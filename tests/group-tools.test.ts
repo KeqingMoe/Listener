@@ -183,7 +183,7 @@ test('read uses local memory first, remote only for local reference; normalized 
   assert.equal((await tools.execute('read_message', { message_id: '500' }, context)).error, 'message_not_in_context');
   assert.equal(calls.length, 0);
   const result = await tools.execute('read_message', { message_id: '2' }, context);
-  assert.deepEqual(result, { status: 'ok', message: { messageId: '2', userId: '123', nickname: 'Alice', text: 'hello[at:456][图片：未分析]', time: 42 } });
+  assert.deepEqual(result, { status: 'ok', message: { messageId: '2', userId: '123', nickname: 'Alice', text: 'hello[at:456][图片 id=img_2_2：未分析]', time: 42, images:[{id:'img_2_2',index:2}] } });
   assert.ok(!JSON.stringify(result).includes('secret'));
   assert.deepEqual(calls, [{ action: 'get_msg', params: { message_id: '2' } }]);
 });

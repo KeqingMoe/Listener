@@ -74,7 +74,7 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
   try { source = readFileSync(configPath, 'utf8'); } catch { return fail('config.toml', '无法读取配置文件'); }
   let parsed: unknown;
   try { parsed = parseToml(source); } catch { throw new ConfigError('配置错误：TOML 格式无效'); }
-  const root = table(parsed, 'config', ['bot', 'onebot', 'ai', 'persona', 'reply', 'memory', 'tools']);
+  const root = table(parsed, 'config', ['bot', 'onebot', 'ai', 'persona', 'reply', 'memory', 'tools', 'images']);
   const bot = table(root.bot, 'bot', ['name', 'owner_id', 'owner_name', 'group_id']);
   const one = table(root.onebot, 'onebot', ['url', 'token_env', 'api_timeout_ms', 'reconnect_base_ms', 'reconnect_max_ms', 'heartbeat_ms']);
   const ai = table(root.ai, 'ai', ['enabled', 'base_url', 'model', 'api_key_env', 'timeout_ms', 'max_output_tokens']);
@@ -83,6 +83,7 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
   const random = table(reply.random, 'reply.random', ['cooldown_ms', 'max_per_minute']);
   const memory = table(root.memory, 'memory', ['path', 'retention_days', 'context_chars']);
   const tools = table(root.tools, 'tools', ['members', 'mention', 'moderation']);
+  const images = table(root.images, 'images', ['enabled', 'max_per_turn', 'max_download_mb']);
   const moderation = table(tools.moderation, 'tools.moderation', ['mute', 'recall', 'member_card', 'confirmation_ttl_seconds', 'max_mute_seconds']);
   for (const [key, expected] of [['group_id', LISTENER_GROUP], ['owner_id', OWNER_ID]] as const) {
     const value = bot[key] ?? expected;
@@ -146,6 +147,7 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
       confirmationTtlSeconds: num(moderation, 'confirmation_ttl_seconds', 'tools.moderation', 60, 1, 60),
       maxMuteSeconds: num(moderation, 'max_mute_seconds', 'tools.moderation', 600, 1, 600),
     } },
+    images: {enabled:bool(images,'enabled','images',false),maxPerTurn:num(images,'max_per_turn','images',3,1,3),maxDownloadMb:num(images,'max_download_mb','images',10,1,10)},
     persona: persona(personaPath),
   };
   return { onebot, listener, personaPath, configPath };

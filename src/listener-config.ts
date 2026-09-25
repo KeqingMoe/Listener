@@ -1,3 +1,4 @@
+export interface ImagesConfig { enabled: boolean; maxPerTurn: number; maxDownloadMb: number }
 export interface ModerationPolicy {
   mute: boolean;
   recall: boolean;
@@ -18,4 +19,5 @@ export interface ListenerConfig {
   persona?: string; botName?: string; ownerName?: string;
   mentionEnabled?: boolean; quoteBotEnabled?: boolean; maxParts?: number;
   tools?: ToolsConfig;
+  images?: ImagesConfig;
 }

@@ -68,6 +68,11 @@ export class SQLiteMemory implements Memory {
     const safe: TimelineEntry = { messageId: entry.messageId, userId: entry.userId,
       nickname: entry.nickname.slice(0, 256), text: entry.text.slice(0, 16_384), time: entry.time,
       ...(typeof entry.replyTo === 'string' ? { replyTo: entry.replyTo.slice(0, 256) } : {}), ...(entry.bot === true ? { bot: true } : {}) };
+    if (Array.isArray(entry.images)) {
+      safe.images = entry.images.filter(image => image && Number.isInteger(image.index) && image.index >= 0 && image.index < 128 &&
+        typeof image.id === 'string' && image.id === `img_${entry.messageId}_${image.index}` && /^img_-?\d{1,32}_\d{1,3}$/.test(image.id))
+        .slice(0,3).map(image => ({id:image.id,index:image.index}));
+    }
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const inserted = this.db.prepare('INSERT OR IGNORE INTO listener_seen VALUES (?, ?)').run(safe.messageId, safe.time);

@@ -25,6 +25,13 @@ max_output_tokens = 1200
 [persona]
 file = 'prompts/listener.md'
 
+# 使用同一个 [ai] 模型的原生多模态能力；模型必须支持图片输入。
+# 关闭时不提供 view_images，也不下载或向模型上传图片。
+[images]
+enabled = false
+max_per_turn = 3 # 每轮最多3张，失败尝试也占额度
+max_download_mb = 10 # 单张最多10MiB；解码后最多4000万像素，缩放到2048边长
+
 [reply]
 mention = true
 quote_bot = true

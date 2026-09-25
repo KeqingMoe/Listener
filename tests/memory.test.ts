@@ -25,6 +25,19 @@ test('deduplicates raw inserts, emits untrusted chronological JSON and finds onl
   } finally { memory.close(); memory.close(); }
 });
 
+test('image references survive persistence without transport URLs, bytes or unknown metadata', () => {
+  const dir=mkdtempSync(join(tmpdir(),'listener-images-memory-'));const path=join(dir,'memory.sqlite');
+  let memory=new SQLiteMemory({path,maxContextChars:8000,retentionDays:7});
+  try{
+    memory.append({...entry(10,'[图片 id=img_10_2：未分析]'),images:[{id:'img_10_2',index:2,url:'https://signed-secret',dataUrl:'data:image/jpeg;base64,secret'},{id:'img_99_0',index:0}] as any});
+    assert.deepEqual(memory.find('10')?.images,[{id:'img_10_2',index:2}]);
+    assert.ok(!memory.context().includes('signed-secret'));assert.ok(!memory.context().includes('base64'));
+    memory.close();memory=new SQLiteMemory({path,maxContextChars:8000,retentionDays:7});
+    assert.deepEqual(memory.find('10')?.images,[{id:'img_10_2',index:2}]);
+    memory.clear();assert.equal(memory.find('10'),undefined);
+  }finally{memory.close();rmSync(dir,{recursive:true,force:true});}
+});
+
 test('raw capacity and context are strictly bounded, including escaped messages', () => {
   const memory = make(8000);
   try {

@@ -30,9 +30,17 @@ test('minimal config has fixed scope, disabled AI, complete defaults and relativ
   assert.equal(c.onebot.rateLimitMs, 2000);
   assert.equal(c.listener.maxParts, 3);
   assert.equal(c.listener.tools?.moderation.maxMuteSeconds, 600);
+  assert.deepEqual(c.listener.images,{enabled:false,maxPerTurn:3,maxDownloadMb:10});
   assert.equal(c.personaPath, join(f.dir, 'prompts/listener.md'));
   assert.equal(c.listener.memoryPath, join(f.dir, 'data/listener.sqlite'));
   assert.equal(c.configPath, join(f.dir, 'config.toml'));
+});
+
+test('images explicitly enabled uses existing model configuration and rejects nonboolean flags', t => {
+  const f=fixture(t,'[images]\nenabled=true\nmax_per_turn=2\nmax_download_mb=5');
+  assert.deepEqual(f.load().listener.images,{enabled:true,maxPerTurn:2,maxDownloadMb:5});
+  for(const value of ['1','"true"','[]']){f.config(`[images]\nenabled=${value}`);assert.throws(()=>f.load(),ConfigError);}
+  f.config('[images]\nenabled=true\nmodel="another-model"');assert.throws(()=>f.load(),ConfigError);
 });
 
 test('example TOML parses and relative paths are anchored at config directory', t => {
@@ -50,7 +58,7 @@ test('example TOML parses and relative paths are anchored at config directory', 
 
 test('unknown fields and wrong table types fail at every nesting level', t => {
   const f = fixture(t);
-  for (const scope of ['', 'bot', 'onebot', 'ai', 'persona', 'reply', 'reply.random', 'memory', 'tools', 'tools.moderation']) {
+  for (const scope of ['', 'bot', 'onebot', 'ai', 'persona', 'reply', 'reply.random', 'memory', 'tools', 'tools.moderation', 'images']) {
     f.config(`${scope ? `[${scope}]\n` : ''}SECRET_UNKNOWN_MARKER = 'sensitive'`);
     assert.throws(() => f.load(), e => e instanceof ConfigError && !e.message.includes('SECRET_UNKNOWN_MARKER') && !e.message.includes('sensitive'));
   }
@@ -72,6 +80,7 @@ test('all numeric bounds are strict, finite and integers except probability', t 
     ['reply.random', 'cooldown_ms', 1000, 3600000], ['reply.random', 'max_per_minute', 1, 10],
     ['memory', 'retention_days', 1, 30], ['memory', 'context_chars', 8000, 100000],
     ['tools.moderation', 'confirmation_ttl_seconds', 1, 60], ['tools.moderation', 'max_mute_seconds', 1, 600],
+    ['images','max_per_turn',1,3], ['images','max_download_mb',1,10],
   ];
   for (const [section, key, min, max] of ranges) {
     for (const value of [String(min - 1), String(max + 1), '1.5', 'nan', 'inf', 'true', '"123"', '[]']) {

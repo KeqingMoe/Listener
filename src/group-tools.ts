@@ -1,5 +1,7 @@
 import { LISTENER_GROUP, type Api, type Memory, type JsonObject, type ToolDefinition, type TurnContext, type TimelineEntry } from './contracts.js';
 
+import { imageReferences, imageMarker } from './image-tools.js';
+
 export interface GroupToolsOptions {
   members?: boolean;
   mention?: boolean;
@@ -43,7 +45,7 @@ function member(v: unknown, expected?: string): JsonObject {
   return { user_id: userId, nickname: bound(v.nickname, 80), card: bound(v.card, 80), role: typeof v.role === 'string' && ['owner', 'admin', 'member'].includes(v.role) ? v.role : 'unknown' };
 }
 function localMessage(entry: TimelineEntry): JsonObject {
-  return { messageId: entry.messageId, userId: entry.userId, nickname: bound(entry.nickname, 80), text: bound(entry.text, 4000), time: Number.isFinite(entry.time) ? entry.time : 0, ...(entry.replyTo !== undefined ? { replyTo: entry.replyTo } : {}), ...(entry.bot ? { bot: true } : {}) };
+  return { messageId: entry.messageId, userId: entry.userId, nickname: bound(entry.nickname, 80), text: bound(entry.text, 4000), time: Number.isFinite(entry.time) ? entry.time : 0, ...(entry.replyTo !== undefined ? { replyTo: entry.replyTo } : {}), ...(entry.bot ? { bot: true } : {}), ...(entry.images?.length ? {images:entry.images.slice(0,3).map(image=>({id:image.id,index:image.index}))} : {}) };
 }
 
 export class GroupTools {
@@ -67,18 +69,19 @@ export class GroupTools {
     if (raw.user_id !== undefined && identifier(raw.user_id, false, true) !== userId) fail('verification_failed');
     if (!Array.isArray(raw.message) || raw.message.length > 128) fail('verification_failed');
     let text = '';
-    for (const segment of raw.message) {
+    const images = imageReferences(messageId,raw.message);
+    for (const [index, segment] of raw.message.entries()) {
       if (!object(segment) || !object(segment.data)) fail('verification_failed');
       if (segment.type === 'text' && typeof segment.data.text === 'string') text += segment.data.text.slice(0, 4000 - text.length);
       else if (segment.type === 'at') {
         let target = 'unknown';
         try { target = identifier(segment.data.qq, false, true); } catch { /* Never expose arbitrary segment data. */ }
         text += `[at:${target}]`;
-      } else if (segment.type === 'image') text += '[图片：未分析]';
+      } else if (segment.type === 'image') { const ref=images.find(image=>image.index===index); text += ref ? imageMarker(ref) : '[图片：超出单消息附件数量限制]'; }
       else if (segment.type !== 'reply') text += '[非文本消息]';
       if (text.length >= 4000) { text = text.slice(0, 4000); break; }
     }
-    return { messageId, userId, nickname: bound(raw.sender.card || raw.sender.nickname, 80), text, time: typeof raw.time === 'number' && Number.isFinite(raw.time) ? Math.floor(raw.time) : 0 };
+    return { messageId, userId, nickname: bound(raw.sender.card || raw.sender.nickname, 80), text, time: typeof raw.time === 'number' && Number.isFinite(raw.time) ? Math.floor(raw.time) : 0, ...(images.length ? {images} : {}) };
   }
   async execute(name: string, args: unknown, context: TurnContext): Promise<JsonObject> {
     try {
