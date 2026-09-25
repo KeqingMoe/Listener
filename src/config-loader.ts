@@ -139,7 +139,7 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
     randomCooldownMs: num(random, 'cooldown_ms', 'reply.random', 60000, 1000, 3600000),
     randomMaxPerMinute: num(random, 'max_per_minute', 'reply.random', 2, 1, 10),
     mentionEnabled: bool(reply, 'mention', 'reply', true), quoteBotEnabled: bool(reply, 'quote_bot', 'reply', true),
-    maxParts: num(reply, 'max_parts', 'reply', 3, 1, 3),
+    maxParts: num(reply, 'max_parts', 'reply', 3, 1, 10),
     memoryPath: filePath(text(memory, 'path', 'memory', 'data/listener.sqlite'), base, 'memory.path'),
     retentionDays: num(memory, 'retention_days', 'memory', 7, 1, 30), maxContextChars: num(memory, 'context_chars', 'memory', 24000, 8000, 100000),
     botName: text(bot, 'name', 'bot', 'Listener'), ownerName: text(bot, 'owner_name', 'bot', '時雨てる'),

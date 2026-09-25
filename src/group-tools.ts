@@ -20,7 +20,7 @@ export const GROUP_TOOLS: ToolDefinition[] = [
   tool('get_member_info', '读取当前群指定成员的基本资料。', schema({ user_id: { type: 'string' } }, ['user_id'])),
   tool('read_message', '读取当前群本地消息或本地近期消息引用的消息。', schema({ message_id: { type: 'string' } }, ['message_id'])),
 ];
-export const SEND_MESSAGE_TOOL = tool('send_message', '向当前群发送1至3条消息。使用结构化at片段提及成员，不支持全员或自己。', schema({ parts: { type: 'array', minItems: 1, maxItems: 3, items: schema({ segments: { type: 'array', minItems: 1, maxItems: 12, items: { oneOf: [schema({ type: { const: 'text' }, text: { type: 'string', maxLength: 800 } }, ['type', 'text']), schema({ type: { const: 'at' }, user_id: { type: 'string' } }, ['type', 'user_id'])] } }, reply_to: { type: 'string' } }, ['segments']) } }, ['parts']));
+export const SEND_MESSAGE_TOOL = tool('send_message', '向当前群发送消息；条数以本轮配置和工具参数上限为准。使用结构化at片段提及成员，不支持全员或自己。', schema({ parts: { type: 'array', minItems: 1, maxItems: 3, items: schema({ segments: { type: 'array', minItems: 1, maxItems: 12, items: { oneOf: [schema({ type: { const: 'text' }, text: { type: 'string', maxLength: 800 } }, ['type', 'text']), schema({ type: { const: 'at' }, user_id: { type: 'string' } }, ['type', 'user_id'])] } }, reply_to: { type: 'string' } }, ['segments']) } }, ['parts']));
 
 function object(v: unknown): v is JsonObject { return !!v && typeof v === 'object' && !Array.isArray(v); }
 function fail(code = 'invalid_arguments'): never { throw new Error(code); }
@@ -55,7 +55,7 @@ export class GroupTools {
       Reflect.ownKeys(options).some(key => typeof key !== 'string' || !['members', 'mention', 'maxParts'].includes(key))) throw new Error('Invalid group tool options');
     const policy = { members: true, mention: true, maxParts: 3, ...options };
     if (typeof policy.members !== 'boolean' || typeof policy.mention !== 'boolean' ||
-      !Number.isInteger(policy.maxParts) || policy.maxParts < 1 || policy.maxParts > 3) throw new Error('Invalid group tool options');
+      !Number.isInteger(policy.maxParts) || policy.maxParts < 1 || policy.maxParts > 10) throw new Error('Invalid group tool options');
     this.options = Object.freeze(policy);
   }
   private scope(context: TurnContext): void { if (context.groupId !== LISTENER_GROUP) fail('forbidden_group'); }

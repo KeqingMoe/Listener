@@ -17,7 +17,7 @@ function setup(response: unknown = record(), entries: TimelineEntry[] = [entry],
 test('options reject malformed runtime values and increased hard limits', () => {
   for (const options of [null, [], true, { unknown: true }, { [Symbol('x')]: true }, Object.create({ members: true }),
     ...['members', 'mention'].flatMap(key => [0, 'false', null, undefined].map(value => ({ [key]: value }))),
-    ...[0, -1, 4, 1.5, NaN, Infinity, '3', undefined].map(maxParts => ({ maxParts }))]) {
+    ...[0, -1, 11, 1.5, NaN, Infinity, '3', undefined].map(maxParts => ({ maxParts }))]) {
     assert.throws(() => setup(record(), [entry], options as any), /Invalid group tool options/);
   }
 });
@@ -50,7 +50,7 @@ test('mention verification remains allowed when member tools are disabled', asyn
 });
 
 test('reduced part caps apply before all API calls and options are captured by copy', async () => {
-  for (const maxParts of [1, 2, 3]) {
+  for (const maxParts of [1, 2, 3, 4, 10]) {
     const options = { maxParts, members: false, mention: false };
     const { tools, calls } = setup(record(), [entry], options);
     options.maxParts = 3; options.members = true; options.mention = true;

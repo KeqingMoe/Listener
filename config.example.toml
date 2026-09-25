@@ -48,7 +48,7 @@ quote_bot = true
 random_probability = 0.03
 delay_ms = [1200, 3000]
 cooldown_ms = 5000
-max_parts = 3
+max_parts = 3 # 每轮回复条数上限，1..10；默认3，不要求凑满
 
 [reply.random]
 cooldown_ms = 60000

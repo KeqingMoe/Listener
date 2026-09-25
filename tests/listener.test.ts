@@ -99,6 +99,14 @@ test('configured tool schemas hide disabled abilities and tighten parts without 
  const normal=buildToolDefinitions(cfg,false).find(t=>t.function.name==='send_message')!.function.parameters as any;
  assert.equal(normal.properties.parts.maxItems,3);assert.equal(normal.properties.parts.items.properties.segments.items.oneOf.length,2);
 });
+test('ten-part configuration updates tool schema and prompt without widening default',()=>{
+ const tools=buildToolDefinitions({...cfg,maxParts:10},false);
+ const send=tools.find(t=>t.function.name==='send_message')!.function;
+ assert.equal((send.parameters as any).properties.parts.maxItems,10);
+ assert.ok(!send.description.includes('1至3'));
+ const prompt=buildSystemPrompt({...cfg,maxParts:10});assert.ok(prompt.includes('"max_parts":10'));assert.ok(!prompt.includes('最多3条'));
+ assert.equal((buildToolDefinitions(cfg,false).find(t=>t.function.name==='send_message')!.function.parameters as any).properties.parts.maxItems,3);
+});
 test('mention and quote trigger switches are honored with random participation disabled',async()=>{
  const s=setup([],{mentionEnabled:false,quoteBotEnabled:false,randomReplyProbability:0});
  try{await s.bot.receive(event(),self);s.memory.append({messageId:'9',userId:self,nickname:'Listener',text:'hi',time:Math.floor(Date.now()/1000),bot:true});await s.bot.receive(event({message_id:'2',message:[{type:'reply',data:{id:'9'}}]}),self);await delay(30);assert.equal(s.requests.length,0);assert.equal(s.calls.length,0);}finally{await s.bot.stop();}

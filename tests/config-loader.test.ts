@@ -84,7 +84,7 @@ test('all numeric bounds are strict, finite and integers except probability', t 
     ['onebot', 'api_timeout_ms', 1, 2147483647], ['onebot', 'heartbeat_ms', 1, 2147483647],
     ['onebot', 'reconnect_base_ms', 1, 2147483647], ['onebot', 'reconnect_max_ms', 1, 2147483647],
     ['ai', 'timeout_ms', 1000, 120000], ['ai', 'max_output_tokens', 128, 4096],
-    ['reply', 'cooldown_ms', 1000, 60000], ['reply', 'max_parts', 1, 3],
+    ['reply', 'cooldown_ms', 1000, 60000], ['reply', 'max_parts', 1, 10],
     ['reply.random', 'cooldown_ms', 1000, 3600000], ['reply.random', 'max_per_minute', 1, 10],
     ['memory', 'retention_days', 1, 30], ['memory', 'context_chars', 8000, 100000],
     ['tools.moderation', 'confirmation_ttl_seconds', 1, 60], ['tools.moderation', 'max_mute_seconds', 1, 600],
