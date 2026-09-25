@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { LISTENER_GROUP, type Api, type JsonObject, type Memory, type ToolDefinition, type TurnContext } from './contracts.js';
+import { LISTENER_GROUP, resolveGroupId, type Api, type JsonObject, type Memory, type ToolDefinition, type TurnContext } from './contracts.js';
 import { extractForward, type ExtractedForward, type ForwardReference } from './forward-references.js';
 import { log } from './logger.js';
 import { faceMarker } from './face-tools.js';
@@ -70,13 +70,16 @@ function safeName(v: unknown): string {
 }
 export class ForwardTools {
   private readonly options: ForwardConfig;
-  constructor(private readonly api: Api, private readonly memory: Memory, options: ForwardConfig) {
+  private readonly groupId: string;
+  private readonly turns = new WeakSet<ForwardTurnState>();
+  constructor(private readonly api: Api, private readonly memory: Memory, options: ForwardConfig, groupId: string = LISTENER_GROUP) {
+    this.groupId = resolveGroupId(groupId);
     if (!object(options) || ![Object.prototype, null].includes(Object.getPrototypeOf(options)) || !Object.hasOwn(options, 'enabled') || typeof options.enabled !== 'boolean' || Reflect.ownKeys(options).some(k => typeof k !== 'string' || !['enabled', 'maxPerRead'].includes(k))) throw new Error('Invalid forward tool options');
     const max = Object.hasOwn(options, 'maxPerRead') ? options.maxPerRead : 20;
     if (!Number.isInteger(max) || max < 1 || max > 20) throw new Error('Invalid forward tool options');
     this.options = { enabled: options.enabled, maxPerRead: max };
   }
-  createTurn(): ForwardTurnState { return { calls: 0, returned: 0, outputChars: 0, cachedBytes: 0, roots: new Map(), children: new Map(), cache: new Map(), childKeys: new Map(), busy: false }; }
+  createTurn(): ForwardTurnState { const state: ForwardTurnState = { calls: 0, returned: 0, outputChars: 0, cachedBytes: 0, roots: new Map(), children: new Map(), cache: new Map(), childKeys: new Map(), busy: false }; this.turns.add(state); return state; }
   private scope(rootId: string, sender?: string) {
     const match = ROOT.exec(rootId)!;
     const messageId = match[1]!, index = Number(match[2]);
@@ -98,7 +101,8 @@ export class ForwardTools {
     try {
       check(signal);
       if (!this.options.enabled) return errorResult('tool_disabled');
-      if (ctx.groupId !== LISTENER_GROUP) return errorResult('forbidden_group');
+      if (ctx.groupId !== this.groupId) return errorResult('forbidden_group');
+      if (!this.turns.has(state)) return errorResult('invalid_arguments');
       if (!object(args) || Reflect.ownKeys(args).length !== 3 || !['forward_id', 'start', 'end'].every(k => Object.hasOwn(args, k)) || typeof args.forward_id !== 'string' || args.forward_id.trim() !== args.forward_id || (!ROOT.test(args.forward_id) && !CHILD.test(args.forward_id)) || !Number.isSafeInteger(args.start) || !Number.isSafeInteger(args.end)) return errorResult('invalid_arguments');
       id = args.forward_id;
       const start = args.start as number, end = args.end as number;
@@ -118,7 +122,7 @@ export class ForwardTools {
         const raw = await this.api.call('get_msg', { message_id: scope.messageId });
         check(signal);
         const snap = snapshot(raw), message = snap.value;
-        if (!object(message) || message.message_type !== 'group' || identifier(message.group_id) !== LISTENER_GROUP || identifier(message.message_id, true) !== scope.messageId || !object(message.sender)) fail('invalid_origin');
+        if (!object(message) || message.message_type !== 'group' || identifier(message.group_id) !== this.groupId || identifier(message.message_id, true) !== scope.messageId || !object(message.sender)) fail('invalid_origin');
         const verified = message as JsonObject;
         const sender = identifier((verified.sender as JsonObject).user_id);
         if (!sender || (scope.local && sender !== scope.local.userId) || (verified.user_id !== undefined && identifier(verified.user_id) !== sender) || !Array.isArray(verified.message) || verified.message.length > 128) fail('invalid_origin');

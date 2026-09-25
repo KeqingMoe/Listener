@@ -17,14 +17,16 @@ function fixture(t: { after(fn: () => void): void }, toml = '') {
   return { dir, load, config: (value: string) => writeFileSync(join(dir, 'config.toml'), value), dotenv: (value: string) => writeFileSync(join(dir, '.env'), value) };
 }
 
-test('minimal config has fixed scope, disabled AI, complete defaults and relative paths', t => {
+test('minimal config has empty group scope, disabled AI, complete defaults and relative paths', t => {
   const f = fixture(t);
   const c = f.load();
   assert.equal(c.listener.enabled, false);
+  assert.equal(c.maxConcurrentTurns,2);
+  assert.deepEqual(c.groups,[]);
   assert.equal(c.listener.botName, 'Listener');
   assert.equal(c.listener.ownerName, '時雨てる');
   assert.equal(c.listener.persona, '你是 Listener。\n');
-  assert.deepEqual([...c.onebot.allowedGroups], [LISTENER_GROUP]);
+  assert.deepEqual([...c.onebot.allowedGroups], []);
   assert.deepEqual([...c.onebot.adminUsers], [OWNER_ID]);
   assert.equal(c.onebot.allowPrivate, false);
   assert.equal(c.onebot.rateLimitMs, 2000);
@@ -90,7 +92,7 @@ test('all numeric bounds are strict, finite and integers except probability', t 
   const ranges: [string, string, number, number][] = [
     ['onebot', 'api_timeout_ms', 1, 2147483647], ['onebot', 'heartbeat_ms', 1, 2147483647],
     ['onebot', 'reconnect_base_ms', 1, 2147483647], ['onebot', 'reconnect_max_ms', 1, 2147483647],
-    ['ai', 'timeout_ms', 1000, 120000], ['ai', 'max_output_tokens', 128, 4096],
+    ['ai', 'timeout_ms', 1000, 120000], ['ai', 'max_output_tokens', 128, 4096], ['ai','max_concurrent_turns',1,8],
     ['reply', 'cooldown_ms', 1000, 60000], ['reply', 'max_parts', 1, 10],
     ['reply.random', 'cooldown_ms', 1000, 3600000], ['reply.random', 'max_per_minute', 1, 10],
     ['memory', 'retention_days', 1, 30], ['memory', 'context_chars', 8000, 100000],
@@ -128,16 +130,18 @@ test('delay array shape, bounds, types and ordering; reconnect ordering', t => {
   assert.throws(() => f.load(), ConfigError);
 });
 
-test('fixed identity cannot widen scope or accept numeric IDs', t => {
+test('owner identity stays fixed and removed bot group_id is always rejected', t => {
   const f = fixture(t);
-  for (const [key, expected] of [['group_id', LISTENER_GROUP], ['owner_id', OWNER_ID]]) {
-    for (const value of ['"123"', expected!, 'true', '["123"]']) {
-      f.config(`[bot]\n${key}=${value}`);
-      assert.throws(() => f.load(), ConfigError);
-    }
-    f.config(`[bot]\n${key}="${expected}"`);
-    f.load();
+  for (const value of ['"123"', OWNER_ID, 'true', '["123"]']) {
+    f.config(`[bot]\nowner_id=${value}`);assert.throws(() => f.load(), ConfigError);
   }
+  f.config(`[bot]\nowner_id="${OWNER_ID}"`);f.load();
+  for (const value of [`"${LISTENER_GROUP}"`,'"9"',LISTENER_GROUP,'true','["123"]','"0"','"01"','" 9"','"9\\n"','"-9"',`"${'1'.repeat(33)}"`]) {
+    for (const groups of ['',`\n[groups."${LISTENER_GROUP}"]\nenabled=true`]) {
+      f.config(`[bot]\ngroup_id=${value}${groups}`);assert.throws(() => f.load(), ConfigError);
+    }
+  }
+  f.config('[groups."9"]');assert.deepEqual([...f.load().onebot.allowedGroups],['9']);
 });
 
 test('booleans and text are not coerced', t => {

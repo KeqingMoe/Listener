@@ -1,4 +1,4 @@
-import { LISTENER_GROUP, type Api, type ChatContentPart, type ImageReference, type JsonObject, type Memory, type ToolDefinition, type TurnContext } from './contracts.js';
+import { LISTENER_GROUP, resolveGroupId, type Api, type ChatContentPart, type ImageReference, type JsonObject, type Memory, type ToolDefinition, type TurnContext } from './contracts.js';
 import type { ImagesConfig } from './listener-config.js';
 import { downloadImage, type ImageDownloader } from './image-download.js';
 import { log, withLogContext } from './logger.js';
@@ -63,14 +63,17 @@ function nickname(value: unknown): string {
 
 export class ImageTools {
   private readonly options: Readonly<ImagesConfig>;
-  constructor(private readonly api: Api, private readonly memory: Memory, options: ImagesConfig, private readonly downloader: ImageDownloader = downloadImage) {
+  private readonly groupId: string;
+  private readonly turns = new WeakSet<ImageTurnState>();
+  constructor(private readonly api: Api, private readonly memory: Memory, options: ImagesConfig, private readonly downloader: ImageDownloader = downloadImage, groupId: string = LISTENER_GROUP) {
+    this.groupId = resolveGroupId(groupId);
     if (!object(options) || ![Object.prototype, null].includes(Object.getPrototypeOf(options)) ||
       Reflect.ownKeys(options).some(key => typeof key !== 'string' || !['enabled', 'maxPerTurn', 'maxDownloadMb'].includes(key)) ||
       typeof options.enabled !== 'boolean' || !Number.isInteger(options.maxPerTurn) || options.maxPerTurn < 1 || options.maxPerTurn > 3 ||
       !Number.isInteger(options.maxDownloadMb) || options.maxDownloadMb < 1 || options.maxDownloadMb > 10) throw new Error('Invalid image tool options');
     this.options = Object.freeze({ enabled: options.enabled, maxPerTurn: options.maxPerTurn, maxDownloadMb: options.maxDownloadMb });
   }
-  createTurn(): ImageTurnState { return { attemptedIds: new Set(), loadedIds: new Set() }; }
+  createTurn(): ImageTurnState { const state: ImageTurnState = { attemptedIds: new Set(), loadedIds: new Set() }; this.turns.add(state); return state; }
   async view(args: unknown, context: TurnContext, state: ImageTurnState, signal?: AbortSignal): Promise<{ result: JsonObject; content: ChatContentPart[] }> {
     const failure = (error: 'cancelled' | 'tool_disabled' | 'forbidden_group' | 'invalid_arguments', ids: string[] = []) => {
       log(error === 'cancelled' || error === 'tool_disabled' ? 'info' : 'warn', 'image.failed', { phase: 'validation', reason: error });
@@ -78,7 +81,8 @@ export class ImageTools {
     };
     if (signal?.aborted) return failure('cancelled');
     if (!this.options.enabled) return failure('tool_disabled');
-    if (context.groupId !== LISTENER_GROUP) return failure('forbidden_group');
+    if (context.groupId !== this.groupId) return failure('forbidden_group');
+    if (!this.turns.has(state)) return failure('invalid_arguments');
     if (!object(args) || Reflect.ownKeys(args).length !== 1 || !Object.hasOwn(args, 'image_ids') ||
       !Array.isArray(args.image_ids) || args.image_ids.length < 1 || args.image_ids.length > 3 || args.image_ids.some(id => !parseId(id))) return failure('invalid_arguments');
     const ids = [...new Set(args.image_ids as string[])];
@@ -111,7 +115,7 @@ export class ImageTools {
         const raw = await this.api.call('get_msg', { message_id: messageId });
         if (signal?.aborted) return cancelled();
         active.phase = 'validation';
-        if (!object(raw) || raw.message_type !== 'group' || identifier(raw.group_id) !== LISTENER_GROUP || identifier(raw.message_id, true) !== messageId || !object(raw.sender)) throw new Error();
+        if (!object(raw) || raw.message_type !== 'group' || identifier(raw.group_id) !== this.groupId || identifier(raw.message_id, true) !== messageId || !object(raw.sender)) throw new Error();
         const userId = identifier(raw.sender.user_id);
         if (!userId || (local && userId !== local.userId) || (raw.user_id !== undefined && identifier(raw.user_id) !== userId)) throw new Error();
         if (!Array.isArray(raw.message) || raw.message.length > 128) throw new Error();

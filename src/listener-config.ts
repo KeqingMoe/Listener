@@ -13,6 +13,7 @@ export interface ToolsConfig {
   moderation: ModerationPolicy;
 }
 export interface ListenerConfig {
+  groupId?: string;
   enabled: boolean; baseUrl: string; apiKey: string; model: string;
   timeoutMs: number; maxTokens: number; debounceMs: number; cooldownMs: number;
   memoryPath: string; maxContextChars: number; retentionDays: number;

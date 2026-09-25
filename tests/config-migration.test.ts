@@ -7,6 +7,7 @@ import { parse as parseEnv } from 'dotenv';
 import { parse as parseToml } from 'smol-toml';
 import { migrateConfig } from '../scripts/migrate-config.js';
 import { loadAppConfig } from '../src/config-loader.js';
+import { LISTENER_GROUP } from '../src/contracts.js';
 function fixture(extra='') {
  const root=mkdtempSync(join(tmpdir(),'listener-migration-'));
  mkdirSync(join(root,'prompts'));writeFileSync(join(root,'prompts/listener.md'),'可爱猫娘');
@@ -22,6 +23,11 @@ test('one-time migration preserves behavior/secrets, backs up and writes private
  assert.equal(result.onebot.token,'original-onebot-secret');assert.equal(result.listener.apiKey,'original-api-secret');
  const secrets=parseEnv(readFileSync(join(root,'.env'),'utf8'));assert.deepEqual(Object.keys(secrets).sort(),['ONEBOT_ACCESS_TOKEN','OPENAI_API_KEY']);
  const config=readFileSync(join(root,'config.toml'),'utf8');assert.ok(!config.includes('original-api-secret'));assert.ok(!config.includes('original-onebot-secret'));
+ const doc=parseToml(config);assert.equal(Object.hasOwn(doc.bot as object,'group_id'),false);
+ assert.deepEqual(Object.keys(doc.groups as object),[LISTENER_GROUP]);
+ assert.equal(((doc.groups as Record<string,unknown>)[LISTENER_GROUP] as Record<string,unknown>).enabled,true);
+ assert.deepEqual([...result.onebot.allowedGroups],[LISTENER_GROUP]);assert.equal(result.groups[0]?.groupId,LISTENER_GROUP);
+ assert.equal(result.groups[0]?.memoryPath,join(root,'data/listener.sqlite'));
  assert.equal(readFileSync(join(root,'data/config-migration.env.bak'),'utf8'),text);
  for(const p of ['.env','config.toml','data/config-migration.env.bak'])assert.equal(statSync(join(root,p)).mode&0o777,0o600);
  assert.throws(()=>migrateConfig(root,{}),/已存在/);
@@ -31,7 +37,7 @@ test('migration preserves old effective process overrides without leaking secret
  const {root}=fixture();try{migrateConfig(root,{OPENAI_MODEL:'override',OPENAI_API_KEY:'process-key',AI_RANDOM_REPLY_PROBABILITY:'0.2'});const c=loadAppConfig({configPath:join(root,'config.toml'),env:{}});assert.equal(c.listener.model,'override');assert.equal(c.listener.apiKey,'process-key');assert.equal(c.listener.randomReplyProbability,0.2);}finally{rmSync(root,{recursive:true,force:true});}
 });
 test('invalid migration validates before changing original env or creating final config',()=>{
- for(const extra of ['UNKNOWN_SETTING=secret-dont-print\n','AI_RANDOM_REPLY_PROBABILITY=NaN\n','AI_DELAY_MAX_MS=1\n','ADMIN_USER_IDS=999\n']){
+ for(const extra of ['UNKNOWN_SETTING=secret-dont-print\n','AI_RANDOM_REPLY_PROBABILITY=NaN\n','AI_DELAY_MAX_MS=1\n','ADMIN_USER_IDS=999\n','ALLOWED_GROUP_IDS=123456789\n']){
  const {root,text}=fixture(extra);try{assert.throws(()=>migrateConfig(root,{}),e=>e instanceof Error&&!e.message.includes('secret-dont-print'));assert.equal(readFileSync(join(root,'.env'),'utf8'),text);assert.equal(existsSync(join(root,'config.toml')),false);assert.equal(existsSync(join(root,'data/config-migration.env.bak')),false);}finally{rmSync(root,{recursive:true,force:true});}}
 });
 test('existing config or backup is never overwritten',()=>{

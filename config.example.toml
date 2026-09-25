@@ -4,7 +4,6 @@
 name = 'Listener'
 owner_id = '100000001'
 owner_name = '時雨てる'
-group_id = '100000002'
 
 [onebot]
 url = 'ws://127.0.0.1:3001'
@@ -21,6 +20,7 @@ model = '' # Set a model and provide OPENAI_API_KEY before enabling AI.
 api_key_env = 'OPENAI_API_KEY'
 timeout_ms = 45000
 max_output_tokens = 1200
+max_concurrent_turns = 2 # 全局并行处理群批次数，1..8；模型/密钥仍由全部群共享
 
 [persona]
 file = 'prompts/listener.md'
@@ -74,3 +74,32 @@ recall = true
 member_card = true
 confirmation_ttl_seconds = 60
 max_mute_seconds = 600
+
+# 显式服务白名单，最多32个配置群。上方均为全局默认，各群仅覆盖需要不同的字段。
+# groups 是唯一白名单来源；未配置、空表或全部 enabled=false 均不服务任何群。禁用群的配置仍须合法。
+[groups.'100000002']
+enabled = true
+
+# 新增群示例（替换群号后取消注释）：默认只在本群响应，不共享聊天记忆。
+# [groups.'123456789']
+# enabled = true
+# [groups.'123456789'.reply]
+# random_probability = 0
+# [groups.'123456789'.tools.moderation]
+# mute = false
+# recall = false
+# member_card = false
+# [groups.'123456789'.images]
+# enabled = true
+# [groups.'123456789'.forward]
+# enabled = true
+# [groups.'123456789'.memory]
+# retention_days = 7
+# context_chars = 24000
+# path = 'data/groups/123456789/listener.sqlite' # 默认已按群隔离，无需填写；不能与其他启用群共用文件
+# [groups.'123456789'.persona]
+# append_file = 'prompts/group-extra.md' # 可选，每文件最多16KiB UTF-8，追加于全局人设后；文件须存在
+
+# 原100000002群继续使用全局 memory.path，不迁移或重标记数据库。
+# 其他群默认使用全局 memory.path 所在目录下的 groups/<群号>/listener.sqlite。
+# 每群不能覆盖 AI/密钥/模型、连接、名字或主人身份；管理确认规则不能放宽。

@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { log } from './logger.js';
 import type { ModerationPolicy } from './listener-config.js';
-import { LISTENER_GROUP, OWNER_ID, type Api, type JsonObject, type ToolDefinition, type TurnContext } from './contracts.js';
+import { LISTENER_GROUP, resolveGroupId, OWNER_ID, type Api, type JsonObject, type ToolDefinition, type TurnContext } from './contracts.js';
 
 const userIdSchema = { type: 'string', pattern: '^[1-9][0-9]*$', description: 'Explicit target QQ user ID; never the owner or bot.' };
 export const MODERATION_TOOLS: ToolDefinition[] = [
@@ -32,7 +32,9 @@ export class Moderation {
   private readonly pending = new Map<string, Pending>();
   private disposed = false;
   private readonly policy: Readonly<ModerationPolicy>;
-  constructor(private readonly api: Api, private readonly now: () => number = Date.now, options: Partial<ModerationPolicy> = {}) {
+  private readonly groupId: string;
+  constructor(private readonly api: Api, private readonly now: () => number = Date.now, options: Partial<ModerationPolicy> = {}, groupId: string = LISTENER_GROUP) {
+    this.groupId = resolveGroupId(groupId);
     const defaults: ModerationPolicy = { mute: true, recall: true, memberCard: true, confirmationTtlSeconds: 60, maxMuteSeconds: 600 };
     if (!record(options) || ![Object.prototype, null].includes(Object.getPrototypeOf(options)) ||
       Reflect.ownKeys(options).some(key => typeof key !== 'string' || !Object.hasOwn(defaults, key))) throw new Error('Invalid moderation options');
@@ -55,7 +57,7 @@ export class Moderation {
   }
 
   private async authorize(context: TurnContext): Promise<void> {
-    if (this.disposed || context.actorId !== OWNER_ID || context.groupId !== LISTENER_GROUP ||
+    if (this.disposed || context.actorId !== OWNER_ID || context.groupId !== this.groupId ||
       !id(context.selfId) || context.selfId === OWNER_ID || !messageId(context.messageId)) deny();
     const login = await this.api.call('get_login_info');
     if (!record(login) || id(login.user_id) !== context.selfId || this.disposed) deny();
@@ -79,13 +81,13 @@ export class Moderation {
     let target: string | undefined;
     if (action.name === 'recall_message') {
       const message = await this.api.call('get_msg', { message_id: action.message_id });
-      if (!record(message) || message.message_type !== 'group' || id(message.group_id) !== LISTENER_GROUP || messageId(message.message_id) !== action.message_id || !record(message.sender)) return deny();
+      if (!record(message) || message.message_type !== 'group' || id(message.group_id) !== this.groupId || messageId(message.message_id) !== action.message_id || !record(message.sender)) return deny();
       target = id(message.sender.user_id);
     } else {
       // Reject protected targets before even looking them up.
       if (action.user_id === OWNER_ID || action.user_id === context.selfId) return deny();
-      const member = await this.api.call('get_group_member_info', { group_id: LISTENER_GROUP, user_id: action.user_id, no_cache: true });
-      if (!record(member) || id(member.group_id) !== LISTENER_GROUP || id(member.user_id) !== action.user_id) return deny();
+      const member = await this.api.call('get_group_member_info', { group_id: this.groupId, user_id: action.user_id, no_cache: true });
+      if (!record(member) || id(member.group_id) !== this.groupId || id(member.user_id) !== action.user_id) return deny();
       // Unknown/missing roles cannot prove a target is an ordinary member.
       if (action.name === 'mute_member' && member.role !== 'member') return deny();
       target = id(member.user_id);
@@ -118,7 +120,7 @@ export class Moderation {
       if (this.disposed || this.pending.size >= 10) deny();
       const code = randomBytes(16).toString('hex');
       this.pending.set(code, { action, context: fixed, target, expires: this.now() + this.policy.confirmationTtlSeconds * 1000 });
-      const description = action.name === 'mute_member' ? `群 ${LISTENER_GROUP}：${action.seconds === 0 ? '解除禁言' : '禁言'}成员 ${target}，时长 ${action.seconds} 秒` : action.name === 'recall_message' ? `群 ${LISTENER_GROUP}：撤回成员 ${target} 的消息 ${action.message_id}` : `群 ${LISTENER_GROUP}：将成员 ${target} 的群名片设置为 ${JSON.stringify(action.card)}`;
+      const description = action.name === 'mute_member' ? `群 ${this.groupId}：${action.seconds === 0 ? '解除禁言' : '禁言'}成员 ${target}，时长 ${action.seconds} 秒` : action.name === 'recall_message' ? `群 ${this.groupId}：撤回成员 ${target} 的消息 ${action.message_id}` : `群 ${this.groupId}：将成员 ${target} 的群名片设置为 ${JSON.stringify(action.card)}`;
       this.audit(name, fixed, target, 'proposed', action.name === 'mute_member' ? action.seconds : undefined);
       return { status: 'confirmation_required', code, description: `${description}；请在 ${this.policy.confirmationTtlSeconds} 秒内使用 /confirm CODE 确认`, expires_in_seconds: this.policy.confirmationTtlSeconds };
     } catch {
@@ -142,8 +144,8 @@ export class Moderation {
       if (target !== pending.target || this.disposed || this.now() >= pending.expires) return deny();
       const action = pending.action;
       attempted = true;
-      if (action.name === 'mute_member') await this.api.call('set_group_ban', { group_id: LISTENER_GROUP, user_id: action.user_id, duration: action.seconds });
-      else if (action.name === 'set_member_card') await this.api.call('set_group_card', { group_id: LISTENER_GROUP, user_id: action.user_id, card: action.card });
+      if (action.name === 'mute_member') await this.api.call('set_group_ban', { group_id: this.groupId, user_id: action.user_id, duration: action.seconds });
+      else if (action.name === 'set_member_card') await this.api.call('set_group_card', { group_id: this.groupId, user_id: action.user_id, card: action.card });
       else await this.api.call('delete_msg', { message_id: action.message_id });
       this.audit(action.name, fixed, target, 'executed', action.name === 'mute_member' ? action.seconds : undefined);
       return { status: 'executed' };

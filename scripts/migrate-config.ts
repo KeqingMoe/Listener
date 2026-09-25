@@ -33,7 +33,8 @@ export function migrateConfig(root = process.cwd(), env: NodeJS.ProcessEnv = pro
   if (value('ALLOWED_GROUP_IDS',LISTENER_GROUP)!==LISTENER_GROUP || value('ADMIN_USER_IDS',OWNER_ID)!==OWNER_ID) throw new ConfigError('迁移取消：群或管理员与本安装不一致');
   const minDelay = number('AI_DEBOUNCE_MS',1200);
   const doc = {
-    bot:{name:'Listener',owner_id:OWNER_ID,owner_name:'時雨てる',group_id:LISTENER_GROUP},
+    bot:{name:'Listener',owner_id:OWNER_ID,owner_name:'時雨てる'},
+    groups:{[LISTENER_GROUP]:{enabled:true}},
     onebot:{url:value('ONEBOT_WS_URL','ws://127.0.0.1:3001'),token_env:'ONEBOT_ACCESS_TOKEN',api_timeout_ms:number('API_TIMEOUT_MS',10000),reconnect_base_ms:number('RECONNECT_BASE_MS',1000),reconnect_max_ms:number('RECONNECT_MAX_MS',30000),heartbeat_ms:number('HEARTBEAT_MS',30000)},
     ai:{enabled:bool('AI_ENABLED',false),base_url:value('OPENAI_BASE_URL','https://api.openai.com/v1'),model:value('OPENAI_MODEL',''),api_key_env:'OPENAI_API_KEY',timeout_ms:number('AI_TIMEOUT_MS',45000),max_output_tokens:number('AI_MAX_TOKENS',1200)},
     persona:{file:'prompts/listener.md'},

@@ -1,10 +1,10 @@
-import { chmodSync, closeSync, openSync } from 'node:fs';
+import { chmodSync, closeSync, openSync, existsSync, statSync } from 'node:fs';
 import { log } from './logger.js';
 import { sanitizeForwardReferences } from './forward-references.js';
 import { DatabaseSync } from 'node:sqlite';
-import { LISTENER_GROUP, type Memory, type Model, type TimelineEntry } from './contracts.js';
+import { resolveGroupId, type Memory, type Model, type TimelineEntry } from './contracts.js';
 
-export interface SQLiteMemoryOptions { path: string; maxContextChars: number; retentionDays: number }
+export interface SQLiteMemoryOptions { path: string; maxContextChars: number; retentionDays: number; groupId?: string }
 type Row = { seq: number; entry: string; time: number };
 type Summary = { text: string; oldest: number };
 const MAX_RAW = 300;
@@ -20,28 +20,44 @@ const MAX_SEEN = 100_000;
 export class SQLiteMemory implements Memory {
   private readonly db: DatabaseSync;
   private readonly options: SQLiteMemoryOptions;
+  private readonly groupId: string;
   private busy = false;
   private closed = false;
   private generation = 0;
   constructor(options: SQLiteMemoryOptions) {
+    this.groupId = resolveGroupId(options.groupId);
     if (!Number.isSafeInteger(options.maxContextChars) || options.maxContextChars < 256
       || !Number.isFinite(options.retentionDays) || options.retentionDays <= 0) throw new Error('Invalid memory configuration');
-    this.options = { ...options };
+    this.options = { ...options, groupId: this.groupId };
+    // Check ownership read-only BEFORE chmod, schema creation, pragmas or retention.
+    // A populated identity-less file is not safe to adopt as another group's memory.
+    if (options.path !== ':memory:' && existsSync(options.path) && statSync(options.path).size > 0) {
+      const probe = new DatabaseSync(options.path, { readOnly: true });
+      try {
+        const hasIdentity = probe.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='listener_identity'").get();
+        if (!hasIdentity || probe.prepare('SELECT group_id FROM listener_identity WHERE singleton=1').get()?.group_id !== this.groupId) throw new Error('Memory group mismatch');
+      } finally { probe.close(); }
+    }
     if (options.path !== ':memory:') {
       closeSync(openSync(options.path, 'a', 0o600));
       chmodSync(options.path, 0o600);
     }
     this.db = new DatabaseSync(options.path);
-    this.db.exec(`PRAGMA journal_mode=DELETE; PRAGMA secure_delete=ON; PRAGMA busy_timeout=3000;
-      CREATE TABLE IF NOT EXISTS listener_identity (singleton INTEGER PRIMARY KEY CHECK(singleton=1), group_id TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS listener_messages (seq INTEGER PRIMARY KEY AUTOINCREMENT, message_id TEXT UNIQUE NOT NULL, time REAL NOT NULL, entry TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS listener_seen (message_id TEXT PRIMARY KEY, time REAL NOT NULL);
-      CREATE INDEX IF NOT EXISTS listener_seen_time ON listener_seen(time);
-      CREATE TABLE IF NOT EXISTS listener_summary (singleton INTEGER PRIMARY KEY CHECK(singleton=1), text TEXT NOT NULL, oldest REAL NOT NULL);`);
-    this.db.prepare('INSERT OR IGNORE INTO listener_identity VALUES (1, ?)').run(LISTENER_GROUP);
-    const identity = this.db.prepare('SELECT group_id FROM listener_identity WHERE singleton=1').get();
-    if (identity?.group_id !== LISTENER_GROUP) { this.db.close(); throw new Error('Memory group mismatch'); }
-    this.housekeep();
+    try {
+      this.db.exec('PRAGMA busy_timeout=3000; BEGIN IMMEDIATE');
+      this.db.exec('CREATE TABLE IF NOT EXISTS listener_identity (singleton INTEGER PRIMARY KEY CHECK(singleton=1), group_id TEXT NOT NULL)');
+      this.db.prepare('INSERT OR IGNORE INTO listener_identity VALUES (1, ?)').run(this.groupId);
+      if (this.db.prepare('SELECT group_id FROM listener_identity WHERE singleton=1').get()?.group_id !== this.groupId) throw new Error('Memory group mismatch');
+      this.db.exec(`CREATE TABLE IF NOT EXISTS listener_messages (seq INTEGER PRIMARY KEY AUTOINCREMENT, message_id TEXT UNIQUE NOT NULL, time REAL NOT NULL, entry TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS listener_seen (message_id TEXT PRIMARY KEY, time REAL NOT NULL);
+        CREATE INDEX IF NOT EXISTS listener_seen_time ON listener_seen(time);
+        CREATE TABLE IF NOT EXISTS listener_summary (singleton INTEGER PRIMARY KEY CHECK(singleton=1), text TEXT NOT NULL, oldest REAL NOT NULL);
+        COMMIT; PRAGMA journal_mode=DELETE; PRAGMA secure_delete=ON;`);
+      this.housekeep();
+    } catch (error) {
+      try { this.db.exec('ROLLBACK'); } catch { /* Initialization may have already committed. */ }
+      this.db.close(); throw error;
+    }
   }
   private cutoff(): number { return Date.now() / 1000 - this.options.retentionDays * 86400; }
   private housekeep(): void {
@@ -96,7 +112,7 @@ export class SQLiteMemory implements Memory {
     return row ? JSON.parse(row.entry as string) as TimelineEntry : undefined;
   }
   private encode(messages: TimelineEntry[], summary?: string): string {
-    return JSON.stringify({ groupId: LISTENER_GROUP, untrusted: true,
+    return JSON.stringify({ groupId: this.groupId, untrusted: true,
       summary: summary ? { untrusted: true, text: summary } : null, messages });
   }
   context(): string {
