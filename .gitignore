@@ -1,0 +1,23 @@
+# 依赖和构建产物
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# 密钥和本地配置
+.env
+.env.*
+!.env.example
+
+# QQ 登录数据、记忆和二维码
+data/
+artifacts/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+
+# 日志和临时文件
+*.log
+*.tmp
+.DS_Store
