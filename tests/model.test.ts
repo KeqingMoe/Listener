@@ -34,6 +34,17 @@ test('native HTTP sends compatible tools and parses content/tool calls', async (
   } finally { stop(fixture.server); }
 });
 
+test('native image content arrays are serialized as image_url blocks, not text', async () => {
+  let captured: any;
+  const image='data:image/jpeg;base64,/9j/2Q==';
+  const fixture=await server((req,res)=>{let body='';req.on('data',c=>body+=c);req.on('end',()=>{captured=JSON.parse(body);res.end(JSON.stringify(reply({role:'assistant',content:'看到了'})));});});
+  try {
+    await fixture.model.complete([{role:'user',content:[{type:'text',text:'附件来源：消息123'},{type:'image_url',image_url:{url:image}}]}]);
+    assert.equal(captured.model,'test-model');assert.ok(Array.isArray(captured.messages[0].content));
+    assert.deepEqual(captured.messages[0].content[1],{type:'image_url',image_url:{url:image}});
+  } finally {stop(fixture.server);}
+});
+
 test('rejects malformed, oversized, excessive, unknown and truncated responses without leaking secrets', async () => {
   const call = { id: 'x', type: 'function', function: { name: 'lookup', arguments: '{}' } };
   const cases: unknown[] = [
