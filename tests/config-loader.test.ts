@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -34,6 +34,14 @@ test('minimal config has fixed scope, disabled AI, complete defaults and relativ
   assert.equal(c.personaPath, join(f.dir, 'prompts/listener.md'));
   assert.equal(c.listener.memoryPath, join(f.dir, 'data/listener.sqlite'));
   assert.equal(c.configPath, join(f.dir, 'config.toml'));
+  assert.deepEqual(c.logging,{level:'info',console:true,file:true,directory:join(f.dir,'data/logs'),retentionDays:7,maxFileMb:20,maxTotalMb:200});
+});
+
+test('logging options validate level, switches, directory and aggregate limit without creating files',t=>{
+  const f=fixture(t,'[logging]\nlevel="debug"\nconsole=false\nfile=false\ndirectory="private-logs"\nmax_file_mb=1\nmax_total_mb=2');
+  const c=f.load();assert.equal(c.logging.level,'debug');assert.equal(c.logging.console,false);assert.equal(c.logging.file,false);assert.equal(c.logging.directory,join(f.dir,'private-logs'));
+  assert.equal(existsSync(join(f.dir,'private-logs')),false);
+  for(const text of ['level="verbose"','level=1','console="true"','file=0','directory="https://example.test"','max_file_mb=20\nmax_total_mb=10']){f.config('[logging]\n'+text);assert.throws(()=>f.load(),ConfigError);}
 });
 
 test('images explicitly enabled uses existing model configuration and rejects nonboolean flags', t => {
@@ -58,7 +66,7 @@ test('example TOML parses and relative paths are anchored at config directory', 
 
 test('unknown fields and wrong table types fail at every nesting level', t => {
   const f = fixture(t);
-  for (const scope of ['', 'bot', 'onebot', 'ai', 'persona', 'reply', 'reply.random', 'memory', 'tools', 'tools.moderation', 'images']) {
+  for (const scope of ['', 'bot', 'onebot', 'ai', 'persona', 'reply', 'reply.random', 'memory', 'tools', 'tools.moderation', 'images', 'logging']) {
     f.config(`${scope ? `[${scope}]\n` : ''}SECRET_UNKNOWN_MARKER = 'sensitive'`);
     assert.throws(() => f.load(), e => e instanceof ConfigError && !e.message.includes('SECRET_UNKNOWN_MARKER') && !e.message.includes('sensitive'));
   }
@@ -81,6 +89,7 @@ test('all numeric bounds are strict, finite and integers except probability', t 
     ['memory', 'retention_days', 1, 30], ['memory', 'context_chars', 8000, 100000],
     ['tools.moderation', 'confirmation_ttl_seconds', 1, 60], ['tools.moderation', 'max_mute_seconds', 1, 600],
     ['images','max_per_turn',1,3], ['images','max_download_mb',1,10],
+    ['logging','retention_days',1,30],['logging','max_file_mb',1,100],['logging','max_total_mb',1,1000],
   ];
   for (const [section, key, min, max] of ranges) {
     for (const value of [String(min - 1), String(max + 1), '1.5', 'nan', 'inf', 'true', '"123"', '[]']) {

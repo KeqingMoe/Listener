@@ -9,11 +9,13 @@
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "config:check": "tsx src/config-check.ts",
-    "config:migrate": "tsx scripts/migrate-config.ts"
+    "config:migrate": "tsx scripts/migrate-config.ts",
+    "logs": "tsx src/logs.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.3",
     "ipaddr.js": "^2.5.0",
+    "pino": "^10.3.1",
     "sharp": "^0.35.4",
     "smol-toml": "^1.9.0",
     "ws": "^8.18.3"

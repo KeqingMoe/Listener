@@ -4,6 +4,7 @@ import { parse as parseToml } from 'smol-toml';
 import { parse as parseDotenv } from 'dotenv';
 import type { Config } from './config.js';
 import type { ListenerConfig } from './listener-config.js';
+import type { LoggingConfig, LogLevel } from './logger.js';
 import { LISTENER_GROUP, OWNER_ID } from './contracts.js';
 
 /** Messages contain only trusted schema paths, never configuration values. */
@@ -66,7 +67,7 @@ function persona(file: string): string {
   } finally { if (fd !== undefined) closeSync(fd); }
 }
 export function loadAppConfig(options: { configPath?: string; envPath?: string; env?: NodeJS.ProcessEnv } = {}): {
-  onebot: Config; listener: ListenerConfig; personaPath: string; configPath: string;
+  onebot: Config; listener: ListenerConfig; logging: LoggingConfig; personaPath: string; configPath: string;
 } {
   const configPath = resolve(options.configPath ?? 'config.toml');
   const base = dirname(configPath);
@@ -74,7 +75,7 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
   try { source = readFileSync(configPath, 'utf8'); } catch { return fail('config.toml', '无法读取配置文件'); }
   let parsed: unknown;
   try { parsed = parseToml(source); } catch { throw new ConfigError('配置错误：TOML 格式无效'); }
-  const root = table(parsed, 'config', ['bot', 'onebot', 'ai', 'persona', 'reply', 'memory', 'tools', 'images']);
+  const root = table(parsed, 'config', ['bot', 'onebot', 'ai', 'persona', 'reply', 'memory', 'tools', 'images', 'logging']);
   const bot = table(root.bot, 'bot', ['name', 'owner_id', 'owner_name', 'group_id']);
   const one = table(root.onebot, 'onebot', ['url', 'token_env', 'api_timeout_ms', 'reconnect_base_ms', 'reconnect_max_ms', 'heartbeat_ms']);
   const ai = table(root.ai, 'ai', ['enabled', 'base_url', 'model', 'api_key_env', 'timeout_ms', 'max_output_tokens']);
@@ -84,6 +85,7 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
   const memory = table(root.memory, 'memory', ['path', 'retention_days', 'context_chars']);
   const tools = table(root.tools, 'tools', ['members', 'mention', 'moderation']);
   const images = table(root.images, 'images', ['enabled', 'max_per_turn', 'max_download_mb']);
+  const logs = table(root.logging, 'logging', ['level', 'console', 'file', 'directory', 'retention_days', 'max_file_mb', 'max_total_mb']);
   const moderation = table(tools.moderation, 'tools.moderation', ['mute', 'recall', 'member_card', 'confirmation_ttl_seconds', 'max_mute_seconds']);
   for (const [key, expected] of [['group_id', LISTENER_GROUP], ['owner_id', OWNER_ID]] as const) {
     const value = bot[key] ?? expected;
@@ -150,5 +152,14 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
     images: {enabled:bool(images,'enabled','images',false),maxPerTurn:num(images,'max_per_turn','images',3,1,3),maxDownloadMb:num(images,'max_download_mb','images',10,1,10)},
     persona: persona(personaPath),
   };
-  return { onebot, listener, personaPath, configPath };
+  const level = text(logs,'level','logging','info');
+  if (!['debug','info','warn','error'].includes(level)) fail('logging.level','必须是 debug、info、warn 或 error');
+  const logging: LoggingConfig = {
+    level:level as LogLevel, console:bool(logs,'console','logging',true), file:bool(logs,'file','logging',true),
+    directory:filePath(text(logs,'directory','logging','data/logs'),base,'logging.directory'),
+    retentionDays:num(logs,'retention_days','logging',7,1,30), maxFileMb:num(logs,'max_file_mb','logging',20,1,100),
+    maxTotalMb:num(logs,'max_total_mb','logging',200,1,1000),
+  };
+  if (logging.maxTotalMb < logging.maxFileMb) fail('logging.max_total_mb','不得小于单文件大小上限');
+  return { onebot, listener, logging, personaPath, configPath };
 }

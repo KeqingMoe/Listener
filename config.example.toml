@@ -32,6 +32,16 @@ enabled = false
 max_per_turn = 3 # 每轮最多3张，失败尝试也占额度
 max_download_mb = 10 # 单张最多10MiB；解码后最多4000万像素，缩放到2048边长
 
+# 所有级别均不记录正文、密钥、图片或完整工具参数。
+[logging]
+level = 'info' # debug/info/warn/error；普通消息跳过原因仅 debug
+console = true
+file = true
+directory = 'data/logs' # 相对 config.toml；JSONL 文件不入库
+retention_days = 7 # 按 UTC 天，在写入时清理；1..30
+max_file_mb = 20 # MiB，1..100；跨日或到达大小上限轮转
+max_total_mb = 200 # MiB，必须 >= max_file_mb，最大1000
+
 [reply]
 mention = true
 quote_bot = true
