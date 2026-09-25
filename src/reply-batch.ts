@@ -1,5 +1,6 @@
 import { OWNER_ID, type JsonObject, type Memory, type TimelineEntry, type TurnContext } from './contracts.js';
 import { newTraceId } from './logger.js';
+import type { AttentionHit } from './attention.js';
 
 export interface BatchItem {
   entry: TimelineEntry;
@@ -21,6 +22,15 @@ export class ReplyBatch {
   openedAt: number;
   readyAt: number;
   randomSelected: boolean;
+  readonly attentionHits: AttentionHit[] = [];
+  omittedAttentionHits = 0;
+  addAttention(hits: readonly AttentionHit[]): void {
+    for(const hit of hits){
+      if(this.attentionHits.some(previous=>previous.plan_id===hit.plan_id))continue;
+      if(this.attentionHits.length>=64){this.omittedAttentionHits++;continue;}
+      this.attentionHits.push(copy(hit));
+    }
+  }
   omittedMessages = 0;
   omittedDirect = 0;
   hasNonOwnerDirect = false;
@@ -68,7 +78,7 @@ export class ReplyBatch {
   }
 
   get direct(): BatchItem[] { return this.items.filter(item => item.trigger); }
-  get kind(): 'direct' | 'random' { return this.direct.length ? 'direct' : 'random'; }
+  get kind(): 'direct' | 'attention' | 'random' { return this.direct.length ? 'direct' : this.attentionHits.length ? 'attention' : 'random'; }
   get primary(): BatchItem { return this.direct[0] ?? this.items[this.items.length - 1]!; }
 
   payload(): JsonObject {

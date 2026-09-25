@@ -23,4 +23,5 @@ export interface ListenerConfig {
   tools?: ToolsConfig;
   images?: ImagesConfig;
   forward?: ForwardConfig;
+  attention?: { enabled: boolean; maxPlans: number };
 }

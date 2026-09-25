@@ -43,7 +43,7 @@ async function main(): Promise<void> {
           chmodSync(group.memoryPath,0o600);
         }
         entries.push([groupId,new Listener(client,model,memory,group,Math.random,undefined,scheduler)]);
-        log('info','app.group_ready',{group_id:groupId,ai_enabled:group.enabled,images_enabled:group.images?.enabled ?? false,forward_enabled:group.forward?.enabled ?? false});
+        log('info','app.group_ready',{group_id:groupId,ai_enabled:group.enabled,images_enabled:group.images?.enabled ?? false,forward_enabled:group.forward?.enabled ?? false,attention_enabled:group.attention?.enabled ?? false});
       } catch(error){
         log('error','app.group_init_failed',{group_id:groupId,reason:error instanceof Error&&error.message==='Memory group mismatch'?'memory_group_mismatch':'group_initialization_failed'});
         throw error;

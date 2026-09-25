@@ -37,6 +37,14 @@ max_download_mb = 10 # 单张最多10MiB；解码后最多4000万像素，缩放
 enabled = false
 max_per_read = 20 # 每次1..20条；转发内部图片暂时只显示占位
 
+# 关注计划：可等待下一条消息（next）、指定成员（member）、定时（timer）或活跃度（activity）。
+# 同一计划内多个条件是 OR 关系；多份计划独立共存，命中一份不会取消其他计划。
+# 不取代随机抽签；不需要随机参与时自行把 reply.random_probability 调为 0。
+# 没有新消息时不调用模型；/reset、断线和重启会清空计划，计划不写入数据库。
+[attention]
+enabled = false
+max_plans = 16 # 每群最多1..32份计划的资源上限，不是回复条数或表情数量配额
+
 # 所有级别均不记录正文、密钥、图片或完整工具参数。
 [logging]
 level = 'info' # debug/info/warn/error；普通消息跳过原因仅 debug
@@ -93,6 +101,9 @@ enabled = true
 # enabled = true
 # [groups.'123456789'.forward]
 # enabled = true
+# [groups.'123456789'.attention]
+# enabled = true
+# max_plans = 16 # 未填写的字段继承全局 attention
 # [groups.'123456789'.memory]
 # retention_days = 7
 # context_chars = 24000
