@@ -34,6 +34,67 @@ async function proposal(m: Moderation, name = 'mute_member', value: unknown = ar
   return String(result.code);
 }
 
+test('policy rejects malformed options and security-limit increases before API calls', () => {
+  const api = new FakeApi();
+  const invalid = [null, [], false, { unknown: true }, { [Symbol('unknown')]: true }, Object.create({ mute: true }),
+    ...['mute', 'recall', 'memberCard'].flatMap(key => [0, 'false', null, undefined].map(value => ({ [key]: value }))),
+    ...[0, -1, 61, 1.5, NaN, Infinity, '60', undefined].map(confirmationTtlSeconds => ({ confirmationTtlSeconds })),
+    ...[0, -1, 601, 1.5, NaN, Infinity, '600', undefined].map(maxMuteSeconds => ({ maxMuteSeconds }))];
+  for (const options of invalid) assert.throws(() => new Moderation(api, Date.now, options as any), /Invalid moderation options/);
+  assert.equal(api.calls.length, 0);
+});
+
+test('disabled moderation actions deny proposal and confirmation before any API calls', async () => {
+  for (const [key, name, value] of [
+    ['mute', 'mute_member', args], ['recall', 'recall_message', { message_id: '-99' }],
+    ['memberCard', 'set_member_card', { user_id: target, card: 'x' }],
+  ] as const) {
+    const api = new FakeApi(); const m = new Moderation(api, Date.now, { [key]: false });
+    assert.equal((await m.propose(name, value, context)).status, 'error');
+    assert.equal(api.calls.length, 0);
+    // Inject a previously validated pending action to independently exercise confirmation's policy gate.
+    const enabled = new Moderation(new FakeApi()); const code = await proposal(enabled, name, value);
+    (m as any).pending.set(code, (enabled as any).pending.get(code));
+    assert.equal((await m.confirm(code, context)).status, 'error');
+    assert.equal((m as any).pending.size, 0);
+    assert.equal(api.calls.length, 0);
+  }
+});
+
+test('reduced caps and TTL apply to proposals and confirmation, with copied policy', async () => {
+  let now = 1000;
+  const options = { maxMuteSeconds: 10, confirmationTtlSeconds: 2, mute: true };
+  const api = new FakeApi(); const m = new Moderation(api, () => now, options);
+  options.maxMuteSeconds = 600; options.confirmationTtlSeconds = 60; options.mute = false;
+  assert.equal((await m.propose('mute_member', { ...args, seconds: 11 }, context)).status, 'error');
+  assert.equal(api.calls.length, 0);
+  for (const seconds of [0, 10]) {
+    const result = await m.propose('mute_member', { ...args, seconds }, context);
+    assert.equal(result.status, 'confirmation_required');
+    assert.equal(result.expires_in_seconds, 2);
+    assert.match(String(result.description), /2 秒内/);
+    now += 1999;
+    assert.equal((await m.confirm(String(result.code), context)).status, 'executed');
+    assert.equal(api.writes().at(-1)?.params.duration, seconds);
+  }
+  const result = await m.propose('mute_member', { ...args, seconds: 10 }, context);
+  now += 2000;
+  const before = api.calls.length;
+  assert.equal((await m.confirm(String(result.code), context)).status, 'error');
+  assert.equal(api.calls.length, before);
+  const enabled = new Moderation(new FakeApi(), () => now); const code = await proposal(enabled);
+  (m as any).pending.set(code, (enabled as any).pending.get(code));
+  assert.equal((await m.confirm(code, context)).status, 'error');
+  assert.equal(api.calls.length, before);
+});
+
+test('disabled policy remains disabled after caller mutates options', async () => {
+  const options = { mute: false }; const api = new FakeApi(); const m = new Moderation(api, Date.now, options);
+  options.mute = true;
+  assert.equal((await m.propose('mute_member', args, context)).status, 'error');
+  assert.equal(api.calls.length, 0);
+});
+
 test('exports only three strict proposal tools', () => {
   assert.deepEqual(MODERATION_TOOLS.map(tool => tool.function.name), ['mute_member', 'recall_message', 'set_member_card']);
   for (const tool of MODERATION_TOOLS) assert.equal(tool.function.parameters.additionalProperties, false);

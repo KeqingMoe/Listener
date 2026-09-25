@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import type { ModerationPolicy } from './listener-config.js';
 import { LISTENER_GROUP, OWNER_ID, type Api, type JsonObject, type ToolDefinition, type TurnContext } from './contracts.js';
 
 const userIdSchema = { type: 'string', pattern: '^[1-9][0-9]*$', description: 'Explicit target QQ user ID; never the owner or bot.' };
@@ -29,7 +30,23 @@ const deny = (): never => { throw new Error('Moderation denied'); };
 export class Moderation {
   private readonly pending = new Map<string, Pending>();
   private disposed = false;
-  constructor(private readonly api: Api, private readonly now: () => number = Date.now) {}
+  private readonly policy: Readonly<ModerationPolicy>;
+  constructor(private readonly api: Api, private readonly now: () => number = Date.now, options: Partial<ModerationPolicy> = {}) {
+    const defaults: ModerationPolicy = { mute: true, recall: true, memberCard: true, confirmationTtlSeconds: 60, maxMuteSeconds: 600 };
+    if (!record(options) || ![Object.prototype, null].includes(Object.getPrototypeOf(options)) ||
+      Reflect.ownKeys(options).some(key => typeof key !== 'string' || !Object.hasOwn(defaults, key))) throw new Error('Invalid moderation options');
+    const policy = { ...defaults, ...options };
+    if (['mute', 'recall', 'memberCard'].some(key => typeof policy[key as keyof ModerationPolicy] !== 'boolean') ||
+      !Number.isInteger(policy.confirmationTtlSeconds) || policy.confirmationTtlSeconds < 1 || policy.confirmationTtlSeconds > 60 ||
+      !Number.isInteger(policy.maxMuteSeconds) || policy.maxMuteSeconds < 1 || policy.maxMuteSeconds > 600) throw new Error('Invalid moderation options');
+    this.policy = Object.freeze(policy);
+  }
+
+  private enforcePolicy(action: Action): void {
+    if (action.name === 'mute_member' && (!this.policy.mute || action.seconds > this.policy.maxMuteSeconds) ||
+      action.name === 'recall_message' && !this.policy.recall ||
+      action.name === 'set_member_card' && !this.policy.memberCard) deny();
+  }
 
   private prune(): void {
     const now = this.now();
@@ -86,15 +103,16 @@ export class Moderation {
     let target: string | undefined;
     try {
       const action = this.parse(name, args);
+      this.enforcePolicy(action);
       await this.authorize(fixed);
       target = await this.verify(action, fixed);
       this.prune();
       if (this.disposed || this.pending.size >= 10) deny();
       const code = randomBytes(16).toString('hex');
-      this.pending.set(code, { action, context: fixed, target, expires: this.now() + 60_000 });
+      this.pending.set(code, { action, context: fixed, target, expires: this.now() + this.policy.confirmationTtlSeconds * 1000 });
       const description = action.name === 'mute_member' ? `群 ${LISTENER_GROUP}：${action.seconds === 0 ? '解除禁言' : '禁言'}成员 ${target}，时长 ${action.seconds} 秒` : action.name === 'recall_message' ? `群 ${LISTENER_GROUP}：撤回成员 ${target} 的消息 ${action.message_id}` : `群 ${LISTENER_GROUP}：将成员 ${target} 的群名片设置为 ${JSON.stringify(action.card)}`;
       this.audit(name, fixed, target, 'proposed');
-      return { status: 'confirmation_required', code, description, expires_in_seconds: 60 };
+      return { status: 'confirmation_required', code, description: `${description}；请在 ${this.policy.confirmationTtlSeconds} 秒内使用 /confirm CODE 确认`, expires_in_seconds: this.policy.confirmationTtlSeconds };
     } catch {
       this.audit(name, fixed, target, 'proposal_denied');
       return { status: 'error', error: 'Moderation proposal denied or verification unavailable.' };
@@ -110,6 +128,7 @@ export class Moderation {
     let attempted = false;
     try {
       if (!pending || fixed.actorId !== pending.context.actorId || fixed.groupId !== pending.context.groupId || fixed.selfId !== pending.context.selfId) return deny();
+      this.enforcePolicy(pending.action);
       await this.authorize(fixed);
       const target = await this.verify(pending.action, fixed);
       if (target !== pending.target || this.disposed || this.now() >= pending.expires) return deny();

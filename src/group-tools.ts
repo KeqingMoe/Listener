@@ -1,5 +1,11 @@
 import { LISTENER_GROUP, type Api, type Memory, type JsonObject, type ToolDefinition, type TurnContext, type TimelineEntry } from './contracts.js';
 
+export interface GroupToolsOptions {
+  members?: boolean;
+  mention?: boolean;
+  maxParts?: number;
+}
+
 export interface PreparedPart {
   segments: Array<{ type: 'text'; data: { text: string } } | { type: 'at'; data: { qq: string } }>;
   text: string;
@@ -41,7 +47,15 @@ function localMessage(entry: TimelineEntry): JsonObject {
 }
 
 export class GroupTools {
-  constructor(private api: Api, private memory: Memory) {}
+  private readonly options: Readonly<Required<GroupToolsOptions>>;
+  constructor(private api: Api, private memory: Memory, options: GroupToolsOptions = {}) {
+    if (!object(options) || ![Object.prototype, null].includes(Object.getPrototypeOf(options)) ||
+      Reflect.ownKeys(options).some(key => typeof key !== 'string' || !['members', 'mention', 'maxParts'].includes(key))) throw new Error('Invalid group tool options');
+    const policy = { members: true, mention: true, maxParts: 3, ...options };
+    if (typeof policy.members !== 'boolean' || typeof policy.mention !== 'boolean' ||
+      !Number.isInteger(policy.maxParts) || policy.maxParts < 1 || policy.maxParts > 3) throw new Error('Invalid group tool options');
+    this.options = Object.freeze(policy);
+  }
   private scope(context: TurnContext): void { if (context.groupId !== LISTENER_GROUP) fail('forbidden_group'); }
   private async call(action: string, params: JsonObject): Promise<unknown> {
     try { return await this.api.call(action, params); } catch { return fail('api_unavailable'); }
@@ -69,6 +83,7 @@ export class GroupTools {
   async execute(name: string, args: unknown, context: TurnContext): Promise<JsonObject> {
     try {
       this.scope(context);
+      if (!this.options.members && (name === 'get_group_members' || name === 'get_member_info')) fail('tool_disabled');
       if (name === 'get_group_members') {
         fields(args, ['search', 'offset', 'limit']);
         if (args.search !== undefined && (typeof args.search !== 'string' || args.search.length > 100)) fail();
@@ -94,12 +109,12 @@ export class GroupTools {
       return { status: 'error', error: 'unknown_tool' };
     } catch (error) {
       const code = error instanceof Error ? error.message : '';
-      return { status: 'error', error: ['invalid_arguments', 'forbidden_group', 'verification_failed', 'api_unavailable', 'message_not_in_context'].includes(code) ? code : 'tool_failed' };
+      return { status: 'error', error: ['invalid_arguments', 'forbidden_group', 'verification_failed', 'api_unavailable', 'message_not_in_context', 'tool_disabled'].includes(code) ? code : 'tool_failed' };
     }
   }
   async prepareMessage(args: unknown, context: TurnContext): Promise<PreparedPart[]> {
     this.scope(context); fields(args, ['parts']);
-    if (!Array.isArray(args.parts) || args.parts.length < 1 || args.parts.length > 3) fail();
+    if (!Array.isArray(args.parts) || args.parts.length < 1 || args.parts.length > this.options.maxParts) fail();
     let atCount = 0;
     const targets = new Set<string>();
     const parts: PreparedPart[] = args.parts.map(part => {
@@ -119,6 +134,7 @@ export class GroupTools {
           return { type: 'text' as const, data: { text: segment.text } };
         }
         if (segment.type !== 'at') fail();
+        if (!this.options.mention) fail('tool_disabled');
         fields(segment, ['type', 'user_id']);
         const target = identifier(segment.user_id);
         if (target === context.selfId || ++atCount > 3) fail();

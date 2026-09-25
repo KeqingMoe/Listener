@@ -1,21 +1,18 @@
-import 'dotenv/config';
 import { mkdirSync, chmodSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { loadConfig } from './config.js';
+import { loadAppConfig, ConfigError } from './config-loader.js';
 import { OneBotClient } from './client.js';
 import { id } from './bot.js';
 import { Listener } from './listener.js';
-import { loadListenerConfig } from './listener-config.js';
 import { OpenAIModel } from './model.js';
 import { SQLiteMemory } from './memory.js';
 import { LISTENER_GROUP, OWNER_ID } from './contracts.js';
 
 async function main(): Promise<void> {
-  const config = loadConfig();
-  // Single-group installation: environment edits cannot silently widen this boundary.
+  const {onebot: config, listener: ai} = loadAppConfig();
+  // Single-group installation: configuration cannot silently widen this boundary.
   if (config.allowedGroups.size !== 1 || !config.allowedGroups.has(LISTENER_GROUP) ||
       config.adminUsers.size !== 1 || !config.adminUsers.has(OWNER_ID)) throw new Error('Group/owner configuration mismatch');
-  const ai = loadListenerConfig();
   const client = new OneBotClient(config);
   let memory: SQLiteMemory | undefined;
   let model: OpenAIModel | undefined;
@@ -51,7 +48,7 @@ async function main(): Promise<void> {
   process.on('SIGTERM',stop);
   client.start();
 }
-void main().catch(() => {
-  console.error('Listener startup failed; check configuration (details suppressed to protect secrets)');
+void main().catch((error: unknown) => {
+  console.error(error instanceof ConfigError ? error.message : 'Listener startup failed; details suppressed to protect secrets');
   process.exitCode = 1;
 });

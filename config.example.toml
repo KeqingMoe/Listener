@@ -1,0 +1,54 @@
+# Copy to config.toml. Store only the selected secrets in .env (or process environment).
+# All relative file paths, including .env, resolve from the config.toml directory.
+[bot]
+name = 'Listener'
+owner_id = '100000001'
+owner_name = '時雨てる'
+group_id = '100000002'
+
+[onebot]
+url = 'ws://127.0.0.1:3001'
+token_env = 'ONEBOT_ACCESS_TOKEN'
+api_timeout_ms = 10000
+reconnect_base_ms = 1000
+reconnect_max_ms = 30000
+heartbeat_ms = 30000
+
+[ai]
+enabled = false
+base_url = 'https://api.openai.com/v1'
+model = '' # Set a model and provide OPENAI_API_KEY before enabling AI.
+api_key_env = 'OPENAI_API_KEY'
+timeout_ms = 45000
+max_output_tokens = 1200
+
+[persona]
+file = 'prompts/listener.md'
+
+[reply]
+mention = true
+quote_bot = true
+random_probability = 0.03
+delay_ms = [1200, 3000]
+cooldown_ms = 5000
+max_parts = 3
+
+[reply.random]
+cooldown_ms = 60000
+max_per_minute = 2
+
+[memory]
+path = 'data/listener.sqlite'
+retention_days = 7
+context_chars = 24000
+
+[tools]
+members = true
+mention = true
+
+[tools.moderation]
+mute = true
+recall = true
+member_card = true
+confirmation_ttl_seconds = 60
+max_mute_seconds = 600

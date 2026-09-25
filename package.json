@@ -7,8 +7,19 @@
     "build": "tsc -p tsconfig.json",
     "test": "tsx --test tests/*.test.ts",
     "start": "node dist/index.js",
-    "dev": "tsx watch src/index.ts"
+    "dev": "tsx watch src/index.ts",
+    "config:check": "tsx src/config-check.ts",
+    "config:migrate": "tsx scripts/migrate-config.ts"
   },
-  "dependencies": { "dotenv": "^17.2.3", "ws": "^8.18.3" },
-  "devDependencies": { "@types/node": "^26.0.0", "@types/ws": "^8.18.1", "tsx": "^4.20.6", "typescript": "^5.9.3" }
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "smol-toml": "^1.9.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
 }

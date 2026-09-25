@@ -1,18 +1,67 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GroupTools, GROUP_TOOLS, SEND_MESSAGE_TOOL } from '../src/group-tools.js';
+import { GroupTools, GROUP_TOOLS, SEND_MESSAGE_TOOL, type GroupToolsOptions } from '../src/group-tools.js';
 import { LISTENER_GROUP, type Api, type Memory, type TimelineEntry, type TurnContext } from '../src/contracts.js';
 
 const context: TurnContext = { groupId: LISTENER_GROUP, actorId: '123', selfId: '999', messageId: '1' };
 const record = (user_id = '123', extra = {}) => ({ group_id: LISTENER_GROUP, user_id, nickname: 'Alice', card: 'team', role: 'member', ...extra });
 const entry: TimelineEntry = { messageId: '1', userId: '123', nickname: 'Alice', text: 'hello', time: 42, replyTo: '2' };
 const remote = (extra = {}) => ({ group_id: LISTENER_GROUP, message_type: 'group', message_id: '2', sender: { user_id: '123', nickname: 'Alice', private: 'secret' }, time: 42, message: [{ type: 'text', data: { text: 'hello' } }, { type: 'at', data: { qq: '456' } }, { type: 'image', data: { url: 'https://secret.invalid/a', file: 'secret' } }], ...extra });
-function setup(response: unknown = record(), entries: TimelineEntry[] = [entry]) {
+function setup(response: unknown = record(), entries: TimelineEntry[] = [entry], options?: GroupToolsOptions) {
   const calls: Array<{ action: string; params: unknown }> = [];
   const api: Api = { async call(action, params) { calls.push({ action, params }); if (response instanceof Error) throw response; return response; } };
   const memory: Memory = { append: () => true, recent: () => entries, find: id => entries.find(e => e.messageId === id), context: () => '', compact: async () => {}, clear() {}, close() {} };
-  return { tools: new GroupTools(api, memory), calls };
+  return { tools: new GroupTools(api, memory, options), calls };
 }
+
+test('options reject malformed runtime values and increased hard limits', () => {
+  for (const options of [null, [], true, { unknown: true }, { [Symbol('x')]: true }, Object.create({ members: true }),
+    ...['members', 'mention'].flatMap(key => [0, 'false', null, undefined].map(value => ({ [key]: value }))),
+    ...[0, -1, 4, 1.5, NaN, Infinity, '3', undefined].map(maxParts => ({ maxParts }))]) {
+    assert.throws(() => setup(record(), [entry], options as any), /Invalid group tool options/);
+  }
+});
+
+test('members disabled denies invented member tools without disabling message reads', async () => {
+  const { tools, calls } = setup(remote(), [entry], { members: false });
+  for (const [name, args] of [['get_group_members', {}], ['get_member_info', { user_id: '123' }]] as const) {
+    assert.deepEqual(await tools.execute(name, args, context), { status: 'error', error: 'tool_disabled' });
+  }
+  assert.equal(calls.length, 0);
+  assert.equal((await tools.execute('read_message', { message_id: '1' }, context)).status, 'ok');
+  assert.equal((await tools.execute('read_message', { message_id: '2' }, context)).status, 'ok');
+  assert.deepEqual(calls.map(c => c.action), ['get_msg']);
+});
+
+test('disabled mentions reject invented at during preparation before reply lookup', async () => {
+  const { tools, calls } = setup(record(), [entry], { mention: false });
+  await assert.rejects(tools.prepareMessage({ parts: [{ text: 'reply', reply_to: '2' }, { segments: [{ type: 'at', user_id: '123' }] }] }, context), /tool_disabled/);
+  assert.equal(calls.length, 0);
+  assert.equal((await tools.prepareMessage({ parts: [{ text: 'hello' }] }, context)).length, 1);
+  assert.equal((await tools.execute('get_member_info', { user_id: '123' }, context)).status, 'ok');
+});
+
+test('mention verification remains allowed when member tools are disabled', async () => {
+  const { tools, calls } = setup(record(), [entry], { members: false, mention: true });
+  assert.equal((await tools.prepareMessage({ parts: [{ segments: [{ type: 'at', user_id: '123' }] }] }, context)).length, 1);
+  assert.deepEqual(calls.map(c => c.action), ['get_group_member_info']);
+  const wrongGroup = setup(record('123', { group_id: '1' }), [entry], { members: false });
+  await assert.rejects(wrongGroup.tools.prepareMessage({ parts: [{ segments: [{ type: 'at', user_id: '123' }] }] }, context), /verification_failed/);
+});
+
+test('reduced part caps apply before all API calls and options are captured by copy', async () => {
+  for (const maxParts of [1, 2, 3]) {
+    const options = { maxParts, members: false, mention: false };
+    const { tools, calls } = setup(record(), [entry], options);
+    options.maxParts = 3; options.members = true; options.mention = true;
+    await assert.rejects(tools.prepareMessage({ parts: Array(maxParts + 1).fill({ segments: [{ type: 'at', user_id: '123' }], reply_to: '2' }) }, context));
+    assert.equal(calls.length, 0);
+    assert.equal((await tools.prepareMessage({ parts: Array(maxParts).fill({ text: 'hello' }) }, context)).length, maxParts);
+    assert.equal((await tools.execute('get_member_info', { user_id: '123' }, context)).error, 'tool_disabled');
+    await assert.rejects(tools.prepareMessage({ parts: [{ segments: [{ type: 'at', user_id: '123' }] }] }, context), /tool_disabled/);
+    assert.equal(calls.length, 0);
+  }
+});
 
 test('schemas advertise structured segments, fixed group tools, no legacy text', () => {
   assert.deepEqual(GROUP_TOOLS.map(t => t.function.name), ['get_group_members', 'get_member_info', 'read_message']);

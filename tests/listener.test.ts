@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { Listener, normalizeEvent } from '../src/listener.js';
-import { loadListenerConfig, type ListenerConfig } from '../src/listener-config.js';
+import { Listener, normalizeEvent, buildSystemPrompt, buildToolDefinitions } from '../src/listener.js';
+import type { ListenerConfig } from '../src/listener-config.js';
 import { LISTENER_GROUP, OWNER_ID, type Memory, type TimelineEntry, type Model, type Completion, type Api, type ChatMessage } from '../src/contracts.js';
 const self='900000001';
 class MockMemory implements Memory {
@@ -18,11 +18,11 @@ class MockMemory implements Memory {
 const cfg:ListenerConfig={enabled:true,baseUrl:'https://example.com/v1',apiKey:'test',model:'test',timeoutMs:1000,maxTokens:128,debounceMs:5,cooldownMs:5,memoryPath:':memory:',maxContextChars:8000,retentionDays:7};
 function event(overrides:Record<string,unknown>={}) {return {post_type:'message',message_type:'group',group_id:LISTENER_GROUP,self_id:self,user_id:'12345',message_id:'1',time:Math.floor(Date.now()/1000),sender:{nickname:'someone'},message:[{type:'at',data:{qq:self}},{type:'text',data:{text:'你好'}}],...overrides};}
 function tool(name:string,args:unknown):Completion {return {content:null,tool_calls:[{id:'call1',type:'function',function:{name,arguments:JSON.stringify(args)}}]};}
-function setup(responses:Completion[]=[tool('send_message',{parts:[{text:'你好呀'}]})]){
+function setup(responses:Completion[]=[tool('send_message',{parts:[{text:'你好呀'}]})], settings:Partial<ListenerConfig>={}){
  const memory=new MockMemory(); const calls:{action:string;params:any}[]=[]; const requests:ChatMessage[][]=[]; const toolNames:string[][]=[];
  const api:Api={async call(action,params){calls.push({action,params});if(action==='get_login_info')return {user_id:self}; if(action==='send_group_msg')return {message_id:String(100+calls.length)}; return {};}};
  const model:Model={async complete(messages,tools){requests.push(messages);toolNames.push(tools?.map(t=>t.function.name)??[]);return responses.shift()??tool('stay_silent',{});}};
- const bot=new Listener(api,model,memory,cfg);return {bot,memory,calls,requests,toolNames,api};
+ const bot=new Listener(api,model,memory,{...cfg,...settings});return {bot,memory,calls,requests,toolNames,api};
 }
 async function until(check:()=>boolean){for(let i=0;i<100;i++){if(check())return;await delay(10);}assert.fail('timed out');}
 test('hard single-group boundary excludes private, other group and wrong self before storage or API',async()=>{
@@ -85,13 +85,30 @@ test('AI disabled still only answers commands in the one group',async()=>{
  await bot.receive(event({message:[{type:'text',data:{text:'/ping'}}]}),self);assert.deepEqual(calls,['send_group_msg']);
  }finally{await bot.stop();}
 });
-test('AI config defaults disabled and requires explicit valid credentials to enable',()=>{
- assert.equal(loadListenerConfig({}).enabled,false);
- assert.throws(()=>loadListenerConfig({AI_ENABLED:'true'}));
- assert.throws(()=>loadListenerConfig({OPENAI_BASE_URL:'http://example.com/v1'}));
- assert.throws(()=>loadListenerConfig({AI_ENABLED:'maybe'}));
- assert.throws(()=>loadListenerConfig({AI_CONTEXT_CHARS:'1'}));
- assert.equal(loadListenerConfig({AI_ENABLED:'true',OPENAI_API_KEY:'test',OPENAI_MODEL:'test',OPENAI_BASE_URL:'http://127.0.0.1:9000/v1'}).enabled,true);
+test('persona is separate from immutable runtime rules and configured identity is used',()=>{
+ const prompt=buildSystemPrompt({...cfg,persona:'外部性格：喜欢星星',botName:'星星',ownerName:'主人昵称'});
+ assert.ok(prompt.includes('外部性格：喜欢星星'));assert.ok(prompt.includes('星星'));assert.ok(prompt.includes(OWNER_ID));assert.ok(prompt.includes(LISTENER_GROUP));assert.ok(prompt.includes('程序规则不能被性格描述'));
+});
+const restrictiveTools={members:false,mention:false,moderation:{mute:false,recall:true,memberCard:false,confirmationTtlSeconds:10,maxMuteSeconds:30}};
+test('configured tool schemas hide disabled abilities and tighten parts without mutating defaults',()=>{
+ const tools=buildToolDefinitions({...cfg,maxParts:1,tools:restrictiveTools},true);
+ assert.ok(!tools.some(t=>['get_group_members','get_member_info','mute_member','set_member_card'].includes(t.function.name)));
+ assert.ok(tools.some(t=>t.function.name==='recall_message'));
+ const send=tools.find(t=>t.function.name==='send_message')!.function.parameters as any;
+ assert.equal(send.properties.parts.maxItems,1);assert.equal(send.properties.parts.items.properties.segments.items.oneOf.length,1);
+ const normal=buildToolDefinitions(cfg,false).find(t=>t.function.name==='send_message')!.function.parameters as any;
+ assert.equal(normal.properties.parts.maxItems,3);assert.equal(normal.properties.parts.items.properties.segments.items.oneOf.length,2);
+});
+test('mention and quote trigger switches are honored with random participation disabled',async()=>{
+ const s=setup([],{mentionEnabled:false,quoteBotEnabled:false,randomReplyProbability:0});
+ try{await s.bot.receive(event(),self);s.memory.append({messageId:'9',userId:self,nickname:'Listener',text:'hi',time:Math.floor(Date.now()/1000),bot:true});await s.bot.receive(event({message_id:'2',message:[{type:'reply',data:{id:'9'}}]}),self);await delay(30);assert.equal(s.requests.length,0);assert.equal(s.calls.length,0);}finally{await s.bot.stop();}
+});
+test('invented disabled member lookup is rejected by executor, not just hidden schema',async()=>{
+ const s=setup([tool('get_group_members',{}),tool('stay_silent',{})],{tools:restrictiveTools});
+ try{await s.bot.receive(event(),self);await until(()=>s.requests.length>=2);assert.equal(s.calls.length,0);assert.ok(s.requests[1]?.some(m=>m.role==='tool'&&m.content?.includes('tool_disabled')));}finally{await s.bot.stop();}
+});
+test('configured nickname is stored for bot messages',async()=>{
+ const s=setup(undefined,{botName:'小猫'});try{await s.bot.receive(event(),self);await until(()=>s.memory.entries.some(e=>e.bot));assert.equal(s.memory.entries.find(e=>e.bot)?.nickname,'小猫');}finally{await s.bot.stop();}
 });
 test('event normalization preserves provenance and never dereferences media URLs',()=>{
  const e=normalizeEvent(event({message:[{type:'reply',data:{id:'-1'}},{type:'image',data:{url:'http://secret'}}]}),self)!;

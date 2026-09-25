@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Listener } from '../src/listener.js';
-import { loadListenerConfig, type ListenerConfig } from '../src/listener-config.js';
+import type { ListenerConfig } from '../src/listener-config.js';
 import { LISTENER_GROUP, OWNER_ID, type Api, type ChatMessage, type Completion, type Memory, type Model, type TimelineEntry } from '../src/contracts.js';
 
 const self = '900000001';
@@ -217,24 +217,4 @@ test('structured send_message at becomes native OneBot at, never marker text', a
   } finally { await s.bot.stop(); }
 });
 
-test('random config defaults and valid boundary values', () => {
-  const defaults = loadListenerConfig({});
-  assert.equal(defaults.randomReplyProbability, 0.03); assert.equal(defaults.randomCooldownMs, 60000);
-  assert.equal(defaults.randomMaxPerMinute, 2); assert.equal(defaults.delayMaxMs, 3000);
-  for (const probability of ['0', '1', '0.125']) assert.equal(loadListenerConfig({ AI_RANDOM_REPLY_PROBABILITY: probability }).randomReplyProbability, Number(probability));
-  assert.equal(loadListenerConfig({ AI_DEBOUNCE_MS: '5000' }).delayMaxMs, 5000);
-  assert.equal(loadListenerConfig({ AI_DEBOUNCE_MS: '100', AI_DELAY_MAX_MS: '100', AI_RANDOM_COOLDOWN_MS: '1000', AI_RANDOM_MAX_PER_MINUTE: '1' }).delayMaxMs, 100);
-  assert.equal(loadListenerConfig({ AI_DELAY_MAX_MS: '10000', AI_RANDOM_COOLDOWN_MS: '3600000', AI_RANDOM_MAX_PER_MINUTE: '10' }).randomMaxPerMinute, 10);
-});
-
-test('random config rejects NaN/nonfinite/range/fractional integer values and inverted delays', () => {
-  const invalid: Record<string, string[]> = {
-    AI_RANDOM_REPLY_PROBABILITY: ['NaN', 'Infinity', '-Infinity', '-0.01', '1.01', '', ' '],
-    AI_RANDOM_COOLDOWN_MS: ['NaN', 'Infinity', '999', '3600001', '1000.5'],
-    AI_RANDOM_MAX_PER_MINUTE: ['NaN', 'Infinity', '0', '11', '1.5'],
-    AI_DELAY_MAX_MS: ['NaN', 'Infinity', '99', '10001', '3000.5'],
-  };
-  for (const [key, values] of Object.entries(invalid)) for (const value of values)
-    assert.throws(() => loadListenerConfig({ [key]: value }), undefined, `${key}=${value}`);
-  assert.throws(() => loadListenerConfig({ AI_DEBOUNCE_MS: '2000', AI_DELAY_MAX_MS: '1999' }));
-});
+// TOML defaults and invalid values are covered by config-loader.test.ts.
