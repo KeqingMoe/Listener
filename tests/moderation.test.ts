@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Moderation, MODERATION_TOOLS } from '../src/moderation.js';
+import { configureLogging } from '../src/logger.js';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { LISTENER_GROUP, OWNER_ID, type Api, type JsonObject, type TurnContext } from '../src/contracts.js';
 
 const context: TurnContext = { actorId: OWNER_ID, groupId: LISTENER_GROUP, selfId: '900000001', messageId: '100' };
@@ -254,18 +258,24 @@ test('revoked recall lookup fails safely and consumes confirmation', async () =>
   assert.equal(api.writes().length, 0);
 });
 
-test('audit excludes card content and remote errors', async t => {
-  const logs: string[] = [];
-  t.mock.method(console, 'info', (line: string) => { logs.push(line); });
-  const api = new FakeApi(); const m = new Moderation(api);
-  const code = await proposal(m, 'set_member_card', { user_id: target, card: 'PRIVATE CARD CONTENT' });
-  api.failMutation = true;
-  await m.confirm(code, context);
-  assert.equal(logs.length, 2);
-  for (const line of logs) {
-    assert.ok(!line.includes('PRIVATE') && !line.includes('SECRET') && !line.includes(code));
-    const entry = JSON.parse(line);
-    assert.equal(entry.actor, OWNER_ID); assert.equal(entry.target, target); assert.equal(entry.action, 'set_member_card');
-    assert.ok(entry.result);
-  }
+test('audit excludes card content and remote errors', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'listener-audit-'));
+  const logger = configureLogging({ level: 'debug', console: false, file: true, directory, retentionDays: 1, maxFileMb: 1, maxTotalMb: 2 });
+  try {
+    const api = new FakeApi(); const m = new Moderation(api);
+    const code = await proposal(m, 'set_member_card', { user_id: target, card: 'PRIVATE CARD CONTENT' });
+    api.failMutation = true;
+    await m.confirm(code, context);
+    await logger.flush();
+    const text = (await Promise.all((await readdir(directory)).map(name => readFile(join(directory, name), 'utf8')))).join('');
+    const logs = text.trim().split('\n');
+    assert.equal(logs.length, 2);
+    for (const line of logs) {
+      assert.ok(!line.includes('PRIVATE') && !line.includes('SECRET') && !line.includes(code));
+      const entry = JSON.parse(line);
+      assert.equal(entry.event, 'moderation.audit');
+      assert.equal(entry.actor_id, OWNER_ID); assert.equal(entry.target_id, target); assert.equal(entry.action, 'set_member_card');
+      assert.ok(entry.outcome);
+    }
+  } finally { await logger.close(); await rm(directory, { recursive: true, force: true }); }
 });

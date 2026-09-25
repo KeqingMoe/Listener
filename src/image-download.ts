@@ -4,6 +4,7 @@ import type { ClientRequest, IncomingMessage } from 'node:http';
 import { isIP } from 'node:net';
 import ipaddr from 'ipaddr.js';
 import sharp from 'sharp';
+import { log } from './logger.js';
 
 export interface DownloadedImage {
   dataUrl: string;
@@ -87,16 +88,22 @@ export async function prepareImage(bytes: Buffer, signal?: AbortSignal): Promise
     throw fail('Invalid image data size');
   }
   if (!hasSupportedImageSignature(bytes)) throw fail('Image decoding failed');
+  const started = performance.now();
+  const metrics = () => ({ phase: 'decode', input_bytes: bytes.length, duration_ms: performance.now() - started });
+  const failed = () => log(signal?.aborted ? 'info' : 'warn', 'image.decode_failed', { ...metrics(), reason: signal?.aborted ? 'cancelled' : 'decode_failed' });
+  log('info', 'image.decode_start', { phase: 'decode', input_bytes: bytes.length });
   let decoder: ReturnType<typeof sharp>;
   try {
     decoder = sharp(bytes, { limitInputPixels: MAX_PIXELS, animated: false, failOn: 'warning' });
   } catch {
+    failed();
     throw fail('Image decoding failed');
   }
   try {
     decoder.timeout({ seconds: 10 });
   } catch {
     decoder.destroy();
+    failed();
     throw fail('Image decoding failed');
   }
   const stop = () => { decoder.destroy(); };
@@ -125,8 +132,11 @@ export async function prepareImage(bytes: Buffer, signal?: AbortSignal): Promise
   try {
     const result = signal ? await abortable(work, signal) : await work;
     checkAbort(signal);
+    log('info', 'image.decode_complete', { ...metrics(), outcome: 'success', width: result.width, height: result.height,
+      output_bytes: Buffer.byteLength(result.dataUrl), first_frame_only: result.firstFrameOnly });
     return result;
   } catch {
+    failed();
     throw fail(signal?.aborted ? 'Image operation aborted' : 'Image decoding failed');
   } finally {
     signal?.removeEventListener('abort', stop);
@@ -146,10 +156,22 @@ export function createImageDownloader(dependencies: ImageDownloadDependencies = 
     ((hostname, options) => dnsLookup(hostname, options));
   const request = dependencies.request ?? httpsRequest;
   return async (value, maxBytes, callerSignal) => {
-    checkAbort(callerSignal);
-    const url = validateImageUrl(value);
-    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_INPUT_BYTES) {
-      throw fail('Invalid image byte limit');
+    let phase: 'url_validation' | 'dns' | 'download' | 'decode' = 'url_validation';
+    let stageStarted = performance.now();
+    let httpStatus: number | undefined;
+    const metrics = () => ({ phase, duration_ms: performance.now() - stageStarted,
+      ...(httpStatus === undefined ? {} : { http_status: httpStatus }) });
+    log('info', 'image.download_start', { phase });
+    let url: URL;
+    try {
+      checkAbort(callerSignal);
+      url = validateImageUrl(value);
+      if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_INPUT_BYTES) {
+        throw fail('Invalid image byte limit');
+      }
+    } catch (error) {
+      log(callerSignal?.aborted ? 'info' : 'warn', 'image.download_failed', { ...metrics(), reason: callerSignal?.aborted ? 'cancelled' : 'url_rejected' });
+      throw error; // These preflight errors already have fixed, public messages.
     }
     const controller = new AbortController();
     const signal = controller.signal;
@@ -158,6 +180,7 @@ export function createImageDownloader(dependencies: ImageDownloadDependencies = 
     callerSignal?.addEventListener('abort', cancel, { once: true });
     const timer = setTimeout(() => { timedOut = true; controller.abort(); }, dependencies.timeoutMs ?? 15_000);
     try {
+      phase = 'dns'; stageStarted = performance.now();
       const addresses = await abortable(lookup(url.hostname, { all: true, verbatim: true }), signal);
       if (addresses.length === 0 || addresses.some(entry =>
         !isPublicAddress(entry.address) || isIP(entry.address) !== entry.family)) {
@@ -165,6 +188,7 @@ export function createImageDownloader(dependencies: ImageDownloadDependencies = 
       }
       const selected = addresses[0]!;
       checkAbort(signal);
+      phase = 'download'; stageStarted = performance.now();
       const bytes = await new Promise<Buffer>((resolve, reject) => {
         let req: ClientRequest | undefined;
         let response: IncomingMessage | undefined;
@@ -196,6 +220,7 @@ export function createImageDownloader(dependencies: ImageDownloadDependencies = 
             headers: { Accept: 'image/jpeg, image/png, image/webp, image/gif', 'Accept-Encoding': 'identity' },
           }, incoming => {
             response = incoming;
+            if (typeof incoming.statusCode === 'number' && Number.isInteger(incoming.statusCode) && incoming.statusCode >= 100 && incoming.statusCode <= 599) httpStatus = incoming.statusCode;
             incoming.on('error', () => finish(fail('Image download failed')));
             if (settled) { incoming.destroy(); return; }
             // All redirects and errors are rejected without reading or exposing their bodies.
@@ -227,8 +252,12 @@ export function createImageDownloader(dependencies: ImageDownloadDependencies = 
           else req.end();
         } catch { finish(fail('Image download failed')); }
       });
+      log('info', 'image.download_complete', { ...metrics(), bytes: bytes.length, input_bytes: bytes.length, outcome: 'success' });
+      phase = 'decode'; stageStarted = performance.now();
       return await prepareImage(bytes, signal);
     } catch {
+      log(callerSignal?.aborted && !timedOut ? 'info' : 'warn', 'image.download_failed', { ...metrics(),
+        reason: timedOut ? 'timeout' : callerSignal?.aborted ? 'cancelled' : phase === 'dns' ? 'dns_rejected' : phase === 'decode' ? 'decode_failed' : 'transfer_failed' });
       // Never include remote exception messages, URL tokens, response text, or binary data.
       throw fail(timedOut ? 'Image download timed out' : callerSignal?.aborted ? 'Image operation aborted' : 'Image download failed');
     } finally {

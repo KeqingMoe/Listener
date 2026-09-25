@@ -1,4 +1,24 @@
 import type { ChatMessage, Completion, Model, ToolCall, ToolDefinition } from './contracts.js';
+import { log } from './logger.js';
+
+export type ModelErrorCode = 'cancelled' | 'timeout' | 'http_error' | 'network_error' | 'response_too_large' | 'invalid_response' | 'truncated_response';
+export class ModelError extends Error {
+  constructor(readonly code: ModelErrorCode, readonly httpStatus?: number) {
+    super(code === 'cancelled' || code === 'timeout' ? 'Model request aborted or timed out' : 'Model request failed');
+    this.name = 'ModelError';
+  }
+}
+const KNOWN_TOOLS = new Set(['send_message', 'stay_silent', 'get_group_members', 'get_member_info', 'read_message', 'view_images', 'mute_member', 'recall_message', 'set_member_card']);
+function usageFields(value: unknown): Record<string, number> {
+  const fields: Record<string, number> = {};
+  if (object(value) && object(value.usage)) {
+    for (const key of ['prompt_tokens', 'completion_tokens', 'total_tokens']) {
+      const count = value.usage[key];
+      if (typeof count === 'number' && Number.isSafeInteger(count) && count >= 0) fields[key] = count;
+    }
+  }
+  return fields;
+}
 
 export interface OpenAIModelOptions {
   baseUrl: string; apiKey: string; model: string; timeoutMs: number; maxTokens: number;
@@ -52,9 +72,15 @@ export class OpenAIModel implements Model {
   }
 
   async complete(messages: ChatMessage[], tools: ToolDefinition[] = [], signal?: AbortSignal): Promise<Completion> {
+    const started = performance.now();
+    const toolNames = tools.map(tool => tool.function.name).filter(name => KNOWN_TOOLS.has(name));
+    log('info', 'model.start', { tools: toolNames });
     const controller = new AbortController();
-    const abort = () => controller.abort();
-    const timer = setTimeout(abort, this.options.timeoutMs);
+    let abortReason: 'cancelled' | 'timeout' | undefined;
+    let failure: ModelErrorCode = 'network_error';
+    let httpStatus: number | undefined;
+    const abort = () => { abortReason ??= 'cancelled'; controller.abort(); };
+    const timer = setTimeout(() => { abortReason ??= 'timeout'; controller.abort(); }, this.options.timeoutMs);
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) abort();
     try {
@@ -64,9 +90,10 @@ export class OpenAIModel implements Model {
         body: JSON.stringify({ model: this.options.model, messages, max_tokens: this.options.maxTokens,
           stream: false, ...(tools.length ? { tools, tool_choice: 'auto' } : {}) }),
       });
-      if (!response.ok || !response.body) { await response.body?.cancel(); throw Error(); }
+      if (!response.ok) { failure = 'http_error'; httpStatus = response.status; await response.body?.cancel(); throw Error(); }
+      if (!response.body) { failure = 'invalid_response'; throw Error(); }
       const length = response.headers.get('content-length');
-      if (length && Number(length) > MAX_RESPONSE_BYTES) { await response.body.cancel(); throw Error(); }
+      if (length && Number(length) > MAX_RESPONSE_BYTES) { failure = 'response_too_large'; await response.body.cancel(); throw Error(); }
       const reader = response.body.getReader();
       const chunks: Uint8Array[] = [];
       let size = 0;
@@ -75,13 +102,23 @@ export class OpenAIModel implements Model {
           const chunk = await reader.read();
           if (chunk.done) break;
           size += chunk.value.byteLength;
-          if (size > MAX_RESPONSE_BYTES) { await reader.cancel(); throw Error(); }
+          if (size > MAX_RESPONSE_BYTES) { failure = 'response_too_large'; await reader.cancel(); throw Error(); }
           chunks.push(chunk.value);
         }
       } finally { reader.releaseLock(); }
-      return validate(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))), tools);
+      failure = 'invalid_response';
+      const value: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)));
+      if (object(value) && Array.isArray(value.choices) && value.choices.some((choice: unknown) => object(choice) && choice.finish_reason === 'length')) {
+        failure = 'truncated_response'; throw Error();
+      }
+      const result = validate(value, tools);
+      if (controller.signal.aborted) throw Error();
+      log('info', 'model.complete', { duration_ms: performance.now() - started, tools: toolNames, outcome: 'success', ...usageFields(value) });
+      return result;
     } catch {
-      throw new Error(controller.signal.aborted ? 'Model request aborted or timed out' : 'Model request failed');
+      const code = abortReason ?? failure;
+      log(code === 'cancelled' ? 'info' : 'warn', 'model.failed', { duration_ms: performance.now() - started, tools: toolNames, reason: code, ...(httpStatus === undefined ? {} : { http_status: httpStatus }) });
+      throw new ModelError(code, httpStatus);
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener('abort', abort);

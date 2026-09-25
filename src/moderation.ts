@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { log } from './logger.js';
 import type { ModerationPolicy } from './listener-config.js';
 import { LISTENER_GROUP, OWNER_ID, type Api, type JsonObject, type ToolDefinition, type TurnContext } from './contracts.js';
 
@@ -93,9 +94,16 @@ export class Moderation {
     return target;
   }
 
-  private audit(action: string, context: TurnContext, target: string | undefined, result: string): void {
-    // Whitelisted action and validated numeric identifiers only; never card, code, chat or API error text.
-    console.info(JSON.stringify({ event: 'moderation', action: ['mute_member', 'recall_message', 'set_member_card'].includes(action) ? action : 'invalid', actor: id(context.actorId) ?? 'invalid', target: id(target) ?? 'unknown', result }));
+  private audit(action: string, context: TurnContext, target: string | undefined,
+    outcome: 'proposed' | 'proposal_denied' | 'executed' | 'delivery_unknown' | 'confirmation_denied', seconds?: number): void {
+    // Only validated identifiers and static outcomes; never card, code, chat or API error text.
+    log(outcome === 'proposed' || outcome === 'executed' ? 'info' : 'warn', 'moderation.audit', {
+      ...(['mute_member', 'recall_message', 'set_member_card'].includes(action) ? { action } : {}),
+      ...(id(context.actorId) ? { actor_id: id(context.actorId) } : {}),
+      ...(id(target) ? { target_id: id(target) } : {}),
+      ...(messageId(context.messageId) ? { message_id: messageId(context.messageId) } : {}),
+      ...(typeof seconds === 'number' && Number.isInteger(seconds) && seconds >= 0 && seconds <= 600 ? { seconds } : {}), outcome,
+    });
   }
 
   async propose(name: string, args: unknown, context: TurnContext): Promise<JsonObject> {
@@ -111,7 +119,7 @@ export class Moderation {
       const code = randomBytes(16).toString('hex');
       this.pending.set(code, { action, context: fixed, target, expires: this.now() + this.policy.confirmationTtlSeconds * 1000 });
       const description = action.name === 'mute_member' ? `群 ${LISTENER_GROUP}：${action.seconds === 0 ? '解除禁言' : '禁言'}成员 ${target}，时长 ${action.seconds} 秒` : action.name === 'recall_message' ? `群 ${LISTENER_GROUP}：撤回成员 ${target} 的消息 ${action.message_id}` : `群 ${LISTENER_GROUP}：将成员 ${target} 的群名片设置为 ${JSON.stringify(action.card)}`;
-      this.audit(name, fixed, target, 'proposed');
+      this.audit(name, fixed, target, 'proposed', action.name === 'mute_member' ? action.seconds : undefined);
       return { status: 'confirmation_required', code, description: `${description}；请在 ${this.policy.confirmationTtlSeconds} 秒内使用 /confirm CODE 确认`, expires_in_seconds: this.policy.confirmationTtlSeconds };
     } catch {
       this.audit(name, fixed, target, 'proposal_denied');
@@ -137,7 +145,7 @@ export class Moderation {
       if (action.name === 'mute_member') await this.api.call('set_group_ban', { group_id: LISTENER_GROUP, user_id: action.user_id, duration: action.seconds });
       else if (action.name === 'set_member_card') await this.api.call('set_group_card', { group_id: LISTENER_GROUP, user_id: action.user_id, card: action.card });
       else await this.api.call('delete_msg', { message_id: action.message_id });
-      this.audit(action.name, fixed, target, 'executed');
+      this.audit(action.name, fixed, target, 'executed', action.name === 'mute_member' ? action.seconds : undefined);
       return { status: 'executed' };
     } catch {
       this.audit(pending?.action.name ?? 'invalid', fixed, pending?.target, attempted ? 'delivery_unknown' : 'confirmation_denied');

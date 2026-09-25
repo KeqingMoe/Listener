@@ -43,6 +43,21 @@ max_download_mb = 10
 
 目前支持 JPEG、PNG、WebP、GIF（动画仅首帧）；单张最多10MiB、4000万像素，去除元数据并缩放到最长2048像素。仅获取可核验的本群附件和允许的 QQ HTTPS 图片地址，链接过期、下载失败或不支持的格式会返回不可读取错误，不允许猜图。数据库只保存图片ID和来源，不存原图、Base64或签名链接；原图仅当轮使用，之后需要时重新获取。
 
+## 日志与排查
+
+默认 `info` 级别，终端可读输出 + `data/logs/` 中的 JSONL 文件；配置见 `[logging]`。按 UTC 天或20MiB轮转，写入时清理超过7天或总量200MiB的旧日志。目录700、文件600；只支持一个 Bot 实例写入同一目录。
+
+```sh
+npm run logs -- --follow               # 最近记录并持续跟随
+npm run logs -- --level warn           # 警告及错误
+npm run logs -- --turn t_0123456789abcdef # 替换为实际 turn_id
+npm run logs -- --directory data/logs  # 配置损坏时仍能查看
+```
+
+查看命令读取有界尾部（每文件256KiB、最近200个文件），默认最多显示100条，可用 `--lines` 调整。`turn_id` 串联触发、模型、工具和发送；`turn.end` 的 `outcome` 区分 `replied`（已回复）、`silent`（主动沉默）、`prose_suppressed`（模型未调用发送工具）、`cancelled`（被新消息/重置等取消）、`model_failed`、`delivery_unknown`（不要盲目重发）及 `round_limit`。
+
+模型日志包含耗时、HTTP错误分类和服务商返回的合法 token 用量；图片日志区分来源核验、DNS、下载、解码。`debug` 额外显示普通消息被跳过的原因，修改级别后需重启。**所有级别都不记录聊天正文、人设、模型内容、图片、密钥、签名链接、管理确认码或群名片内容**，但含 QQ／消息ID，请勿随意公开。写入故障或队列满会丢弃日志并限频警告，不影响 Bot；控制台阻塞不会拖住文件日志。
+
 ## 小提醒
 
 - 仍只服务固定白名单群，私聊不处理；群和管理员必须与 `src/contracts.ts` 的安装边界一致。

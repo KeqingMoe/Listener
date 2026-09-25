@@ -7,9 +7,13 @@ import { Listener } from './listener.js';
 import { OpenAIModel } from './model.js';
 import { SQLiteMemory } from './memory.js';
 import { LISTENER_GROUP, OWNER_ID } from './contracts.js';
+import { configureLogging, log } from './logger.js';
+let logger: ReturnType<typeof configureLogging> | undefined;
 
 async function main(): Promise<void> {
-  const {onebot: config, listener: ai} = loadAppConfig();
+  const {onebot: config, listener: ai, logging} = loadAppConfig();
+  logger=configureLogging(logging,[config.token,ai.apiKey]);
+  log('info','app.start',{group_id:LISTENER_GROUP,ai_enabled:ai.enabled,images_enabled:ai.images?.enabled ?? false});
   // Single-group installation: configuration cannot silently widen this boundary.
   if (config.allowedGroups.size !== 1 || !config.allowedGroups.has(LISTENER_GROUP) ||
       config.adminUsers.size !== 1 || !config.adminUsers.has(OWNER_ID)) throw new Error('Group/owner configuration mismatch');
@@ -29,26 +33,39 @@ async function main(): Promise<void> {
   client.on('ready', (data: unknown) => {
     selfId = data && typeof data === 'object' && 'user_id' in data ? id(data.user_id) : undefined;
     listener.setConnected(!!selfId);
-    console.info(selfId ? `Listener connected; group-only; AI ${ai.enabled ? 'enabled' : 'disabled (configure API first)'}` : 'OneBot identity unavailable; messages disabled');
+    log(selfId?'info':'warn',selfId?'onebot.ready':'onebot.identity_failed',{group_id:LISTENER_GROUP,ai_enabled:ai.enabled,images_enabled:ai.images?.enabled ?? false});
   });
   client.on('disconnected', () => {
     selfId = undefined; listener.setConnected(false);
-    if (!stopping) console.info('OneBot disconnected; reconnect scheduled');
+    if (!stopping) log('warn','onebot.disconnected');
   });
   client.on('message', (event: unknown) => {
     if (!selfId || stopping) return;
-    void listener.receive(event,selfId).catch(() => console.warn('Listener event rejected or failed'));
+    void listener.receive(event,selfId).catch(() => log('warn','message.failed',{reason:'event_handler_failed'}));
   });
   const stop = () => {
     if (stopping) return;
     stopping = true;
-    void Promise.all([listener.stop(),client.stop()]).then(() => console.info('Listener stopped'));
+    log('info','app.stopping');
+    void Promise.allSettled([listener.stop(),client.stop()])
+      .then(results=>{
+        if(results.some(result=>result.status==='rejected')){log('error','app.shutdown_failed',{reason:'operation_failed'});process.exitCode=1;}
+        else log('info','app.stopped');
+      })
+      .finally(async()=>{
+        await logger?.close();
+        // A blocked stdout pipe may keep a native write alive after bounded
+        // logger shutdown. Only this executable owns process termination.
+        process.exit(process.exitCode ?? 0);
+      });
   };
   process.on('SIGINT',stop);
   process.on('SIGTERM',stop);
   client.start();
 }
-void main().catch((error: unknown) => {
-  console.error(error instanceof ConfigError ? error.message : 'Listener startup failed; details suppressed to protect secrets');
+void main().catch(async (error: unknown) => {
+  if (logger) { log('error','app.startup_failed',{reason:'startup_failed'});await logger.close(); }
+  else console.error(error instanceof ConfigError ? error.message : 'Listener startup failed; details suppressed to protect secrets');
   process.exitCode = 1;
+  process.exit(1);
 });
