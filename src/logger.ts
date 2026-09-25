@@ -11,14 +11,14 @@ export interface LoggingConfig {
   retentionDays: number; maxFileMb: number; maxTotalMb: number;
 }
 const levels: LogLevel[] = ['debug', 'info', 'warn', 'error'];
-const domains = /^(app|onebot|message|trigger|turn|model|tool|image|memory|moderation|command|send|logging)\.[a-z][a-z0-9_]{0,39}$/;
+const domains = /^(app|onebot|message|trigger|turn|model|tool|image|forward|memory|moderation|command|send|logging)\.[a-z][a-z0-9_]{0,39}$/;
 const owned = /^listener-(\d{4}-\d{2}-\d{2})-T\d{9}-[a-f0-9]{24}\.jsonl$/;
-const tools = new Set(['send_message', 'stay_silent', 'get_group_members', 'get_member_info', 'read_message', 'view_images', 'mute_member', 'recall_message', 'set_member_card', 'invalid']);
-const actions = new Set([...tools, 'get_login_info', 'get_msg', 'get_group_member_info', 'get_group_member_list', 'send_group_msg', 'set_group_ban', 'set_group_card', 'delete_msg', 'get_group_msg_history', 'get_image']);
+const tools = new Set(['send_message', 'stay_silent', 'get_group_members', 'get_member_info', 'read_message', 'view_images', 'read_forward', 'mute_member', 'recall_message', 'set_member_card', 'invalid']);
+const actions = new Set([...tools, 'get_login_info', 'get_msg', 'get_group_member_info', 'get_group_member_list', 'send_group_msg', 'set_group_ban', 'set_group_card', 'delete_msg', 'get_group_msg_history', 'get_image', 'get_forward_msg']);
 export function managedLogFilename(name: string): boolean { return owned.test(name); }
-const numeric = ['duration_ms','wait_ms','round','parts','sent_parts','images','width','height','bytes','input_bytes','output_bytes','prompt_tokens','completion_tokens','total_tokens','http_status','retcode','attempt','rows_before','rows_after','chars_before','chars_after','seconds','count','dropped','retry'];
+const numeric = ['duration_ms','wait_ms','round','parts','sent_parts','images','width','height','bytes','input_bytes','output_bytes','prompt_tokens','completion_tokens','total_tokens','http_status','retcode','attempt','rows_before','rows_after','chars_before','chars_after','seconds','count','dropped','retry','start','end','total','depth'];
 const ids = ['group_id','actor_id','message_id','target_id','reply_to'];
-const bools = ['ai_enabled','images_enabled','first_frame_only'];
+const bools = ['ai_enabled','images_enabled','forward_enabled','first_frame_only'];
 const codes = ['outcome','reason','status','phase','trigger'];
 const context = new AsyncLocalStorage<Record<string, unknown>>();
 let secrets: string[] = [];
@@ -53,7 +53,7 @@ export function sanitizeLogFields(fields: Record<string, unknown>): Record<strin
       const value = fields[key];
       if (typeof value === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(value) && clean(value)) out[key] = value;
     }
-    for (const [key, pattern] of [['turn_id', /^t_[a-f0-9]{16}$/], ['command_id', /^c_[a-f0-9]{16}$/], ['image_id', /^img_-?\d{1,32}_\d{1,10}$/]] as const) {
+    for (const [key, pattern] of [['turn_id', /^t_[a-f0-9]{16}$/], ['command_id', /^c_[a-f0-9]{16}$/], ['image_id', /^img_-?\d{1,32}_\d{1,10}$/], ['forward_id', /^(?:fwd_-?\d{1,32}_\d{1,3}|fwdn_[a-f0-9]{16})$/]] as const) {
       const value = fields[key];
       if (typeof value === 'string' && pattern.test(value) && clean(value)) out[key] = value;
     }

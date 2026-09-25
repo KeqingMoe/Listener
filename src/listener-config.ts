@@ -1,3 +1,4 @@
+import type { ForwardConfig } from './forward-tools.js';
 export interface ImagesConfig { enabled: boolean; maxPerTurn: number; maxDownloadMb: number }
 export interface ModerationPolicy {
   mute: boolean;
@@ -20,4 +21,5 @@ export interface ListenerConfig {
   mentionEnabled?: boolean; quoteBotEnabled?: boolean; maxParts?: number;
   tools?: ToolsConfig;
   images?: ImagesConfig;
+  forward?: ForwardConfig;
 }

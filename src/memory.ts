@@ -1,5 +1,6 @@
 import { chmodSync, closeSync, openSync } from 'node:fs';
 import { log } from './logger.js';
+import { sanitizeForwardReferences } from './forward-references.js';
 import { DatabaseSync } from 'node:sqlite';
 import { LISTENER_GROUP, type Memory, type Model, type TimelineEntry } from './contracts.js';
 
@@ -74,6 +75,7 @@ export class SQLiteMemory implements Memory {
         typeof image.id === 'string' && image.id === `img_${entry.messageId}_${image.index}` && /^img_-?\d{1,32}_\d{1,3}$/.test(image.id))
         .slice(0,3).map(image => ({id:image.id,index:image.index}));
     }
+    if (Array.isArray(entry.forwards)) safe.forwards = sanitizeForwardReferences(entry.messageId,entry.forwards);
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const inserted = this.db.prepare('INSERT OR IGNORE INTO listener_seen VALUES (?, ?)').run(safe.messageId, safe.time);

@@ -13,7 +13,7 @@ let logger: ReturnType<typeof configureLogging> | undefined;
 async function main(): Promise<void> {
   const {onebot: config, listener: ai, logging} = loadAppConfig();
   logger=configureLogging(logging,[config.token,ai.apiKey]);
-  log('info','app.start',{group_id:LISTENER_GROUP,ai_enabled:ai.enabled,images_enabled:ai.images?.enabled ?? false});
+  log('info','app.start',{group_id:LISTENER_GROUP,ai_enabled:ai.enabled,images_enabled:ai.images?.enabled ?? false,forward_enabled:ai.forward?.enabled ?? false});
   // Single-group installation: configuration cannot silently widen this boundary.
   if (config.allowedGroups.size !== 1 || !config.allowedGroups.has(LISTENER_GROUP) ||
       config.adminUsers.size !== 1 || !config.adminUsers.has(OWNER_ID)) throw new Error('Group/owner configuration mismatch');
@@ -33,7 +33,7 @@ async function main(): Promise<void> {
   client.on('ready', (data: unknown) => {
     selfId = data && typeof data === 'object' && 'user_id' in data ? id(data.user_id) : undefined;
     listener.setConnected(!!selfId);
-    log(selfId?'info':'warn',selfId?'onebot.ready':'onebot.identity_failed',{group_id:LISTENER_GROUP,ai_enabled:ai.enabled,images_enabled:ai.images?.enabled ?? false});
+    log(selfId?'info':'warn',selfId?'onebot.ready':'onebot.identity_failed',{group_id:LISTENER_GROUP,ai_enabled:ai.enabled,images_enabled:ai.images?.enabled ?? false,forward_enabled:ai.forward?.enabled ?? false});
   });
   client.on('disconnected', () => {
     selfId = undefined; listener.setConnected(false);

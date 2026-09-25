@@ -8,7 +8,7 @@ export class ModelError extends Error {
     this.name = 'ModelError';
   }
 }
-const KNOWN_TOOLS = new Set(['send_message', 'stay_silent', 'get_group_members', 'get_member_info', 'read_message', 'view_images', 'mute_member', 'recall_message', 'set_member_card']);
+const KNOWN_TOOLS = new Set(['send_message', 'stay_silent', 'get_group_members', 'get_member_info', 'read_message', 'view_images', 'read_forward', 'mute_member', 'recall_message', 'set_member_card']);
 function usageFields(value: unknown): Record<string, number> {
   const fields: Record<string, number> = {};
   if (object(value) && object(value.usage)) {
