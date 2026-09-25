@@ -2,6 +2,7 @@ import { LISTENER_GROUP, type Api, type Memory, type JsonObject, type ToolDefini
 
 import { imageReferences, imageMarker } from './image-tools.js';
 import { forwardReferences, forwardMarker, sanitizeForwardReferences } from './forward-references.js';
+import { FACE_ID_SCHEMA, faceMarker, isKnownFaceId } from './face-tools.js';
 
 export interface GroupToolsOptions {
   members?: boolean;
@@ -10,7 +11,7 @@ export interface GroupToolsOptions {
 }
 
 export interface PreparedPart {
-  segments: Array<{ type: 'text'; data: { text: string } } | { type: 'at'; data: { qq: string } }>;
+  segments: Array<{ type: 'text'; data: { text: string } } | { type: 'at'; data: { qq: string } } | { type: 'face'; data: { id: string } }>;
   text: string;
   replyTo?: string;
 }
@@ -21,7 +22,7 @@ export const GROUP_TOOLS: ToolDefinition[] = [
   tool('get_member_info', '读取当前群指定成员的基本资料。', schema({ user_id: { type: 'string' } }, ['user_id'])),
   tool('read_message', '读取当前群本地消息或本地近期消息引用的消息。', schema({ message_id: { type: 'string' } }, ['message_id'])),
 ];
-export const SEND_MESSAGE_TOOL = tool('send_message', '向当前群发送消息；条数以本轮配置和工具参数上限为准。使用结构化at片段提及成员，不支持全员或自己。', schema({ parts: { type: 'array', minItems: 1, maxItems: 3, items: schema({ segments: { type: 'array', minItems: 1, maxItems: 12, items: { oneOf: [schema({ type: { const: 'text' }, text: { type: 'string', maxLength: 800 } }, ['type', 'text']), schema({ type: { const: 'at' }, user_id: { type: 'string' } }, ['type', 'user_id'])] } }, reply_to: { type: 'string' } }, ['segments']) } }, ['parts']));
+export const SEND_MESSAGE_TOOL = tool('send_message', '向当前群发送文字、QQ原生表情或混合消息；face只需目录中的id，普通和超级表情都可发送，不支持指定连击或动画结果。条数及片段数沿用本轮上限，不另设表情数量配额。使用结构化at片段提及成员，不支持全员或自己。', schema({ parts: { type: 'array', minItems: 1, maxItems: 3, items: schema({ segments: { type: 'array', minItems: 1, maxItems: 12, items: { oneOf: [schema({ type: { const: 'text' }, text: { type: 'string', maxLength: 800 } }, ['type', 'text']), schema({ type: { const: 'at' }, user_id: { type: 'string' } }, ['type', 'user_id']), schema({ type: { const: 'face' }, id: FACE_ID_SCHEMA }, ['type', 'id'])] } }, reply_to: { type: 'string' } }, ['segments']) } }, ['parts']));
 
 function object(v: unknown): v is JsonObject { return !!v && typeof v === 'object' && !Array.isArray(v); }
 function fail(code = 'invalid_arguments'): never { throw new Error(code); }
@@ -80,6 +81,7 @@ export class GroupTools {
         try { target = identifier(segment.data.qq, false, true); } catch { /* Never expose arbitrary segment data. */ }
         text += `[at:${target}]`;
       } else if (segment.type === 'image') { const ref=images.find(image=>image.index===index); text += ref ? imageMarker(ref) : '[图片：超出单消息附件数量限制]'; }
+      else if (segment.type === 'face') text += faceMarker(segment.data.id);
       else if (forwards.some(ref=>ref.index===index)) text += forwardMarker(forwards.find(ref=>ref.index===index)!);
       else if (segment.type === 'forward') text += '[合并转发：本消息可读取引用上限或格式不支持]';
       else if (segment.type !== 'reply') text += '[非文本消息]';
@@ -140,6 +142,12 @@ export class GroupTools {
           visible ||= !!segment.text.trim();
           return { type: 'text' as const, data: { text: segment.text } };
         }
+        if (segment.type === 'face') {
+          fields(segment,['type','id']);
+          if (!isKnownFaceId(segment.id)) fail();
+          visible = true;
+          return {type:'face' as const,data:{id:segment.id}};
+        }
         if (segment.type !== 'at') fail();
         if (!this.options.mention) fail('tool_disabled');
         fields(segment, ['type', 'user_id']);
@@ -152,7 +160,7 @@ export class GroupTools {
       // Reject marker syntax even when split across adjacent text segments.
       if (/\[(?:at:|CQ:at)/i.test(segments.filter(s => s.type === 'text').map(s => s.data.text).join(''))) fail();
       const replyTo = Object.hasOwn(part, 'reply_to') ? identifier(part.reply_to, true) : undefined;
-      return { segments, text: segments.map(s => s.type === 'text' ? s.data.text : `[at:${s.data.qq}]`).join(''), ...(replyTo !== undefined ? { replyTo } : {}) };
+      return { segments, text: segments.map(s => s.type === 'text' ? s.data.text : s.type === 'face' ? faceMarker(s.data.id) : `[at:${s.data.qq}]`).join(''), ...(replyTo !== undefined ? { replyTo } : {}) };
     });
     for (const target of targets) member(await this.call('get_group_member_info', { group_id: LISTENER_GROUP, user_id: target, no_cache: true }), target);
     for (const part of parts) if (part.replyTo !== undefined && !this.memory.find(part.replyTo)) {

@@ -104,9 +104,9 @@ test('configured tool schemas hide disabled abilities and tighten parts without 
  assert.ok(!tools.some(t=>['get_group_members','get_member_info','mute_member','set_member_card'].includes(t.function.name)));
  assert.ok(tools.some(t=>t.function.name==='recall_message'));
  const send=tools.find(t=>t.function.name==='send_message')!.function.parameters as any;
- assert.equal(send.properties.parts.maxItems,1);assert.equal(send.properties.parts.items.properties.segments.items.oneOf.length,1);
+ assert.equal(send.properties.parts.maxItems,1);assert.equal(send.properties.parts.items.properties.segments.items.oneOf.length,2);
  const normal=buildToolDefinitions(cfg,false).find(t=>t.function.name==='send_message')!.function.parameters as any;
- assert.equal(normal.properties.parts.maxItems,3);assert.equal(normal.properties.parts.items.properties.segments.items.oneOf.length,2);
+ assert.equal(normal.properties.parts.maxItems,3);assert.equal(normal.properties.parts.items.properties.segments.items.oneOf.length,3);
 });
 test('ten-part configuration updates tool schema and prompt without widening default',()=>{
  const tools=buildToolDefinitions({...cfg,maxParts:10},false);

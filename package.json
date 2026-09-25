@@ -10,7 +10,8 @@
     "dev": "tsx watch src/index.ts",
     "config:check": "tsx src/config-check.ts",
     "config:migrate": "tsx scripts/migrate-config.ts",
-    "logs": "tsx src/logs.ts"
+    "logs": "tsx src/logs.ts",
+    "faces:sync": "tsx src/sync-faces.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.3",

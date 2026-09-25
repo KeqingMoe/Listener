@@ -8,12 +8,14 @@ import { OpenAIModel } from './model.js';
 import { SQLiteMemory } from './memory.js';
 import { LISTENER_GROUP, OWNER_ID } from './contracts.js';
 import { configureLogging, log } from './logger.js';
+import { FACE_CATALOG, EXAMPLE_FACE_CATALOG } from './face-catalog.js';
 let logger: ReturnType<typeof configureLogging> | undefined;
 
 async function main(): Promise<void> {
   const {onebot: config, listener: ai, logging} = loadAppConfig();
   logger=configureLogging(logging,[config.token,ai.apiKey]);
   log('info','app.start',{group_id:LISTENER_GROUP,ai_enabled:ai.enabled,images_enabled:ai.images?.enabled ?? false,forward_enabled:ai.forward?.enabled ?? false});
+  log(FACE_CATALOG===EXAMPLE_FACE_CATALOG?'warn':'info','app.faces_ready',{count:FACE_CATALOG.length,reason:FACE_CATALOG===EXAMPLE_FACE_CATALOG?'example_catalog':'local_catalog'});
   // Single-group installation: configuration cannot silently widen this boundary.
   if (config.allowedGroups.size !== 1 || !config.allowedGroups.has(LISTENER_GROUP) ||
       config.adminUsers.size !== 1 || !config.adminUsers.has(OWNER_ID)) throw new Error('Group/owner configuration mismatch');

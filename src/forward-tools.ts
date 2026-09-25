@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { LISTENER_GROUP, type Api, type JsonObject, type Memory, type ToolDefinition, type TurnContext } from './contracts.js';
 import { extractForward, type ExtractedForward, type ForwardReference } from './forward-references.js';
 import { log } from './logger.js';
+import { faceMarker } from './face-tools.js';
 
 export interface ForwardConfig { enabled: boolean; maxPerRead: number }
 const ROOT = /^fwd_(-?\d{1,32})_(0|[1-9]\d?|1[01]\d|12[0-7])$/;
@@ -195,6 +196,7 @@ export class ForwardTools {
           } else if (object(segment) && segment.type === 'text' && object(segment.data) && typeof segment.data.text === 'string') {
             const room = 12000 - text.length; text += segment.data.text.slice(0, room); if (segment.data.text.length > room) cut = true;
           } else if (object(segment) && segment.type === 'image') text += '[图片：转发内图片本版不支持查看]';
+          else if (object(segment) && segment.type === 'face') text += faceMarker(object(segment.data)?segment.data.id:undefined);
           else if (object(segment) && segment.type === 'at') text += '[@提及]';
           else text += '[非文本消息]';
         }

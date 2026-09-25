@@ -1,0 +1,123 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { setTimeout as delay } from 'node:timers/promises';
+import { Listener, normalizeEvent, buildToolDefinitions } from '../src/listener.js';
+import { faceMarker } from '../src/face-tools.js';
+import type { ListenerConfig } from '../src/listener-config.js';
+import { LISTENER_GROUP, type Memory, type TimelineEntry, type Api, type Model, type Completion, type ChatMessage } from '../src/contracts.js';
+
+const self = '900000001';
+const config: ListenerConfig = { enabled: true, baseUrl: 'https://example.invalid/v1', apiKey: 'test', model: 'test', timeoutMs: 2000,
+  maxTokens: 128, debounceMs: 1, cooldownMs: 0, memoryPath: ':memory:', maxContextChars: 8000, retentionDays: 7,
+  randomReplyProbability: 0 };
+class TestMemory implements Memory {
+  entries: TimelineEntry[] = [];
+  append(entry: TimelineEntry) { if (this.find(entry.messageId)) return false; this.entries.push(entry); return true; }
+  recent() { return this.entries; }
+  find(id: string) { return this.entries.find(e => e.messageId === id); }
+  context() { return JSON.stringify(this.entries); }
+  async compact() {}
+  clear() { this.entries = []; }
+  close() {}
+}
+function event(message: unknown[], id = '1') {
+  return { post_type: 'message', message_type: 'group', group_id: LISTENER_GROUP, self_id: self, user_id: '123', message_id: id,
+    time: Math.floor(Date.now() / 1000), sender: { nickname: 'member' }, message };
+}
+function completion(name: string, args: unknown): Completion {
+  return { content: null, tool_calls: [{ id: 'call1', type: 'function', function: { name, arguments: JSON.stringify(args) } }] };
+}
+function setup(reply: unknown) {
+  const memory = new TestMemory();
+  const calls: Array<{ action: string; params: any }> = [];
+  const requests: ChatMessage[][] = [];
+  const api: Api = { async call(action, params) { calls.push({ action, params }); if (action === 'send_group_msg') return { message_id: String(900 + calls.length) }; return {}; } };
+  const model: Model = { async complete(messages) { requests.push(structuredClone(messages)); return requests.length === 1 ? completion('send_message', reply) : completion('stay_silent', {}); } };
+  const bot = new Listener(api, model, memory, config);
+  return { bot, memory, calls, requests };
+}
+async function until(check: () => boolean) { for (let i = 0; i < 200; i++) { if (check()) return; await delay(5); } assert.fail('listener did not settle'); }
+
+function faceSchema(configOverrides: Partial<ListenerConfig> = {}) {
+  const tools = buildToolDefinitions({ ...config, ...configOverrides }, false);
+  const send = tools.find(t => t.function.name === 'send_message')!;
+  const params: any = send.function.parameters;
+  const variants = params.properties.parts.items.properties.segments.items.oneOf as any[];
+  return { params, variants, face: variants.find(v => v.properties.type.const === 'face') };
+}
+
+test('send tool includes strict ordinary and animated face choices without adding a quota', () => {
+  const { params, face } = faceSchema({ maxParts: 10 });
+  assert.ok(face); assert.equal(face.additionalProperties, false); assert.deepEqual(face.required, ['type', 'id']);
+  assert.deepEqual(Object.keys(face.properties).sort(), ['id', 'type']);
+  assert.equal(face.properties.id.type, 'string');
+  for (const id of ['0', '6', '14', '20', '21', '22', '32', '375']) assert.ok(face.properties.id.enum.includes(id), id);
+  assert.ok(!face.properties.id.enum.includes('999999'));
+  assert.equal(params.properties.parts.maxItems, 10);
+  assert.equal(params.properties.parts.items.properties.segments.maxItems, 12);
+});
+
+test('mention-disabled tool schema keeps face variant and removes only at', () => {
+  const { variants, face } = faceSchema({ tools: { members: false, mention: false,
+    moderation: { mute: false, recall: false, memberCard: false, confirmationTtlSeconds: 60, maxMuteSeconds: 600 } } });
+  assert.ok(face); assert.ok(face.properties.id.enum.includes('375'));
+  assert.deepEqual(variants.map(v => v.properties.type.const).sort(), ['face', 'text']);
+});
+
+test('incoming faces preserve semantic names and order without raw metadata', () => {
+  const entry = normalizeEvent(event([
+    { type: 'text', data: { text: 'before' } }, { type: 'face', data: { id: '20', raw: { token: 'RAW_SECRET' }, resultId: 'RESULT_SECRET', chainCount: 100 } },
+    { type: 'text', data: { text: 'middle' } }, { type: 'face', data: { id: 375 } },
+  ]), self)!;
+  assert.equal(entry.text, `before${faceMarker('20')}middle${faceMarker(375)}`);
+  assert.match(entry.text, /偷笑.*20/); assert.match(entry.text, /超级鼓掌.*375/);
+  assert.ok(!JSON.stringify(entry).includes('SECRET')); assert.ok(!JSON.stringify(entry).includes('chainCount'));
+});
+
+test('unknown and malformed incoming IDs keep safe generic markers rather than raw values', () => {
+  const unknown = normalizeEvent(event([{ type: 'face', data: { id: '999999', raw: 'SECRET_RAW' } }]), self)!;
+  assert.match(unknown.text, /QQ表情/); assert.match(unknown.text, /999999/); assert.match(unknown.text, /未知/);
+  for (const id of ['SECRET_BAD', '20\nSECRET', -1, NaN, {}, [], null, undefined]) {
+    const entry = normalizeEvent(event([{ type: 'face', data: { id, raw: 'SECRET_RAW' } }]), self)!;
+    assert.match(entry.text, /QQ表情/); assert.match(entry.text, /未知/); assert.ok(!JSON.stringify(entry).includes('SECRET'));
+  }
+});
+
+test('face-only model reply sends native OneBot face and persists semantic marker', async () => {
+  const s = setup({ parts: [{ segments: [{ type: 'face', id: '375' }] }] });
+  try {
+    await s.bot.receive(event([{ type: 'at', data: { qq: self } }, { type: 'face', data: { id: '20', raw: 'SECRET_RAW' } }]), self);
+    await until(() => s.memory.entries.some(e => e.bot));
+    assert.equal(s.calls.length, 1); assert.equal(s.calls[0]!.action, 'send_group_msg');
+    assert.equal(s.calls[0]!.params.group_id, LISTENER_GROUP);
+    assert.deepEqual(s.calls[0]!.params.message, [{ type: 'face', data: { id: '375' } }]);
+    assert.equal(s.memory.entries.find(e => e.bot)!.text, faceMarker('375'));
+    assert.match(JSON.stringify(s.requests[0]), /偷笑/); assert.ok(!JSON.stringify(s.requests).includes('SECRET_RAW'));
+  } finally { await s.bot.stop(); }
+});
+
+test('mixed native face reply retains text ordering and verified local reply target', async () => {
+  const s = setup({ parts: [{ reply_to: '1', segments: [{ type: 'text', text: 'before' }, { type: 'face', id: '0' }, { type: 'text', text: 'after' }, { type: 'face', id: '20' }] }] });
+  try {
+    await s.bot.receive(event([{ type: 'at', data: { qq: self } }, { type: 'text', data: { text: 'hello' } }]), self);
+    await until(() => s.memory.entries.some(e => e.bot));
+    assert.deepEqual(s.calls[0]!.params.message, [
+      { type: 'reply', data: { id: '1' } }, { type: 'text', data: { text: 'before' } }, { type: 'face', data: { id: '0' } },
+      { type: 'text', data: { text: 'after' } }, { type: 'face', data: { id: '20' } },
+    ]);
+    const sent = s.memory.entries.find(e => e.bot)!;
+    assert.equal(sent.replyTo, '1'); assert.equal(sent.text, `before${faceMarker('0')}after${faceMarker('20')}`);
+  } finally { await s.bot.stop(); }
+});
+
+test('invalid later face prevents every earlier message and membership lookup', async () => {
+  const s = setup({ parts: [
+    { segments: [{ type: 'text', text: 'must not send' }, { type: 'at', user_id: '456' }] },
+    { segments: [{ type: 'face', id: '375', chainCount: 3 }] },
+  ] });
+  try {
+    await s.bot.receive(event([{ type: 'at', data: { qq: self } }]), self);
+    await until(() => s.requests.length >= 2 && !(s.bot as any).running);
+    assert.equal(s.calls.length, 0); assert.ok(!s.memory.entries.some(e => e.bot));
+  } finally { await s.bot.stop(); }
+});
