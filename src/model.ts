@@ -1,0 +1,90 @@
+import type { ChatMessage, Completion, Model, ToolCall, ToolDefinition } from './contracts.js';
+
+export interface OpenAIModelOptions {
+  baseUrl: string; apiKey: string; model: string; timeoutMs: number; maxTokens: number;
+}
+const MAX_RESPONSE_BYTES = 256 * 1024;
+const MAX_ARGUMENT_BYTES = 16 * 1024;
+const object = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+function validate(value: unknown, tools: ToolDefinition[]): Completion {
+  if (!object(value) || !Array.isArray(value.choices) || value.choices.length !== 1) throw Error();
+  const choice: unknown = value.choices[0];
+  if (!object(choice) || !object(choice.message)) throw Error();
+  const message = choice.message;
+  if (message.role !== 'assistant' || (message.content !== undefined && message.content !== null && typeof message.content !== 'string')) throw Error();
+  if (choice.finish_reason !== 'stop' && choice.finish_reason !== 'tool_calls') throw Error();
+  const calls: unknown = message.tool_calls === undefined ? [] : message.tool_calls;
+  if (!Array.isArray(calls) || calls.length > 8) throw Error();
+  if ((choice.finish_reason === 'tool_calls') !== (calls.length > 0)) throw Error();
+  const ids = new Set<string>();
+  const allowed = new Set(tools.map(t => t.function.name));
+  const validated: ToolCall[] = calls.map((call: unknown) => {
+    if (!object(call) || typeof call.id !== 'string' || !call.id || call.id.length > 256 || ids.has(call.id)
+      || call.type !== 'function' || !object(call.function)) throw Error();
+    const fn = call.function;
+    if (typeof fn.name !== 'string' || !allowed.has(fn.name) || typeof fn.arguments !== 'string'
+      || Buffer.byteLength(fn.arguments) > MAX_ARGUMENT_BYTES || !object(JSON.parse(fn.arguments))) throw Error();
+    ids.add(call.id);
+    return { id: call.id, type: 'function', function: { name: fn.name, arguments: fn.arguments } };
+  });
+  return { content: (message.content ?? null) as string | null, tool_calls: validated };
+}
+
+/** Single attempt transport. Errors deliberately contain no remote text or underlying cause. */
+export class OpenAIModel implements Model {
+  private readonly endpoint: string;
+  private readonly options: OpenAIModelOptions;
+  constructor(options: OpenAIModelOptions) {
+    try {
+      const url = new URL(options.baseUrl);
+      const local = url.hostname === 'localhost' || url.hostname === '[::1]' || /^127\.(?:\d{1,3}\.){2}\d{1,3}$/.test(url.hostname);
+      if (url.username || url.password || url.search || url.hash || options.baseUrl.includes('?') || options.baseUrl.includes('#')
+        || (url.protocol !== 'https:' && !(url.protocol === 'http:' && local))
+        || !options.apiKey || /[\r\n]/.test(options.apiKey) || !options.model
+        || !Number.isSafeInteger(options.timeoutMs) || options.timeoutMs < 1 || options.timeoutMs > 2_147_483_647
+        || !Number.isSafeInteger(options.maxTokens) || options.maxTokens < 1) throw Error();
+      url.pathname = url.pathname.replace(/\/+$/, '') + '/chat/completions';
+      this.endpoint = url.toString();
+      this.options = { ...options };
+    } catch { throw new Error('Invalid model configuration'); }
+  }
+
+  async complete(messages: ChatMessage[], tools: ToolDefinition[] = [], signal?: AbortSignal): Promise<Completion> {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    const timer = setTimeout(abort, this.options.timeoutMs);
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
+    try {
+      const response = await fetch(this.endpoint, {
+        method: 'POST', redirect: 'error', signal: controller.signal,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.options.apiKey}` },
+        body: JSON.stringify({ model: this.options.model, messages, max_tokens: this.options.maxTokens,
+          stream: false, ...(tools.length ? { tools, tool_choice: 'auto' } : {}) }),
+      });
+      if (!response.ok || !response.body) { await response.body?.cancel(); throw Error(); }
+      const length = response.headers.get('content-length');
+      if (length && Number(length) > MAX_RESPONSE_BYTES) { await response.body.cancel(); throw Error(); }
+      const reader = response.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      try {
+        while (true) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          size += chunk.value.byteLength;
+          if (size > MAX_RESPONSE_BYTES) { await reader.cancel(); throw Error(); }
+          chunks.push(chunk.value);
+        }
+      } finally { reader.releaseLock(); }
+      return validate(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))), tools);
+    } catch {
+      throw new Error(controller.signal.aborted ? 'Model request aborted or timed out' : 'Model request failed');
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
+    }
+  }
+}
