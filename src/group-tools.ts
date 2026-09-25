@@ -155,7 +155,10 @@ export class GroupTools {
       return { segments, text: segments.map(s => s.type === 'text' ? s.data.text : `[at:${s.data.qq}]`).join(''), ...(replyTo !== undefined ? { replyTo } : {}) };
     });
     for (const target of targets) member(await this.call('get_group_member_info', { group_id: LISTENER_GROUP, user_id: target, no_cache: true }), target);
-    for (const part of parts) if (part.replyTo !== undefined && !this.memory.find(part.replyTo)) await this.remoteMessage(part.replyTo);
+    for (const part of parts) if (part.replyTo !== undefined && !this.memory.find(part.replyTo)) {
+      if (!this.memory.recent().some(entry=>entry.replyTo===part.replyTo)) fail('forbidden_reference');
+      await this.remoteMessage(part.replyTo);
+    }
     return parts;
   }
 }

@@ -94,7 +94,7 @@ test('reset during an already-dispatched send cannot resurrect old memory', asyn
   } finally { send.resolve(null); await s.bot.stop(); }
 });
 
-test('late reference lookup in the same second cannot replace a newer trigger', async () => {
+test('late reference lookup before sealing merges callers in arrival order without mixed-owner authority', async () => {
   const s = setup(); const lookup = deferred<unknown>(); const time = Math.floor(Date.now() / 1000);
   s.setHook(action => action === 'get_msg' ? lookup.promise : undefined);
   const old = s.bot.receive(event('1', 'older', OWNER_ID, { time, message: [{ type: 'reply', data: { id: '99' } }, { type: 'text', data: { text: 'older' } }] }), self);
@@ -106,10 +106,31 @@ test('late reference lookup in the same second cannot replace a newer trigger', 
     await delay(30);
     assert.equal(s.requests.length, 1);
     const prompt = JSON.parse(s.requests[0]![1]!.content!);
-    assert.equal(prompt.current_request.messageId, '2');
-    assert.equal(prompt.trusted_actor_id, target);
+    assert.equal(prompt.current_request, undefined);
+    assert.equal(prompt.trusted_actor_id, null);
+    assert.equal(prompt.trusted_moderation_allowed, false);
+    assert.deepEqual(prompt.trusted_direct_requests,[
+      {message_id:'1',user_id:OWNER_ID,trigger:'quote'},
+      {message_id:'2',user_id:target,trigger:'mention'},
+    ]);
+    assert.deepEqual(prompt.current_batch.messages.map((m:TimelineEntry)=>m.messageId),['1','2']);
     assert.ok(!s.tools[0]!.includes('mute_member'));
   } finally { lookup.resolve(null); await old; await s.bot.stop(); }
+});
+
+test('verified late quote after sealing remains excluded from first snapshot and runs exactly once next',async()=>{
+ const s=setup();const lookup=deferred<unknown>();s.setHook(action=>action==='get_msg'?lookup.promise:undefined);
+ const receive=s.bot.receive(event('1','LATE_QUOTE_SECRET',OWNER_ID,{message:[{type:'reply',data:{id:'99'}},{type:'text',data:{text:'LATE_QUOTE_SECRET'}}]}),self);
+ try{
+  await until(()=>s.calls.some(c=>c.action==='get_msg'));
+  await s.bot.receive(event('2','immediate caller',target),self);await until(()=>s.requests.length===1);await delay(20);
+  assert.ok(!s.requests[0]![1]!.content!.includes('LATE_QUOTE_SECRET'));
+  lookup.resolve({group_id:LISTENER_GROUP,message_type:'group',message_id:'99',sender:{user_id:self}});await receive;
+  await until(()=>s.requests.length===2);await delay(30);
+  assert.equal(s.requests.length,2);assert.equal(JSON.parse(s.requests[1]![1]!.content!).current_request.messageId,'1');
+  assert.deepEqual(JSON.parse(s.requests[1]![1]!.content!).trusted_direct_requests,[{message_id:'1',user_id:OWNER_ID,trigger:'quote'}]);
+  assert.ok(s.tools[1]!.includes('mute_member'));
+ }finally{lookup.resolve(null);await receive;await s.bot.stop();}
 });
 
 test('reset revokes old confirmations while newly proposed moderation still executes', async t => {
@@ -158,7 +179,20 @@ test('malicious model moderation call from nonowner is independently rejected', 
   } finally { await s.bot.stop(); }
 });
 
-test('new revision during confirmation notification does not requeue the proposal', async () => {
+test('mixed explicit callers reject invented moderation even when first requester is owner',async()=>{
+  let round=0;const s=setup(()=>round++===0?mute():tool('stay_silent',{}));
+  try{
+    await s.bot.receive(event('1','owner request',OWNER_ID),self);
+    await s.bot.receive(event('2','nonowner request',target),self);
+    await until(()=>s.requests.length===2);
+    assert.ok(s.tools.every(names=>!names.includes('mute_member')));
+    assert.equal(JSON.parse(s.requests[1]!.find(m=>m.role==='tool')!.content!).status,'error');
+    assert.equal(s.calls.length,0);assert.equal(s.codes().length,0);
+    assert.deepEqual(JSON.parse(s.requests[0]![1]!.content!).trusted_direct_requests.map((r:{user_id:string})=>r.user_id),[OWNER_ID,target]);
+  }finally{await s.bot.stop();}
+});
+
+test('ordinary arrival during confirmation notification does not requeue the proposal', async () => {
   const s = setup(mute); const send = deferred<unknown>();
   s.setHook((action, params) => action === 'send_group_msg' && JSON.stringify(params).includes('/confirm') ? send.promise : undefined);
   try {

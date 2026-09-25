@@ -41,6 +41,14 @@ test('disabled mentions reject invented at during preparation before reply looku
   assert.equal((await tools.execute('get_member_info', { user_id: '123' }, context)).status, 'ok');
 });
 
+test('reply targets cannot fetch arbitrary messages outside the supplied snapshot',async()=>{
+ const s=setup(remote({message_id:'99'}));
+ await assert.rejects(s.tools.prepareMessage({parts:[{text:'reply',reply_to:'99'}]},context),/forbidden_reference/);
+ assert.equal(s.calls.length,0);
+ const scoped=setup(remote());assert.equal((await scoped.tools.prepareMessage({parts:[{text:'reply',reply_to:'2'}]},context))[0]?.replyTo,'2');
+ assert.deepEqual(scoped.calls.map(call=>call.action),['get_msg']);
+});
+
 test('mention verification remains allowed when member tools are disabled', async () => {
   const { tools, calls } = setup(record(), [entry], { members: false, mention: true });
   assert.equal((await tools.prepareMessage({ parts: [{ segments: [{ type: 'at', user_id: '123' }] }] }, context)).length, 1);

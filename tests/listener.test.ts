@@ -27,7 +27,7 @@ function setup(responses:Completion[]=[tool('send_message',{parts:[{text:'你好
 async function until(check:()=>boolean){for(let i=0;i<100;i++){if(check())return;await delay(10);}assert.fail('timed out');}
 test('hard single-group boundary excludes private, other group and wrong self before storage or API',async()=>{
  const s=setup();try{
- for(const overrides of [{group_id:'555'},{message_type:'private'},{self_id:'999'},{user_id:self},{time:1}])await s.bot.receive(event(overrides),self);
+ for(const overrides of [{group_id:'555'},{message_type:'private'},{self_id:'999'},{user_id:self},{user_id:'1'.repeat(33)},{time:1}])await s.bot.receive(event(overrides),self);
  await delay(20);assert.equal(s.memory.entries.length,0);assert.equal(s.calls.length,0);assert.equal(s.requests.length,0);
  }finally{await s.bot.stop();}
 });
@@ -65,11 +65,20 @@ test('invalid message batch is rejected before any part is sent',async()=>{
  for(const parts of [[{text:'safe'},{text:'bad',reply_to:'999'}],[{text:'ok',group_id:'999'}],[{text:'1'},{text:'2'},{text:'3'},{text:'4'}]]){
  const s=setup([tool('send_message',{parts})]);try{await s.bot.receive(event(),self);await until(()=>s.requests.length>=1);await delay(20);assert.equal(s.calls.filter(c=>c.action==='send_group_msg').length,0);}finally{await s.bot.stop();}}
 });
-test('new group message invalidates in-flight generated reply',async()=>{
- const s=setup();let release!:(v:Completion)=>void;let started=false;
- const model:Model={complete:async()=>{started=true;return new Promise(r=>{release=r;});}};
- const bot=new Listener(s.api,model,s.memory,cfg);
- try{await bot.receive(event(),self);await until(()=>started);await bot.receive(event({message_id:'2',message:[{type:'text',data:{text:'话题变了'}}]}),self);release(tool('send_message',{parts:[{text:'old'}]}));bot.setConnected(false);await delay(30);assert.equal(s.calls.length,0);}finally{await bot.stop();await s.bot.stop();}
+test('new ordinary message neither cancels active reply nor enters its frozen prompt',async()=>{
+ const s=setup();let release!:(v:Completion)=>void;let signal:AbortSignal|undefined;const requests:ChatMessage[][]=[];
+ const model:Model={complete:async(messages,_tools,currentSignal)=>{requests.push(structuredClone(messages));signal=currentSignal;return new Promise(r=>{release=r;});}};
+ const bot=new Listener(s.api,model,s.memory,{...cfg,randomReplyProbability:0});
+ try{
+  await bot.receive(event(),self);await until(()=>requests.length===1);
+  await bot.receive(event({message_id:'2',message:[{type:'text',data:{text:'LATER_ORDINARY_MESSAGE'}}]}),self);
+  assert.equal(signal?.aborted,false);assert.ok(!JSON.stringify(requests[0]).includes('LATER_ORDINARY_MESSAGE'));
+  release(tool('send_message',{parts:[{text:'finished original request'}]}));
+  await until(()=>s.calls.some(call=>call.action==='send_group_msg'));await delay(30);
+  assert.equal(requests.length,1);assert.equal(s.calls.filter(call=>call.action==='send_group_msg').length,1);
+  assert.equal(s.calls.find(call=>call.action==='send_group_msg')!.params.message[0].data.text,'finished original request');
+  assert.ok(s.memory.find('2'));
+ }finally{release?.(tool('stay_silent',{}));await bot.stop();await s.bot.stop();}
 });
 test('nonowner cannot clear memory; owner reset clears and no admin tools granted by nickname',async()=>{
  const s=setup([tool('stay_silent',{})]);try{

@@ -16,7 +16,7 @@ const owned = /^listener-(\d{4}-\d{2}-\d{2})-T\d{9}-[a-f0-9]{24}\.jsonl$/;
 const tools = new Set(['send_message', 'stay_silent', 'get_group_members', 'get_member_info', 'read_message', 'view_images', 'read_forward', 'mute_member', 'recall_message', 'set_member_card', 'invalid']);
 const actions = new Set([...tools, 'get_login_info', 'get_msg', 'get_group_member_info', 'get_group_member_list', 'send_group_msg', 'set_group_ban', 'set_group_card', 'delete_msg', 'get_group_msg_history', 'get_image', 'get_forward_msg']);
 export function managedLogFilename(name: string): boolean { return owned.test(name); }
-const numeric = ['duration_ms','wait_ms','round','parts','sent_parts','images','width','height','bytes','input_bytes','output_bytes','prompt_tokens','completion_tokens','total_tokens','http_status','retcode','attempt','rows_before','rows_after','chars_before','chars_after','seconds','count','dropped','retry','start','end','total','depth'];
+const numeric = ['duration_ms','wait_ms','round','parts','sent_parts','images','width','height','bytes','input_bytes','output_bytes','prompt_tokens','completion_tokens','total_tokens','http_status','retcode','attempt','rows_before','rows_after','chars_before','chars_after','seconds','count','dropped','retry','start','end','total','depth','direct_count','omitted_direct'];
 const ids = ['group_id','actor_id','message_id','target_id','reply_to'];
 const bools = ['ai_enabled','images_enabled','forward_enabled','first_frame_only'];
 const codes = ['outcome','reason','status','phase','trigger'];

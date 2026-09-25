@@ -131,7 +131,7 @@ test('pending direct cannot be replaced by ordinary random candidate', async () 
   } finally { await s.bot.stop(); }
 });
 
-test('pending random is replaced by direct and deferred direct bursts coalesce to latest', async () => {
+test('pending random upgrades to direct and retains every caller in arrival order', async () => {
   const s = setup();
   try {
     await s.bot.receive(event('1'), self);
@@ -140,25 +140,47 @@ test('pending random is replaced by direct and deferred direct bursts coalesce t
     assert.equal(s.requests.length, 0, 'receive must defer model work');
     await until(() => s.requests.length === 1); await settled();
     assert.equal(s.requests.length, 1); assert.equal(request(s).trigger_kind, 'direct');
-    assert.equal(request(s).current_request.messageId, '3');
+    assert.equal(request(s).current_request, undefined);
+    assert.deepEqual(request(s).current_batch.messages.map((m:TimelineEntry)=>m.messageId), ['1','2','3']);
+    assert.deepEqual(request(s).trusted_direct_requests, [
+      {message_id:'2',user_id:'12345',trigger:'mention'},
+      {message_id:'3',user_id:'12345',trigger:'mention'},
+    ]);
   } finally { await s.bot.stop(); }
 });
 
-test('direct aborts running random model via signal and runs next without stale send', async () => {
-  let aborted = false; let rounds = 0;
-  const s = setup({ complete: async (_messages, _tools, signal) => {
-    if (++rounds > 1) return tool('stay_silent');
-    return new Promise<Completion>((_resolve, reject) => {
-      const abort = () => { aborted = true; reject(new Error('aborted')); };
-      if (signal!.aborted) abort(); else signal!.addEventListener('abort', abort, { once: true });
-    });
-  } });
+test('new direct requests preserve running random reply and form one next batch', async () => {
+  let release!:(value:Completion)=>void;let rounds=0;
+  const s=setup({complete:async()=>++rounds===1?new Promise<Completion>(resolve=>{release=resolve;}):tool('stay_silent')});
   try {
-    await s.bot.receive(event(), self); await until(() => s.requests.length === 1);
-    await s.bot.receive(event('2', true), self); await until(() => s.requests.length === 2);
-    assert.ok(aborted); assert.ok(s.requests[0]!.signal!.aborted);
-    assert.equal(request(s, 1).trigger_kind, 'direct'); assert.deepEqual(s.calls, []);
-  } finally { await s.bot.stop(); }
+    await s.bot.receive(event(),self);await until(()=>s.requests.length===1);
+    await s.bot.receive(event('2',true),self);
+    await s.bot.receive(event('3',true,{user_id:'67890'}),self);
+    await settled();assert.equal(s.requests.length,1);assert.equal(s.requests[0]!.signal!.aborted,false);
+    assert.deepEqual(request(s).current_batch.messages.map((m:TimelineEntry)=>m.messageId),['1']);
+    release(tool('send_message',{parts:[{text:'finish original random reply'}]}));
+    await until(()=>s.requests.length===2);await settled();
+    assert.equal(s.calls.filter(c=>c.action==='send_group_msg').length,1);
+    assert.equal(s.requests.length,2);assert.equal(request(s,1).trigger_kind,'direct');
+    assert.deepEqual(request(s,1).trusted_direct_requests.map((r:{message_id:string})=>r.message_id),['2','3']);
+    assert.deepEqual(request(s,1).current_batch.messages.map((m:TimelineEntry)=>m.messageId),['2','3']);
+  }finally{release?.(tool('stay_silent'));await s.bot.stop();}
+});
+
+test('ordinary messages collected while busy receive one random decision at turn end',async()=>{
+ for(const probability of [0,1]){
+  let release!:(value:Completion)=>void;let rounds=0;
+  const s=setup({config:{randomReplyProbability:probability},complete:async()=>++rounds===1?new Promise<Completion>(resolve=>{release=resolve;}):tool('stay_silent')});
+  try{
+   await s.bot.receive(event('1',true),self);await until(()=>s.requests.length===1);const before=s.draws;
+   for(let n=2;n<=51;n++)await s.bot.receive(event(String(n)),self);
+   assert.equal(s.draws,before,'collection must not sample each message');assert.equal(s.requests.length,1);
+   release(tool('stay_silent'));await until(()=>!(s.bot as any).running);await settled();
+   assert.equal(s.requests.length,1+probability);
+   assert.equal(s.draws,before+1+probability,'one participation draw plus one delay draw only when selected');
+   if(probability){assert.equal(request(s,1).trigger_kind,'random');assert.equal(request(s,1).current_batch.messages.length,50);assert.deepEqual(request(s,1).trusted_direct_requests,[]);}
+  }finally{release?.(tool('stay_silent'));await s.bot.stop();}
+ }
 });
 
 test('stale async reply lookup cannot admit random after a newer direct turn finishes', async () => {
