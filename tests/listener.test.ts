@@ -1,0 +1,99 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { setTimeout as delay } from 'node:timers/promises';
+import { Listener, normalizeEvent } from '../src/listener.js';
+import { loadListenerConfig, type ListenerConfig } from '../src/listener-config.js';
+import { LISTENER_GROUP, OWNER_ID, type Memory, type TimelineEntry, type Model, type Completion, type Api, type ChatMessage } from '../src/contracts.js';
+const self='900000001';
+class MockMemory implements Memory {
+  entries:TimelineEntry[]=[]; closed=false;
+  append(e:TimelineEntry){if(this.find(e.messageId))return false;this.entries.push(e);return true;}
+  recent(){return this.entries;}
+  find(id:string){return this.entries.find(e=>e.messageId===id);}
+  context(){return JSON.stringify(this.entries);}
+  async compact(){}
+  clear(){this.entries=[];}
+  close(){this.closed=true;}
+}
+const cfg:ListenerConfig={enabled:true,baseUrl:'https://example.com/v1',apiKey:'test',model:'test',timeoutMs:1000,maxTokens:128,debounceMs:5,cooldownMs:5,memoryPath:':memory:',maxContextChars:8000,retentionDays:7};
+function event(overrides:Record<string,unknown>={}) {return {post_type:'message',message_type:'group',group_id:LISTENER_GROUP,self_id:self,user_id:'12345',message_id:'1',time:Math.floor(Date.now()/1000),sender:{nickname:'someone'},message:[{type:'at',data:{qq:self}},{type:'text',data:{text:'你好'}}],...overrides};}
+function tool(name:string,args:unknown):Completion {return {content:null,tool_calls:[{id:'call1',type:'function',function:{name,arguments:JSON.stringify(args)}}]};}
+function setup(responses:Completion[]=[tool('send_message',{parts:[{text:'你好呀'}]})]){
+ const memory=new MockMemory(); const calls:{action:string;params:any}[]=[]; const requests:ChatMessage[][]=[]; const toolNames:string[][]=[];
+ const api:Api={async call(action,params){calls.push({action,params});if(action==='get_login_info')return {user_id:self}; if(action==='send_group_msg')return {message_id:String(100+calls.length)}; return {};}};
+ const model:Model={async complete(messages,tools){requests.push(messages);toolNames.push(tools?.map(t=>t.function.name)??[]);return responses.shift()??tool('stay_silent',{});}};
+ const bot=new Listener(api,model,memory,cfg);return {bot,memory,calls,requests,toolNames,api};
+}
+async function until(check:()=>boolean){for(let i=0;i<100;i++){if(check())return;await delay(10);}assert.fail('timed out');}
+test('hard single-group boundary excludes private, other group and wrong self before storage or API',async()=>{
+ const s=setup();try{
+ for(const overrides of [{group_id:'555'},{message_type:'private'},{self_id:'999'},{user_id:self},{time:1}])await s.bot.receive(event(overrides),self);
+ await delay(20);assert.equal(s.memory.entries.length,0);assert.equal(s.calls.length,0);assert.equal(s.requests.length,0);
+ }finally{await s.bot.stop();}
+});
+test('at trigger, tool-only reply and ordinary group timeline shared by participants',async()=>{
+ const s=setup();try{
+ await s.bot.receive(event({message_id:'0',message:[{type:'text',data:{text:'这是普通聊天'}}]}),self);
+ await s.bot.receive(event(),self);await until(()=>s.calls.some(c=>c.action==='send_group_msg'));
+ assert.equal(s.memory.entries[0]?.text,'这是普通聊天');assert.equal(s.calls[0]?.params.group_id,LISTENER_GROUP);
+ assert.equal(s.calls[0]?.params.message[0].data.text,'你好呀');assert.ok(!s.toolNames[0]?.includes('mute_member'));
+ }finally{await s.bot.stop();}
+});
+test('ordinary completion text never leaks as a QQ message',async()=>{
+ const s=setup([{content:'内部文本不发送',tool_calls:[]}]);try{await s.bot.receive(event(),self);await until(()=>s.requests.length===1);await delay(20);assert.equal(s.calls.length,0);}finally{await s.bot.stop();}
+});
+test('duplicate events do not produce two turns and only literal at self triggers',async()=>{
+ const s=setup([tool('stay_silent',{})]);try{
+ await s.bot.receive(event({message_id:'2',message:[{type:'text',data:{text:`[at:${self}]`}}]}),self);
+ await s.bot.receive(event(),self);await s.bot.receive(event(),self);await until(()=>s.requests.length===1);await delay(20);assert.equal(s.requests.length,1);
+ }finally{await s.bot.stop();}
+});
+test('reply to known bot triggers; replying to another member does not',async()=>{
+ const s=setup();try{
+ s.memory.append({messageId:'7',userId:self,nickname:'Listener',text:'hi',time:Math.floor(Date.now()/1000),bot:true});
+ s.memory.append({messageId:'8',userId:'12345',nickname:'user',text:'hi',time:Math.floor(Date.now()/1000)});
+ await s.bot.receive(event({message_id:'2',message:[{type:'reply',data:{id:'8'}},{type:'text',data:{text:'hello'}}]}),self);
+ await s.bot.receive(event({message:[{type:'reply',data:{id:'7'}},{type:'text',data:{text:'hello'}}]}),self);
+ await until(()=>s.calls.length>0);assert.equal(s.requests.length,1);
+ }finally{await s.bot.stop();}
+});
+test('unknown reply lookup must verify current group and actual sender',async()=>{
+ const s=setup();s.api.call=async(action)=>{if(action==='get_msg')return {message_type:'group',group_id:'other',message_id:'99',sender:{user_id:self}};throw new Error('unexpected');};
+ try{await s.bot.receive(event({message:[{type:'reply',data:{id:'99'}}]}),self);await delay(20);assert.equal(s.requests.length,0);}finally{await s.bot.stop();}
+});
+test('invalid message batch is rejected before any part is sent',async()=>{
+ for(const parts of [[{text:'safe'},{text:'bad',reply_to:'999'}],[{text:'ok',group_id:'999'}],[{text:'1'},{text:'2'},{text:'3'},{text:'4'}]]){
+ const s=setup([tool('send_message',{parts})]);try{await s.bot.receive(event(),self);await until(()=>s.requests.length>=1);await delay(20);assert.equal(s.calls.filter(c=>c.action==='send_group_msg').length,0);}finally{await s.bot.stop();}}
+});
+test('new group message invalidates in-flight generated reply',async()=>{
+ const s=setup();let release!:(v:Completion)=>void;let started=false;
+ const model:Model={complete:async()=>{started=true;return new Promise(r=>{release=r;});}};
+ const bot=new Listener(s.api,model,s.memory,cfg);
+ try{await bot.receive(event(),self);await until(()=>started);await bot.receive(event({message_id:'2',message:[{type:'text',data:{text:'话题变了'}}]}),self);release(tool('send_message',{parts:[{text:'old'}]}));bot.setConnected(false);await delay(30);assert.equal(s.calls.length,0);}finally{await bot.stop();await s.bot.stop();}
+});
+test('nonowner cannot clear memory; owner reset clears and no admin tools granted by nickname',async()=>{
+ const s=setup([tool('stay_silent',{})]);try{
+ await s.bot.receive(event({sender:{nickname:'時雨てる'}}),self);await until(()=>s.requests.length===1);assert.ok(!s.toolNames[0]?.includes('mute_member'));
+ await s.bot.receive(event({message_id:'2',message:[{type:'text',data:{text:'/reset'}}]}),self);assert.ok(s.memory.entries.length>0);
+ }finally{await s.bot.stop();}
+ const s2=setup();try{await s2.bot.receive(event({user_id:OWNER_ID,message:[{type:'text',data:{text:'/reset'}}]}),self);assert.equal(s2.memory.entries.filter(e=>!e.bot).length,0);}finally{await s2.bot.stop();}
+});
+test('AI disabled still only answers commands in the one group',async()=>{
+ const calls:string[]=[];const api:Api={async call(action){calls.push(action);return {};}};
+ const bot=new Listener(api,undefined,undefined,{...cfg,enabled:false});try{
+ await bot.receive(event({message_type:'private',message:[{type:'text',data:{text:'/ping'}}]}),self);assert.equal(calls.length,0);
+ await bot.receive(event({message:[{type:'text',data:{text:'/ping'}}]}),self);assert.deepEqual(calls,['send_group_msg']);
+ }finally{await bot.stop();}
+});
+test('AI config defaults disabled and requires explicit valid credentials to enable',()=>{
+ assert.equal(loadListenerConfig({}).enabled,false);
+ assert.throws(()=>loadListenerConfig({AI_ENABLED:'true'}));
+ assert.throws(()=>loadListenerConfig({OPENAI_BASE_URL:'http://example.com/v1'}));
+ assert.throws(()=>loadListenerConfig({AI_ENABLED:'maybe'}));
+ assert.throws(()=>loadListenerConfig({AI_CONTEXT_CHARS:'1'}));
+ assert.equal(loadListenerConfig({AI_ENABLED:'true',OPENAI_API_KEY:'test',OPENAI_MODEL:'test',OPENAI_BASE_URL:'http://127.0.0.1:9000/v1'}).enabled,true);
+});
+test('event normalization preserves provenance and never dereferences media URLs',()=>{
+ const e=normalizeEvent(event({message:[{type:'reply',data:{id:'-1'}},{type:'image',data:{url:'http://secret'}}]}),self)!;
+ assert.equal(e.replyTo,'-1');assert.ok(!e.text.includes('http'));assert.equal(e.userId,'12345');
+});
