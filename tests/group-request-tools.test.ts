@@ -260,7 +260,9 @@ test("response rechecks pending identity and current role, passing exact non-mod
     false,
     "literal https://site/path [CQ:at,qq=1]",
   );
-  assert.equal(r.status, "unknown");
+  assert.equal(r.status, "ok");
+  assert.equal(r.submitted, true);
+  assert.equal(r.effect_confirmed, false);
   assert.equal(r.retry_allowed, false);
   assert.deepEqual(f.writes, [
     {
@@ -323,7 +325,7 @@ test("role and identity are refreshed after the potentially slow pending query",
     assert.equal(f.writes.length, 0);
   }
 });
-test("native null result zero errors and late cancel all stay unknown without retries", async () => {
+test("native null is submitted including late cancel, while invalid shape and errors remain unknown without retries", async () => {
   for (const mode of ["null", "zero", "error", "cancel"]) {
     const controller = new AbortController();
     let dispatched = 0;
@@ -339,20 +341,31 @@ test("native null result zero errors and late cancel all stay unknown without re
     });
     const token = await handle(f);
     const result = await respond(f, token, true, "", controller.signal);
-    assert.equal(result.status, "unknown");
+    const accepted = mode === "null" || mode === "cancel";
+    assert.equal(result.status, accepted ? "ok" : "unknown");
+    if (accepted) {
+      assert.equal(result.submitted, true);
+      assert.equal(result.effect_confirmed, false);
+    }
+    if (mode === "cancel") assert.equal(result.cancelled_after_dispatch, true);
     assert.equal(result.retry_allowed, false);
     assert.doesNotMatch(JSON.stringify(result), /SECRET|URL/);
     assert.equal(
       (await respond(f, token, false, "deny")).error,
-      "previous_result_unknown",
+      accepted ? "request_already_submitted" : "previous_result_unknown",
     );
     f.tools.resetWake();
-    assert.equal((await respond(f, token)).error, "previous_result_unknown");
+    const again = await respond(f, token);
+    if (accepted) {
+      assert.equal(again.submitted, true);
+      assert.equal(again.cached, true);
+      assert.equal(again.dispatched, false);
+    } else assert.equal(again.error, "previous_result_unknown");
     assert.equal(dispatched, 1);
   }
 });
 test("unknown locks survive handle expiry reset and replacement handle across wakes", async () => {
-  const f = setup();
+  const f = setup({ write: { malformed: true } });
   const old = await handle(f);
   await respond(f, old);
   f.tools.reset();
@@ -366,6 +379,41 @@ test("unknown locks survive handle expiry reset and replacement handle across wa
     "unknown",
   );
 });
+test("submitted outcomes survive replacement handles and reset without blocking independent requests", async () => {
+  const f = setup();
+  const old = await handle(f);
+  const sent = await respond(f, old);
+  assert.equal(sent.submitted, true);
+  f.tools.reset();
+  const fresh = await handle(f);
+  assert.notEqual(fresh, old);
+  assert.equal((await respond(f, fresh)).cached, true);
+  assert.equal(
+    (await respond(f, fresh, false, "deny")).error,
+    "request_already_submitted",
+  );
+  assert.equal(
+    ((await listing(f)).items as JsonObject[])[0]!.previous_outcome,
+    "submitted",
+  );
+  f.setRole("member");
+  assert.equal((await respond(f, fresh)).error, "permission_denied");
+  f.setRole("admin");
+  f.setRows([req({ request_id: 6789 })]);
+  const independent = await handle(f);
+  assert.equal((await respond(f, independent)).submitted, true);
+  assert.equal(f.writes.length, 2);
+  assert.doesNotMatch(JSON.stringify(sent), /1780000000000001/);
+  f.setRows([req({ invitor_uin: 999 })]);
+  const changed = await handle(f);
+  assert.equal((await respond(f, changed)).error, "request_identity_changed");
+  assert.equal(
+    ((await listing(f)).items as JsonObject[])[0]!.previous_outcome,
+    "identity_conflict",
+  );
+  assert.equal(f.writes.length, 2);
+});
+
 test("TTL expiry and cross-instance/cross-bot handles are rejected", async () => {
   const f = setup();
   const token = await handle(f);
@@ -471,8 +519,8 @@ test("concurrent decisions serialize and dispatch once even with opposite approv
     respond(f, token, true, ""),
     respond(f, token, false, "deny"),
   ]);
-  assert.equal(results[0]!.status, "unknown");
-  assert.equal(results[1]!.error, "previous_result_unknown");
+  assert.equal(results[0]!.submitted, true);
+  assert.equal(results[1]!.error, "request_already_submitted");
   assert.equal(f.writes.length, 1);
 });
 test("handle capacity stops issuance explicitly rather than evicting live capabilities", async () => {
@@ -521,22 +569,34 @@ test("bounded account prefix never claims global completeness or silently increa
     { count: 1000 },
   );
 });
-test("unknown lock capacity survives repeated reset and fails closed without eviction", async () => {
-  const f = setup();
+test("submitted and unknown records share capacity across reset without unsafe eviction", async () => {
+  let dispatch = 0;
+  const f = setup({
+    hook: (a) =>
+      a === "set_group_add_request"
+        ? dispatch++ % 2
+          ? { malformed: true }
+          : null
+        : undefined,
+  });
   for (let i = 0; i < 4096; i++) {
     f.tools.reset();
     f.setRows([req({ request_id: 1000 + i })]);
     const token = await handle(f);
-    assert.equal((await respond(f, token)).status, "unknown");
+    assert.equal((await respond(f, token)).status, i % 2 ? "unknown" : "ok");
   }
   f.tools.reset();
   f.setRows([req({ request_id: 99999 })]);
   const extra = await handle(f);
   assert.equal((await respond(f, extra)).error, "outcome_lock_capacity");
-  assert.equal(f.writes.length, 4096);
+  assert.equal(dispatch, 4096);
   f.tools.reset();
-  f.setRows([req({ request_id: 1000 })]);
+  f.setRows([req({ request_id: 1001 })]);
   const first = await handle(f);
   assert.equal((await respond(f, first)).error, "previous_result_unknown");
-  assert.equal(f.writes.length, 4096);
+  f.tools.reset();
+  f.setRows([req({ request_id: 1000 })]);
+  const accepted = await handle(f);
+  assert.equal((await respond(f, accepted)).cached, true);
+  assert.equal(dispatch, 4096);
 });

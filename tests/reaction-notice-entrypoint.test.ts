@@ -71,7 +71,7 @@ test('real entrypoint receives wire reaction notices and refreshes the bot messa
   const wsPort=(ws.address() as AddressInfo).port,httpPort=(http.address() as AddressInfo).port;
   mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'Isolated fake reaction-notice integration test.');
   writeFileSync(join(dir,'.env'),'FIXTURE_TOKEN=fixture-token\nFIXTURE_KEY=fixture-key\n',{mode:0o600});
-  writeFileSync(join(dir,'config.toml'),`[onebot]\nurl="ws://127.0.0.1:${wsPort}"\ntoken_env="FIXTURE_TOKEN"\n[ai]\nenabled=true\nbase_url="http://127.0.0.1:${httpPort}/v1"\nmodel="fixture-notice-model"\napi_key_env="FIXTURE_KEY"\ntimeout_ms=10000\n[reply]\ndelay_ms=[100,100]\ncooldown_ms=1000\nrandom_probability=0\n[tools]\nreactions=true\n[attention]\nenabled=true\n[logging]\nlevel="debug"\nconsole=true\nfile=false\n[groups."${GROUP}"]\n[groups."${OTHER}"]\n`);
+  writeFileSync(join(dir,'config.toml'),`[bot]\nowner_id="778899"\n[onebot]\nurl="ws://127.0.0.1:${wsPort}"\ntoken_env="FIXTURE_TOKEN"\n[ai]\nenabled=true\nbase_url="http://127.0.0.1:${httpPort}/v1"\nmodel="fixture-notice-model"\napi_key_env="FIXTURE_KEY"\ntimeout_ms=10000\n[reply]\ndelay_ms=[100,100]\ncooldown_ms=1000\nrandom_probability=0\n[tools]\nreactions=true\n[attention]\nenabled=true\n[logging]\nlevel="debug"\nconsole=true\nfile=false\n[groups."${GROUP}"]\n[groups."${OTHER}"]\n`);
   child=spawn(process.execPath,['--import',import.meta.resolve('tsx'),fileURLToPath(new URL('../src/index.ts',import.meta.url))],{cwd:dir,env:{PATH:process.env.PATH??'',HOME:dir,NODE_NO_WARNINGS:'1'},stdio:['ignore','pipe','pipe']});
   exit=new Promise((resolve,reject)=>{child!.once('error',error=>{fail(error);reject(error);});child!.once('close',(code,signal)=>{resolve({code,signal});notify();});});void exit.catch(()=>{});
   for(const stream of [child.stdout!,child.stderr!])stream.on('data',chunk=>{output=(output+chunk.toString()).slice(-128*1024);notify();});
@@ -92,7 +92,7 @@ test('real entrypoint receives wire reaction notices and refreshes the bot messa
   assert.equal(payloads[3].group_id,GROUP);assert.equal(wakeNumber,4);
   assert.equal(calls.filter(c=>c.action==='send_group_msg').length,1);assert.equal(calls.filter(c=>c.action==='set_msg_emoji_like').length,0);
   assert.equal(child.kill('SIGTERM'),true);assert.deepEqual(await bounded(exit),{code:0,signal:null});assert.ok(output.includes('app.stopped'));
-  const db=new DatabaseSync(join(dir,'data/listener.sqlite'),{readOnly:true});try{const rows=db.prepare('SELECT entry FROM listener_messages').all().map(row=>JSON.parse(row.entry as string));assert.equal(rows.length,5,'notices never create chat-memory rows');assert.equal(rows.filter(row=>row.bot).length,1);}finally{db.close();}
+  const db=new DatabaseSync(join(dir,`data/groups/${GROUP}/listener.sqlite`),{readOnly:true});try{const rows=db.prepare('SELECT entry FROM listener_messages').all().map(row=>JSON.parse(row.entry as string));assert.equal(rows.length,5,'notices never create chat-memory rows');assert.equal(rows.filter(row=>row.bot).length,1);}finally{db.close();}
  }finally{
   if(child&&child.exitCode===null&&child.signalCode===null){child.kill('SIGTERM');try{if(exit)await bounded(exit);}catch{child.kill('SIGKILL');if(exit)await bounded(exit).catch(()=>{});}}
   for(const peer of peers)peer.terminate();for(const socket of sockets)socket.destroy();

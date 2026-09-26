@@ -16,6 +16,7 @@ const groupId = "123456",
   actorId = "444",
   target = "555";
 const ctx: TurnContext = { groupId, selfId, actorId, messageId: "1" };
+function submitted(value:JsonObject){assert.equal(value.status,'ok');assert.equal(value.submitted,true);assert.equal(value.effect_confirmed,false);assert.equal(value.delivery_confirmed,false);assert.equal(value.error,undefined);assert.equal(value.retry_allowed,false);}
 const entry = (
   messageId = "1",
   userId = target,
@@ -238,7 +239,7 @@ test("role checks use actual QQ authority without owner-account immunity", async
         ctx,
       )
     ).status,
-    "unknown",
+    "ok",
   );
   assert.equal(owner.writes.length, 1);
   assert.deepEqual(owner.writes[0], {
@@ -259,7 +260,7 @@ test("role checks use actual QQ authority without owner-account immunity", async
   const poke = setup({ botRole: "member", targetRole: "owner" });
   assert.equal(
     (await poke.tools.execute("poke_member", { user_id: target }, ctx)).status,
-    "unknown",
+    "ok",
   );
   assert.equal(poke.writes.length, 1);
 });
@@ -320,7 +321,6 @@ test("verified null ACKs execute with explicit native fields and literal text pr
 });
 test("packet-only and discarded native results never become fake confirmations", async () => {
   for (const [name, args, action] of [
-    ["poke_member", { user_id: target }, "group_poke"],
     ["group_sign", {}, "set_group_sign"],
     [
       "set_group_title",
@@ -337,13 +337,10 @@ test("packet-only and discarded native results never become fake confirmations",
   ] as const) {
     const f = setup();
     const result = await f.tools.execute(name, args, ctx);
-    assert.equal(result.status, "unknown");
-    assert.equal(result.retry_allowed, false);
+    submitted(result);
     assert.equal(f.writes[0]?.action, action);
-    assert.equal(
-      (await f.tools.execute(name, args, ctx)).error,
-      "previous_result_unknown",
-    );
+    const cached=await f.tools.execute(name,args,ctx);
+    submitted(cached);assert.equal(cached.cached,true);
     assert.equal(f.writes.length, 1);
     if (name === "leave_group")
       assert.equal(f.writes[0]!.params.is_dismiss, false);
@@ -355,7 +352,7 @@ test("packet-only and discarded native results never become fake confirmations",
       });
   }
 });
-test("unverified native results including synthetic result zero never confirm or permit retry", async () => {
+test("Any results only prove submission while malformed void remains uncertain, and neither replays",  async () => {
   for (const [name, args] of [
     ["set_group_essence", { message_id: "1" }],
     ["remove_group_essence", { message_id: "1" }],
@@ -375,13 +372,12 @@ test("unverified native results including synthetic result zero never confirm or
     ]) {
       const f = setup({ write: value });
       const result = await f.tools.execute(name, args, ctx);
-      assert.equal(result.status, "unknown");
+      const normal=value!==undefined&&(name!=='delete_group_notice'||value===null);
+      if(normal)submitted(result);else assert.equal(result.status,'unknown');
       assert.equal(result.retry_allowed, false);
       assert.doesNotMatch(JSON.stringify(result), /PRIVATE|SECRET|URL/);
-      assert.equal(
-        (await f.tools.execute(name, args, ctx)).error,
-        "previous_result_unknown",
-      );
+      const again=await f.tools.execute(name,args,ctx);
+      if(normal){submitted(again);assert.equal(again.cached,true);}else assert.equal(again.error,'previous_result_unknown');
       assert.equal(f.writes.length, 1);
       if (name !== "delete_group_notice") {
         const reverse =
@@ -390,7 +386,7 @@ test("unverified native results including synthetic result zero never confirm or
             : "set_group_essence";
         assert.equal(
           (await f.tools.execute(reverse, args, ctx)).error,
-          "previous_result_unknown",
+          normal?'previous_submission_pending':'previous_result_unknown',
         );
         assert.equal(f.writes.length, 1);
       }
@@ -448,7 +444,7 @@ test("essence only authorizes live local messages and verified direct references
         ctx,
       )
     ).status,
-    "unknown",
+    "ok",
   );
   assert.deepEqual(quote.writes[0], {
     action: "delete_essence_msg",
@@ -503,7 +499,7 @@ test("essence only authorizes live local messages and verified direct references
   assert.equal(
     (await live.tools.execute("set_group_essence", { message_id: "1" }, ctx))
       .status,
-    "unknown",
+    "ok",
   );
 });
 test("notice removal proves current group list membership and rejects guessed IDs", async () => {
@@ -569,8 +565,8 @@ test("confirmed latest calls deduplicate while reverse changes invalidate stale 
   await mute.tools.execute("set_group_whole_mute", { enable: true }, ctx);
   assert.equal(mute.writes.length, 3);
 });
-test("unknown locks target across related tools but does not invent confirmation", async () => {
-  const f = setup();
+test("uncertain family blocks reversal without freezing unrelated member operations", async () => {
+  const f = setup({write:undefined});
   await f.tools.execute("set_group_essence", { message_id: "1" }, ctx);
   assert.equal(
     (await f.tools.execute("remove_group_essence", { message_id: "1" }, ctx))
@@ -578,8 +574,8 @@ test("unknown locks target across related tools but does not invent confirmation
     "previous_result_unknown",
   );
   assert.equal(f.writes.length, 1);
-  const member = setup();
-  await member.tools.execute("poke_member", { user_id: target }, ctx);
+  const member = setup({write:undefined});
+  await member.tools.execute("set_group_title", { user_id: target, title: "t" }, ctx);
   assert.equal(
     (
       await member.tools.execute(
@@ -588,9 +584,11 @@ test("unknown locks target across related tools but does not invent confirmation
         ctx,
       )
     ).error,
-    "previous_result_unknown",
+    "action_result_unknown",
   );
-  assert.equal(member.writes.length, 1);
+  assert.equal(member.writes.length, 2);
+  assert.equal((await member.tools.execute('set_group_title',{user_id:target,title:'other'},ctx)).error,'previous_result_unknown');
+  assert.equal(member.writes.length,2);
 });
 test("cancellation before and during reads prevents dispatch; late write ACK is not reported as unexecuted", async () => {
   const early = new AbortController();
@@ -630,19 +628,19 @@ test("cancellation before and during reads prevents dispatch; late write ACK is 
   const uncertain = new AbortController();
   const unknown = setup({
     hook: (action) => {
-      if (action === "group_poke") uncertain.abort();
+      if (action === "set_group_sign") uncertain.abort();
     },
   });
   assert.equal(
     (
       await unknown.tools.execute(
-        "poke_member",
-        { user_id: target },
+        "group_sign",
+        {},
         ctx,
         uncertain.signal,
       )
     ).status,
-    "unknown",
+    "ok",
   );
 });
 test("unverified deletion remains unknown and locked even after notice disappears", async () => {
@@ -710,7 +708,7 @@ test("cached checked acknowledgements still recheck current login and bot permis
     assert.equal(f.writes.length, 1);
   }
 });
-test("late cancellation never turns an unverified native result into success or retry permission", async () => {
+test("late cancellation preserves normal submission but cannot invent business ACK or retry permission",  async () => {
   for (const [name, args, native] of [
     ["set_group_essence", { message_id: "1" }, "set_essence_msg"],
     ["remove_group_essence", { message_id: "1" }, "delete_essence_msg"],
@@ -724,12 +722,11 @@ test("late cancellation never turns an unverified native result into success or 
       },
     });
     const result = await f.tools.execute(name, args, ctx, controller.signal);
-    assert.equal(result.status, "unknown");
+    if(name!=='delete_group_notice')submitted(result);else assert.equal(result.status,'unknown');
+    assert.equal(result.cancelled_after_dispatch,true);
     assert.equal(result.retry_allowed, false);
-    assert.equal(
-      (await f.tools.execute(name, args, ctx)).error,
-      "previous_result_unknown",
-    );
+    const again=await f.tools.execute(name,args,ctx);
+    if(name!=='delete_group_notice'){submitted(again);assert.equal(again.cached,true);}else assert.equal(again.error,'previous_result_unknown');
     assert.equal(f.writes.length, 1);
   }
 });

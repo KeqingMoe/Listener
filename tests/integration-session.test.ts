@@ -69,14 +69,14 @@ test('live attention metadata survives session rotation and remains absent from 
   const state=JSON.parse(String(requests[2]!.find(m=>m.tool_call_id==='state')!.content));
   assert.equal(state.attention_state.active_plans.length,1);assert.equal(state.attention_state.active_plans[0].plan_id,planResult.plan_id);
   assert.equal(state.attention_state.active_plans[0].purpose,'wait for different member');assert.deepEqual(state.attention_state.active_plans[0].any_of,[{type:'member_message',user_ids:['99988']}]);
-  assert.equal(state.reaction_state.recent.length,1);assert.equal(state.reaction_state.recent[0].message_id,'1');assert.equal(state.reaction_state.recent[0].status,'ok');assert.equal(state.group_id,LISTENER_GROUP);assert.doesNotMatch(JSON.stringify(state),/BODY_PRIVATE/);
+  assert.equal(state.reaction_state.recent.length,1);assert.equal(state.reaction_state.recent[0].message_id,'1');assert.equal(state.reaction_state.recent[0].status,'ok');assert.equal(state.reaction_state.recent[0].submitted,true);assert.equal(state.reaction_state.recent[0].effect_confirmed,false);assert.equal(state.reaction_state.last_turn.confirmed,0);assert.equal(state.reaction_state.last_turn.submitted,1);assert.equal(state.group_id,LISTENER_GROUP);assert.doesNotMatch(JSON.stringify(state),/BODY_PRIVATE/);
  }finally{await listener.stop();}
 });
 
 test('late valid send ACK remains a world fact without resuming cancelled execution',async()=>{
  const session=new ModelSession({path:':memory:',groupId:LISTENER_GROUP}),world=new WorldEventStore({path:':memory:',groupId:LISTENER_GROUP});let rounds=0,writes=0;let listener:Listener;
  listener=new Listener({async call(action){assert.equal(action,'send_group_msg');writes++;assert.equal(session.summarizeTools({since:0,until:Date.now()}).started,1);listener.setConnected(false);return {message_id:'777'};}},{async complete(){rounds++;return completion(call('send','send_message',{segments:[{type:'text',text:'confirmed late delivery'}]}),call('finish','finish'));}},memory(),config,()=>0,undefined,undefined,{session,world});
- try{await listener.receive(event('1','trigger'),self);await settled(session,()=>rounds===1);assert.equal(writes,1);assert.equal(world.findMessage('777')?.text,'confirmed late delivery');assert.equal(session.summarizeTools({since:0,until:Date.now()}).pending,0);assert.equal(JSON.parse(String(session.messages().find(m=>m.tool_call_id==='send')!.content)).status,'unknown');}
+ try{await listener.receive(event('1','trigger'),self);await settled(session,()=>rounds===1);assert.equal(writes,1);assert.equal(world.findMessage('777')?.text,'confirmed late delivery');assert.equal(session.summarizeTools({since:0,until:Date.now()}).pending,0);const result=JSON.parse(String(session.messages().find(m=>m.tool_call_id==='send')!.content));assert.equal(result.status,'ok');assert.equal(result.effect_confirmed,true);assert.equal(result.cancelled_after_dispatch,true);}
  finally{await listener.stop();}
 });
 

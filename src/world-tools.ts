@@ -88,8 +88,8 @@ function runtimeState(source:unknown):JsonObject {
       out.triggered=list(raw.triggered,64,item=>project(item,['plan_id','reason','purpose']));
       if(object(raw.last_commit))out.last_commit={...project(raw.last_commit,['status','error']),...Object.fromEntries(['applied','skipped','rejected_operations'].map(k=>[k,list((raw.last_commit as JsonObject)[k],64,item=>typeof item==='string'?item.slice(0,160):project(item,['plan_id','reason','error']))]))};
     }else{
-      out.recent=list(raw.recent,128,item=>project(item,['message_id','emoji_id','action','status','at','error']));
-      if(object(raw.last_turn))out.last_turn={...project(raw.last_turn,['at','outcome','confirmed','unknown','rejected']),errors:list(raw.last_turn.errors,32,item=>typeof item==='string'?item.slice(0,160):'invalid')};
+      out.recent=list(raw.recent,128,item=>project(item,['message_id','emoji_id','action','status','at','error','submitted','effect_confirmed']));
+      if(object(raw.last_turn))out.last_turn={...project(raw.last_turn,['at','outcome','confirmed','submitted','unknown','rejected']),errors:list(raw.last_turn.errors,32,item=>typeof item==='string'?item.slice(0,160):'invalid')};
     }
     let omitted=0;
     for(const key of name==='attention_state'?['active_plans','triggered']:['recent']){

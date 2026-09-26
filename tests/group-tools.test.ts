@@ -143,6 +143,9 @@ test('member list pagination, filtering and redaction use native fixed-group API
   const first = await tools.execute('get_group_members', { limit: 20 }, context);
   assert.equal((first.members as unknown[]).length, 20);
   assert.equal(first.total, 55);
+  assert.equal(first.source, 'provider_member_cache');
+  assert.equal(first.freshness, 'not_guaranteed');
+  assert.equal(first.total_scope, 'provider_snapshot');
   assert.equal(first.has_more, true);
   const page = await tools.execute('get_group_members', { search: 'BLUE', offset: 2, limit: 3 }, context);
   assert.equal(page.total, 28);

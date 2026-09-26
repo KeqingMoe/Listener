@@ -6,6 +6,7 @@ import {
   type ToolDefinition,
   type TurnContext,
 } from "./contracts.js";
+import { afterDispatch, submittedResult, writeFailure } from './operation-result.js';
 
 // Pinned NapCat v4.18.28 contracts:
 // packages/napcat-onebot/action/system/GetSystemMsg.ts: join_requests = type 7,
@@ -97,6 +98,7 @@ export class GroupRequestTools {
   private readonly enabled: ReadonlySet<string>;
   private readonly handles = new Map<string, Handle>();
   private readonly uncertain = new Set<string>();
+  private readonly submitted = new Map<string, { intent: string; applicant: string; result: JsonObject }>();
   private epoch = 0;
   private serial: Promise<void> = Promise.resolve();
   constructor(
@@ -137,7 +139,7 @@ export class GroupRequestTools {
         function: {
           name: "respond_group_request",
           description:
-            "处理通过list_group_requests获得的本群申请handle；approve和reason都必填，同意时reason必须为空串，拒绝理由原样发送且最多512 UTF-8字节。重新核验本群申请仍待处理、申请人、Bot身份与管理员权限。立即执行，不隐式确认；上游无可信ACK，派发后结果为unknown，禁止重试或反向操作，该申请在后续唤醒仍锁定。",
+            "处理通过list_group_requests获得的本群申请handle；approve和reason都必填，同意时reason必须为空串，拒绝理由原样发送且最多512 UTF-8字节。重新核验本群申请仍待处理、申请人、Bot身份与管理员权限。依本群配置直接执行或等待主人确认；正常返回表示申请处理请求已提交，不代表已观察到成员加入，禁止重复或反向处理同一申请。异常导致结果未知时同样不自动重试，其他独立申请不受影响。",
           parameters: schema(
             {
               request_handle: { type: "string", pattern: "^grq_[0-9a-f]{48}$" },
@@ -151,6 +153,25 @@ export class GroupRequestTools {
     ];
     return list.filter((t) => this.enabled.has(t.function.name));
   }
+  private validate(name: string, value: unknown, context: TurnContext, generation: number, signal?: AbortSignal): {args: JsonObject; self: string} {
+    this.check(generation, signal);
+    if (!NAMES.has(name) || !this.enabled.has(name)) fail("tool_disabled");
+    if (!record(context) || context.groupId !== this.groupId) fail("forbidden_group");
+    if (typeof context.selfId !== "string" || id(context.selfId) !== context.selfId) fail("invalid_identity");
+    return {args: this.parse(name, value), self: context.selfId};
+  }
+  /** Read-only current-request proof for an owner confirmation; flags never leave this class. */
+  async confirmationDetails(name: string, value: unknown, context: TurnContext, signal?: AbortSignal): Promise<string> {
+    const generation = this.epoch;
+    try {
+      const {args, self} = this.validate(name, value, context, generation, signal);
+      if (name !== "respond_group_request") fail("invalid_arguments");
+      const {current} = await this.verifiedRequest(args, self, generation, signal);
+      return JSON.stringify({群号: this.groupId, 操作: args.approve ? "同意入群申请" : "拒绝入群申请", 申请人QQ: current.applicant, 拒绝理由: args.reason});
+    } catch (error) {
+      fail(this.error(error, signal).error as string);
+    }
+  }
   async execute(
     name: string,
     value: unknown,
@@ -160,17 +181,7 @@ export class GroupRequestTools {
     const generation = this.epoch;
     let args: JsonObject, self: string;
     try {
-      this.check(generation, signal);
-      if (!NAMES.has(name) || !this.enabled.has(name)) fail("tool_disabled");
-      if (!record(context) || context.groupId !== this.groupId)
-        fail("forbidden_group");
-      if (
-        typeof context.selfId !== "string" ||
-        id(context.selfId) !== context.selfId
-      )
-        fail("invalid_identity");
-      self = context.selfId;
-      args = this.parse(name, value);
+      ({args, self} = this.validate(name, value, context, generation, signal));
     } catch (error) {
       return this.error(error, signal);
     }
@@ -240,6 +251,7 @@ export class GroupRequestTools {
         : error instanceof Denied
           ? error.code
           : "verification_failed",
+      ...(error instanceof Denied && error.code === 'request_already_submitted' ? {previous_submitted:true,dispatched:false} : {}),
     };
   }
   private async read(
@@ -409,6 +421,7 @@ export class GroupRequestTools {
       )
         item.content_truncated = true;
       if (this.uncertain.has(row.key)) item.previous_outcome = "unknown";
+      else if (this.submitted.has(row.key)) item.previous_outcome = this.submitted.get(row.key)!.applicant === row.applicant ? 'submitted' : 'identity_conflict';
       const size = Buffer.byteLength(JSON.stringify(item)) + 150;
       if (bytes + size > OUTPUT_LIMIT - 2000) {
         reason = "output_limit";
@@ -455,17 +468,18 @@ export class GroupRequestTools {
       fail("resource_limit");
     return result;
   }
-  private async respond(
+  private async verifiedRequest(
     args: JsonObject,
     self: string,
     generation: number,
     signal?: AbortSignal,
-  ): Promise<JsonObject> {
+  ): Promise<{handle: Handle; current: Pending}> {
     const handle = this.handles.get(args.request_handle as string);
     if (!handle || handle.expires <= Date.now() || handle.self !== self)
       fail("invalid_request_handle");
     if (this.uncertain.has(handle.key)) fail("previous_result_unknown");
-    if (this.uncertain.size >= CAPACITY) fail("outcome_lock_capacity");
+    if (this.submitted.has(handle.key)) fail('request_already_submitted');
+    if (this.uncertain.size + this.submitted.size >= CAPACITY) fail("outcome_lock_capacity");
     await this.authorize(self, generation, signal);
     const rows = await this.pending(self, generation, signal);
     const current = rows.find(
@@ -484,23 +498,44 @@ export class GroupRequestTools {
     )
       fail("invalid_request_handle");
     this.check(generation, signal);
-    this.uncertain.add(handle.key); // Reserved before external effects, survives reset.
+    if (this.uncertain.has(handle.key)) fail("previous_result_unknown");
+    if (this.submitted.has(handle.key)) fail('request_already_submitted');
+    return {handle, current};
+  }
+  private async respond(args: JsonObject, self: string, generation: number, signal?: AbortSignal): Promise<JsonObject> {
+    const token = this.handles.get(args.request_handle as string);
+    const intent = createHash('sha256').update(JSON.stringify([args.approve,args.reason])).digest('hex');
+    if (token && token.self === self && token.expires > Date.now()) {
+      const prior = this.submitted.get(token.key);
+      if (prior) {
+        await this.authorize(self,generation,signal);
+        this.check(generation,signal);
+        if (this.handles.get(args.request_handle as string) !== token || token.expires <= Date.now()) fail('invalid_request_handle');
+        if (prior.applicant !== token.applicant) return {status:'error',error:'request_identity_changed',previous_submitted:true,dispatched:false};
+        return prior.intent === intent
+          ? {...structuredClone(prior.result),cached:true,dispatched:false}
+          : {status:'error',error:'request_already_submitted',previous_submitted:true,dispatched:false};
+      }
+    }
+    const {handle} = await this.verifiedRequest(args, self, generation, signal);
+    this.uncertain.add(handle.key); // Reserve before external effects, including reset races.
+    let result: JsonObject;
     try {
-      await this.api.call("set_group_add_request", {
+      const value = await this.api.call("set_group_add_request", {
         flag: handle.flag,
         approve: args.approve,
         reason: args.reason,
         count: SOURCE_LIMIT,
       });
-    } catch {
-      /* An exception after dispatch cannot prove non-execution. */
-    }
-    return {
-      status: "unknown",
-      action: "respond_group_request",
-      group_id: this.groupId,
-      retry_allowed: false,
-      ...(signal?.aborted ? { cancelled_after_dispatch: true } : {}),
-    };
+      result = value === null
+        ? submittedResult({action:'respond_group_request',group_id:this.groupId})
+        : {status:'unknown',error:'operation_result_unknown',effect_unknown:true,retry_allowed:false};
+    } catch (error) { result = writeFailure(error,'operation_result_unknown'); }
+    result = afterDispatch(result, !!signal?.aborted || generation !== this.epoch);
+    if (result.status === 'ok') {
+      this.uncertain.delete(handle.key);
+      this.submitted.set(handle.key,{intent,applicant:handle.applicant,result:structuredClone(result)});
+    } else if (result.dispatched === false) this.uncertain.delete(handle.key);
+    return result;
   }
 }

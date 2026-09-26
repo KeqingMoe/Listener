@@ -8,7 +8,8 @@ import {ConfigError,loadAppConfig} from '../src/config-loader.js';
 function fixture(t:{after(fn:()=>void):void},source=''){
  const dir=mkdtempSync(join(tmpdir(),'listener-reactions-config-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
  mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'fixture persona');
- const config=(text:string)=>writeFileSync(join(dir,'config.toml'),text);config(source);
+ // Preserve explicit bot inputs; other fixtures use a synthetic global owner.
+ const config=(text:string)=>writeFileSync(join(dir,'config.toml'),/^\s*\[bot\]/m.test(text)?text:text+'\n[bot]\nowner_id="778899"\n');config(source);
  const load=()=>loadAppConfig({configPath:join(dir,'config.toml'),env:{ONEBOT_ACCESS_TOKEN:'fixture-token',OPENAI_API_KEY:'fixture-key'}});
  return {config,load};
 }

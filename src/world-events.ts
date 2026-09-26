@@ -270,10 +270,12 @@ export class WorldEventStore {
       this.db.exec('COMMIT'); return page;
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
-  findMessage(messageId: string): MessageView | undefined {
+  findMessage(messageId: string, highWater?: number): MessageView | undefined {
     this.ensureOpen(); if (!text(messageId)) return undefined;
-    const row = this.db.prepare('SELECT entry FROM world_messages WHERE message_id=?').get(messageId);
-    return row ? this.messageView(JSON.parse(row.entry as string) as TimelineEntry, this.latestSequence()) : undefined;
+    const watermark = highWater ?? this.latestSequence();
+    if (!Number.isSafeInteger(watermark) || watermark < 0) throw new Error('Invalid high water');
+    const row = this.db.prepare('SELECT entry FROM world_messages WHERE message_id=? AND sequence<=?').get(messageId, watermark);
+    return row ? this.messageView(JSON.parse(row.entry as string) as TimelineEntry, watermark) : undefined;
   }
   /** Internal convenience view with the same 24KB output resource boundary as readMessages. */
   recentMessages(limit: number): MessageView[] { return this.readMessages({ limit, direction: 'backward' }).messages.reverse(); }

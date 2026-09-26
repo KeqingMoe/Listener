@@ -366,10 +366,10 @@ test("all native records validate before exposing even a small first page", asyn
 test("send verifies currently available character and passes only plain text native payload", async () => {
   const f = fixture();
   const r = await f.tools.execute("send_group_ai_voice", sendArgs, ctx);
-  assert.equal(r.status, "unknown");
-  assert.equal(r.outcome, "accepted_unverified");
+  assert.equal(r.status, "ok");
+  assert.equal(r.submitted,true);assert.equal(r.effect_confirmed,false);assert.equal(r.delivery_confirmed,false);
   assert.equal(r.message_id, null);
-  assert.equal(r.error, "voice_delivery_unverified");
+  assert.equal(r.error, undefined);
   assert.deepEqual(
     f.calls.map((c) => c.action),
     [
@@ -389,12 +389,13 @@ test("send verifies currently available character and passes only plain text nat
     /CQ:|example\.com|PRIVATE_PREVIEW|voice_0/,
   );
   const again = await f.tools.execute("send_group_ai_voice", sendArgs, ctx);
-  assert.equal(again.cached, true);
-  assert.equal(again.status, "unknown");
-  assert.equal(f.writes().length, 1);
+  assert.equal(again.cached, undefined);
+  assert.equal(again.status, "ok");
+  assert.equal(again.submitted,true);
+  assert.equal(f.writes().length, 2);
   assert.equal(
     f.calls.filter((c) => c.action === "get_ai_characters").length,
-    1,
+    2,
   );
   assert.equal(f.calls.filter((c) => c.action === "get_login_info").length, 2);
 });
@@ -454,7 +455,7 @@ test("send never trusts any fabricated positive ACK and locks exceptions and mal
   await throwing.tools.execute("send_group_ai_voice", sendArgs, ctx);
   assert.equal(throwing.writes().length, 1);
 });
-test("cancellation before dispatch prevents send; late return is permanently unknown", async () => {
+test("cancellation before dispatch prevents send; late normal return preserves submission",  async () => {
   const before = new AbortController();
   const f = fixture({
     voices: () => {
@@ -481,13 +482,13 @@ test("cancellation before dispatch prevents send; late return is permanently unk
     ctx,
     after.signal,
   );
-  assert.equal(r.status, "unknown");
-  assert.equal(r.outcome, undefined);
+  assert.equal(r.status, "ok");
+  assert.equal(r.submitted,true);assert.equal(r.cancelled_after_dispatch,true);assert.equal(r.message_id,null);
   assert.equal(
-    (await late.tools.execute("send_group_ai_voice", sendArgs, ctx)).cached,
+    (await late.tools.execute("send_group_ai_voice", sendArgs, ctx)).submitted,
     true,
   );
-  assert.equal(late.writes().length, 1);
+  assert.equal(late.writes().length, 2);
 });
 test("read exceptions are static and a rejected read does not lock future corrected attempts", async () => {
   let error = true;
@@ -505,11 +506,11 @@ test("read exceptions are static and a rejected read does not lock future correc
   error = false;
   assert.equal(
     (await f.tools.execute("send_group_ai_voice", sendArgs, ctx)).status,
-    "unknown",
+    "ok",
   );
   assert.equal(f.writes().length, 1);
 });
-test("concurrent same-argument dispatches share the unknown lock; instances remain isolated", async () => {
+test("concurrent explicit voice calls each submit after a normal predecessor; instances stay isolated",   async () => {
   const hold = gate(),
     started = gate();
   const f = fixture({
@@ -524,9 +525,11 @@ test("concurrent same-argument dispatches share the unknown lock; instances rema
   const b = f.tools.execute("send_group_ai_voice", sendArgs, ctx);
   hold.release();
   const results = await Promise.all([a, b]);
-  assert.equal(results[0]!.status, "unknown");
-  assert.equal(results[1]!.cached, true);
-  assert.equal(f.writes().length, 1);
+  assert.equal(results[0]!.status, "ok");
+  assert.equal(results[0]!.submitted,true);
+  assert.equal(results[1]!.cached, undefined);
+  assert.equal(results[1]!.submitted,true);
+  assert.equal(f.writes().length, 2);
   const other = fixture();
   await other.tools.execute("send_group_ai_voice", sendArgs, ctx);
   assert.equal(other.writes().length, 1);
@@ -542,7 +545,7 @@ test("UTF8 text resource boundary permits 8192 bytes without changing literal te
         ctx,
       )
     ).status,
-    "unknown",
+    "ok",
   );
   assert.equal(f.writes()[0]!.params!.text, text);
 });

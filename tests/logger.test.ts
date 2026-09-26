@@ -64,7 +64,8 @@ test('unconfigured logging is no-op and sanitization is strict at every level', 
 test('autonomous moderation and explicit unmute tool names remain observable without sensitive arguments',()=>{
  const tools=['mute_member','unmute_member','recall_message','set_member_card'];
  for(const tool of tools)assert.deepEqual(sanitizeLogFields({tool,action:tool,tools,body:'private',card:'private',code:'private',args:{user_id:'123'}}),{tool,action:tool,tools});
- assert.deepEqual(sanitizeLogFields({tool:'kick_member',tools:['unmute_member','publish_announcement']}),{tools:['unmute_member']});
+ assert.deepEqual(sanitizeLogFields({tool:'kick_member',tools:['unmute_member','publish_announcement']}),{tool:'kick_member',tools:['unmute_member']});
+ assert.deepEqual(sanitizeLogFields({tool:'invented_tool',tools:['invented_tool'],args:{secret:'private'}}),{tools:[]});
 });
 
 test('context propagates through async work without leaking between turns', async t => {

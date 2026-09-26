@@ -304,7 +304,7 @@ test(
       );
       writeFileSync(
         join(dir, "config.toml"),
-        `[onebot]\nurl="ws://127.0.0.1:${(ws.address() as AddressInfo).port}"\ntoken_env="FIXTURE_TOKEN"\n[ai]\nenabled=true\nbase_url="http://127.0.0.1:${(http.address() as AddressInfo).port}/v1"\nmodel="fixture-world-notices"\napi_key_env="FIXTURE_KEY"\ntimeout_ms=10000\n[reply]\ndelay_ms=[100,100]\ncooldown_ms=1000\nrandom_probability=0\n[logging]\nlevel="debug"\nconsole=true\nfile=false\n[groups."${GROUP}"]\n[groups."${OTHER}"]\n[groups."${DISABLED}"]\nenabled=false\n`,
+        `[bot]\nowner_id="778899"\n[onebot]\nurl="ws://127.0.0.1:${(ws.address() as AddressInfo).port}"\ntoken_env="FIXTURE_TOKEN"\n[ai]\nenabled=true\nbase_url="http://127.0.0.1:${(http.address() as AddressInfo).port}/v1"\nmodel="fixture-world-notices"\napi_key_env="FIXTURE_KEY"\ntimeout_ms=10000\n[reply]\ndelay_ms=[100,100]\ncooldown_ms=1000\nrandom_probability=0\n[logging]\nlevel="debug"\nconsole=true\nfile=false\n[groups."${GROUP}"]\n[groups."${OTHER}"]\n[groups."${DISABLED}"]\nenabled=false\n`,
       );
       child = spawn(
         process.execPath,
@@ -375,7 +375,7 @@ test(
       );
       assert.equal(modelCalls, 0);
       assert.deepEqual(calls, ["get_login_info"]);
-      const ownPath = join(dir, "data/listener.sqlite.events.sqlite"),
+      const ownPath = join(dir, `data/groups/${GROUP}/listener.sqlite.events.sqlite`),
         otherPath = join(
           dir,
           `data/groups/${OTHER}/listener.sqlite.events.sqlite`,
@@ -392,7 +392,7 @@ test(
       );
       assert.equal(events(otherPath).length, 1);
       assert.equal(existsSync(join(dir, `data/groups/${DISABLED}`)), false);
-      const memory = new DatabaseSync(join(dir, "data/listener.sqlite"), {
+      const memory = new DatabaseSync(join(dir, `data/groups/${GROUP}/listener.sqlite`), {
         readOnly: true,
       });
       try {

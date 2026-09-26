@@ -135,9 +135,19 @@ test('all numeric bounds are strict, finite and integers except probability', t 
 
 test('delay array shape, bounds, types and ordering; reconnect ordering', t => {
   const f = fixture(t);
-  for (const value of ['[]', '[1000]', '[1000,2000,3000]', '[3000,1000]', '[99,3000]', '[5001,6000]', '[1000,10001]', '[1000,99]', '[1000,"3000"]', '[1000,inf]', '[1000,2000.5]', '"1000,3000"']) {
+  for (const value of ['[]', '[1000]', '[1000,2000,3000]', '[3000,1000]', '[-1,3000]', '[5001,6000]', '[1000,10001]', '[1000,99]', '[1000,"3000"]', '[1000,inf]', '[1000,2000.5]', '"1000,3000"']) {
     f.config(`[reply]\ndelay_ms=${value}`);
     assert.throws(() => f.load(), ConfigError, value);
+  }
+  for(const [min,max] of [[0,0],[0,99],[99,100]]){
+    f.config(`[bot]\nowner_id="${OWNER_ID}"\n[reply]\ndelay_ms=[${min},${max}]\n[groups."22"]`);
+    const c=f.load();assert.equal(c.listener.debounceMs,min);assert.equal(c.listener.delayMaxMs,max);
+    assert.equal(c.groups[0]!.debounceMs,min);assert.equal(c.groups[0]!.delayMaxMs,max);
+    f.config(`[bot]\nowner_id="${OWNER_ID}"\n[reply]\ndelay_ms=[1000,2000]\n[groups."22".reply]\ndelay_ms=[${min},${max}]`);
+    const group=f.load().groups[0]!;assert.equal(group.debounceMs,min);assert.equal(group.delayMaxMs,max);
+  }
+  for(const value of ['[-1,0]','[0,-1]','[0,0.5]','[1,0]']){
+    f.config(`[groups."22".reply]\ndelay_ms=${value}`);assert.throws(()=>f.load(),ConfigError);
   }
   f.config('[reply]\ndelay_ms=[100,100]');
   assert.equal(f.load().listener.debounceMs, 100);
@@ -147,18 +157,39 @@ test('delay array shape, bounds, types and ordering; reconnect ordering', t => {
   assert.throws(() => f.load(), ConfigError);
 });
 
-test('owner identity stays fixed and removed bot group_id is always rejected', t => {
+test('global owner is a strict canonical local ID and the explicit value is the sole administrator', t => {
   const f = fixture(t);
-  for (const value of ['"123"', OWNER_ID, 'true', '["123"]']) {
+  assert.equal(f.load().listener.ownerId,OWNER_ID);
+  for (const id of ['123','9'.repeat(32)]) {
+    f.config(`[bot]\nowner_id="${id}"\n[groups."22"]\n[groups."33"]`);
+    const c=f.load();assert.equal(c.listener.ownerId,id);assert.deepEqual(c.groups.map(g=>g.ownerId),[id,id]);
+    assert.deepEqual([...c.onebot.adminUsers],[id]);assert.ok(!c.onebot.adminUsers.has(OWNER_ID));
+  }
+  for (const value of [OWNER_ID,'true','["123"]','""','"0"','"01"','" 9"','"9 "','"9\\n"','"-9"','"+9"','"1.0"',`"${'1'.repeat(33)}"`]) {
     f.config(`[bot]\nowner_id=${value}`);assert.throws(() => f.load(), ConfigError);
   }
-  f.config(`[bot]\nowner_id="${OWNER_ID}"`);f.load();
+  f.config(`[bot]\nowner_id="${OWNER_ID}"`);assert.equal(f.load().listener.ownerId,OWNER_ID);
+});
+
+test('an enabled group requires an explicit local owner even when AI is disabled',t=>{
+  const f=fixture(t);
+  for(const ai of ['','[ai]\nenabled=false\n','[ai]\nenabled=true\nmodel="fixture"\n']){
+    f.config(`${ai}[groups."22"]`);
+    assert.throws(()=>f.load({ONEBOT_ACCESS_TOKEN:'token',OPENAI_API_KEY:'key'}),e=>e instanceof ConfigError&&e.message.includes('owner_id'));
+  }
+  for(const source of ['','[groups]','[groups."22"]\nenabled=false']){
+    f.config(source);assert.deepEqual(f.load().groups,[]);assert.equal(f.load().listener.ownerId,OWNER_ID);
+  }
+});
+
+test('removed bot group_id is always rejected', t => {
+  const f = fixture(t);
   for (const value of [`"${LISTENER_GROUP}"`,'"9"',LISTENER_GROUP,'true','["123"]','"0"','"01"','" 9"','"9\\n"','"-9"',`"${'1'.repeat(33)}"`]) {
     for (const groups of ['',`\n[groups."${LISTENER_GROUP}"]\nenabled=true`]) {
       f.config(`[bot]\ngroup_id=${value}${groups}`);assert.throws(() => f.load(), ConfigError);
     }
   }
-  f.config('[groups."9"]');assert.deepEqual([...f.load().onebot.allowedGroups],['9']);
+  f.config(`[bot]\nowner_id="${OWNER_ID}"\n[groups."9"]`);assert.deepEqual([...f.load().onebot.allowedGroups],['9']);
 });
 
 test('booleans and text are not coerced', t => {

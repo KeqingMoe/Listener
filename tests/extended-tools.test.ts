@@ -1,0 +1,702 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { ToolRegistry } from "../src/tool-registry.js";
+import { loadAppConfig } from "../src/config-loader.js";
+import {
+  createExtendedTools,
+  buildExtendedToolDefinitions,
+} from "../src/extended-tools.js";
+import {
+  EXTENDED_TOOL_NAMES,
+  enabledExtendedTools,
+  type ExtendedToolsConfig,
+} from "../src/extended-tool-config.js";
+import { GROUP_ACTION_TOOL_NAMES } from "../src/group-action-tools.js";
+import { GROUP_OBSERVATION_TOOL_NAMES } from "../src/group-observation-tools.js";
+import { Listener, buildToolDefinitions } from "../src/listener.js";
+import { ModelSession } from "../src/model-session.js";
+import { WorldEventStore } from "../src/world-events.js";
+import type { ListenerConfig } from "../src/listener-config.js";
+import {
+  LISTENER_GROUP,
+  type Api,
+  type ChatMessage,
+  type Completion,
+  type JsonObject,
+  type Memory,
+  type TimelineEntry,
+  type ToolDefinition,
+  type TurnContext,
+} from "../src/contracts.js";
+
+const self = "900000001",
+  actor = "12345",
+  groupId = LISTENER_GROUP;
+const context: TurnContext = {
+  groupId,
+  selfId: self,
+  actorId: actor,
+  messageId: "1",
+};
+const base: ListenerConfig = {
+  enabled: true,
+  baseUrl: "https://fixture.invalid/v1",
+  apiKey: "fixture-key",
+  model: "fixture",
+  timeoutMs: 1000,
+  maxTokens: 128,
+  debounceMs: 1,
+  cooldownMs: 1,
+  memoryPath: ":memory:",
+  maxContextChars: 8000,
+  retentionDays: 7,
+  randomReplyProbability: 0,
+};
+const call = (id: string, name: string, args: unknown = {}) => ({
+  id,
+  type: "function" as const,
+  function: { name, arguments: JSON.stringify(args) },
+});
+const completion = (...calls: Completion["tool_calls"]): Completion => ({
+  content: null,
+  tool_calls: calls,
+});
+function memory(): Memory {
+  const rows: TimelineEntry[] = [];
+  return {
+    recent: () => rows,
+    find: (id) => rows.find((r) => r.messageId === id),
+    append(row) {
+      rows.push(row);
+      return true;
+    },
+    context: () => "",
+    async compact() {
+      throw new Error("Unexpected legacy compaction");
+    },
+    clear() {
+      rows.length = 0;
+    },
+    close() {},
+  };
+}
+function config(extended?: ExtendedToolsConfig): ListenerConfig {
+  return {
+    ...base,
+    tools: {
+      members: false,
+      mention: false,
+      reactions: false,
+      extended,
+      moderation: {
+        mute: "off",
+        unmute: "off",
+        recall: "off",
+        memberCard: "off",
+        confirmationTtlSeconds: 60,
+        maxMuteSeconds: 600,
+      },
+    },
+  };
+}
+const definition = (name: string): ToolDefinition => ({
+  type: "function",
+  function: {
+    name,
+    description: "fixture",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {},
+      required: [],
+    },
+  },
+});
+function event() {
+  return {
+    post_type: "message",
+    message_type: "group",
+    group_id: groupId,
+    self_id: self,
+    user_id: actor,
+    message_id: "1",
+    time: Math.floor(Date.now() / 1000),
+    sender: { nickname: "fixture" },
+    message: [
+      { type: "at", data: { qq: self } },
+      { type: "text", data: { text: "PRIVATE_TRIGGER" } },
+    ],
+  };
+}
+function result(messages: ChatMessage[], id: string): JsonObject {
+  const item = messages.find((m) => m.tool_call_id === id);
+  assert.ok(item, `missing result ${id}`);
+  return JSON.parse(String(item.content)) as JsonObject;
+}
+
+async function fixture(options: {
+  extended?: ExtendedToolsConfig;
+  budget?: number;
+  respond: (
+    messages: ChatMessage[],
+    round: number,
+  ) => Completion | Promise<Completion>;
+  apiHook?: (
+    action: string,
+    params: JsonObject,
+    listener: Listener,
+  ) => unknown | Promise<unknown>;
+}) {
+  const dir = mkdtempSync(join(tmpdir(), "extended-integration-"));
+  const session = new ModelSession({
+      path: join(dir, "session.sqlite"),
+      groupId,
+    }),
+    world = new WorldEventStore({ path: join(dir, "world.sqlite"), groupId });
+  const native: Array<{ action: string; params: JsonObject }> = [],
+    requests: ChatMessage[][] = [],
+    failures: unknown[] = [];
+  let listener: Listener;
+  const api: Api = {
+    async call(action, params = {}) {
+      native.push({ action, params });
+      if (options.apiHook) {
+        const value = await options.apiHook(action, params, listener);
+        if (value !== undefined) return value;
+      }
+      if (action === "get_login_info") return { user_id: self };
+      if (action === "get_group_member_info")
+        return {
+          group_id: groupId,
+          user_id: params.user_id,
+          role: params.user_id === self ? "owner" : "member",
+        };
+      if (action === "get_group_info")
+        return {
+          group_id: groupId,
+          group_name: "Fixture group",
+          member_count: 5,
+          max_member_count: 200,
+        };
+      if (action === "send_group_msg") return { message_id: "9001" };
+      if (
+        [
+          "group_poke",
+          "set_group_name",
+          "set_group_whole_ban",
+          "set_group_sign",
+        ].includes(action)
+      )
+        return null;
+      throw new Error("Unexpected API " + action);
+    },
+  };
+  listener = new Listener(
+    api,
+    {
+      async complete(messages) {
+        requests.push(structuredClone(messages));
+        try {
+          return await options.respond(messages, requests.length);
+        } catch (error) {
+          failures.push(error);
+          throw error;
+        }
+      },
+    },
+    memory(),
+    {
+      ...config(options.extended),
+      ...(options.budget ? { maxToolCallsPerWake: options.budget } : {}),
+    },
+    () => 0,
+    undefined,
+    undefined,
+    { session, world, modelRequestId: () => `request-${requests.length}` },
+  );
+  return {
+    listener,
+    session,
+    world,
+    native,
+    requests,
+    async run() {
+      await listener.receive(event(), self);
+      for (let i = 0; i < 400; i++) {
+        if (requests.length && !session.state().wakeId) {
+          if (failures.length) throw failures[0];
+          return;
+        }
+        await delay(5);
+      }
+      assert.fail("extended fixture did not settle");
+    },
+    async close() {
+      await listener.stop();
+      rmSync(dir, { recursive: true, force: true });
+    },
+  };
+}
+
+test("registry definitions and dispatch share an immutable unique registration", async () => {
+  const registry = new ToolRegistry(),
+    d = definition("read_fixture");
+  let executions = 0;
+  registry.register({
+    definition: d,
+    sideEffect: false,
+    async execute() {
+      executions++;
+      return { status: "ok" };
+    },
+  });
+  d.function.name = "mutated";
+  registry.definitions()[0]!.function.parameters.required = ["mutated"];
+  assert.equal(registry.has("read_fixture"), true);
+  assert.equal(registry.has("mutated"), false);
+  assert.deepEqual(registry.definitions()[0]!.function.parameters.required, []);
+  assert.throws(
+    () =>
+      registry.register({
+        definition: definition("read_fixture"),
+        sideEffect: true,
+        async execute() {
+          return {};
+        },
+      }),
+    /duplicate/,
+  );
+  assert.throws(() =>
+    registry.register({
+      definition: definition("../invalid"),
+      sideEffect: false,
+      async execute() {
+        return {};
+      },
+    }),
+  );
+  assert.equal(
+    (await registry.execute("missing", {}, context)).error,
+    "tool_disabled",
+  );
+  assert.equal(executions, 0);
+  assert.equal(
+    (await registry.execute("read_fixture", {}, context)).status,
+    "ok",
+  );
+  assert.equal(executions, 1);
+});
+
+test("registry sanitizes thrown read and write failures, checks early cancellation, preserves late ACK", async () => {
+  const registry = new ToolRegistry();
+  let calls = 0;
+  for (const sideEffect of [false, true])
+    registry.register({
+      definition: definition(sideEffect ? "write_fixture" : "read_fixture"),
+      sideEffect,
+      async execute() {
+        calls++;
+        throw new Error("SECRET_PRIVATE_ERROR_URL");
+      },
+    });
+  assert.deepEqual(await registry.execute("read_fixture", {}, context), {
+    status: "error",
+    error: "tool_failed",
+  });
+  assert.deepEqual(await registry.execute("write_fixture", {}, context), {
+    status: "unknown",
+    error: "tool_result_unknown",
+  });
+  const aborted = new AbortController();
+  aborted.abort();
+  assert.deepEqual(
+    await registry.execute("write_fixture", {}, context, aborted.signal),
+    { status: "error", error: "cancelled" },
+  );
+  assert.equal(calls, 2);
+  const late = new AbortController();
+  registry.register({
+    definition: definition("late_ack"),
+    sideEffect: true,
+    async execute() {
+      late.abort();
+      return { status: "executed" };
+    },
+  });
+  assert.deepEqual(
+    await registry.execute("late_ack", {}, context, late.signal),
+    { status: "executed" },
+  );
+});
+
+test("extended capabilities default off and raw model calls cannot bypass absent registration", async () => {
+  let native = 0;
+  const api: Api = {
+    async call() {
+      native++;
+      throw new Error("must not call native");
+    },
+  };
+  assert.deepEqual(enabledExtendedTools(), []);
+  assert.deepEqual(buildExtendedToolDefinitions(groupId), []);
+  for (const setting of [
+    undefined,
+    Object.fromEntries(
+      EXTENDED_TOOL_NAMES.map((name) => [name, "off"]),
+    ) as ExtendedToolsConfig,
+  ]) {
+    const registry = createExtendedTools(api, memory(), groupId, setting);
+    assert.deepEqual(registry.definitions(), []);
+    for (const name of EXTENDED_TOOL_NAMES) {
+      assert.equal(registry.has(name), false);
+      assert.equal(
+        (await registry.execute(name, {}, context)).error,
+        "tool_disabled",
+      );
+    }
+    assert.equal(
+      buildToolDefinitions(config(setting), true).some((d) =>
+        (EXTENDED_TOOL_NAMES as readonly string[]).includes(d.function.name),
+      ),
+      false,
+    );
+  }
+  assert.equal(native, 0);
+});
+
+test("loaded TOML is the source of per-group registration without capability leakage", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "extended-config-registry-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "prompts"));
+  writeFileSync(join(dir, "prompts/listener.md"), "Fixture persona");
+  const path = join(dir, "config.toml");
+  writeFileSync(
+    path,
+    '[bot]\nowner_id="778899"\n[groups."111".tools.extended]\nget_group_info="direct"\n[groups."222".tools.extended]\nget_group_info="off"\n',
+  );
+  const loaded = loadAppConfig({
+    configPath: path,
+    env: { ONEBOT_ACCESS_TOKEN: "fixture" },
+  });
+  assert.deepEqual(enabledExtendedTools(loaded.listener.tools?.extended), []);
+  let calls = 0;
+  const api: Api = {
+    async call() {
+      calls++;
+      throw new Error("unexpected API");
+    },
+  };
+  for (const group of loaded.groups) {
+    const registry = createExtendedTools(
+      api,
+      memory(),
+      group.groupId!,
+      group.tools?.extended,
+    );
+    assert.deepEqual(
+      registry.definitions().map((d) => d.function.name),
+      group.groupId === "111" ? ["get_group_info"] : [],
+    );
+    assert.deepEqual(
+      buildToolDefinitions(group, true).filter((d) =>
+        (EXTENDED_TOOL_NAMES as readonly string[]).includes(d.function.name),
+      ),
+      registry.definitions(),
+    );
+    if (group.groupId === "222")
+      assert.equal(
+        (
+          await registry.execute(
+            "get_group_info",
+            {},
+            { ...context, groupId: "222" },
+          )
+        ).error,
+        "tool_disabled",
+      );
+  }
+  assert.equal(calls, 0);
+});
+
+test("each explicit capability appears identically in schema generation Listener and runtime lookup", async () => {
+  let native = 0;
+  const api: Api = {
+    async call() {
+      native++;
+      throw new Error("must not call native");
+    },
+  };
+  for (const name of EXTENDED_TOOL_NAMES) {
+    const setting: ExtendedToolsConfig = { [name]: "direct" },
+      registry = createExtendedTools(api, memory(), groupId, setting),
+      defs = registry.definitions();
+    assert.deepEqual(
+      defs.map((d) => d.function.name),
+      [name],
+    );
+    assert.equal(registry.has(name), true);
+    assert.deepEqual(buildExtendedToolDefinitions(groupId, setting), defs);
+    const listenerDefs = buildToolDefinitions(config(setting), true).filter(
+      (d) =>
+        (EXTENDED_TOOL_NAMES as readonly string[]).includes(d.function.name),
+    );
+    assert.deepEqual(listenerDefs, defs);
+    if ((GROUP_ACTION_TOOL_NAMES as readonly string[]).includes(name))
+      assert.equal(registry.isSideEffect(name), true);
+    if ((GROUP_OBSERVATION_TOOL_NAMES as readonly string[]).includes(name))
+      assert.equal(registry.isSideEffect(name), false);
+    assert.notEqual(
+      (await registry.execute(name, { unexpected: true }, context)).error,
+      "tool_disabled",
+    );
+  }
+  assert.equal(native, 0);
+});
+
+test("Listener rejects raw disabled names and checkpoints the result without native API calls", async () => {
+  const f = await fixture({
+    respond: () =>
+      completion(
+        call("disabled", "set_group_name", { name: "must not apply" }),
+        call("done", "finish"),
+      ),
+  });
+  try {
+    await f.run();
+    assert.equal(f.native.length, 0);
+    assert.equal(
+      result(f.session.messages(), "disabled").error,
+      "tool_disabled",
+    );
+    assert.equal(result(f.session.messages(), "done").status, "ok");
+    assert.equal(
+      f.session.summarizeTools({ since: 0, until: Date.now() }).pending,
+      0,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test("readonly extension can complete with send and finish without creating a management review gate", async () => {
+  const f = await fixture({
+    extended: { get_group_info: "direct" },
+    respond: () =>
+      completion(
+        call("info", "get_group_info"),
+        call("send", "send_message", {
+          segments: [{ type: "text", text: "reply after read" }],
+        }),
+        call("done", "finish"),
+      ),
+  });
+  try {
+    await f.run();
+    assert.equal(f.requests.length, 1);
+    assert.equal(result(f.session.messages(), "info").status, "ok");
+    assert.equal(result(f.session.messages(), "send").status, "ok");
+    assert.equal(
+      f.native.filter((c) => c.action === "send_group_msg").length,
+      1,
+    );
+    assert.equal(
+      f.session.summarizeTools({ since: 0, until: Date.now() }).pending,
+      0,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test("readonly native failure stays sanitized and does not impose the write review gate", async () => {
+  const f = await fixture({
+    extended: { get_group_info: "direct" },
+    apiHook: (action) => {
+      if (action === "get_group_info")
+        throw new Error("SECRET_PRIVATE_NATIVE_ERROR");
+    },
+    respond: () =>
+      completion(
+        call("failed-read", "get_group_info"),
+        call("send", "send_message", {
+          segments: [{ type: "text", text: "read was unavailable" }],
+        }),
+        call("done", "finish"),
+      ),
+  });
+  try {
+    await f.run();
+    const value = result(f.session.messages(), "failed-read");
+    assert.equal(value.status, "error");
+    assert.doesNotMatch(JSON.stringify(value), /SECRET|PRIVATE|NATIVE/);
+    assert.equal(result(f.session.messages(), "send").status, "ok");
+    assert.equal(
+      f.native.filter((c) => c.action === "send_group_msg").length,
+      1,
+    );
+    assert.equal(
+      f.session.summarizeTools({ since: 0, until: Date.now() }).unknown,
+      0,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+for(const budget of [96,5])test(`explicit ten pokes remain independent submissions under shared budget ${budget}`,async()=>{
+ const f=await fixture({extended:{poke_member:'direct'},budget,respond:(messages,round)=>{
+  if(round===1)return completion(...Array.from({length:10},(_,i)=>call(`poke${i}`,'poke_member',{user_id:actor})));
+  assert.equal(budget,96);assert.equal(round,2);
+  for(let i=0;i<10;i++){const r=result(messages,`poke${i}`);assert.equal(r.status,'ok');assert.equal(r.submitted,true);assert.equal(r.delivery_confirmed,false);assert.equal(r.cached,undefined);}
+  return completion(call('done','finish'));
+ }});
+ try{await f.run();assert.equal(f.native.filter(c=>c.action==='group_poke').length,Math.min(10,budget));assert.equal(f.session.summarizeTools({since:0,until:Date.now()}).pending,0);}finally{await f.close();}
+});
+
+test("unknown write blocks prewritten send in same response, permits reviewed send in next model round", async () => {
+  const f = await fixture({
+    extended: { poke_member: "direct" },
+    apiHook: action => { if(action==='group_poke')throw new Error('synthetic transport failure'); },
+    respond: (messages, round) => {
+      if (round === 1) {
+        assert.doesNotMatch(JSON.stringify(messages), /PRIVATE_TRIGGER/);
+        return completion(
+          call("poke", "poke_member", { user_id: actor }),
+          call("prewritten", "send_message", {
+            segments: [{ type: "text", text: "MUST_NOT_SEND" }],
+          }),
+        );
+      }
+      assert.equal(round, 2);
+      assert.equal(result(messages, "poke").status, "unknown");
+      assert.equal(
+        result(messages, "prewritten").error,
+        "management_result_review_required",
+      );
+      return completion(
+        call("reviewed", "send_message", {
+          segments: [{ type: "text", text: "result remains uncertain" }],
+        }),
+        call("done", "finish"),
+      );
+    },
+  });
+  try {
+    await f.run();
+    assert.equal(f.requests.length, 2);
+    assert.equal(f.native.filter((c) => c.action === "group_poke").length, 1);
+    const sent = f.native.filter((c) => c.action === "send_group_msg");
+    assert.equal(sent.length, 1);
+    assert.doesNotMatch(JSON.stringify(sent), /MUST_NOT_SEND/);
+    assert.match(JSON.stringify(sent), /result remains uncertain/);
+    const summary = f.session.summarizeTools({ since: 0, until: Date.now() });
+    assert.equal(summary.pending, 0);
+    assert.equal(summary.unknown, 1);
+  } finally {
+    await f.close();
+  }
+});
+
+test("finish terminates before trailing enabled write and read extensions", async () => {
+  const f = await fixture({
+    extended: { set_group_name: "direct", get_group_info: "direct" },
+    respond: () =>
+      completion(
+        call("done", "finish"),
+        call("trailing-write", "set_group_name", { name: "never" }),
+        call("trailing-read", "get_group_info"),
+      ),
+  });
+  try {
+    await f.run();
+    assert.equal(f.native.length, 0);
+    assert.equal(
+      result(f.session.messages(), "trailing-write").status,
+      "skipped",
+    );
+    assert.equal(
+      result(f.session.messages(), "trailing-read").status,
+      "skipped",
+    );
+    assert.equal(
+      f.session.summarizeTools({ since: 0, until: Date.now() }).pending,
+      0,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test("extended tools consume the shared wake budget, not one allowance per native call", async () => {
+  const f = await fixture({
+    extended: { get_group_info: "direct", set_group_name: "direct" },
+    budget: 1,
+    respond: () =>
+      completion(
+        call("info", "get_group_info"),
+        call("tail", "set_group_name", { name: "never" }),
+        call("done", "finish"),
+      ),
+  });
+  try {
+    await f.run();
+    assert.equal(f.requests.length, 1);
+    assert.deepEqual(
+      f.native.map((c) => c.action),
+      ["get_login_info", "get_group_info"],
+    );
+    assert.equal(result(f.session.messages(), "info").status, "ok");
+    assert.equal(result(f.session.messages(), "tail").status, "skipped");
+    assert.equal(result(f.session.messages(), "done").status, "skipped");
+    assert.equal(
+      f.session.summarizeTools({ since: 0, until: Date.now() }).pending,
+      0,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test("cancelled wake retains late confirmed extension ACK and resolves trailing ledger entries", async () => {
+  const f = await fixture({
+    extended: { set_group_name: "direct" },
+    apiHook: (action, _params, listener) => {
+      if (action === "set_group_name") listener.setConnected(false);
+    },
+    respond: () =>
+      completion(
+        call("rename", "set_group_name", { name: "changed" }),
+        call("tail", "send_message", {
+          segments: [{ type: "text", text: "never" }],
+        }),
+        call("done", "finish"),
+      ),
+  });
+  try {
+    await f.run();
+    assert.equal(
+      f.native.filter((c) => c.action === "set_group_name").length,
+      1,
+    );
+    assert.equal(
+      f.native.filter((c) => c.action === "send_group_msg").length,
+      0,
+    );
+    assert.equal(result(f.session.messages(), "rename").status, "executed");
+    assert.equal(
+      result(f.session.messages(), "rename").cancelled_after_dispatch,
+      true,
+    );
+    assert.equal(result(f.session.messages(), "tail").status, "skipped");
+    assert.equal(
+      f.session.summarizeTools({ since: 0, until: Date.now() }).pending,
+      0,
+    );
+  } finally {
+    await f.close();
+  }
+});

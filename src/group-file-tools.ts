@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { resolveGroupId, type Api, type JsonObject, type ToolDefinition, type TurnContext } from './contracts.js';
 import { downloadGroupText, type GroupTextDownloader } from './group-file-download.js';
+import { afterDispatch, submittedResult, writeFailure } from './operation-result.js';
 
 export const GROUP_FILE_TOOL_NAMES = ['get_group_file_space', 'list_group_files', 'read_group_text_file', 'upload_group_text_file', 'create_group_folder', 'delete_group_file', 'delete_group_folder'] as const;
 export type GroupFileToolName = typeof GROUP_FILE_TOOL_NAMES[number];
@@ -32,18 +33,18 @@ function fields(v: unknown, allowed: string[], required: string[] = []): asserts
   if (Reflect.ownKeys(descriptors).some(key => typeof key !== 'string' || !allowed.includes(key) || !Object.hasOwn(descriptors[key]!, 'value')) || required.some(key => !Object.hasOwn(descriptors, key))) fail();
 }
 function filename(v: unknown): string { if (typeof v !== 'string' || !v.trim() || v !== v.trim() || v.length > 120 || /[\\/:\x00-\x1f\x7f]/.test(v) || v === '.' || v === '..' || v.startsWith('.') || v.endsWith('.')) fail(); return v; }
-interface Resource { kind: 'file' | 'folder'; rawId: string; parent?: string; uploader?: string; name: string; size?: number; expires: number }
-interface Listed { kind: 'file' | 'folder'; rawId: string; uploader?: string; view: JsonObject }
+interface Resource { kind: 'file' | 'folder'; rawId: string; parent?: string; uploader?: string; name: string; nameFingerprint: string; size?: number; uploadedAt?: number; expires: number }
+interface Listed { kind: 'file' | 'folder'; rawId: string; uploader?: string; nameFingerprint: string; view: JsonObject }
 export interface GroupFileToolsOptions { downloader?: GroupTextDownloader }
 interface MutationPlan { action: string; params: JsonObject; resource?: Resource; token?: unknown; lockKeys: string[]; parentKey: string; resourceKey?: string; deletesFolder: boolean }
-interface TargetLock { state: 'pending' | 'unknown' | 'deleted'; parentKey: string }
+interface TargetLock { state: 'pending' | 'submitted' | 'unknown' | 'deleted'; parentKey: string }
 export class GroupFileTools {
   private readonly groupId: string;
   private readonly enabled: Set<string>;
   private readonly handles = new Map<string, Resource>();
   private readonly writes = new Map<string, Promise<JsonObject>>();
-  // Resource locks use provider identities, never revocable/mintable local aliases.
-  // Unknown results survive wake boundaries until an explicit reset.
+  // Original provider tokens pin execution; conservative metadata keys only reject
+  // duplicate aliases. Submitted and unknown outcomes survive wakes, not explicit reset.
   private readonly targetLocks = new Map<string, TargetLock>();
   private generation = 0;
   private readonly downloader: GroupTextDownloader;
@@ -56,10 +57,10 @@ export class GroupFileTools {
   private resource(value: unknown, kind: Resource['kind']): Resource { this.clean(); if (typeof value !== 'string' || !/^gf_[a-f0-9]{48}$/.test(value)) fail('invalid_handle'); const found = this.handles.get(value); if (!found || found.kind !== kind) fail('invalid_handle'); return found; }
   private issue(item: Listed, parent?: string): string {
     this.clean();
-    for (const [token, value] of this.handles) if (value.kind === item.kind && value.rawId === item.rawId && value.parent === parent) { value.uploader = item.uploader; value.name = item.view.name as string; value.size = finite(item.view.size_bytes); value.expires = Date.now() + HANDLE_TTL; return token; }
+    for (const [token, value] of this.handles) if (value.kind === item.kind && value.rawId === item.rawId && value.parent === parent) { value.uploader = item.uploader; value.name = item.view.name as string; value.nameFingerprint = item.nameFingerprint; value.size = finite(item.view.size_bytes); value.uploadedAt = finite(item.view.uploaded_at); value.expires = Date.now() + HANDLE_TTL; return token; }
     while (this.handles.size >= HANDLE_LIMIT) this.handles.delete(this.handles.keys().next().value!);
     const token = `gf_${randomBytes(24).toString('hex')}`;
-    this.handles.set(token, { kind: item.kind, rawId: item.rawId, parent, uploader: item.uploader, name: item.view.name as string, size: finite(item.view.size_bytes), expires: Date.now() + HANDLE_TTL }); return token;
+    this.handles.set(token, { kind: item.kind, rawId: item.rawId, parent, uploader: item.uploader, name: item.view.name as string, nameFingerprint: item.nameFingerprint, size: finite(item.view.size_bytes), uploadedAt: finite(item.view.uploaded_at), expires: Date.now() + HANDLE_TTL }); return token;
   }
   private async read(action: string, params: JsonObject, generation: number, signal?: AbortSignal): Promise<unknown> {
     this.check(generation, signal); let result: unknown; try { result = await this.api.call(action, params); } catch { this.check(generation, signal); fail('api_unavailable'); } this.check(generation, signal); return result;
@@ -79,9 +80,11 @@ export class GroupFileTools {
       if (!object(value) || id(value.group_id) !== this.groupId) fail('verification_failed');
       const rawId = kind === 'file' ? value.file_id : value.folder_id;
       if (!resourceId(rawId) || seen.has(`${kind}:${rawId}`) || (kind === 'folder' && ['/', '\\', '.', '..', '0'].includes(rawId))) fail('verification_failed'); seen.add(`${kind}:${rawId}`);
-      if (kind === 'folder') return { kind, rawId, view: { kind, name: text(value.folder_name), ...(finite(value.total_file_count) === undefined ? {} : { reported_file_count: value.total_file_count }), ...(id(value.creator) ? { creator_id: id(value.creator) } : {}) } };
+      const rawName = kind === 'folder' ? value.folder_name : value.file_name;
+      const nameFingerprint = typeof rawName === 'string' && rawName.length ? createHash('sha256').update(rawName).digest('hex') : '';
+      if (kind === 'folder') return { kind, rawId, nameFingerprint, view: { kind, name: text(value.folder_name), ...(finite(value.total_file_count) === undefined ? {} : { reported_file_count: value.total_file_count }), ...(id(value.creator) ? { creator_id: id(value.creator) } : {}) } };
       const uploader = id(value.uploader), size = finite(value.file_size ?? value.size);
-      return { kind, rawId, uploader, view: { kind, name: text(value.file_name), ...(size === undefined ? {} : { size_bytes: size }), ...(uploader ? { uploader_id: uploader } : {}), ...(finite(value.upload_time) === undefined ? {} : { uploaded_at: value.upload_time }) } };
+      return { kind, rawId, uploader, nameFingerprint, view: { kind, name: text(value.file_name), ...(size === undefined ? {} : { size_bytes: size }), ...(uploader ? { uploader_id: uploader } : {}), ...(finite(value.upload_time) === undefined ? {} : { uploaded_at: value.upload_time }) } };
     });
   }
   private async list(a: JsonObject, generation: number, signal?: AbortSignal): Promise<JsonObject> {
@@ -98,7 +101,7 @@ export class GroupFileTools {
     }
     const next = offset + items.length, visibleMore = next < source.length;
     const canExpand = source.length >= requestedPrefix && requestedPrefix < SOURCE_LIMIT && items.length > 0;
-    return { status: 'ok', untrusted: true, group_id: this.groupId, queried_at: Date.now() / 1000, requested: limit, returned: items.length, offset, items, upstream_partial: true, complete: false, pagination: 'live_prefix_local_slice', source_limit: SOURCE_LIMIT, upstream_requested: requestedPrefix, upstream_returned: source.length, next_offset: visibleMore || canExpand ? next : null, truncated: visibleMore || canExpand || source.length >= SOURCE_LIMIT, reason: visibleMore && items.length < Math.min(limit, Math.max(0, source.length - offset)) ? 'output_limit' : source.length >= SOURCE_LIMIT ? 'source_limit' : 'upstream_completeness_unknown', handle_expires_in_seconds: HANDLE_TTL / 1000 };
+    return { status: 'ok', untrusted: true, group_id: this.groupId, queried_at: Date.now() / 1000, requested: limit, returned: items.length, offset, items, upstream_partial: true, complete: false, pagination: 'live_prefix_local_slice', ...(parent ? { subfolders_reported: false } : {}), source_limit: SOURCE_LIMIT, upstream_requested: requestedPrefix, upstream_returned: source.length, next_offset: visibleMore || canExpand ? next : null, truncated: visibleMore || canExpand || source.length >= SOURCE_LIMIT, reason: visibleMore && items.length < Math.min(limit, Math.max(0, source.length - offset)) ? 'output_limit' : source.length >= SOURCE_LIMIT ? 'source_limit' : 'upstream_completeness_unknown', handle_expires_in_seconds: HANDLE_TTL / 1000 };
   }
   private async readText(args: JsonObject, generation: number, signal?: AbortSignal): Promise<JsonObject> {
     const resource = this.resource(args.file_handle, 'file'), maxBytes = args.max_bytes as number;
@@ -106,7 +109,9 @@ export class GroupFileTools {
     if (resource.size === undefined) fail('unknown_file_size');
     if (resource.size > maxBytes) fail('resource_limit');
     const response = await this.read('get_group_file_url', { group_id: this.groupId, file_id: resource.rawId }, generation, signal);
-    if (!object(response) || typeof response.url !== 'string' || !response.url || response.url.length > 8192 || (Object.hasOwn(response, 'group_id') && id(response.group_id) !== this.groupId)) fail('verification_failed');
+    if (!object(response) || (Object.hasOwn(response, 'group_id') && id(response.group_id) !== this.groupId)) fail('verification_failed');
+    if (response.url === undefined || response.url === '') fail('file_url_unavailable');
+    if (typeof response.url !== 'string' || response.url.length > 8192) fail('verification_failed');
     let content: string;
     this.check(generation, signal); this.resource(args.file_handle, 'file');
     try { content = await this.downloader(response.url, maxBytes, signal); }
@@ -120,25 +125,43 @@ export class GroupFileTools {
     return { status: 'ok', untrusted: true, group_id: this.groupId, file_handle: args.file_handle, name: resource.name, content: output, encoding: 'utf-8', requested_max_bytes: maxBytes, source_bytes: sourceBytes, listed_size_bytes: resource.size, returned_bytes: Buffer.byteLength(output, 'utf8'), truncated: output.length !== content.length, complete: output.length === content.length, read_at: Date.now() / 1000 };
   }
   private classify(name: string, value: unknown): JsonObject {
-    if (name === 'upload_group_text_file') return object(value) && resourceId(value.file_id) ? { status: 'ok', uploaded: true } : { status: 'unknown', error: 'operation_result_unknown' };
-    if (!object(value)) return { status: 'unknown', error: 'operation_result_unknown' };
+    const unknown = (): JsonObject => ({ status: 'unknown', error: 'operation_result_unknown', effect_unknown: true, retry_allowed: false });
+    const rejected = (): JsonObject => ({ status: 'error', error: 'operation_rejected' });
+    if (!object(value)) return unknown();
+    if (name === 'upload_group_text_file') {
+      // UploadGroupFile waits for the native send-success event; UUID extraction is optional.
+      return value.file_id === null || resourceId(value.file_id)
+        ? { status: 'ok', uploaded: true, resource_id_available: value.file_id !== null, effect_confirmed: true, confirmation_basis: 'native_send_success' }
+        : unknown();
+    }
     if (name === 'delete_group_folder') {
-      if (finite(value.retCode) === undefined) return { status: 'unknown', error: 'operation_result_unknown' };
-      return value.retCode === 0 ? { status: 'ok', deleted: true } : { status: 'error', error: 'operation_rejected' };
+      if (!Number.isSafeInteger(value.retCode)) return unknown();
+      return value.retCode === 0 ? { status: 'ok', deleted: true, effect_confirmed: true, confirmation_basis: 'provider_business_ack' } : rejected();
     }
     if (name === 'create_group_folder') {
-      if (!object(value.result) || finite(value.result.retCode) === undefined) return { status: 'unknown', error: 'operation_result_unknown' };
-      // The upstream native result is typed unknown and has no verified success
-      // contract. Even an apparent zero is not enough to invent an ACK.
-      return value.result.retCode === 0 ? { status: 'unknown', error: 'operation_result_unknown', refresh_list: true } : { status: 'error', error: 'operation_rejected' };
+      // The action intentionally exposes {result:Any,groupItem:Any}, not a required retCode.
+      if (!Object.hasOwn(value, 'result') || !Object.hasOwn(value, 'groupItem')) return unknown();
+      return submittedResult({ action: name, refresh_list: true });
     }
-    // delete_group_file returns native result/ID shapes that are not proven to
-    // match the provider-encoded ID we possess. Never invent confirmation from
-    // a success list containing some unrelated opaque native identifier.
-    return { status: 'unknown', error: 'operation_result_unknown' };
+    // deleteGroupFile carries a documented GeneralCallResult plus opaque native-ID lists.
+    // Those IDs are not the random provider cache token and must never be compared to it.
+    if (!Number.isSafeInteger(value.result)) return unknown();
+    if (value.result !== 0) return rejected();
+    const report = value.transGroupFileResult;
+    if (!object(report) || !Array.isArray(report.successFileIdList) || !Array.isArray(report.failFileIdList)) return unknown();
+    if (report.failFileIdList.length && !report.successFileIdList.length) return rejected();
+    if (report.failFileIdList.length) return { ...unknown(), provider_reported_partial: true };
+    return submittedResult({ action: name, api_reported_success: report.successFileIdList.length > 0, refresh_list: true });
   }
   private resourceKey(kind: Resource['kind'] | 'root', rawId: string): string { return JSON.stringify([this.groupId, kind, rawId]); }
   private parentKey(parent?: string): string { return parent === undefined ? this.resourceKey('root', '') : this.resourceKey('folder', parent); }
+  /** Conservative rejection key, NOT native identity proof. Excluding mutable name/parent
+   * keeps an uncertain file blocked after aliases, renames or moves; collisions only deny. */
+  private observedFileKey(resource: Resource): string | undefined {
+    if (resource.kind !== 'file' || resource.size === undefined || !resource.uploader || resource.uploadedAt === undefined) return;
+    return JSON.stringify([this.groupId, 'observed-file', resource.size, resource.uploader, resource.uploadedAt]);
+  }
+  private blocked(lock: TargetLock): never { fail(lock.state === 'unknown' ? 'target_result_unknown' : lock.state === 'submitted' ? 'target_already_submitted' : lock.state === 'deleted' ? 'target_deleted' : 'target_busy'); }
   private slotKey(parentKey: string, name: string): string { return JSON.stringify([parentKey, 'name', name.normalize('NFC').toLowerCase()]); }
   private plan(name: string, args: JsonObject): MutationPlan {
     if (name === 'create_group_folder') {
@@ -151,11 +174,11 @@ export class GroupFileTools {
     }
     const kind = name === 'delete_group_file' ? 'file' : 'folder', token = args[`${kind}_handle`], resource = { ...this.resource(token, kind) };
     const parentKey = this.parentKey(resource.parent), resourceKey = this.resourceKey(kind, resource.rawId);
-    return { action: kind === 'file' ? 'delete_group_file' : 'delete_group_folder', params: { group_id: this.groupId, [kind === 'file' ? 'file_id' : 'folder_id']: resource.rawId }, resource, token, lockKeys: [resourceKey, this.slotKey(parentKey, resource.name)], parentKey, resourceKey, deletesFolder: kind === 'folder' };
+    return { action: kind === 'file' ? 'delete_group_file' : 'delete_group_folder', params: { group_id: this.groupId, [kind === 'file' ? 'file_id' : 'folder_id']: resource.rawId }, resource, token, lockKeys: [resourceKey, this.slotKey(parentKey, resource.name), ...[this.observedFileKey(resource)].filter((key): key is string => key !== undefined)], parentKey, resourceKey, deletesFolder: kind === 'folder' };
   }
   private acquire(plan: MutationPlan): Map<string, TargetLock> {
     const blocked = [this.targetLocks.get(plan.parentKey), ...plan.lockKeys.map(key => this.targetLocks.get(key)), ...(plan.deletesFolder ? [...this.targetLocks.values()].filter(lock => lock.parentKey === plan.resourceKey && lock.state !== 'deleted') : [])].find(Boolean);
-    if (blocked) fail(blocked.state === 'unknown' ? 'target_result_unknown' : blocked.state === 'deleted' ? 'target_deleted' : 'target_busy');
+    if (blocked) this.blocked(blocked);
     if (this.targetLocks.size + plan.lockKeys.length > HANDLE_LIMIT) fail('resource_limit');
     const locks = new Map<string, TargetLock>();
     for (const key of plan.lockKeys) { const lock: TargetLock = { state: 'pending', parentKey: plan.parentKey }; locks.set(key, lock); this.targetLocks.set(key, lock); }
@@ -163,11 +186,19 @@ export class GroupFileTools {
   }
   private async fresh(resource: Resource, generation: number, signal?: AbortSignal): Promise<Listed> {
     const raw = await this.read(resource.parent === undefined ? 'get_group_root_files' : 'get_group_files_by_folder', { group_id: this.groupId, file_count: SOURCE_LIMIT, ...(resource.parent === undefined ? {} : { folder_id: resource.parent }) }, generation, signal);
-    const current = this.rows(raw).find(item => item.kind === resource.kind && item.rawId === resource.rawId);
-    // A bounded prefix may omit a real resource: absence is NOT proof of deletion,
-    // but it cannot authorize a write either. Fail closed rather than using age.
-    if (!current) fail('resource_not_verified');
-    return current;
+    const rows = this.rows(raw);
+    const sameToken = rows.find(item => item.kind === resource.kind && item.rawId === resource.rawId);
+    if (sameToken) return sameToken;
+    // NapCat reissues a random cache token on every file listing. Never replace the
+    // original execution token with a new candidate: only that old token fixes identity.
+    // Complete unique metadata is a current-consistency check, not native ID equality.
+    if (resource.kind === 'file' && resource.nameFingerprint && resource.size !== undefined && resource.uploader && resource.uploadedAt !== undefined) {
+      const matches = rows.filter(item => item.kind === 'file' && item.nameFingerprint === resource.nameFingerprint &&
+        item.uploader === resource.uploader && finite(item.view.size_bytes) === resource.size && finite(item.view.uploaded_at) === resource.uploadedAt);
+      if (matches.length === 1) return matches[0]!;
+    }
+    // Missing/ambiguous metadata or a bounded prefix cannot authorize a changed target.
+    fail('resource_not_verified');
   }
   private async mutate(name: string, plan: MutationPlan, locks: Map<string, TargetLock>, ctx: TurnContext, generation: number, signal?: AbortSignal): Promise<JsonObject> {
     let dispatched = false, result: JsonObject | undefined;
@@ -182,7 +213,7 @@ export class GroupFileTools {
           const freshSlot = this.slotKey(plan.parentKey, current.view.name as string);
           if (!locks.has(freshSlot)) {
             const existing = this.targetLocks.get(freshSlot);
-            if (existing) fail(existing.state === 'unknown' ? 'target_result_unknown' : 'target_busy');
+            if (existing) this.blocked(existing);
             if (this.targetLocks.size >= HANDLE_LIMIT) fail('resource_limit');
             const lock: TargetLock = { state: 'pending', parentKey: plan.parentKey }; this.targetLocks.set(freshSlot, lock); locks.set(freshSlot, lock);
           }
@@ -191,23 +222,23 @@ export class GroupFileTools {
       this.check(generation, signal); dispatched = true;
       try {
         const value = await this.api.call(plan.action, plan.params);
-        result = signal?.aborted || generation !== this.generation ? { status: 'unknown', error: 'operation_result_unknown' } : this.classify(name, value);
-      } catch { result = { status: 'unknown', error: 'operation_result_unknown' }; }
-      if (plan.resource && name.startsWith('delete_') && result.status === 'ok') for (const [token, item] of this.handles) if ((item.rawId === plan.resource.rawId && item.kind === plan.resource.kind) || (plan.deletesFolder && item.parent === plan.resource.rawId)) this.handles.delete(token);
+        result = afterDispatch(this.classify(name, value), !!signal?.aborted || generation !== this.generation);
+      } catch (error) { result = afterDispatch(writeFailure(error, 'operation_result_unknown'), !!signal?.aborted || generation !== this.generation); }
+      if (generation === this.generation && plan.resource && name.startsWith('delete_') && result.status === 'ok' && result.effect_confirmed === true) for (const [token, item] of this.handles) if ((item.rawId === plan.resource.rawId && item.kind === plan.resource.kind) || (plan.deletesFolder && item.parent === plan.resource.rawId)) this.handles.delete(token);
       return result;
     } finally {
       for (const [key, lock] of locks) {
         // Explicit reset may already have replaced ownership; never resurrect it.
         if (this.targetLocks.get(key) !== lock) continue;
         if (dispatched && (!result || result.status === 'unknown')) lock.state = 'unknown';
-        else if (result?.status === 'ok' && name.startsWith('delete_') && key === plan.resourceKey) lock.state = 'deleted';
+        else if (result?.status === 'ok' && result.submitted === true) lock.state = 'submitted';
+        else if (result?.status === 'ok' && result.effect_confirmed === true && name.startsWith('delete_') && key === plan.resourceKey) lock.state = 'deleted';
         else this.targetLocks.delete(key);
       }
     }
   }
-  async execute(name: string, args: unknown, ctx: TurnContext, signal?: AbortSignal): Promise<JsonObject> {
-    const generation = this.generation;
-    try {
+  private validate(name: string, args: unknown, ctx: TurnContext, generation: number, signal?: AbortSignal): JsonObject {
+      fields(ctx, ['groupId', 'selfId', 'actorId', 'messageId'], ['groupId', 'selfId']);
       if (ctx.groupId !== this.groupId) fail('forbidden_group');
       if (!id(ctx.selfId) || !GROUP_FILE_TOOL_NAMES.includes(name as GroupFileToolName)) fail('invalid_arguments');
       if (!this.enabled.has(name)) fail('tool_disabled'); this.check(generation, signal);
@@ -217,13 +248,51 @@ export class GroupFileTools {
       else if (name === 'upload_group_text_file') { fields(args, ['name', 'content', 'folder_handle'], ['name', 'content']); filename(args.name); if (typeof args.content !== 'string' || !args.content.length || args.content.includes('\0') || Buffer.byteLength(args.content, 'utf8') > TEXT_BYTES) fail(); if (args.folder_handle !== undefined) this.resource(args.folder_handle, 'folder'); }
       else if (name === 'create_group_folder') { fields(args, ['name'], ['name']); filename(args.name); }
       else { const key = name === 'delete_group_file' ? 'file_handle' : 'folder_handle'; fields(args, [key], [key]); }
+      return { ...args };
+  }
+  /** Read-only preflight for an owner confirmation. Never reserves a write or issues handles. */
+  async confirmationDetails(name: string, value: unknown, ctx: TurnContext, signal?: AbortSignal): Promise<string> {
+    const generation = this.generation;
+    try {
+      const args = this.validate(name, value, ctx, generation, signal), context = { ...ctx };
+      if (!WRITES.has(name)) fail('invalid_arguments');
+      const plan = this.plan(name, args);
+      let role = await this.verify(context, generation, signal);
+      const details: JsonObject = { 群号: this.groupId, 操作: name };
+      const label = (value: unknown): string => text(value).replace(/(?:https?:\/\/|file:\/\/|data:)[^\s]*/gi, '[已隐藏资源地址]');
+      if (plan.resource) {
+        const current = await this.fresh(plan.resource, generation, signal);
+        role = await this.verify(context, generation, signal);
+        this.resource(plan.token, plan.resource.kind);
+        if (name.startsWith('delete_') && !['admin', 'owner'].includes(role) && (plan.resource.kind === 'folder' || current.uploader !== context.selfId)) fail('insufficient_permission');
+        if (!current.view.name) fail('resource_not_verified');
+        const target: JsonObject = { 类型: current.kind === 'file' ? '文件' : '目录', 名称: label(current.view.name), 名称SHA256: current.nameFingerprint, 大小字节: current.view.size_bytes ?? null, 上传者QQ: current.uploader ?? current.view.creator_id ?? null };
+        if (current.view.uploaded_at !== undefined) target.上传时间 = current.view.uploaded_at;
+        if (current.view.reported_file_count !== undefined) target.已报告文件数 = current.view.reported_file_count;
+        details[name === 'upload_group_text_file' ? '目标目录' : '目标'] = target;
+      } else details.目标目录 = '本群文件根目录';
+      if (name === 'upload_group_text_file' || name === 'create_group_folder') details.名称 = label(args.name);
+      if (name === 'upload_group_text_file') { details.内容字节数 = Buffer.byteLength(args.content as string, 'utf8'); details.内容SHA256 = createHash('sha256').update(args.content as string).digest('hex'); }
+      this.check(generation, signal);
+      if (plan.resource) this.resource(plan.token, plan.resource.kind);
+      return JSON.stringify(details);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : '';
+      fail(['invalid_arguments', 'forbidden_group', 'tool_disabled', 'cancelled', 'invalid_handle', 'resource_limit', 'verification_failed', 'api_unavailable', 'insufficient_permission', 'resource_not_verified'].includes(code) ? code : 'verification_failed');
+    }
+  }
+  async execute(name: string, value: unknown, ctx: TurnContext, signal?: AbortSignal): Promise<JsonObject> {
+    const generation = this.generation;
+    try {
+      const args = this.validate(name, value, ctx, generation, signal);
+      ctx = { ...ctx };
       if (WRITES.has(name)) {
         const plan = this.plan(name, args);
         const key = createHash('sha256').update(name).update(JSON.stringify(plan.params)).digest('hex');
-        const prior = this.writes.get(key); if (prior) return structuredClone(await prior);
+        const prior = this.writes.get(key); if (prior) return { ...structuredClone(await prior), cached: true };
         if (this.writes.size >= 128) fail('resource_limit');
         const locks = this.acquire(plan);
-        const promise = this.mutate(name, plan, locks, ctx, generation, signal).catch(error => { const code = error instanceof Error ? error.message : ''; return { status: 'error', error: ['cancelled', 'api_unavailable', 'verification_failed', 'invalid_handle', 'insufficient_permission', 'resource_limit', 'resource_not_verified', 'target_result_unknown', 'target_busy', 'target_deleted'].includes(code) ? code : 'tool_failed' }; });
+        const promise = this.mutate(name, plan, locks, ctx, generation, signal).catch(error => { const code = error instanceof Error ? error.message : ''; return { status: 'error', error: ['cancelled', 'api_unavailable', 'verification_failed', 'invalid_handle', 'insufficient_permission', 'resource_limit', 'resource_not_verified', 'target_result_unknown', 'target_already_submitted', 'target_busy', 'target_deleted'].includes(code) ? code : 'tool_failed', ...(code === 'target_already_submitted' ? { previous_submitted: true, dispatched: false } : {}) }; });
         this.writes.set(key, promise); return structuredClone(await promise);
       }
       await this.verify(ctx, generation, signal);
@@ -234,7 +303,7 @@ export class GroupFileTools {
       return { status: 'ok', group_id: this.groupId, queried_at: Date.now() / 1000, file_count: raw.file_count, limit_count: raw.limit_count, used_space: raw.used_space, total_space: raw.total_space, provider_values_unverified: true, note: 'provider_may_return_fallback_capacity_and_zero_usage' };
     } catch (error) {
       const code = error instanceof Error ? error.message : '';
-      return { status: 'error', error: ['invalid_arguments', 'forbidden_group', 'tool_disabled', 'cancelled', 'invalid_handle', 'resource_limit', 'verification_failed', 'api_unavailable', 'insufficient_permission', 'unsupported_file_type', 'unknown_file_size', 'unsafe_url', 'invalid_text', 'download_failed', 'resource_not_verified', 'target_result_unknown', 'target_busy', 'target_deleted'].includes(code) ? code : 'tool_failed' };
+      return { status: 'error', error: ['invalid_arguments', 'forbidden_group', 'tool_disabled', 'cancelled', 'invalid_handle', 'resource_limit', 'verification_failed', 'api_unavailable', 'insufficient_permission', 'unsupported_file_type', 'unknown_file_size', 'unsafe_url', 'invalid_text', 'download_failed', 'file_url_unavailable', 'resource_not_verified', 'target_result_unknown', 'target_already_submitted', 'target_busy', 'target_deleted'].includes(code) ? code : 'tool_failed', ...(code === 'target_already_submitted' ? { previous_submitted: true, dispatched: false } : {}) };
     }
   }
 }

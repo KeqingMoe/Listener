@@ -11,6 +11,7 @@ import {
 import { ImageTools, imageReferences } from "./image-tools.js";
 import type { ImageDownloader } from "./image-download.js";
 import { extractMessageContent } from "./message-content.js";
+import { afterDispatch, writeFailure, DuplicateMessageAckError } from './operation-result.js';
 
 export const GROUP_MEDIA_TOOL_NAMES = [
   "send_group_image",
@@ -18,9 +19,15 @@ export const GROUP_MEDIA_TOOL_NAMES = [
   "send_group_forward",
 ] as const;
 type Name = (typeof GROUP_MEDIA_TOOL_NAMES)[number];
+/** Captured immediately before native dispatch, never at ACK time. */
+export interface SendReceiptSnapshot {
+  worldHighWater?: number;
+  memoryIds: ReadonlySet<string>;
+}
 export interface GroupMediaOptions {
   downloader?: ImageDownloader;
-  onSent?: (entry: TimelineEntry) => void;
+  beforeSend?: () => SendReceiptSnapshot;
+  onSent?: (entry: TimelineEntry, receipt?: SendReceiptSnapshot) => void;
 }
 const INPUT_BYTES = 24 * 1024,
   MAX_REFS = 128,
@@ -53,7 +60,7 @@ const definition = (
   type: "function",
   function: {
     name,
-    description,
+    description: `${description}每次明确工具调用均独立发送一次，正常结果不吞掉下一次相同调用；不自动重试，只有真正unknown会阻止相同请求盲重放。`,
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -80,7 +87,7 @@ const DEFINITIONS: ToolDefinition[] = [
   ),
   definition(
     "send_group_forward",
-    "按指定顺序把本群已知消息或其直接引用合并转发到当前群。只接受真实消息ID，不允许伪造发送者或正文。重复源消息保留；通用请求资源边界为24KiB、128个引用。未知发送结果不得重试。",
+    "按指定顺序把本群已知消息或其直接引用合并转发到当前群。只接受真实消息ID，不允许伪造发送者或正文。重复源消息保留；通用请求资源边界为24KiB、128个引用。成功消息回执不证明上游保留全部源节点，requested_source_count只是请求数；未知发送结果不得重试。",
     {
       message_ids: {
         type: "array",
@@ -254,16 +261,17 @@ export class GroupMediaTools {
       .update(JSON.stringify([ctx.selfId, name, args]))
       .digest("hex");
     const previous = this.operations.get(key);
-    if (previous) return this.response({ ...(await previous), cached: true });
-    if (this.operations.size >= MAX_OPERATIONS)
+    if (!previous && this.operations.size >= MAX_OPERATIONS)
       return this.response({ status: "error", error: "resource_limit" });
     const context = { ...ctx };
-    const operation = Promise.resolve().then(() =>
-      this.run(name as Name, args, context, signal),
+    // Each explicit call is a new interaction after a normal result. Serialize
+    // identical intents so an uncertain predecessor can prevent a blind replay.
+    const operation = Promise.resolve(previous).then(prior =>
+      prior?.status==='unknown' ? {...prior,cached:true,dispatched:false} : this.run(name as Name,args,context,signal)
     );
     this.operations.set(key, operation);
     const result = await operation;
-    if (result.status === "error") this.operations.delete(key);
+    if (result.status !== "unknown" && this.operations.get(key)===operation) this.operations.delete(key);
     return this.response(result);
   }
   private async run(
@@ -273,11 +281,9 @@ export class GroupMediaTools {
     signal?: AbortSignal,
   ): Promise<JsonObject> {
     let dispatched = false;
-    const unknown = (): JsonObject => ({
-      status: "unknown",
-      error: "delivery_unknown",
-      message_id: null,
-    });
+    const unknown = (): JsonObject => afterDispatch(
+      { ...writeFailure(undefined), message_id: null }, !!signal?.aborted,
+    );
     try {
       this.check(signal);
       let login: unknown;
@@ -356,13 +362,14 @@ export class GroupMediaTools {
               };
       }
       this.check(signal);
+      const receipt = this.options.beforeSend?.();
       dispatched = true;
       const ack = await this.api.call(action, params);
       if (name === "forward_message") {
         // NapCat v4.18.28 ForwardSingleMsg validates native ret.result===0 and
         // returns null. There is no new message ID to persist as a world fact.
-        if (signal?.aborted || ack !== null) return unknown();
-        return { status: "executed", message_id: null, source_count: 1 };
+        if (ack !== null) return unknown();
+        return afterDispatch({ status: "executed", message_id: null, source_count: 1 },!!signal?.aborted);
       }
       const id = object(ack) ? messageId(ack.message_id) : undefined;
       if (!id) return unknown();
@@ -384,18 +391,24 @@ export class GroupMediaTools {
         ...(forwards.length ? { forwards } : {}),
         ...extractMessageContent(id, segments, images, forwards),
       };
-      // A valid late ACK is still a world fact, even after cancellation.
-      this.options.onSent?.(entry);
-      if (signal?.aborted) return unknown();
-      return {
+      // A valid ACK is a provider fact even when local projection is unavailable.
+      // A reused ID is different: it cannot prove a new send happened.
+      let projectionFailed=false;
+      try { this.options.onSent?.(entry, receipt); }
+      catch(error) {
+        if(error instanceof DuplicateMessageAckError)return {...unknown(),error:'duplicate_message_ack'};
+        projectionFailed=true;
+      }
+      return afterDispatch({
         status: "executed",
         message_id: id,
+        ...(projectionFailed?{local_projection_failed:true}:{}),
         ...(name === "send_group_forward"
-          ? { source_count: (args.message_ids as string[]).length }
+          ? { requested_source_count: (args.message_ids as string[]).length,source_completeness:'not_verified' }
           : {}),
-      };
+      },!!signal?.aborted);
     } catch (error) {
-      if (dispatched) return unknown();
+      if (dispatched) { const result=writeFailure(error); return afterDispatch({...result,message_id:null},result.dispatched!==false&&!!signal?.aborted); }
       return {
         status: "error",
         error: signal?.aborted

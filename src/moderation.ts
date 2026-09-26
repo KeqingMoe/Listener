@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto';
+import { writeFailure } from './operation-result.js';
 import { log } from './logger.js';
 import type { ModerationPolicy } from './listener-config.js';
-import { LISTENER_GROUP, resolveGroupId, OWNER_ID, type Api, type JsonObject, type ToolDefinition, type TurnContext } from './contracts.js';
+import { LISTENER_GROUP, resolveGroupId, OWNER_ID, resolveOwnerId, type Api, type JsonObject, type ToolDefinition, type TurnContext } from './contracts.js';
 
 type Mode = 'off' | 'confirm' | 'direct';
 const userIdSchema = { type: 'string', maxLength: 32, pattern: '^[1-9][0-9]*$', description: 'Target QQ user ID in this group; actual QQ permissions apply. Nicknames are not identity proof.' };
@@ -19,7 +20,17 @@ type Action = { name: 'mute_member'; user_id: string; seconds: number } |
   { name: 'recall_message'; message_id: string };
 const policyKey = { mute_member: 'mute', unmute_member: 'unmute', recall_message: 'recall', set_member_card: 'memberCard' } as const;
 type ActionName = keyof typeof policyKey;
-type Pending = { action: Action; context: TurnContext; target: string; expires: number };
+export interface ExternalModerationProposal {
+  name: string;
+  description: string;
+  /** Revalidate scope/permissions and check this confirmation's signal after every await.
+   * Once a write is dispatched, preserve its real ACK or return unknown. */
+  execute(context: TurnContext, signal: AbortSignal): Promise<JsonObject>;
+}
+type Pending = { context: TurnContext; expires: number } & (
+  { kind: 'legacy'; action: Action; target: string } |
+  { kind: 'external'; external: ExternalModerationProposal }
+);
 function record(value: unknown): value is JsonObject {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   try { return [Object.prototype, null].includes(Object.getPrototypeOf(value)) && Reflect.ownKeys(value).every(key =>
@@ -60,10 +71,12 @@ export function buildModerationTools(options: Partial<ModerationPolicy> = {}): T
 export class Moderation {
   private readonly pending = new Map<string, Pending>();
   private disposed = false;
+  private readonly externalLifetime = new AbortController();
   private readonly policy: Readonly<ModerationPolicy>;
   private readonly groupId: string;
-  constructor(private readonly api: Api, private readonly now: () => number = Date.now, options: Partial<ModerationPolicy> = {}, groupId: string = LISTENER_GROUP) {
-    this.groupId = resolveGroupId(groupId); this.policy = policy(options);
+  private readonly ownerId: string;
+  constructor(private readonly api: Api, private readonly now: () => number = Date.now, options: Partial<ModerationPolicy> = {}, groupId: string = LISTENER_GROUP, ownerId: string = OWNER_ID) {
+    this.groupId = resolveGroupId(groupId); this.ownerId = resolveOwnerId(ownerId); this.policy = policy(options);
   }
   private check(signal?: AbortSignal, expires?: number): void {
     if (this.disposed || signal?.aborted) deny('cancelled');
@@ -71,7 +84,7 @@ export class Moderation {
   }
   private scope(context: TurnContext): TurnContext {
     if (!record(context) || context.groupId !== this.groupId || typeof context.actorId !== 'string' || id(context.actorId) !== context.actorId ||
-      typeof context.selfId !== 'string' || id(context.selfId) !== context.selfId || context.selfId === OWNER_ID ||
+      typeof context.selfId !== 'string' || id(context.selfId) !== context.selfId || context.selfId === this.ownerId ||
       typeof context.messageId !== 'string' || messageId(context.messageId) !== context.messageId) deny('forbidden_context');
     return { groupId: this.groupId, actorId: context.actorId, selfId: context.selfId, messageId: context.messageId };
   }
@@ -141,24 +154,16 @@ export class Moderation {
       if (action.name === 'mute_member' || action.name === 'unmute_member') result = await this.api.call('set_group_ban', { group_id: this.groupId, user_id: action.user_id, duration: action.name === 'mute_member' ? action.seconds : 0 });
       else if (action.name === 'set_member_card') result = await this.api.call('set_group_card', { group_id: this.groupId, user_id: action.user_id, card: action.card });
       else result = await this.api.call('delete_msg', { message_id: action.message_id });
-    } catch {
-      this.audit(action.name, context, target, 'delivery_unknown', undefined, phase);
-      return { status: 'unknown', error: 'delivery_unknown' };
+    } catch (error) {
+      const failure = writeFailure(error, 'delivery_unknown');
+      this.audit(action.name, context, target, failure.status === 'error' ? 'rejected' : 'delivery_unknown', undefined, phase);
+      return failure;
     }
+    // These handlers check native business ACKs (ban/card) or a matching recall
+    // event and return void. The transport canonicalizes only outer success to null.
+    // Do not guess meanings for arbitrary native result/retcode fields or scalars.
     // Dispatch is irreversible. Preserve its acknowledgement even after cancellation.
-    const objectResult = record(result) ? result : undefined;
-    const failedCode = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value !== 0;
-    const rejected = result === false || failedCode(result) || (objectResult !== undefined &&
-      (objectResult.result === false || objectResult.success === false || failedCode(objectResult.result) || failedCode(objectResult.retcode) || failedCode(objectResult.code) || objectResult.status === 'failed' || objectResult.status === 'error'));
-    if (rejected) { this.audit(action.name, context, target, 'rejected', undefined, phase); return { status: 'error', error: 'moderation_rejected' }; }
-    const malformedStatus = objectResult !== undefined && (
-      (Object.hasOwn(objectResult, 'result') && objectResult.result !== 0 && objectResult.result !== true) ||
-      ['retcode', 'code'].some(key => Object.hasOwn(objectResult, key) && objectResult[key] !== 0) ||
-      (Object.hasOwn(objectResult, 'success') && objectResult.success !== true) ||
-      (Object.hasOwn(objectResult, 'status') && !['ok', 'success'].includes(objectResult.status as string)));
-    const accepted = !malformedStatus && (result === null || result === undefined || result === true || result === 0 ||
-      (objectResult !== undefined && (Object.keys(objectResult).length === 0 || objectResult.result === 0 || objectResult.result === true)));
-    if (!accepted) { this.audit(action.name, context, target, 'delivery_unknown', undefined, phase); return { status: 'unknown', error: 'delivery_unknown' }; }
+    if (result !== null) { this.audit(action.name, context, target, 'delivery_unknown', undefined, phase); return writeFailure(undefined, 'delivery_unknown'); }
     this.audit(action.name, context, target, 'executed', action.name === 'mute_member' ? action.seconds : action.name === 'unmute_member' ? 0 : undefined, phase);
     return { status: 'executed' };
   }
@@ -174,7 +179,7 @@ export class Moderation {
       if (mode === 'direct') return await this.execute(action, fixed, target, signal);
       if (this.pending.size >= 10) return deny('confirmation_limit');
       const code = randomBytes(16).toString('hex');
-      this.pending.set(code, { action, context: fixed, target, expires: this.now() + this.policy.confirmationTtlSeconds * 1000 });
+      this.pending.set(code, { kind: 'legacy', action, context: fixed, target, expires: this.now() + this.policy.confirmationTtlSeconds * 1000 });
       this.audit(action.name, fixed, target, 'confirmation_required', action.name === 'mute_member' ? action.seconds : action.name === 'unmute_member' ? 0 : undefined);
       const description = action.name === 'mute_member' ? `禁言 QQ ${action.user_id} ${action.seconds} 秒` :
         action.name === 'unmute_member' ? `解除 QQ ${action.user_id} 的禁言` :
@@ -183,16 +188,54 @@ export class Moderation {
       return { status: 'confirmation_required', code, expires_in_seconds: this.policy.confirmationTtlSeconds, description: `群 ${this.groupId}：${description}`, action: { ...action } };
     } catch (error) { this.audit(action?.name ?? 'invalid', fixed, target, 'request_denied'); return this.resultError(error); }
   }
+  requestExternal(input: ExternalModerationProposal, context: TurnContext, signal?: AbortSignal): JsonObject {
+    let fixed: TurnContext | undefined, name = 'invalid';
+    try {
+      this.check(signal); fixed = this.scope(context);
+      if (!record(input) || Reflect.ownKeys(input).length !== 3 ||
+        typeof input.name !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(input.name) ||
+        typeof input.description !== 'string' || !input.description.trim() || Buffer.byteLength(input.description) > 4096 ||
+        /[\u0000-\u0008\u000b-\u001f\u007f]/.test(input.description) || typeof input.execute !== 'function') return deny('invalid_arguments');
+      name = input.name;
+      for (const [code, pending] of this.pending) if (this.now() >= pending.expires) this.pending.delete(code);
+      if (this.pending.size >= 10) return deny('confirmation_limit');
+      const code = randomBytes(16).toString('hex');
+      // Copy metadata, and deliberately do not retain the proposal wake's signal.
+      const external = {name, description: input.description, execute: input.execute};
+      this.pending.set(code, {kind:'external', external, context:fixed, expires:this.now()+this.policy.confirmationTtlSeconds*1000});
+      this.audit(name, fixed, undefined, 'confirmation_required');
+      return {status:'confirmation_required', code, expires_in_seconds:this.policy.confirmationTtlSeconds, description:`群 ${this.groupId}：${external.description}`};
+    } catch (error) { this.audit(name, fixed, undefined, 'request_denied'); return this.resultError(error); }
+  }
+  private async confirmExternal(pending: Extract<Pending, {kind:'external'}>, context: TurnContext, signal?: AbortSignal): Promise<JsonObject> {
+    this.check(signal, pending.expires);
+    const deadline = AbortSignal.timeout(Math.max(1, Math.ceil(pending.expires-this.now())));
+    const confirmationSignal = AbortSignal.any([this.externalLifetime.signal, deadline, ...(signal ? [signal] : [])]);
+    this.check(confirmationSignal, pending.expires);
+    try {
+      const result = await pending.external.execute(context, confirmationSignal);
+      // No post-await cancellation check: a confirmed late write remains a fact.
+      if (!record(result) || !['ok','executed','unknown','error'].includes(result.status as string)) throw new Error('Invalid external result');
+      this.audit(pending.external.name, context, undefined, result.status === 'unknown' ? 'delivery_unknown' : result.status === 'error' ? 'rejected' : result.submitted === true ? 'submitted' : 'executed', undefined, 'confirm');
+      return result;
+    } catch {
+      // Only the callback knows whether it dispatched; never turn an opaque throw
+      // into permission to retry a potentially completed external write.
+      this.audit(pending.external.name, context, undefined, 'delivery_unknown', undefined, 'confirm');
+      return writeFailure(undefined, 'delivery_unknown');
+    }
+  }
   async confirm(code: string, context: TurnContext, signal?: AbortSignal): Promise<JsonObject> {
     let fixed: TurnContext | undefined, pending: Pending | undefined;
     try {
       this.check(signal); fixed = this.scope(context);
       // A nonowner or another group/bot must not consume a valid owner's code.
-      if (fixed.actorId !== OWNER_ID) return deny('confirmation_denied');
+      if (fixed.actorId !== this.ownerId) return deny('confirmation_denied');
       if (typeof code !== 'string' || !/^[0-9a-f]{32}$/.test(code)) return deny('confirmation_denied');
       pending = this.pending.get(code);
       if (!pending || pending.context.groupId !== fixed.groupId || pending.context.selfId !== fixed.selfId) return deny('confirmation_denied');
       this.pending.delete(code); // Consume before the first await: concurrent confirmations execute once.
+      if (pending.kind === 'external') return await this.confirmExternal(pending, fixed, signal);
       const { name, ...args } = pending.action;
       const action = this.parse(name, args);
       if (this.mode(action) !== 'confirm') return deny('tool_disabled');
@@ -201,8 +244,8 @@ export class Moderation {
       if (target !== pending.target) return deny('verification_failed');
       this.check(signal, pending.expires);
       return await this.execute(action, fixed, target, signal, pending.expires);
-    } catch (error) { this.audit(pending?.action.name ?? 'invalid', fixed, pending?.target, 'confirmation_denied', undefined, 'confirm'); return this.resultError(error); }
+    } catch (error) { this.audit(pending?.kind === 'external' ? pending.external.name : pending?.action.name ?? 'invalid', fixed, pending?.kind === 'legacy' ? pending.target : undefined, 'confirmation_denied', undefined, 'confirm'); return this.resultError(error); }
   }
   cancelPending(code: string): boolean { return this.pending.delete(code); }
-  dispose(): void { this.disposed = true; this.pending.clear(); }
+  dispose(): void { this.disposed = true; this.pending.clear(); this.externalLifetime.abort(); }
 }

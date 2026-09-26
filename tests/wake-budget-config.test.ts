@@ -7,7 +7,7 @@ import {loadAppConfig,ConfigError} from '../src/config-loader.js';
 function fixture(t:{after(fn:()=>void):void}){
  const dir=mkdtempSync(join(tmpdir(),'wake-budget-config-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
  mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'test persona');
- return (toml:string)=>{writeFileSync(join(dir,'config.toml'),toml);return loadAppConfig({configPath:join(dir,'config.toml'),env:{ONEBOT_ACCESS_TOKEN:'test'}});};
+ return (toml:string)=>{writeFileSync(join(dir,'config.toml'),/^\s*\[bot\]/m.test(toml)?toml:toml+'\n[bot]\nowner_id="778899"\n');return loadAppConfig({configPath:join(dir,'config.toml'),env:{ONEBOT_ACCESS_TOKEN:'test'}});};
 }
 test('wake budgets default to 96 calls and 90 seconds in every group',t=>{
  const load=fixture(t),c=load('[groups."123"]\nenabled=true\n[groups."456"]\nenabled=true');

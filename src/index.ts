@@ -10,7 +10,7 @@ import { WorldEventStore } from './world-events.js';
 import { ResponsesModel } from './responses-model.js';
 import type { ModelRequestRecord } from './model-usage.js';
 import { ModelSession } from './model-session.js';
-import { resolveGroupId, OWNER_ID } from './contracts.js';
+import { resolveGroupId, resolveOwnerId } from './contracts.js';
 import { GroupRouter } from './group-router.js';
 import { TurnScheduler } from './turn-scheduler.js';
 import { configureLogging, getLogContext, log } from './logger.js';
@@ -29,9 +29,10 @@ async function main(): Promise<void> {
   // Route only explicitly configured groups; private access and owner authority
   // cannot be widened by group overrides or model-selected parameters.
   const groupIds=groups.map(group=>resolveGroupId(group.groupId));
+  const ownerId=resolveOwnerId(ai.ownerId);
   if(new Set(groupIds).size!==groups.length||config.allowedGroups.size!==groups.length||
      groupIds.some(groupId=>!config.allowedGroups.has(groupId))||config.allowPrivate||
-     config.adminUsers.size!==1||!config.adminUsers.has(OWNER_ID))throw new Error('Group/owner configuration mismatch');
+     groups.some(group=>group.ownerId!==ownerId)||config.adminUsers.size!==1||!config.adminUsers.has(ownerId))throw new Error('Group/owner configuration mismatch');
   const client = new OneBotClient(config);
   const scheduler=new TurnScheduler(maxConcurrentTurns);
   if(ai.enabled){

@@ -115,10 +115,10 @@ test('administrator target permission is rechecked if the bot loses group owners
  }
 });
 
-test('native refusal of an administrator mute is not reported as execution success',async()=>{
+test('non-contract result field of an administrator mute is never mistaken for a business ACK',async()=>{
  const api=new ApiMock();api.botRole='owner';api.targetRole='admin';api.result={result:1};
  const r=await new Moderation(api,Date.now,all('direct')).request('mute_member',{user_id:target,seconds:2},ctx);
- assert.equal(api.mutations().length,1);assert.equal(r.status,'error');
+ assert.equal(api.mutations().length,1);assert.equal(r.status,'unknown');
 });
 
 test('bot group/id metadata cannot be replaced with claimed administrator names', async () => {
@@ -177,10 +177,10 @@ test('successful dispatch acknowledgement stays executed after abort/dispose ins
   }
 });
 
-test('native acknowledged success, explicit rejection and uncertain response remain distinct', async () => {
+test('only the contracted null acknowledgement executes; arbitrary shapes remain uncertain', async () => {
   const responses: [unknown, string][] = [
-    [null, 'executed'], [undefined, 'executed'], [{}, 'executed'], [Object.create(null), 'executed'], [true, 'executed'], [0, 'executed'], [{ result: 0 }, 'executed'], [{ result: true }, 'executed'],
-    [false, 'error'], [-1, 'error'], [{ result: 1, errMsg: 'SECRET BUSINESS ERROR' }, 'error'], [{ result: false }, 'error'], [{ result: 0, success: false }, 'error'], [{ retcode: 1 }, 'error'], [{ code: -1 }, 'error'], [{ status: 'failed' }, 'error'],
+    [null, 'executed'], [undefined, 'unknown'], [{}, 'unknown'], [Object.create(null), 'unknown'], [true, 'unknown'], [0, 'unknown'], [{ result: 0 }, 'unknown'], [{ result: true }, 'unknown'],
+    [false, 'unknown'], [-1, 'unknown'], [{ result: 1, errMsg: 'SECRET BUSINESS ERROR' }, 'unknown'], [{ result: false }, 'unknown'], [{ result: 0, success: false }, 'unknown'], [{ retcode: 1 }, 'unknown'], [{ code: -1 }, 'unknown'], [{ status: 'failed' }, 'unknown'],
     ['success?', 'unknown'], [[], 'unknown'], [{ info: 'SECRET UNKNOWN DETAIL' }, 'unknown'], [{ result: '0' }, 'unknown'], [NaN, 'unknown'], [{ result: Infinity }, 'unknown'],
     [{ result: 0, retcode: '1' }, 'unknown'], [{ result: true, success: undefined }, 'unknown'], [{ result: 0, status: 'unknown' }, 'unknown'], [{ result: 0, code: NaN }, 'unknown'],
   ];
@@ -189,7 +189,7 @@ test('native acknowledged success, explicit rejection and uncertain response rem
     const result = await new Moderation(api, Date.now, { unmute: 'direct' }).request('unmute_member', { user_id: target }, ctx);
     assert.equal(result.status, status); assert.ok(!JSON.stringify(result).includes('SECRET')); assert.equal(api.mutations().length, 1);
     if (status === 'unknown') assert.equal(result.error, 'delivery_unknown');
-    if (status === 'error') assert.equal(result.error, 'moderation_rejected');
+    if (status === 'unknown') { assert.equal(result.effect_unknown,true); assert.equal(result.retry_allowed,false); }
   }
 });
 
@@ -199,7 +199,7 @@ test('transport failure after dispatch is unknown in direct and confirm modes an
     api.hook = name => { if (writes.has(name)) throw new Error('SECRET TRANSPORT BODY'); };
     const result = await m.request('unmute_member', { user_id: target }, ctx);
     const final = mode === 'confirm' ? await m.confirm(String(result.code), owner) : result;
-    assert.deepEqual(final, { status: 'unknown', error: 'delivery_unknown' }); assert.equal(api.mutations().length, 1);
+    assert.deepEqual(final, { status: 'unknown', error: 'delivery_unknown', effect_unknown:true, retry_allowed:false }); assert.equal(api.mutations().length, 1);
     if (mode === 'confirm') { assert.equal((await m.confirm(String(result.code), owner)).status, 'error'); assert.equal(api.mutations().length, 1); }
   }
 });

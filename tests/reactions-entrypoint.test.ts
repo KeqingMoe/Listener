@@ -82,7 +82,7 @@ test('real entrypoint performs isolated reactions, exposes only local ledger sta
   const wsPort=(ws.address() as AddressInfo).port,httpPort=(http.address() as AddressInfo).port;
   mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'Local reaction fixture, no external provider or QQ connection.');
   writeFileSync(join(dir,'.env'),'FIXTURE_ONEBOT_TOKEN=fixture-onebot-token\nFIXTURE_MODEL_KEY=fixture-model-key\n',{mode:0o600});
-  writeFileSync(join(dir,'config.toml'),`[onebot]\nurl="ws://127.0.0.1:${wsPort}"\ntoken_env="FIXTURE_ONEBOT_TOKEN"\n[ai]\nenabled=true\nbase_url="http://127.0.0.1:${httpPort}/v1"\nmodel="fixture-reactions-model"\napi_key_env="FIXTURE_MODEL_KEY"\ntimeout_ms=10000\nmax_concurrent_turns=2\n[reply]\ndelay_ms=[100,100]\ncooldown_ms=1000\nrandom_probability=0\n[tools]\nreactions=true\n[logging]\nlevel="debug"\nconsole=true\nfile=false\n[groups."${A}"]\n[groups."${B}"]\n`);
+  writeFileSync(join(dir,'config.toml'),`[bot]\nowner_id="778899"\n[onebot]\nurl="ws://127.0.0.1:${wsPort}"\ntoken_env="FIXTURE_ONEBOT_TOKEN"\n[ai]\nenabled=true\nbase_url="http://127.0.0.1:${httpPort}/v1"\nmodel="fixture-reactions-model"\napi_key_env="FIXTURE_MODEL_KEY"\ntimeout_ms=10000\nmax_concurrent_turns=2\n[reply]\ndelay_ms=[100,100]\ncooldown_ms=1000\nrandom_probability=0\n[tools]\nreactions=true\n[logging]\nlevel="debug"\nconsole=true\nfile=false\n[groups."${A}"]\n[groups."${B}"]\n`);
   child=spawn(process.execPath,['--import',import.meta.resolve('tsx'),fileURLToPath(new URL('../src/index.ts',import.meta.url))],{cwd:dir,env:{PATH:process.env.PATH??'',HOME:dir,NODE_NO_WARNINGS:'1'},stdio:['ignore','pipe','pipe']});
   childExited=new Promise((resolve,reject)=>{child!.once('error',error=>{fail(error);reject(error);});child!.once('close',(code,signal)=>{resolve({code,signal});notify();});});void childExited.catch(()=>{});
   for(const stream of [child.stdout!,child.stderr!])stream.on('data',chunk=>{output=(output+chunk.toString()).slice(-128*1024);notify();});
@@ -110,7 +110,7 @@ test('real entrypoint performs isolated reactions, exposes only local ledger sta
   assert.deepEqual(await bounded(childExited,5000),{code:0,signal:null});assert.ok(output.includes('app.stopped'));
   await wait(()=>peers.size===0&&sockets.size===0,'all child network resources closed');assert.equal(connectionCount,1);assert.equal(requests.length,6);assert.equal(mutations().length,5);assert.equal(sends().length,2);
   assert.ok(!JSON.stringify(sends()).includes('must-not-send-after-cancel'));assert.equal(mutations().filter(c=>c.params.message_id==='201').length,1);
-  for(const [group,path,inputs]of [[A,join(dir,'data/listener.sqlite'),['101','102','103']],[B,join(dir,'data/groups/22/listener.sqlite'),['201','202','203']]] as const){
+  for(const [group,path,inputs]of [[A,join(dir,`data/groups/${A}/listener.sqlite`),['101','102','103']],[B,join(dir,'data/groups/22/listener.sqlite'),['201','202','203']]] as const){
    const db=new DatabaseSync(path,{readOnly:true});try{
     assert.equal(db.prepare('SELECT group_id FROM listener_identity WHERE singleton=1').get()!.group_id,group);
     const entries=db.prepare('SELECT entry FROM listener_messages ORDER BY seq').all().map(row=>JSON.parse(row.entry as string));

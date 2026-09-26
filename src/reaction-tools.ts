@@ -1,6 +1,11 @@
 import { LISTENER_GROUP, resolveGroupId, type Api, type Memory, type JsonObject, type TimelineEntry, type TurnContext } from './contracts.js';
-import { isKnownReactionId } from './reaction-catalog.js';
-export { createReactionTool } from './reaction-catalog.js';
+import { isKnownReactionId, createReactionTool as catalogReactionTool } from './reaction-catalog.js';
+import { submittedResult, writeFailure, afterDispatch } from './operation-result.js';
+export function createReactionTool() {
+  const tool = catalogReactionTool();
+  tool.function.description = tool.function.description.replace('即时执行，后续取消本轮不回滚已执行操作。', '即时向provider提交请求，后续取消本轮不回滚提交。') + ' 正常结果submitted=true只证明provider接受提交，不代表已观察到QQ贴上或移除表情，也不是失败。重复同一动作返回原提交而不重发；明确要求的add/remove可作为新的期望状态独立提交，但不得仅因缺少业务回执而盲目反向试探或补偿。真实unknown仍禁止同一消息与表情的双向重试。';
+  return tool;
+}
 
 /** Opaque ownership token: mutable state never comes from model arguments. */
 export interface ReactionTurn { readonly reaction_turn: true }
@@ -28,6 +33,30 @@ function identity(value: unknown): string|undefined {
   if (typeof value === 'number') return Number.isSafeInteger(value) && value > 0 ? String(value) : undefined;
   if (typeof value !== 'string' || value.length > 32 || value.trim() !== value || !/^[1-9][0-9]*$/.test(value)) return undefined;
   return value;
+}
+
+/** Native returnSchema is Any: normal JSON is a submission, never a business ACK.
+ * Do not execute getters/toJSON or expose native response bodies while classifying. */
+function jsonResponse(value: unknown, depth = 0, seen = new Set<object>(), budget = {nodes:8192}): boolean {
+  if (--budget.nodes < 0 || depth > 32) return false;
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (typeof value !== 'object' || !value || seen.has(value)) return false;
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      const keys = Reflect.ownKeys(value);
+      if (keys.length !== value.length + 1) return false;
+      for (let i=0;i<value.length;i++) {
+        const descriptor=Object.getOwnPropertyDescriptor(value,String(i));
+        if(!descriptor || !Object.hasOwn(descriptor,'value') || !jsonResponse(descriptor.value,depth+1,seen,budget))return false;
+      }
+      return true;
+    }
+    if (!record(value)) return false;
+    return Object.values(Object.getOwnPropertyDescriptors(value)).every(descriptor => jsonResponse(descriptor.value,depth+1,seen,budget));
+  } catch { return false; }
+  finally { seen.delete(value); }
 }
 
 export class ReactionTools {
@@ -99,15 +128,15 @@ export class ReactionTools {
       (Object.hasOwn(remote, 'user_id') && identity(remote.user_id) !== remoteSender)) return remember(error('verification_failed'));
     if (signal?.aborted) return remember(error('cancelled'));
     const tuple = { message_id: id, emoji_id: emoji, action };
-    const unknown = (): JsonObject => remember({ status: 'unknown', error: 'reaction_result_unknown', ...tuple });
+    const unknown = (): JsonObject => remember({ ...writeFailure(undefined, 'reaction_result_unknown'), ...tuple });
     let result: unknown;
     try { result = await this.api.call('set_msg_emoji_like', { message_id: id, emoji_id: emoji, set: action === 'add' }); }
-    catch { return unknown(); }
+    catch (failure) { return remember({ ...writeFailure(failure, 'reaction_result_unknown'), ...tuple }); }
     // A cancellation during a dispatched native call cannot undo its result.
-    if (record(result) && (result.result === 0 || result.result === true)) return remember({ status: 'ok', ...tuple });
-    if (record(result) && (result.result === false || (typeof result.result === 'number' && Number.isFinite(result.result) && result.result !== 0))) {
+    if (!jsonResponse(result)) return unknown();
+    if (record(result) && Object.hasOwn(result, 'result') && (result.result === false || (typeof result.result === 'number' && Number.isFinite(result.result) && result.result !== 0))) {
       return remember({ status: 'error', error: 'reaction_rejected', ...tuple });
     }
-    return unknown();
+    return remember(afterDispatch(submittedResult(tuple), signal?.aborted === true));
   }
 }

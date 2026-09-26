@@ -132,11 +132,12 @@ test("security: delete result naming an unrelated native file does not confirm t
   });
   const rows = await f.list(),
     token = rows.find((r) => r.kind === "file")!.file_handle;
-  assert.equal(
-    (await f.run("delete_group_file", { file_handle: token })).status,
-    "unknown",
-    "uncorrelated native success list is not an ACK for this handle",
-  );
+  const result = await f.run('delete_group_file',{file_handle:token});
+  assert.equal(result.status,'ok');
+  assert.equal(result.submitted,true);
+  assert.equal(result.effect_confirmed,false,'native success list is API reported completion, not independent identity/physical deletion proof');
+  assert.equal(result.deleted,undefined);
+  assert.equal(JSON.stringify(result).includes('UNRELATED-NATIVE-FILE'),false);
 });
 
 test("security: destructive file operation checks current directory membership before dispatch", async () => {

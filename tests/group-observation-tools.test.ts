@@ -41,6 +41,24 @@ const execute = (
   args: unknown,
   signal?: AbortSignal,
 ) => tools.execute(name, args, context, signal);
+test("normal empty notice and essence replies remain usable without claiming upstream completeness", async () => {
+  for (const name of ["read_group_notices", "read_group_essence"]) {
+    const { tools } = fixture([]);
+    const result = await execute(tools, name, { limit: 20 });
+    assert.equal(result.status, "ok");
+    assert.deepEqual(result.items, []);
+    assert.equal(result.upstream_partial, true);
+    assert.notEqual(result.completeness, undefined);
+    assert.equal(result.total_scope, "upstream_response");
+    if (name === "read_group_essence") {
+      assert.equal(result.message_ids_verified, false);
+      assert.equal(result.upstream_page_limit, 20);
+      assert.equal(result.upstream_page_size, 50);
+      assert.match(String(result.completeness), /empty_or_partial_on_failure/);
+    } else assert.equal(result.upstream_requested_window, 20);
+  }
+});
+
 test("definitions expose five strict read-only tools and explicit collection limits", () => {
   const { tools } = fixture([]);
   const defs = tools.definitions();
@@ -411,7 +429,7 @@ test("source size, malformed source, and foreign group rows fail rather than par
     "resource_limit",
   );
 });
-test("API exceptions and sensitive text transport encodings remain sanitized", async () => {
+test("API errors remain sanitized while typed notice text stays literal and untrusted", async () => {
   const error = await execute(
     fixture(null, { fail: true }).tools,
     "get_group_info",
@@ -429,7 +447,31 @@ test("API exceptions and sensitive text transport encodings remain sanitized", a
     "read_group_notices",
     { limit: 1 },
   );
-  assert.doesNotMatch(JSON.stringify(r), /PRIVATE/);
+  assert.equal(
+    (r.items as JsonObject[])[0]!.text,
+    "hello [CQ:image,file=/PRIVATE,url=https://PRIVATE] https://PRIVATE data:PRIVATE file:///PRIVATE",
+  );
+  assert.equal(r.untrusted, true);
+  const essence = await execute(
+    fixture([
+      {
+        content: [
+          {
+            type: "text",
+            data: { text: "[CQ:at,qq=all] https://example.com" },
+          },
+          { type: "image", data: { url: "https://TRANSPORT-SECRET" } },
+        ],
+      },
+    ]).tools,
+    "read_group_essence",
+    { limit: 1 },
+  );
+  assert.equal(
+    (essence.items as JsonObject[])[0]!.text,
+    "[CQ:at,qq=all] https://example.com",
+  );
+  assert.doesNotMatch(JSON.stringify(essence), /TRANSPORT-SECRET/);
 });
 test("cancellation before dispatch, after login, and after upstream read discards results", async () => {
   for (const when of ["before", "get_login_info", "get_group_info"]) {

@@ -5,7 +5,8 @@ import { parse as parseDotenv } from 'dotenv';
 import type { Config } from './config.js';
 import type { ListenerConfig, ModerationMode } from './listener-config.js';
 import type { LoggingConfig, LogLevel } from './logger.js';
-import { LISTENER_GROUP, OWNER_ID } from './contracts.js';
+import { OWNER_ID } from './contracts.js';
+import { EXTENDED_TOOL_NAMES, EXTENDED_READ_ONLY_TOOLS, type ExtendedToolsConfig } from './extended-tool-config.js';
 
 /** Messages contain only trusted schema paths, never configuration values. */
 export class ConfigError extends Error {
@@ -34,6 +35,18 @@ function moderationMode(t: Table, key: string, path: string, fallback: Moderatio
   const value = Object.hasOwn(t, key) ? t[key] : fallback;
   if (value !== 'off' && value !== 'confirm' && value !== 'direct') return fail(`${path}.${key}`, '必须是 off、confirm 或 direct 字符串，不接受布尔值');
   return value;
+}
+function extendedSettings(value: unknown, path: string, defaults?: ExtendedToolsConfig): { extended?: ExtendedToolsConfig } {
+  if (value === undefined && defaults === undefined) return {};
+  const raw = table(value, path, [...EXTENDED_TOOL_NAMES]);
+  const result: ExtendedToolsConfig = {...defaults};
+  for (const name of EXTENDED_TOOL_NAMES) if (Object.hasOwn(raw, name)) {
+    const mode = raw[name];
+    if (mode !== 'off' && mode !== 'confirm' && mode !== 'direct') fail(`${path}.${name}`, '必须是 off、confirm 或 direct；新增能力默认 off');
+    if(mode==='confirm'&&EXTENDED_READ_ONLY_TOOLS.includes(name))fail(`${path}.${name}`,'只读工具无需写操作确认，请使用 off 或 direct');
+    result[name] = mode as 'off' | 'confirm' | 'direct';
+  }
+  return {extended: result};
 }
 function num(t: Table, key: string, path: string, fallback: number, min: number, max: number, integer = true): number {
   const value = t[key] ?? fallback;
@@ -92,18 +105,18 @@ function persona(file: string, field = 'persona.file'): string {
     return fail(field, '无法读取 UTF-8 文件');
   } finally { if (fd !== undefined) closeSync(fd); }
 }
-function groupId(value: unknown, field: string): string {
-  if (typeof value !== 'string' || !/^[1-9]\d{0,31}$/.test(value) || value.trim() !== value) return fail(field, '必须是规范的群号字符串');
+function groupId(value: unknown, field: string, label = '群号'): string {
+  if (typeof value !== 'string' || !/^[1-9]\d{0,31}$/.test(value) || value.trim() !== value) return fail(field, `必须是规范的${label}字符串`);
   return value;
 }
-function groupSettings(id: string, raw: unknown, defaults: ListenerConfig, base: string): { enabled: boolean; config: ListenerConfig } {
+function groupSettings(id: string, raw: unknown, defaults: ListenerConfig, base: string, legacyGroupId?: string): { enabled: boolean; config: ListenerConfig } {
   const path = `groups.${id}`;
   const group = table(raw,path,['enabled','ai','reply','tools','images','forward','attention','memory','persona']);
    const groupAi = table(group.ai,`${path}.ai`,['max_tool_calls_per_wake','wake_timeout_ms','transport','session_max_context_bytes','server_compaction','compact_threshold']);
   const enabled = bool(group,'enabled',path,true);
   const reply = table(group.reply,`${path}.reply`,['mention','quote_bot','random_probability','delay_ms','cooldown_ms','random']);
   const random = table(reply.random,`${path}.reply.random`,['cooldown_ms','max_per_minute']);
-  const tools = table(group.tools,`${path}.tools`,['members','mention','reactions','moderation']);
+  const tools = table(group.tools,`${path}.tools`,['members','mention','reactions','moderation','extended']);
   const moderation = table(tools.moderation,`${path}.tools.moderation`,['mute','unmute','recall','member_card','confirmation_ttl_seconds','max_mute_seconds']);
   const images = table(group.images,`${path}.images`,['enabled','max_per_turn','max_download_mb']);
   const forward = table(group.forward,`${path}.forward`,['enabled']);
@@ -113,11 +126,11 @@ function groupSettings(id: string, raw: unknown, defaults: ListenerConfig, base:
   const delay = reply.delay_ms ?? [defaults.debounceMs,defaults.delayMaxMs];
   if (!Array.isArray(delay) || delay.length !== 2) fail(`${path}.reply.delay_ms`,'必须是两个整数的数组');
   const pair=delay as unknown[];
-  const debounceMs=num({min:pair[0]},'min',`${path}.reply.delay_ms`,defaults.debounceMs,100,5000);
-  const delayMaxMs=num({max:pair[1]},'max',`${path}.reply.delay_ms`,defaults.delayMaxMs!,100,10000);
+  const debounceMs=num({min:pair[0]},'min',`${path}.reply.delay_ms`,defaults.debounceMs,0,5000);
+  const delayMaxMs=num({max:pair[1]},'max',`${path}.reply.delay_ms`,defaults.delayMaxMs!,0,10000);
   if(delayMaxMs<debounceMs)fail(`${path}.reply.delay_ms`,'最大延迟不得小于最小延迟');
   const dTools=defaults.tools!, dModeration=dTools.moderation, dImages=defaults.images!, dForward=defaults.forward!;
-  const defaultMemory=id===LISTENER_GROUP?defaults.memoryPath:resolve(dirname(defaults.memoryPath),'groups',id,'listener.sqlite');
+  const defaultMemory=id===legacyGroupId?defaults.memoryPath:resolve(dirname(defaults.memoryPath),'groups',id,'listener.sqlite');
   const memoryPath=Object.hasOwn(memory,'path')?filePath(text(memory,'path',`${path}.memory`,''),base,`${path}.memory.path`):defaultMemory;
   const append=Object.hasOwn(extra,'append_file')?persona(filePath(text(extra,'append_file',`${path}.persona`,''),base,`${path}.persona.append_file`),`${path}.persona.append_file`):undefined;
   return {enabled,config:{
@@ -132,7 +145,7 @@ function groupSettings(id: string, raw: unknown, defaults: ListenerConfig, base:
     quoteBotEnabled:bool(reply,'quote_bot',`${path}.reply`,defaults.quoteBotEnabled!),
     memoryPath,retentionDays:num(memory,'retention_days',`${path}.memory`,defaults.retentionDays,1,30),
     maxContextChars:num(memory,'context_chars',`${path}.memory`,defaults.maxContextChars,8000,100000),
-    tools:{members:bool(tools,'members',`${path}.tools`,dTools.members),mention:bool(tools,'mention',`${path}.tools`,dTools.mention),reactions:bool(tools,'reactions',`${path}.tools`,dTools.reactions ?? false),moderation:{
+    tools:{...extendedSettings(tools.extended,`${path}.tools.extended`,dTools.extended),members:bool(tools,'members',`${path}.tools`,dTools.members),mention:bool(tools,'mention',`${path}.tools`,dTools.mention),reactions:bool(tools,'reactions',`${path}.tools`,dTools.reactions ?? false),moderation:{
       mute:moderationMode(moderation,'mute',`${path}.tools.moderation`,dModeration.mute),unmute:moderationMode(moderation,'unmute',`${path}.tools.moderation`,dModeration.unmute),
       recall:moderationMode(moderation,'recall',`${path}.tools.moderation`,dModeration.recall),memberCard:moderationMode(moderation,'member_card',`${path}.tools.moderation`,dModeration.memberCard),
       confirmationTtlSeconds:num(moderation,'confirmation_ttl_seconds',`${path}.tools.moderation`,dModeration.confirmationTtlSeconds,1,60),
@@ -183,14 +196,17 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
   const p = table(root.persona, 'persona', ['file']);
   const reply = table(root.reply, 'reply', ['mention', 'quote_bot', 'random_probability', 'delay_ms', 'cooldown_ms', 'random']);
   const random = table(reply.random, 'reply.random', ['cooldown_ms', 'max_per_minute']);
-  const memory = table(root.memory, 'memory', ['path', 'retention_days', 'context_chars']);
-  const tools = table(root.tools, 'tools', ['members', 'mention', 'reactions', 'moderation']);
+  const memory = table(root.memory, 'memory', ['path', 'retention_days', 'context_chars', 'legacy_group_id']);
+  const legacyGroupId = Object.hasOwn(memory,'legacy_group_id') ? groupId(memory.legacy_group_id,'memory.legacy_group_id') : undefined;
+  const tools = table(root.tools, 'tools', ['members', 'mention', 'reactions', 'moderation', 'extended']);
   const images = table(root.images, 'images', ['enabled', 'max_per_turn', 'max_download_mb']);
   const forward = table(root.forward, 'forward', ['enabled']);
   const attention = table(root.attention, 'attention', ['enabled', 'max_plans']);
   const logs = table(root.logging, 'logging', ['level', 'console', 'file', 'directory', 'retention_days', 'max_file_mb', 'max_total_mb']);
   const moderation = table(tools.moderation, 'tools.moderation', ['mute', 'unmute', 'recall', 'member_card', 'confirmation_ttl_seconds', 'max_mute_seconds']);
-  if ((bot.owner_id ?? OWNER_ID)!==OWNER_ID) fail('bot.owner_id','必须使用本安装固定的身份字符串');
+  // No routed groups may inherit a public compatibility/test owner identity.
+  const ownerConfigured=Object.hasOwn(bot,'owner_id');
+  const ownerId=ownerConfigured ? groupId(bot.owner_id,'bot.owner_id','主人QQ号') : OWNER_ID;
   const tokenEnv = text(one, 'token_env', 'onebot', 'ONEBOT_ACCESS_TOKEN');
   const keyEnv = text(ai, 'api_key_env', 'ai', 'OPENAI_API_KEY');
   for (const [name, field] of [[tokenEnv, 'onebot.token_env'], [keyEnv, 'ai.api_key_env']]) {
@@ -218,12 +234,12 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
   const delay = reply.delay_ms ?? [1200, 3000];
   if (!Array.isArray(delay) || delay.length !== 2) fail('reply.delay_ms', '必须是两个整数的数组');
   const pair = delay as unknown[];
-  const debounceMs = num({ min: pair[0] }, 'min', 'reply.delay_ms', 1200, 100, 5000);
-  const delayMaxMs = num({ max: pair[1] }, 'max', 'reply.delay_ms', 3000, 100, 10000);
+  const debounceMs = num({ min: pair[0] }, 'min', 'reply.delay_ms', 1200, 0, 5000);
+  const delayMaxMs = num({ max: pair[1] }, 'max', 'reply.delay_ms', 3000, 0, 10000);
   if (delayMaxMs < debounceMs) fail('reply.delay_ms', '最大延迟不得小于最小延迟');
   const onebot: Config = {
     url: url(text(one, 'url', 'onebot', 'ws://127.0.0.1:3001'), 'onebot.url'), token,
-    allowedGroups: new Set<string>(), allowedUsers: new Set(), adminUsers: new Set([OWNER_ID]), allowPrivate: false,
+    allowedGroups: new Set<string>(), allowedUsers: new Set(), adminUsers: new Set([ownerId]), allowPrivate: false,
     apiTimeoutMs: num(one, 'api_timeout_ms', 'onebot', 10000, 1, 2147483647),
     reconnectBaseMs: num(one, 'reconnect_base_ms', 'onebot', 1000, 1, 2147483647),
     reconnectMaxMs: num(one, 'reconnect_max_ms', 'onebot', 30000, 1, 2147483647),
@@ -233,7 +249,7 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
   if (onebot.reconnectBaseMs > onebot.reconnectMaxMs) fail('onebot.reconnect_max_ms', '不得小于重连基础间隔');
   const personaPath = filePath(text(p, 'file', 'persona', 'prompts/listener.md'), base, 'persona.file');
   const listener: ListenerConfig = {
-    enabled, apiKey, model, baseUrl: url(text(ai, 'base_url', 'ai', 'https://api.openai.com/v1'), 'ai.base_url', true),
+    ownerId, enabled, apiKey, model, baseUrl: url(text(ai, 'base_url', 'ai', 'https://api.openai.com/v1'), 'ai.base_url', true),
     timeoutMs: num(ai, 'timeout_ms', 'ai', 45000, 1000, 120000), maxTokens: num(ai, 'max_output_tokens', 'ai', 1200, 128, 4096),
      maxToolCallsPerWake: wakeNumber(ai,'max_tool_calls_per_wake','ai',96,1,4096),
      wakeTimeoutMs: wakeNumber(ai,'wake_timeout_ms','ai',90000,1000,600000),
@@ -246,7 +262,7 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
     memoryPath: filePath(text(memory, 'path', 'memory', 'data/listener.sqlite'), base, 'memory.path'),
     retentionDays: num(memory, 'retention_days', 'memory', 7, 1, 30), maxContextChars: num(memory, 'context_chars', 'memory', 24000, 8000, 100000),
     botName: text(bot, 'name', 'bot', 'Listener'), ownerName: text(bot, 'owner_name', 'bot', '時雨てる'),
-    tools: { members: bool(tools, 'members', 'tools', true), mention: bool(tools, 'mention', 'tools', true), reactions: bool(tools, 'reactions', 'tools', false), moderation: {
+    tools: { ...extendedSettings(tools.extended,'tools.extended'), members: bool(tools, 'members', 'tools', true), mention: bool(tools, 'mention', 'tools', true), reactions: bool(tools, 'reactions', 'tools', false), moderation: {
       mute: moderationMode(moderation, 'mute', 'tools.moderation', 'off'), unmute: moderationMode(moderation, 'unmute', 'tools.moderation', 'off'),
       recall: moderationMode(moderation, 'recall', 'tools.moderation', 'off'), memberCard: moderationMode(moderation, 'member_card', 'tools.moderation', 'off'),
       confirmationTtlSeconds: num(moderation, 'confirmation_ttl_seconds', 'tools.moderation', 60, 1, 60),
@@ -277,9 +293,10 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
   }else configured={};
   const groups:ListenerConfig[]=[];
   for(const [id,settings] of Object.entries(configured)){
-    const group=groupSettings(id,settings,listener,base);
+    const group=groupSettings(id,settings,listener,base,legacyGroupId);
     if(group.enabled)groups.push(group.config);
   }
+  if(groups.length&&!ownerConfigured)fail('bot.owner_id','启用群时必须在本地全局配置中显式指定主人QQ号');
   checkMemoryPaths(groups);
   onebot.allowedGroups=new Set(groups.map(group=>group.groupId!));
   return { onebot, listener, groups, maxConcurrentTurns, logging, personaPath, configPath };

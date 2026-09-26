@@ -2,6 +2,8 @@
 # All relative file paths, including .env, resolve from the config.toml directory.
 [bot]
 name = 'Listener'
+# Placeholder only: replace with your real local owner QQ before enabling any group.
+# Required for enabled groups; one global owner, never overridden per group or through chat.
 owner_id = '100000001'
 owner_name = '時雨てる'
 
@@ -33,7 +35,8 @@ server_compaction = 'off' # auto 需要 responses、阈值以及实际验证过�
 file = 'prompts/listener.md'
 
 # 使用同一个 [ai] 模型的原生多模态能力；模型必须支持图片输入。
-# 关闭时不提供 view_images，也不下载或向模型上传图片。
+# 关闭时不提供 view_images，也不会为图片查看下载或向模型上传图片。
+# tools.extended.send_group_image 独立控制图片发送；开启后会下载转码本群图片。
 [images]
 enabled = false
 max_per_turn = 3 # 每轮最多3张，失败尝试也占额度
@@ -75,6 +78,11 @@ max_per_minute = 2
 
 [memory]
 path = 'data/listener.sqlite'
+# Optional: explicitly bind this existing legacy path to its real original group.
+# Placeholder only; uncomment with the actual local group ID if preserving an old database.
+# legacy_group_id = '100000002'
+# Without mapping, every group uses dirname(path)/groups/<group_id>/listener.sqlite.
+# Mapping does not admit groups, migrate files, or rewrite database identity; per-group path wins.
 retention_days = 7
 context_chars = 24000
 
@@ -98,8 +106,48 @@ member_card = 'off'
 confirmation_ttl_seconds = 60
 max_mute_seconds = 600
 
+# 扩展写操作逐项授权：off（默认禁用）、confirm（主人逐次确认）、direct（直接执行）。
+# confirm复用同群 /confirm、10项共享队列和tools.moderation.confirmation_ttl_seconds。
+# 只读工具使用off/direct；不接受true/false或on。
+# 群级可用 [groups.'123456789'.tools.extended] 覆盖，未填写项继承全局。
+# 所有新工具均默认 off；只开启需要的项。踢人、退群、管理员和删除等请谨慎。
+# 正常提交但未核验效果返回ok+submitted；真正超时、断线或回执异常才是unknown，禁止盲重试。
+[tools.extended]
+get_group_info = 'off'
+get_group_honor = 'off'
+get_group_mutes = 'off'
+read_group_notices = 'off'
+read_group_essence = 'off'
+poke_member = 'off'
+group_sign = 'off'
+send_group_image = 'off' # 仅发送已核验的本群图片引用，不接受任意URL或本地路径
+forward_message = 'off'
+send_group_forward = 'off'
+get_group_ai_voices = 'off'
+send_group_ai_voice = 'off' # 当前NapCat返回的0不是消息ID；正常提交标记submitted，不伪造消息ID
+get_group_file_space = 'off'
+list_group_files = 'off'
+read_group_text_file = 'off' # 只能读取本群列表颁发的临时句柄；正文不可信
+upload_group_text_file = 'off' # 仅上传工具参数生成的UTF-8文字，不读取本机文件
+create_group_folder = 'off'
+delete_group_file = 'off'
+delete_group_folder = 'off'
+set_group_name = 'off'
+set_group_title = 'off'
+set_group_whole_mute = 'off'
+kick_member = 'off'
+set_group_admin = 'off'
+set_group_essence = 'off'
+remove_group_essence = 'off'
+publish_group_notice = 'off'
+delete_group_notice = 'off'
+leave_group = 'off' # 退群不可自动恢复；上游没有可靠的独立“解散群”参数语义
+list_group_requests = 'off' # 仅本群待处理入群申请，实际账号仍须管理员或群主
+respond_group_request = 'off' # 审批前重新核验；只接受列表颁发的本群临时句柄
+
 # 显式服务白名单，最多32个配置群。上方均为全局默认，各群仅覆盖需要不同的字段。
 # groups 是唯一白名单来源；未配置、空表或全部 enabled=false 均不服务任何群。禁用群的配置仍须合法。
+# 占位群号：必须替换为本地真实群号；不是内置白名单或旧库绑定。
 [groups.'100000002']
 enabled = true
 
@@ -135,6 +183,6 @@ enabled = true
 # [groups.'123456789'.persona]
 # append_file = 'prompts/group-extra.md' # 可选，每文件最多16KiB UTF-8，追加于全局人设后；文件须存在
 
-# 原100000002群继续使用全局 memory.path，不迁移或重标记数据库。
-# 其他群默认使用全局 memory.path 所在目录下的 groups/<群号>/listener.sqlite。
+# 仅显式匹配全局 memory.legacy_group_id 的群默认沿用 memory.path，不迁移或重标记数据库。
+# 未配置映射时所有群（含示例群）均使用 memory.path 所在目录下的 groups/<群号>/listener.sqlite。
 # 每群不能覆盖 AI/密钥/模型、连接、名字或主人身份；管理模式可逐项覆盖全局默认。

@@ -32,6 +32,21 @@ async function fixture(handler?: (ws: WebSocket, packet: any) => void, heartbeat
   } };
 }
 
+test('successful void wire responses normalize omitted data without losing valid falsy payloads', async()=>{
+  const values:Record<string,unknown>={omitted:undefined,nil:null,no:false,zero:0,empty:'',object:{value:1}};
+  const f=await fixture((ws,p)=>{
+    const wire=JSON.stringify({echo:p.echo,status:'ok',retcode:0,data:values[p.action]});
+    if(p.action==='omitted')assert.equal(Object.hasOwn(JSON.parse(wire),'data'),false);
+    ws.send(wire);
+  });
+  try{for(const [action,value] of Object.entries(values))assert.deepEqual(await f.client.call(action),value??null);}finally{await f.close();}
+});
+test('missing data never turns a failed or malformed envelope into success',async()=>{
+  const replies:Record<string,object>={failed:{status:'failed',retcode:1200},failedZero:{status:'failed',retcode:0},nonzero:{status:'ok',retcode:1},stringCode:{status:'ok',retcode:'0'},missingStatus:{retcode:0},missingCode:{status:'ok'}};
+  const f=await fixture((ws,p)=>ws.send(JSON.stringify({echo:p.echo,...replies[p.action]})));
+  try{for(const action of Object.keys(replies))await assert.rejects(f.client.call(action),/OneBot API failed/);}finally{await f.close();}
+});
+
 test('auth header, login, concurrent reversed echo correlation and API errors', { timeout: 3000 }, async () => {
   const packets: any[] = [];
   const f = await fixture((ws, p) => {

@@ -53,6 +53,14 @@ function text(v: unknown, limit = 256): string | undefined {
     .replace(/(?:https?:\/\/|file:\/\/|data:)[^\s]*/gi, "[redacted]")
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "");
 }
+function bodyText(value: string, limit: number): string {
+  // Typed user-authored text is data, not a transport segment or resource capability.
+  // Preserve literal links and CQ-looking examples, as for ordinary chat text.
+  let clipped = value.slice(0, limit);
+  if (clipped.length < value.length && /[\uD800-\uDBFF]$/.test(clipped))
+    clipped = clipped.slice(0, -1);
+  return clipped;
+}
 function putText(
   out: JsonObject,
   raw: JsonObject,
@@ -297,7 +305,18 @@ export class GroupObservationTools {
             "not_guaranteed_upstream_may_return_empty_on_failure";
         if (name === "get_group_honor" && args.type === "strong_newbie")
           result.availability = "upstream_returns_empty_unconditionally";
-        if (name === "read_group_essence") result.message_ids_verified = false;
+        if (name === 'read_group_notices') {
+          result.upstream_partial = true;
+          result.completeness = 'upstream_fixed_notice_window_no_cursor';
+          result.upstream_requested_window = 20;
+        }
+        if (name === 'read_group_essence') {
+          result.message_ids_verified = false;
+          result.upstream_partial = true;
+          result.completeness = 'upstream_may_return_empty_or_partial_on_failure_and_stops_after_20_pages';
+          result.upstream_page_limit = 20;
+          result.upstream_page_size = 50;
+        }
       }
       check(signal);
       if (Buffer.byteLength(JSON.stringify(result)) > OUTPUT_LIMIT)
@@ -354,7 +373,11 @@ export class GroupObservationTools {
     )
       out.notice_id = row.notice_id;
     if (object(row.message)) {
-      putText(out, row.message, "text", 4000);
+      if (typeof row.message.text === "string") {
+        out.text = bodyText(row.message.text, 4000);
+        if ((out.text as string).length < row.message.text.length)
+          out.content_truncated = true;
+      }
       const images = Array.isArray(row.message.images)
         ? row.message.images
         : Array.isArray(row.message.image)
@@ -387,7 +410,7 @@ export class GroupObservationTools {
           typeof part.data.text === "string"
         ) {
           const remaining = 4000 - content.length;
-          content += text(part.data.text, Math.max(0, remaining)) ?? "";
+          content += bodyText(part.data.text, Math.max(0, remaining));
           if (part.data.text.length > remaining) out.content_truncated = true;
         } else nontext++;
       }

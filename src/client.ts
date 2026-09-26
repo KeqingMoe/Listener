@@ -76,7 +76,10 @@ export class OneBotClient extends EventEmitter {
         if (!pending) return;
         clearTimeout(pending.timer);
         this.pending.delete(packet.echo);
-        if (packet.status === 'ok' && packet.retcode === 0) pending.resolve(packet.data);
+        // NapCat void handlers serialize success without a data key (undefined is
+        // omitted by JSON.stringify). Canonicalize only a successful empty payload;
+        // never confuse a failed envelope with success or discard false/0/empty text.
+        if (packet.status === 'ok' && packet.retcode === 0) pending.resolve(packet.data ?? null);
         else pending.reject(new OneBotError('api_failed',Number.isSafeInteger(packet.retcode)?packet.retcode:undefined));
       } else if (packet.post_type === 'message') this.emit('message', packet);
       else if (packet.post_type === 'notice' && (['group_msg_emoji_like','group_recall','group_increase','group_decrease','group_ban','group_upload'].includes(packet.notice_type) || (packet.notice_type==='notify'&&['poke','group_name'].includes(packet.sub_type)))) this.emit('notice', packet);

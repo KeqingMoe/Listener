@@ -102,7 +102,7 @@ export class GroupTools {
           bytes+=size; members.push(value);
         }
         const next = offset+members.length, hasMore=next<matching.length;
-        return { status: 'ok', members, total: matching.length, offset, limit, requested:limit, returned:members.length, has_more:hasMore, truncated:members.length<wanted, ...(members.length<wanted?{reason:'output_limit'}:{}), ...(hasMore?{next_offset:next}:{}) };
+        return { status: 'ok', members, source:'provider_member_cache', freshness:'not_guaranteed', total_scope:'provider_snapshot', total: matching.length, offset, limit, requested:limit, returned:members.length, has_more:hasMore, truncated:members.length<wanted, ...(members.length<wanted?{reason:'output_limit'}:{}), ...(hasMore?{next_offset:next}:{}) };
       }
       if (name === 'get_member_info') {
         fields(args, ['user_id']); const userId = identifier(args.user_id);

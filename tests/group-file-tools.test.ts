@@ -18,7 +18,7 @@ function harness(options: { role?: string; respond?: (action: string, params: Js
     if (action === 'get_group_file_system_info') return { file_count: 1, limit_count: 10000, used_space: 0, total_space: 10737418240 };
     if (action === 'upload_group_file') return { file_id: 'native-upload-uuid' };
     if (action === 'create_group_file_folder') return { result: {}, groupItem: [] };
-    if (action === 'delete_group_file') return { result: 0, transGroupFileResult: { successFileIdList: ['native-file-uuid'], failFileIdList: [] } };
+    if (action === 'delete_group_file') return { result: 0, transGroupFileResult: { result: {}, successFileIdList: ['native-file-uuid'], failFileIdList: [] } };
     if (action === 'delete_group_folder') return { retCode: 0 };
     throw new Error(`Unexpected ${action}`);
   } };
@@ -96,7 +96,7 @@ test('never mint root-directory handles and recheck current role instead of trus
 });
 test('upload only explicit UTF-8 bytes as base64, no arbitrary file path or network', async () => {
   const h = harness({ role: 'member' }); const tokens = await handles(h);
-  const result = await h.run('upload_group_text_file', { name: '记录.txt', content: '你好\nhttps://example.com is text', folder_handle: tokens.folder }); assert.deepEqual(result, { status: 'ok', uploaded: true });
+  const result = await h.run('upload_group_text_file', { name: '记录.txt', content: '你好\nhttps://example.com is text', folder_handle: tokens.folder }); assert.deepEqual(result, { status: 'ok', uploaded: true, resource_id_available: true, effect_confirmed: true, confirmation_basis: 'native_send_success' });
   const call = h.calls.find(c => c.action === 'upload_group_file')!; assert.equal(call.params.group_id, '123'); assert.equal(call.params.name, '记录.txt'); assert.equal(call.params.folder_id, 'provider-folder-1'); assert.match(String(call.params.file), /^base64:\/\//);
   assert.equal(Buffer.from(String(call.params.file).slice(9), 'base64').toString('utf8'), '你好\nhttps://example.com is text'); assert.ok(!JSON.stringify(result).includes('uuid'));
   assert.ok(!h.calls.some(c => c.action === 'download_file' || c.action === 'get_group_file_url'));
@@ -107,21 +107,23 @@ test('reject path names, URL passthrough, NUL, empty and oversized UTF-8 upload'
   for (const content of ['', '\0', '中'.repeat(90000)]) assert.equal((await h.run('upload_group_text_file', { name: 'safe.txt', content })).error, 'invalid_arguments');
   assert.equal((await h.run('upload_group_text_file', { name: 'safe.txt', content: 'x', file: '/etc/passwd' })).error, 'invalid_arguments'); assert.equal(h.calls.length, 0);
 });
-test('native null upload and unverified create results are unknown, never invented success', async () => {
-  for (const payload of [null, {}, { file_id: null }, { file_id: '' }]) { const h = harness({ respond: a => a === 'upload_group_file' ? payload : undefined }); assert.equal((await h.run('upload_group_text_file', { name: 'file.txt', content: 'x' })).status, 'unknown'); }
-  for (const payload of [{ result: {}, groupItem: [] }, { result: { retCode: 0 }, groupItem: [] }]) { const h = harness({ respond: a => a === 'create_group_file_folder' ? payload : undefined }); assert.equal((await h.run('create_group_folder', { name: 'docs' })).status, 'unknown'); }
+test('documented nullable upload and broad create wrappers are normal outcomes, invalid shapes remain unknown', async () => {
+  for (const payload of [null, {}, { file_id: '' }]) { const h = harness({ respond: a => a === 'upload_group_file' ? payload : undefined }); assert.equal((await h.run('upload_group_text_file', { name: 'file.txt', content: 'x' })).status, 'unknown'); }
+  const nullable=harness({respond:a=>a==='upload_group_file'?{file_id:null}:undefined});
+  assert.deepEqual(await nullable.run('upload_group_text_file',{name:'file.txt',content:'x'}),{status:'ok',uploaded:true,resource_id_available:false,effect_confirmed:true,confirmation_basis:'native_send_success'});
+  for (const payload of [{ result: {}, groupItem: [] }, { result: {}, groupItem: {} }, { result: { retCode: 0 }, groupItem: [] }]) { const h = harness({ respond: a => a === 'create_group_file_folder' ? payload : undefined }); const r=await h.run('create_group_folder', { name: 'docs' });assert.equal(r.status,'ok');assert.equal(r.submitted,true);assert.equal(r.effect_confirmed,false); }
 });
 test('deletion requires fresh role, ordinary member may only delete own issued file', async () => {
   const own = harness({ role: 'member' }); const tokens = await handles(own);
-  assert.equal((await own.run('delete_group_file', { file_handle: tokens.file })).status, 'unknown');
+  assert.equal((await own.run('delete_group_file', { file_handle: tokens.file })).submitted, true);
   assert.equal(own.calls.filter(c => c.action === 'delete_group_file').length, 1);
   assert.equal((await own.run('delete_group_folder', { folder_handle: tokens.folder })).error, 'insufficient_permission');
   const other = harness({ role: 'member', respond: a => a === 'get_group_root_files' ? { files: [file(1, { uploader: 999 })], folders: [folder()] } : undefined }); const otherTokens = await handles(other);
   assert.equal((await other.run('delete_group_file', { file_handle: otherTokens.file })).error, 'insufficient_permission'); assert.ok(!other.calls.some(c => c.action === 'delete_group_file'));
 });
-test('folder native retCode is verified but file native identifiers cannot prove an ACK', async () => {
-  const good = harness(); const token = await handles(good); assert.deepEqual(await good.run('delete_group_folder', { folder_handle: token.folder }), { status: 'ok', deleted: true });
-  for (const payload of [null, {}, { result: 0 }, { result: 0, transGroupFileResult: { successFileIdList: [], failFileIdList: [] } }]) { const h = harness({ respond: a => a === 'delete_group_file' ? payload : undefined }); const t = await handles(h); assert.equal((await h.run('delete_group_file', { file_handle: t.file })).status, 'unknown'); }
+test('folder native retCode confirms effects while file malformed wrappers remain unknown', async () => {
+  const good = harness(); const token = await handles(good); assert.deepEqual(await good.run('delete_group_folder', { folder_handle: token.folder }), { status: 'ok', deleted: true, effect_confirmed: true, confirmation_basis: 'provider_business_ack' });
+  for (const payload of [null, {}, { result: 0 }, { result: 0, transGroupFileResult: { successFileIdList: [], failFileIdList: null } }]) { const h = harness({ respond: a => a === 'delete_group_file' ? payload : undefined }); const t = await handles(h); assert.equal((await h.run('delete_group_file', { file_handle: t.file })).status, 'unknown'); }
   const bad = harness({ respond: a => a === 'delete_group_folder' ? { retCode: 5, retMsg: 'SECRET' } : undefined }); const badTokens = await handles(bad); assert.deepEqual(await bad.run('delete_group_folder', { folder_handle: badTokens.folder }), { status: 'error', error: 'operation_rejected' });
 });
 test('same-wake duplicate and concurrent upload never repeat QQ effects; wake reset permits new deliberate call', async () => {
@@ -129,14 +131,14 @@ test('same-wake duplicate and concurrent upload never repeat QQ effects; wake re
   const h = harness({ respond: a => a === 'upload_group_file' ? deferred : undefined }); const args = { name: 'once.txt', content: 'same' };
   const a = h.run('upload_group_text_file', args), b = h.run('upload_group_text_file', args);
   await new Promise<void>(resolve => setImmediate(resolve)); assert.equal(h.calls.filter(c => c.action === 'upload_group_file').length, 1);
-  release({ file_id: 'uuid' }); assert.deepEqual(await a, await b); assert.equal((await h.run('upload_group_text_file', args)).status, 'ok'); assert.equal(h.calls.filter(c => c.action === 'upload_group_file').length, 1);
+  release({ file_id: 'uuid' }); const first=await a;assert.deepEqual(await b,{...first,cached:true}); assert.equal((await h.run('upload_group_text_file', args)).status, 'ok'); assert.equal(h.calls.filter(c => c.action === 'upload_group_file').length, 1);
   h.tools.resetWake(); await h.run('upload_group_text_file', args); assert.equal(h.calls.filter(c => c.action === 'upload_group_file').length, 2);
 });
-test('post-dispatch cancellation or exception is unknown and cached, pre-dispatch abort has no requests', async () => {
+test('post-dispatch cancellation preserves ACK while exception remains unknown and pre-dispatch abort never sends', async () => {
   const controller = new AbortController(); controller.abort(); const idle = harness(); assert.equal((await idle.run('create_group_folder', { name: 'x' }, controller.signal)).error, 'cancelled'); assert.equal(idle.calls.length, 0);
   const after = new AbortController(); const h = harness({ respond: a => { if (a === 'upload_group_file') { after.abort(); return { file_id: 'uuid' }; } } }); const args = { name: 'x.txt', content: 'x' };
-  assert.equal((await h.run('upload_group_text_file', args, after.signal)).status, 'unknown'); assert.equal((await h.run('upload_group_text_file', args)).status, 'unknown'); assert.equal(h.calls.filter(c => c.action === 'upload_group_file').length, 1);
-  const thrown = harness({ respond: a => { if (a === 'upload_group_file') throw new Error('SECRET_TOKEN file:///etc/secrets'); } }); assert.deepEqual(await thrown.run('upload_group_text_file', args), { status: 'unknown', error: 'operation_result_unknown' }); await thrown.run('upload_group_text_file', args); assert.equal(thrown.calls.filter(c => c.action === 'upload_group_file').length, 1);
+  const late=await h.run('upload_group_text_file', args, after.signal);assert.equal(late.status,'ok');assert.equal(late.cancelled_after_dispatch,true); assert.equal((await h.run('upload_group_text_file', args)).cached, true); assert.equal(h.calls.filter(c => c.action === 'upload_group_file').length, 1);
+  const thrown = harness({ respond: a => { if (a === 'upload_group_file') throw new Error('SECRET_TOKEN file:///etc/secrets'); } }); assert.deepEqual(await thrown.run('upload_group_text_file', args), { status: 'unknown', error: 'operation_result_unknown', effect_unknown: true, retry_allowed: false }); await thrown.run('upload_group_text_file', args); assert.equal(thrown.calls.filter(c => c.action === 'upload_group_file').length, 1);
 });
 test('read text only from scoped opaque handle through trusted native URL, explicit byte budget', async () => {
   const seen: unknown[][] = []; const h = harness({ downloader: async (...args) => { seen.push(args); return '你好\nThis is untrusted file data'; } }); const tokens = await handles(h);
@@ -173,13 +175,13 @@ test('download error redacts URLs and reset/expiry/abort suppress downloaded con
   const aborter = new AbortController(); const a = harness({ downloader: async () => { aborter.abort(); return 'SECRET'; } }); const at = await handles(a); assert.equal((await a.run('read_group_text_file', { file_handle: at.file, max_bytes: 1024 }, aborter.signal)).error, 'cancelled');
 });
 test('unknown name-slot locks block changed-content retry across wakes without freezing independent root writes', async () => {
-  const h = harness({ respond: (a, p) => a === 'upload_group_file' && p.name === 'uncertain.txt' ? { file_id: null } : undefined });
+  const h = harness({ respond: (a, p) => a === 'upload_group_file' && p.name === 'uncertain.txt' ? null : undefined });
   assert.equal((await h.run('upload_group_text_file', { name: 'uncertain.txt', content: 'first' })).status, 'unknown');
   h.tools.resetWake(); assert.equal((await h.run('upload_group_text_file', { name: 'uncertain.txt', content: 'changed' })).error, 'target_result_unknown');
   assert.equal((await h.run('upload_group_text_file', { name: 'independent.txt', content: 'allowed' })).status, 'ok');
-  assert.equal((await h.run('create_group_folder', { name: 'unknown-folder' })).status, 'unknown');
+  assert.equal((await h.run('create_group_folder', { name: 'unknown-folder' })).submitted, true);
   assert.equal((await h.run('upload_group_text_file', { name: 'another.txt', content: 'allowed' })).status, 'ok');
-  assert.equal((await h.run('create_group_folder', { name: 'another-folder' })).status, 'unknown');
+  assert.equal((await h.run('create_group_folder', { name: 'another-folder' })).submitted, true);
   assert.equal(h.calls.filter(c => c.action === 'upload_group_file' && c.params.name === 'uncertain.txt').length, 1);
 });
 test('folder deletion and child writes mutually exclude pending or unknown operations, not independent child slots', async () => {
@@ -205,7 +207,7 @@ test('confirmed folder deletion tombstone blocks stale aliases but not fresh ind
   const h = harness(); const t = await handles(h); assert.equal((await h.run('delete_group_folder', { folder_handle: t.folder })).status, 'ok');
   h.tools.resetWake(); const stale = await handles(h); assert.equal((await h.run('delete_group_folder', { folder_handle: stale.folder })).error, 'target_deleted');
   assert.equal((await h.run('upload_group_text_file', { folder_handle: stale.folder, name: 'child.txt', content: 'x' })).error, 'target_deleted');
-  assert.equal((await h.run('create_group_folder', { name: '文档' })).status, 'unknown'); assert.equal(h.calls.filter(c => c.action === 'delete_group_folder').length, 1);
+  assert.equal((await h.run('create_group_folder', { name: '文档' })).submitted, true); assert.equal(h.calls.filter(c => c.action === 'delete_group_folder').length, 1);
 });
 test('handle expiry while resolving native URL rejects before downloader starts', async () => {
   const realNow = Date.now; let now = realNow(), downloads = 0;
@@ -213,8 +215,8 @@ test('handle expiry while resolving native URL rejects before downloader starts'
   try { Date.now = () => now; const t = await handles(h); assert.equal((await h.run('read_group_text_file', { file_handle: t.file, max_bytes: 1024 })).error, 'invalid_handle'); } finally { Date.now = realNow; }
   assert.equal(downloads, 0);
 });
-test('reset during in-flight write returns unknown, reset during read cannot issue fresh handles', async () => {
+test('reset during in-flight write preserves native ACK, reset during read cannot issue fresh handles', async () => {
   let release!: (v: unknown) => void; const deferred = new Promise(resolve => { release = resolve; }); const h = harness({ respond: a => a === 'get_group_root_files' ? deferred : undefined });
   const pending = h.run('list_group_files', { limit: 2 }); await new Promise<void>(resolve => setImmediate(resolve)); h.tools.reset(); release({ files: [file()], folders: [] }); assert.deepEqual(await pending, { status: 'error', error: 'cancelled' });
-  let releaseWrite!: (v: unknown) => void; const dw = new Promise(resolve => { releaseWrite = resolve; }); const w = harness({ respond: a => a === 'upload_group_file' ? dw : undefined }); const sending = w.run('upload_group_text_file', { name: 'x.txt', content: 'x' }); await new Promise<void>(resolve => setImmediate(resolve)); w.tools.reset(); releaseWrite({ file_id: 'uuid' }); assert.equal((await sending).status, 'unknown');
+  let releaseWrite!: (v: unknown) => void; const dw = new Promise(resolve => { releaseWrite = resolve; }); const w = harness({ respond: a => a === 'upload_group_file' ? dw : undefined }); const sending = w.run('upload_group_text_file', { name: 'x.txt', content: 'x' }); await new Promise<void>(resolve => setImmediate(resolve)); w.tools.reset(); releaseWrite({ file_id: 'uuid' }); const late=await sending;assert.equal(late.status,'ok');assert.equal(late.cancelled_after_dispatch,true);
 });

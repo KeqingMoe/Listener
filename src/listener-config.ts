@@ -1,4 +1,5 @@
 import type { ForwardConfig } from './forward-tools.js';
+import type { ExtendedToolsConfig } from './extended-tool-config.js';
 export interface ImagesConfig { enabled: boolean; maxPerTurn: number; maxDownloadMb: number }
 export type ModerationMode = 'off' | 'confirm' | 'direct';
 export interface ModerationPolicy {
@@ -13,10 +14,13 @@ export interface ToolsConfig {
   members: boolean;
   mention: boolean;
   reactions?: boolean;
+  extended?: ExtendedToolsConfig;
   moderation: ModerationPolicy;
 }
 export interface ListenerConfig {
   groupId?: string;
+  /** Trusted global deployment owner; never accepted from group overrides or chat. */
+  ownerId?: string;
   enabled: boolean; baseUrl: string; apiKey: string; model: string;
   timeoutMs: number; maxTokens: number; debounceMs: number; cooldownMs: number;
   maxToolCallsPerWake?: number; wakeTimeoutMs?: number;

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { types } from 'node:util';
 import {
   resolveGroupId,
   type Api,
@@ -7,6 +8,7 @@ import {
   type ToolDefinition,
   type TurnContext,
 } from "./contracts.js";
+import { submittedResult, writeFailure, afterDispatch } from './operation-result.js';
 
 /** NapCat v4.18.28: set_group_leave ignores is_dismiss; no dismiss tool is offered. */
 export const GROUP_ACTION_TOOL_NAMES = [
@@ -53,7 +55,7 @@ const fields: Record<Name, JsonObject> = {
   leave_group: {},
 };
 const descriptions: Record<Name, string> = {
-  poke_member: "向核验的本群成员戳一戳。",
+  poke_member: "向核验的本群成员提交一次戳一戳。每次显式调用是独立的一下；需要多次时分别调用，不自动重试。submitted=true仅表示已提交，delivery_confirmed=false表示QQ不提供送达确认，不得编造对方实际收到次数。正常提交不去重、不阻止后续明确调用；异常unknown才禁止盲目重试。",
   group_sign: "以Bot账号在本群签到。",
   set_group_name: "修改本群名称，需要Bot管理员或群主权限。",
   set_group_title: "设置本群成员专属头衔，空字符串移除；需要Bot群主权限。",
@@ -62,13 +64,13 @@ const descriptions: Record<Name, string> = {
     "将核验的成员移出本群；reject_add_request必须明确指定。需要真实QQ权限。",
   set_group_admin: "任免本群管理员，enable必须明确指定；需要Bot群主权限。",
   set_group_essence:
-    "将当前群可见消息或可核验直接引用设为精华，不接受转发内部或猜测ID。上游确认格式未核实，派发后返回unknown并禁止重试或反向操作。",
+    "将当前群可见消息或可核验直接引用设为精华，不接受转发内部或猜测ID。正常提交返回submitted，不代表精华状态已核实；同一意图不自动重发，未核实前不反向操作。",
   remove_group_essence:
-    "移除当前群可见消息或可核验直接引用的精华，不接受精华列表合成ID。上游确认格式未核实，派发后返回unknown并禁止重试或反向操作。",
+    "移除当前群可见消息或可核验直接引用的精华，不接受精华列表合成ID。正常提交返回submitted，不代表精华状态已核实；同一意图不自动重发，未核实前不反向操作。",
   publish_group_notice:
     "在本群发布纯文字公告，需要Bot管理员或群主权限；文本不作为图片URL或文件路径读取。",
   delete_group_notice:
-    "删除本群当前公告列表中核验存在的公告，需要Bot管理员或群主权限。上游未提供可核实的确认，派发后返回unknown并禁止重试。",
+    "删除本群当前公告列表中核验存在的公告，需要Bot管理员或群主权限。正常提交返回submitted，不代表删除状态已核实；同一意图不自动重发。",
   leave_group:
     "请求Bot退出当前群。上游不保证区分群主退群与解散，不提供解散工具；执行后可能失去本群访问能力。",
 };
@@ -131,6 +133,31 @@ function fail(code: string): never {
 const check = (signal?: AbortSignal) => {
   if (signal?.aborted) fail("cancelled");
 };
+// These two native essence APIs declare Any. Validate JSON transport data, not
+// invented business ACK fields; a normal provider return only proves submission.
+function jsonValue(value: unknown, depth = 0, budget = { nodes: 0 }): boolean {
+  if (++budget.nodes > 4096 || depth > 16) return false;
+  if (value === null || typeof value === "boolean" || typeof value === "string") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value !== "object" || types.isProxy(value)) return false;
+  if (Array.isArray(value)) {
+    if (Object.getPrototypeOf(value) !== Array.prototype || value.length > 4096 ||
+        Reflect.ownKeys(value).length !== value.length + 1) return false;
+    for (let i = 0; i < value.length; i++) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(i));
+      if (!descriptor || !Object.hasOwn(descriptor, "value") ||
+          !jsonValue(descriptor.value, depth + 1, budget)) return false;
+    }
+    return true;
+  }
+  if (![Object.prototype, null].includes(Object.getPrototypeOf(value))) return false;
+  const keys = Reflect.ownKeys(value);
+  return keys.length <= 4096 && keys.every(key => {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
+    return typeof key === "string" && Object.hasOwn(descriptor, "value") &&
+      jsonValue(descriptor.value, depth + 1, budget);
+  });
+}
 
 /** One instance per wake: dedup/unknown locks must never be shared across wakes. */
 export class GroupActionTools {
@@ -165,7 +192,7 @@ export class GroupActionTools {
         type: "function",
         function: {
           name,
-          description: `${descriptions[name]}仅在显式启用时提供，立即执行，无隐式确认；unknown不代表失败，禁止重试或反向操作。`,
+          description: `${descriptions[name]}仅在显式启用时提供，立即执行，无隐式确认；executed表示有业务确认，ok且submitted表示正常提交但状态未核实，不是失败。unknown才表示请求结果不明，禁止盲重试或反向操作。`,
           parameters: {
             type: "object",
             additionalProperties: false,
@@ -175,6 +202,24 @@ export class GroupActionTools {
         },
       }),
     );
+  }
+  /** Read-only proposal verification; never queues, reserves or dispatches a write. */
+  async verifyProposal(name: string, args: unknown, ctx: TurnContext, signal?: AbortSignal): Promise<void> {
+    try {
+      check(signal);
+      if (!names.has(name) || !this.enabled.has(name)) fail("tool_disabled");
+      const action = name as Name, value = this.parse(action, args);
+      if (!record(ctx) || ctx.groupId !== this.groupId) fail("forbidden_group");
+      if (typeof ctx.selfId !== "string" || id(ctx.selfId) !== ctx.selfId ||
+          typeof ctx.actorId !== "string" || id(ctx.actorId) !== ctx.actorId ||
+          typeof ctx.messageId !== "string" || mid(ctx.messageId) !== ctx.messageId) fail("invalid_context");
+      const context: TurnContext = {groupId: this.groupId, selfId: ctx.selfId, actorId: ctx.actorId, messageId: ctx.messageId};
+      await this.verify(action, value, context, signal);
+      check(signal);
+    } catch (error) {
+      if (error instanceof Denied) throw error;
+      fail("verification_failed");
+    }
   }
   async execute(
     name: string,
@@ -433,8 +478,8 @@ export class GroupActionTools {
   // core/services/NodeIKernelGroupService.ts declares add/removeGroupEssence
   // as Promise<unknown>, NOT GeneralCallResult. A guessed {result:0} is no ACK.
   // deleteGroupBulletin is declared void; DelGroupNotice forwards it unchanged.
-  // These three operations remain unknown after dispatch until a real semantic
-  // acknowledgement contract is verified; do not infer success from fixtures.
+  // Normal returns prove provider submission, not the final QQ state. Any-result
+  // bodies never become invented business ACKs; void is client-normalized null.
   // group/{SetGroupAdmin,SetGroupKick,SetGroupLeave}.ts discard native result.
   // packet/SendPoke.ts and extends/{SetGroupSign,SetSpecialTitle}.ts only send
   // packets: core/packet/context/operationContext.ts awaits sendOidbPacket with
@@ -445,7 +490,7 @@ export class GroupActionTools {
   ): {
     action: string;
     params: JsonObject;
-    ack: "checked_null" | "unverified";
+    ack: "checked_null" | "submitted_null" | "submitted_void" | "submitted_any";
   } {
     const group_id = this.groupId;
     switch (name) {
@@ -453,13 +498,13 @@ export class GroupActionTools {
         return {
           action: "group_poke",
           params: { group_id, user_id: args.user_id },
-          ack: "unverified",
+          ack: "submitted_null",
         };
       case "group_sign":
         return {
           action: "set_group_sign",
           params: { group_id },
-          ack: "unverified",
+          ack: "submitted_void",
         };
       case "set_group_name":
         return {
@@ -475,7 +520,7 @@ export class GroupActionTools {
             user_id: args.user_id,
             special_title: args.title,
           },
-          ack: "unverified",
+          ack: "submitted_void",
         };
       case "set_group_whole_mute":
         return {
@@ -491,25 +536,25 @@ export class GroupActionTools {
             user_id: args.user_id,
             reject_add_request: args.reject_add_request,
           },
-          ack: "unverified",
+          ack: "submitted_void",
         };
       case "set_group_admin":
         return {
           action: "set_group_admin",
           params: { group_id, user_id: args.user_id, enable: args.enable },
-          ack: "unverified",
+          ack: "submitted_void",
         };
       case "set_group_essence":
         return {
           action: "set_essence_msg",
           params: { message_id: args.message_id },
-          ack: "unverified",
+          ack: "submitted_any",
         };
       case "remove_group_essence":
         return {
           action: "delete_essence_msg",
           params: { message_id: args.message_id },
-          ack: "unverified",
+          ack: "submitted_any",
         };
       case "publish_group_notice":
         return {
@@ -529,13 +574,13 @@ export class GroupActionTools {
         return {
           action: "_del_group_notice",
           params: { group_id, notice_id: args.notice_id },
-          ack: "unverified",
+          ack: "submitted_void",
         };
       case "leave_group":
         return {
           action: "set_group_leave",
           params: { group_id, is_dismiss: false },
-          ack: "unverified",
+          ack: "submitted_void",
         };
     }
   }
@@ -560,37 +605,50 @@ export class GroupActionTools {
     const fingerprint = createHash("sha256")
       .update(JSON.stringify([name, args, ctx.selfId]))
       .digest("hex");
-    if (this.uncertain.has("group") || this.uncertain.has(target))
+    const uncertaintyKey = name === "leave_group" ? "membership" : key;
+    if (this.uncertain.has("membership") || this.uncertain.has(uncertaintyKey))
       return {
         status: "unknown",
         error: "previous_result_unknown",
+        cached: true,
+        dispatched: false,
+        effect_unknown: true,
         retry_allowed: false,
       };
     // Every new dispatch rechecks live login/group/role; cached confirmations are not new dispatches.
-    const cached = this.latest.get(key);
+    // Accepted pokes are independent submissions, never idempotent deliveries.
+    const cached = name === "poke_member" ? undefined : this.latest.get(key);
     const hit = cached?.fingerprint === fingerprint;
     await this.verify(name, args, ctx, signal, hit);
-    if (hit) return { ...cached!.result, cached: true };
+    if (hit) return { ...cached!.result, cached: true, dispatched:false };
+    if (cached?.result.submitted === true || this.latest.get('leave_group:group')?.result.submitted === true)
+      return {status:'error',error:'previous_submission_pending',previous_submitted:true,dispatched:false,retry_allowed:false};
     const native = this.native(name, args);
     check(signal);
     this.latest.delete(key);
-    const unknown = (): JsonObject => {
-      this.uncertain.add(target);
-      return {
-        status: "unknown",
-        error: "action_result_unknown",
-        retry_allowed: false,
-      };
+    const failure = (error?:unknown): JsonObject => {
+      const result=writeFailure(error,'action_result_unknown');
+      if(result.status==='unknown')this.uncertain.add(uncertaintyKey);
+      return afterDispatch(result,result.dispatched!==false&&!!signal?.aborted);
     };
     let result: unknown;
     try {
       result = await this.api.call(native.action, native.params);
-    } catch {
-      return unknown();
+    } catch (error) {
+      return failure(error);
     }
-    // Never report cancelled/not executed after a write was dispatched.
+    // A successful provider return and a confirmed QQ state are different facts.
+    const submitted = ((native.ack === 'submitted_null' || native.ack === 'submitted_void') && result === null) ||
+      (native.ack === 'submitted_any' && jsonValue(result));
+    if (submitted) {
+      const response=submittedResult({action:name,group_id:this.groupId,
+        ...(typeof args.user_id==='string'?{user_id:args.user_id}:{}),
+        note:name==='poke_member'?'已提交一次戳一戳请求；QQ不提供送达确认，不得据此声称对方收到或编造收到次数。':'操作请求已正常提交；未提供可核实的QQ状态回执，不代表失败，也不可编造生效或送达结果。'});
+      if(name!=='poke_member')this.latest.set(key,{fingerprint,result:response});
+      return afterDispatch(response,!!signal?.aborted);
+    }
     const ack = native.ack === "checked_null" && result === null;
-    if (!ack) return unknown();
+    if (!ack) return failure();
     const confirmed: JsonObject = {
       status: "executed",
       action: name,

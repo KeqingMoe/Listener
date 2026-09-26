@@ -6,6 +6,7 @@ import {
   type ToolDefinition,
   type TurnContext,
 } from "./contracts.js";
+import { submittedResult, writeFailure, afterDispatch } from './operation-result.js';
 
 export const GROUP_VOICE_TOOL_NAMES = [
   "get_group_ai_voices",
@@ -82,7 +83,7 @@ const DEFINITIONS: ToolDefinition[] = [
   ),
   tool(
     "send_group_ai_voice",
-    "用当前群实时可用的character_id发送QQ AI语音。text仅为原样语音文本，不解析CQ或下载URL，UTF-8资源上限8192字节。原生接口不返回真实消息ID，结果永远不能视作确认送达；同一唤醒内相同请求不重试。",
+    "用当前群实时可用的character_id发送QQ AI语音。text仅为原样语音文本，不解析CQ或下载URL，UTF-8资源上限8192字节。原生接口不返回真实消息ID；正常返回ok且submitted表示请求已提交，不是错误或未知，也不证明已送达。message_id始终null，不得伪造消息事实；每次明确工具调用均独立发送一次，正常提交不吞掉后续相同调用；不自动重试，真正unknown才阻止相同请求盲重放。",
     {
       character_id: { type: "string", minLength: 1, maxLength: 128 },
       text: { type: "string", minLength: 1 },
@@ -311,12 +312,17 @@ export class GroupVoiceTools {
         .update(JSON.stringify([ctx.selfId, args]))
         .digest("hex");
       const previous = this.operations.get(key);
-      if (previous) return this.output({ ...(await previous), cached: true });
-      if (this.operations.size >= MAX_OPERATIONS) fail("resource_limit");
-      const operation = Promise.resolve().then(() => this.send(args, signal));
+      if (!previous && this.operations.size >= MAX_OPERATIONS) fail("resource_limit");
+      const operation = Promise.resolve(previous).then(async prior => {
+        if(prior?.status==='unknown')return {...prior,cached:true,dispatched:false};
+        // A queued explicit interaction needs fresh identity/membership proof too.
+        if(previous)await this.verify(ctx,signal);
+        return this.send(args,signal);
+      });
       this.operations.set(key, operation);
-      const result = await operation;
-      if (result.status === "error") this.operations.delete(key);
+      let result:JsonObject;
+      try{result=await operation;}catch(error){if(this.operations.get(key)===operation)this.operations.delete(key);throw error;}
+      if (result.status !== "unknown" && this.operations.get(key)===operation) this.operations.delete(key);
       return this.output(result);
     } catch (error) {
       return this.output({
@@ -334,11 +340,7 @@ export class GroupVoiceTools {
     signal?: AbortSignal,
   ): Promise<JsonObject> {
     let dispatched = false;
-    const unknown = (): JsonObject => ({
-      status: "unknown",
-      error: "voice_delivery_unknown",
-      message_id: null,
-    });
+    const unknown = (): JsonObject => ({...writeFailure(undefined,'voice_delivery_unknown'),message_id:null});
     try {
       const voices = await this.voices(signal);
       if (!voices.some((v) => v.character_id === args.character_id))
@@ -350,18 +352,13 @@ export class GroupVoiceTools {
         character: args.character_id,
         text: args.text,
       });
-      if (signal?.aborted || !record(response) || response.message_id !== 0)
-        return unknown();
-      // NapCat v4.18.28 awaits GetAiVoice then hard-codes message_id: 0.
-      // A protocol success has no verifiable message ACK; never invent one.
-      return {
-        status: "unknown",
-        outcome: "accepted_unverified",
-        error: "voice_delivery_unverified",
-        message_id: null,
-      };
+      if (!record(response) || response.message_id !== 0)
+        return afterDispatch(unknown(),!!signal?.aborted);
+      // GetAiVoice completed normally, but the handler hard-codes message_id: 0.
+      // Preserve submission even after cancellation without inventing a message ACK.
+      return afterDispatch(submittedResult({action:'send_group_ai_voice',message_id:null}),!!signal?.aborted);
     } catch (error) {
-      if (dispatched) return unknown();
+      if (dispatched) { const result=writeFailure(error,'voice_delivery_unknown'); return afterDispatch({...result,message_id:null},result.dispatched!==false&&!!signal?.aborted); }
       return {
         status: "error",
         error: signal?.aborted

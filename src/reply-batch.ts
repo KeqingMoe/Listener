@@ -1,4 +1,4 @@
-import { OWNER_ID, type JsonObject, type Memory, type TimelineEntry, type TurnContext } from './contracts.js';
+import { OWNER_ID, resolveOwnerId, type JsonObject, type Memory, type TimelineEntry, type TurnContext } from './contracts.js';
 import { newTraceId } from './logger.js';
 import type { AttentionHit } from './attention.js';
 import { projectMessage } from './message-content.js';
@@ -39,7 +39,9 @@ export class ReplyBatch {
   private readonly seen = new Set<string>();
   private firstDirectSequence = Infinity;
 
-  constructor(item: BatchItem, delayMs: number, randomSelected = false) {
+  private readonly ownerId: string;
+  constructor(item: BatchItem, delayMs: number, randomSelected = false, ownerId: string = OWNER_ID) {
+    this.ownerId = resolveOwnerId(ownerId);
     this.openedAt = item.received;
     this.readyAt = item.received + delayMs;
     this.randomSelected = randomSelected;
@@ -47,7 +49,7 @@ export class ReplyBatch {
   }
 
   add(item: BatchItem, delayMs: number): void {
-    if (item.trigger && item.entry.userId !== OWNER_ID) this.hasNonOwnerDirect = true;
+    if (item.trigger && item.entry.userId !== this.ownerId) this.hasNonOwnerDirect = true;
     if (item.unverifiedQuote) this.hasUnverifiedQuote = true;
     if (this.seen.has(item.entry.messageId) || this.items.some(existing => existing.entry.messageId === item.entry.messageId)) return;
     this.seen.add(item.entry.messageId);

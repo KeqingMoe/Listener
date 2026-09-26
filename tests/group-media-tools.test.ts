@@ -62,7 +62,7 @@ function fixture(
   let entries = options.entries ?? [entry()];
   const calls: Array<{ action: string; params: JsonObject | undefined }> = [],
     sent: TimelineEntry[] = [];
-  let downloads = 0;
+  let downloads = 0, nextMessageId=900;
   const memory: Memory = {
     append(e) {
       entries.push(e);
@@ -92,7 +92,7 @@ function fixture(
         ? options.send(action, params!)
         : action === "forward_group_single_msg"
           ? null
-          : { message_id: 900, res_id: SECRET, forward_id: SECRET };
+          : { message_id: nextMessageId++, res_id: SECRET, forward_id: SECRET };
     },
   };
   const downloader: ImageDownloader = async (...args) => {
@@ -237,8 +237,9 @@ test("single forwarding follows native null return without inventing a sent mess
     { message_id: "1" },
     ctx,
   );
-  assert.equal(again.cached, true);
-  assert.equal(f.writes().length, 1);
+  assert.equal(again.cached, undefined);
+  assert.equal(again.status,'executed');
+  assert.equal(f.writes().length, 2);
 });
 test("single forwarding rejects invented envelopes and locks uncertain writes", async () => {
   for (const value of [
@@ -401,11 +402,11 @@ test("image send verifies origin, downloads normalized bytes and persists only s
   );
   assert.equal(
     (await f.tools.execute("send_group_image", { image_id: "img_1_0" }, ctx))
-      .cached,
-    true,
+      .status,
+    'executed',
   );
-  assert.equal(f.downloads, 1);
-  assert.equal(f.writes().length, 1);
+  assert.equal(f.downloads, 2);
+  assert.equal(f.writes().length, 2);
 });
 test("image source verification precedes downloader and rejects arbitrary content", async () => {
   for (const options of [
@@ -467,29 +468,30 @@ test("image source verification precedes downloader and rejects arbitrary conten
     "executed",
   );
 });
-test("late valid image and merged ACKs are recorded before cancellation and never replayed", async () => {
+test("late valid ACKs remain facts and another explicit interaction is independent",  async () => {
   for (const name of ["send_group_image", "send_group_forward"] as const) {
     const controller = new AbortController();
-    let callbackAfterAbort = false;
+    let callbackAfterAbort = false, nextMessageId=-900;
     const f = fixture({
       send() {
         controller.abort();
-        return { message_id: -900, res_id: SECRET };
+        return { message_id: nextMessageId--, res_id: SECRET };
       },
       onSent() {
         callbackAfterAbort = controller.signal.aborted;
       },
     });
     const r = await f.tools.execute(name, args(name), ctx, controller.signal);
-    assert.equal(r.status, "unknown");
+    assert.equal(r.status, "executed");
+    assert.equal(r.cancelled_after_dispatch,true);
     assert.equal(callbackAfterAbort, true);
     assert.equal(f.sent[0]!.messageId, "-900");
     assert.equal(
       (await f.tools.execute(name, args(name), ctx)).status,
-      "unknown",
+      "executed",
     );
-    assert.equal(f.writes().length, 1);
-    assert.equal(f.sent.length, 1);
+    assert.equal(f.writes().length, 2);
+    assert.equal(f.sent.length, 2);
   }
 });
 test("all dispatched exceptions and malformed ACKs are static unknown locks", async () => {
@@ -567,14 +569,15 @@ test("cancellation during lookup or download prevents dispatch", async () => {
   );
   assert.equal(image.writes().length, 0);
 });
-test("concurrent duplicates share one dispatch and isolated instances do not share locks", async () => {
+test("concurrent explicit interactions serialize and each dispatches after a normal predecessor",  async () => {
   const hold = gate(),
     started = gate();
+  let nextMessageId=900;
   const f = fixture({
     async send() {
       started.release();
       await hold.promise;
-      return { message_id: 900 };
+      return { message_id: nextMessageId++ };
     },
   });
   const first = f.tools.execute(
@@ -591,9 +594,11 @@ test("concurrent duplicates share one dispatch and isolated instances do not sha
   hold.release();
   const [a, b] = await Promise.all([first, second]);
   assert.equal(a.status, "executed");
-  assert.equal(b.cached, true);
-  assert.equal(f.writes().length, 1);
-  assert.equal(f.sent.length, 1);
+  assert.equal(b.cached, undefined);
+  assert.equal(b.status,'executed');
+  assert.notEqual(a.message_id,b.message_id);
+  assert.equal(f.writes().length, 2);
+  assert.equal(f.sent.length, 2);
   const other = fixture();
   assert.equal(
     (
@@ -607,7 +612,7 @@ test("concurrent duplicates share one dispatch and isolated instances do not sha
   );
   assert.equal(other.writes().length, 1);
 });
-test("callback failure after ACK remains unknown without replay or leaking exception text", async () => {
+test("projection failure preserves ACK without automatic replay; a new explicit call still dispatches",   async () => {
   const f = fixture({
     onSent() {
       throw Error(SECRET);
@@ -618,14 +623,19 @@ test("callback failure after ACK remains unknown without replay or leaking excep
     { message_ids: ["1"] },
     ctx,
   );
-  assert.equal(r.status, "unknown");
+  assert.equal(r.status, "executed");
+  assert.equal(r.local_projection_failed,true);
+  assert.equal(r.requested_source_count,1);
+  assert.equal(r.source_count,undefined);
+  assert.equal(r.source_completeness,'not_verified');
+  assert.equal(f.writes().length,1); // projection failure never triggers an automatic resend
   assert.equal(
     (await f.tools.execute("send_group_forward", { message_ids: ["1"] }, ctx))
-      .cached,
-    true,
+      .status,
+    'executed',
   );
-  assert.equal(f.writes().length, 1);
-  assert.equal(f.sent.length, 1);
+  assert.equal(f.writes().length, 2);
+  assert.equal(f.sent.length, 2);
   assert.doesNotMatch(JSON.stringify(r), /PRIVATE_URL_RESOURCE_TOKEN/);
 });
 test("image scope is rechecked after downloader yields before any dispatch", async () => {

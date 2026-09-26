@@ -93,7 +93,7 @@ test('forward resources and cached pages cannot cross instances with colliding r
 
 function moderationFixture(group:string){
  let foreign=false;
- const a=api((action,params)=>action==='get_login_info'?{user_id:self}:action==='get_group_member_info'?{...member(foreign?(group===A?B:A):group),user_id:params.user_id,role:params.user_id===self?'admin':'member'}:action==='get_msg'?msg(foreign?(group===A?B:A):group,String(params.message_id)):{});
+ const a=api((action,params)=>action==='get_login_info'?{user_id:self}:action==='get_group_member_info'?{...member(foreign?(group===A?B:A):group),user_id:params.user_id,role:params.user_id===self?'admin':'member'}:action==='get_msg'?msg(foreign?(group===A?B:A):group,String(params.message_id)):null);
  return {...a,tools:new Moderation(a.client,Date.now,{mute:'confirm',unmute:'confirm',recall:'confirm',memberCard:'confirm'},group),foreign(){foreign=true;}};
 }
 test('autonomous moderation proposals remain groupbound and only the owner can confirm',async()=>{

@@ -13,7 +13,8 @@ const defaults={mute:'off',unmute:'off',recall:'off',memberCard:'off',confirmati
 function fixture(t:{after(fn:()=>void):void}){
  const dir=mkdtempSync(join(tmpdir(),'listener-moderation-config-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
  mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'fixture persona');
- const config=(source:string)=>writeFileSync(join(dir,'config.toml'),source);config('');
+ // Preserve explicit bot inputs; other fixtures use a synthetic global owner.
+ const config=(source:string)=>writeFileSync(join(dir,'config.toml'),/^\s*\[bot\]/m.test(source)?source:source+'\n[bot]\nowner_id="778899"\n');config('');
  const load=()=>loadAppConfig({configPath:join(dir,'config.toml'),env:{ONEBOT_ACCESS_TOKEN:'test-token'}});
  return {dir,config,load};
 }

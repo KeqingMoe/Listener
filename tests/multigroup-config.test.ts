@@ -9,14 +9,14 @@ import { LISTENER_GROUP, OWNER_ID } from '../src/contracts.js';
 function fixture(t:{after(fn:()=>void):void}, source='') {
  const dir=mkdtempSync(join(tmpdir(),'listener-multigroup-config-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
  mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'global persona');
- const config=(text:string)=>writeFileSync(join(dir,'config.toml'),text);config(source);
+ const config=(text:string)=>writeFileSync(join(dir,'config.toml'),text+(/^\[bot\]/m.test(text)?'':`\n[bot]\nowner_id="${OWNER_ID}"\n`));config(source);
  const load=()=>loadAppConfig({configPath:join(dir,'config.toml'),env:{ONEBOT_ACCESS_TOKEN:'fixture-token',OPENAI_API_KEY:'fixture-key'}});
  return {dir,config,load};
 }
 
-test('explicit original group preserves its database and new groups derive independent paths',t=>{
+test('without legacy mapping even the historical group derives its independent path',t=>{
  const f=fixture(t,`[groups."${LISTENER_GROUP}"]`);let c=f.load();
- assert.deepEqual([...c.onebot.allowedGroups],[LISTENER_GROUP]);assert.equal(c.groups[0]!.memoryPath,c.listener.memoryPath);
+ assert.deepEqual([...c.onebot.allowedGroups],[LISTENER_GROUP]);assert.equal(c.groups[0]!.memoryPath,join(f.dir,`data/groups/${LISTENER_GROUP}/listener.sqlite`));
  assert.equal(c.groups[0]!.groupId,LISTENER_GROUP);assert.equal(c.listener.groupId,undefined);
  f.config('[groups."22"]');c=f.load();
  assert.equal(c.listener.memoryPath,join(f.dir,'data/listener.sqlite'));
@@ -24,6 +24,38 @@ test('explicit original group preserves its database and new groups derive indep
  assert.equal(existsSync(join(f.dir,'data')),false);
  f.config('[groups."22"]\n[memory]\npath="custom/history.db"');c=f.load();
  assert.equal(c.groups[0]!.memoryPath,join(f.dir,'custom/groups/22/listener.sqlite'));
+});
+
+test('legacy mapping is explicit, global-only and never grants group admission or rewrites storage',t=>{
+ const f=fixture(t,'[memory]\npath="history.db"\nlegacy_group_id="22"');
+ writeFileSync(join(f.dir,'history.db'),'unchanged legacy identity');
+ assert.deepEqual(f.load().groups,[]);assert.equal(f.load().onebot.allowedGroups.size,0);
+ f.config(`[memory]\npath="history.db"\nlegacy_group_id="22"\n[groups."22"]\n[groups."${LISTENER_GROUP}"]`);
+ let c=f.load();assert.equal(c.groups.find(g=>g.groupId==='22')!.memoryPath,join(f.dir,'history.db'));
+ assert.equal(c.groups.find(g=>g.groupId===LISTENER_GROUP)!.memoryPath,join(f.dir,`groups/${LISTENER_GROUP}/listener.sqlite`));
+ f.config('[memory]\npath="history.db"\nlegacy_group_id="22"\n[groups."22".memory]\npath="override.db"');
+ assert.equal(f.load().groups[0]!.memoryPath,join(f.dir,'override.db'));
+ f.config('[memory]\npath="history.db"\nlegacy_group_id="22"\n[groups."22"]\nenabled=false\n[groups."33"]');
+ c=f.load();assert.deepEqual([...c.onebot.allowedGroups],['33']);assert.equal(c.groups[0]!.memoryPath,join(f.dir,'groups/33/listener.sqlite'));
+ assert.equal(readFileSync(join(f.dir,'history.db'),'utf8'),'unchanged legacy identity');assert.equal(existsSync(join(f.dir,'groups')),false);
+ for(const value of ['22','true','[]','""','"0"','"01"','" 22"','"22 "','"22\\n"','"-1"','"+1"',`"${'1'.repeat(33)}"`]){
+  f.config(`[memory]\nlegacy_group_id=${value}`);assert.throws(()=>f.load(),ConfigError);
+ }
+ for(const enabled of [true,false]){
+  for(const source of ['owner_id="77"','[groups."22".bot]\nowner_id="77"','[groups."22".memory]\nlegacy_group_id="22"']){
+   f.config(`[bot]\nowner_id="88"\n[groups."22"]\nenabled=${enabled}\n${source}`);assert.throws(()=>f.load(),ConfigError);
+  }
+ }
+});
+
+test('legacy mapping participates in resolved path and inode conflict checks',t=>{
+ const f=fixture(t);writeFileSync(join(f.dir,'old.db'),'identity must not change');
+ linkSync(join(f.dir,'old.db'),join(f.dir,'alias.db'));
+ for(const path of ['old.db','sub/../old.db','alias.db']){
+  f.config(`[memory]\npath="old.db"\nlegacy_group_id="22"\n[groups."22"]\n[groups."33".memory]\npath="${path}"`);assert.throws(()=>f.load(),ConfigError);
+ }
+ f.config('[memory]\npath="groups/33/listener.sqlite"\nlegacy_group_id="22"\n[groups."22"]\n[groups."33".memory]\npath="groups/33/listener.sqlite"');assert.throws(()=>f.load(),ConfigError);
+ assert.equal(readFileSync(join(f.dir,'old.db'),'utf8'),'identity must not change');
 });
 
 test('explicit groups exclusively define enabled scope while AI enabled remains global',t=>{
@@ -87,7 +119,7 @@ test('group numeric ranges and boolean types match global bounds',t=>{
   f.config(`[groups."22".${section}]\n${key}="true"`);assert.throws(()=>f.load(),ConfigError);
  }
  for(const v of ['-0.1','1.1','nan','true','"0.5"']){f.config(`[groups."22".reply]\nrandom_probability=${v}`);assert.throws(()=>f.load(),ConfigError);}
- for(const v of ['[]','[100]','[99,1000]','[5001,7000]','[100,10001]','[3000,1000]','[100,1.5]']){f.config(`[groups."22".reply]\ndelay_ms=${v}`);assert.throws(()=>f.load(),ConfigError);}
+ for(const v of ['[]','[100]','[-1,1000]','[5001,7000]','[100,10001]','[3000,1000]','[100,1.5]']){f.config(`[groups."22".reply]\ndelay_ms=${v}`);assert.throws(()=>f.load(),ConfigError);}
 });
 
 test('persona append is bounded UTF8, relative, independent and validated for disabled groups',t=>{
@@ -105,7 +137,7 @@ test('persona append is bounded UTF8, relative, independent and validated for di
 });
 
 test('per-group memory overrides anchor to config and enabled paths must differ',t=>{
- const f=fixture(t,`[memory]\npath="custom/history.db"\n[groups."${LISTENER_GROUP}"]\n[groups."22"]\n[groups."33".memory]\npath="elsewhere/third.db"`);
+ const f=fixture(t,`[memory]\npath="custom/history.db"\nlegacy_group_id="${LISTENER_GROUP}"\n[groups."${LISTENER_GROUP}"]\n[groups."22"]\n[groups."33".memory]\npath="elsewhere/third.db"`);
  let c=f.load();assert.equal(c.groups.find(g=>g.groupId===LISTENER_GROUP)!.memoryPath,join(f.dir,'custom/history.db'));
  assert.equal(c.groups.find(g=>g.groupId==='22')!.memoryPath,join(f.dir,'custom/groups/22/listener.sqlite'));
  assert.equal(c.groups.find(g=>g.groupId==='33')!.memoryPath,join(f.dir,'elsewhere/third.db'));

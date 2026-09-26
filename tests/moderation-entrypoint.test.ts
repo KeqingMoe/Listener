@@ -11,14 +11,15 @@ import type {AddressInfo,Socket} from 'node:net';
 import {DatabaseSync} from 'node:sqlite';
 import {WebSocketServer,type WebSocket} from 'ws';
 import {OWNER_ID} from '../src/contracts.js';
+import {setTimeout as delay} from 'node:timers/promises';
 
-const A='111111',B='222222',SELF='99999',MEMBER='123',TARGET='456';
+const A='111111',B='222222',SELF='99999',MEMBER='123',TARGET='456',LOCAL_OWNER='778899';
 const BODY='普通群聊上下文，不是主人提出的管理指令';
 function event(group:string,messageId:string,actor=MEMBER,command?:string){return {post_type:'message',message_type:'group',group_id:group,self_id:SELF,user_id:actor,message_id:messageId,time:Math.floor(Date.now()/1000),sender:{user_id:actor,nickname:'fixture member'},message:command?[{type:'text',data:{text:command}}]:[{type:'at',data:{qq:SELF}},{type:'text',data:{text:BODY}}]};}
 async function bounded<T>(promise:Promise<T>,ms=5000):Promise<T>{let timer:NodeJS.Timeout|undefined;try{return await Promise.race([promise,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error('fixture timeout')),ms);})]);}finally{clearTimeout(timer);}}
 function payload(body:any):any{const message=body.messages.filter((m:any)=>m.role==='user'&&typeof m.content==='string'&&JSON.parse(m.content).wake).at(-1);assert.ok(message);return JSON.parse(message.content).wake;}
 
-test('real entrypoint authorizes autonomous direct and owner-confirmed moderation independently per group',{timeout:20000},async()=>{
+test('real entrypoint uses the configured nondefault owner for confirmation and reset, not the fallback owner',{timeout:20000},async()=>{
  const dir=mkdtempSync(join(tmpdir(),'moderation-entrypoint-')),changed=new EventEmitter();let failure:unknown,output='',child:ChildProcess|undefined,exit:Promise<{code:number|null;signal:NodeJS.Signals|null}>|undefined;
  const notify=()=>changed.emit('change'),fail=(error:unknown)=>{failure=error;notify();};
  const peers=new Set<WebSocket>(),sockets=new Set<Socket>();let peer:WebSocket|undefined,notificationCode='';
@@ -58,12 +59,13 @@ test('real entrypoint authorizes autonomous direct and owner-confirmed moderatio
     assert.ok([A,B].includes(call.params.group_id));assert.equal(call.params.no_cache,true);assert.ok([SELF,TARGET].includes(call.params.user_id));
     data={group_id:call.params.group_id,user_id:call.params.user_id,role:call.params.user_id===SELF?'admin':'member'};
    }else if(call.action==='set_group_ban'){
-    assert.ok([A,B].includes(call.params.group_id));assert.equal(call.params.user_id,TARGET);assert.equal(call.params.duration,120);data={};
+    assert.ok([A,B].includes(call.params.group_id));assert.equal(call.params.user_id,TARGET);assert.equal(call.params.duration,120);data=call.params.group_id===A?undefined:null; // Real handler void/null, not an invented empty-object ACK.
    }else if(call.action==='send_group_msg'){
     assert.ok(Array.isArray(call.params.message));assert.ok(call.params.message.every((s:any)=>s.type==='text'));const text=call.params.message.map((s:any)=>s.data.text).join('');
     if(sends.length===0){assert.equal(call.params.group_id,B);assert.match(text,/待主人确认/);assert.match(text,/禁言 QQ 456 120 秒/);notificationCode=text.match(/\/confirm ([a-f0-9]{32})/)?.[1]??'';assert.equal(notificationCode.length,32);assert.equal(mutations().length,1);}
     else if(sends.length===1){assert.equal(call.params.group_id,A);assert.match(text,/未能确认执行成功/);assert.equal(mutations().length,1);}
-    else{assert.equal(sends.length,2);assert.equal(call.params.group_id,B);assert.equal(text,'已执行确认的管理操作。');assert.equal(mutations().length,2);}
+    else if(sends.length===2){assert.equal(call.params.group_id,B);assert.equal(text,'已执行确认的管理操作。');assert.equal(mutations().length,2);}
+     else{assert.equal(sends.length,3);assert.equal(call.params.group_id,A);assert.equal(text,'本群对话记忆已清空。');assert.equal(mutations().length,2);}
     sends.push({group:call.params.group_id,text});data={message_id:String(9000+sends.length)};
    }else throw Error(`unexpected fixture API: ${call.action}`);
    socket.send(JSON.stringify({status:'ok',retcode:0,echo:call.echo,data}));notify();
@@ -76,24 +78,30 @@ test('real entrypoint authorizes autonomous direct and owner-confirmed moderatio
  try{
   const listening=ws.address()?Promise.resolve():once(ws,'listening');http.listen(0,'127.0.0.1');await Promise.all([listening,once(http,'listening')]);const wsPort=(ws.address() as AddressInfo).port,httpPort=(http.address() as AddressInfo).port;
   mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'Isolated autonomous moderation fixture.');writeFileSync(join(dir,'.env'),'FIXTURE_TOKEN=fixture-token\nFIXTURE_KEY=fixture-key\n',{mode:0o600});
-  writeFileSync(join(dir,'config.toml'),`[onebot]\nurl="ws://127.0.0.1:${wsPort}"\ntoken_env="FIXTURE_TOKEN"\n[ai]\nenabled=true\nbase_url="http://127.0.0.1:${httpPort}/v1"\nmodel="fixture-moderation"\napi_key_env="FIXTURE_KEY"\ntimeout_ms=10000\n[reply]\ndelay_ms=[100,100]\ncooldown_ms=1000\nrandom_probability=0\n[tools]\nreactions=false\nmembers=false\nmention=false\n[tools.moderation]\nmute="off"\nunmute="off"\nrecall="off"\nmember_card="off"\n[logging]\nlevel="debug"\nconsole=true\nfile=false\n[groups."${A}".tools.moderation]\nmute="direct"\n[groups."${B}".tools.moderation]\nmute="confirm"\n`);
+  writeFileSync(join(dir,'config.toml'),`[bot]\nowner_id="${LOCAL_OWNER}"\n[onebot]\nurl="ws://127.0.0.1:${wsPort}"\ntoken_env="FIXTURE_TOKEN"\n[ai]\nenabled=true\nbase_url="http://127.0.0.1:${httpPort}/v1"\nmodel="fixture-moderation"\napi_key_env="FIXTURE_KEY"\ntimeout_ms=10000\n[reply]\ndelay_ms=[100,100]\ncooldown_ms=1000\nrandom_probability=0\n[tools]\nreactions=false\nmembers=false\nmention=false\n[tools.moderation]\nmute="off"\nunmute="off"\nrecall="off"\nmember_card="off"\n[logging]\nlevel="debug"\nconsole=true\nfile=false\n[groups."${A}".tools.moderation]\nmute="direct"\n[groups."${B}".tools.moderation]\nmute="confirm"\n`);
   child=spawn(process.execPath,['--import',import.meta.resolve('tsx'),fileURLToPath(new URL('../src/index.ts',import.meta.url))],{cwd:dir,env:{PATH:process.env.PATH??'',HOME:dir,NODE_NO_WARNINGS:'1'},stdio:['ignore','pipe','pipe']});exit=new Promise((resolve,reject)=>{child!.once('error',error=>{fail(error);reject(error);});child!.once('close',(code,signal)=>{resolve({code,signal});notify();});});void exit.catch(()=>{});for(const stream of [child.stdout!,child.stderr!])stream.on('data',chunk=>{output=(output+chunk.toString()).slice(-128*1024);notify();});
   await wait(()=>output.includes('onebot.ready'),'startup');peer!.send(JSON.stringify(event(A,'101')));await wait(()=>ended()===1,'autonomous direct action and silence');
   assert.equal(requests.length,3);assert.equal(mutations().length,1);assert.equal(sends.length,0);
   assert.deepEqual(calls.map(c=>c.action),['get_login_info','get_login_info','get_group_member_info','get_group_member_info','set_group_ban']);
   peer!.send(JSON.stringify(event(B,'201')));await wait(()=>ended()===2,'autonomous confirmation proposal');assert.equal(requests.length,5);assert.equal(mutations().length,1);assert.equal(sends.length,1);
   assert.deepEqual(calls.slice(5).map(c=>c.action),['get_login_info','get_group_member_info','get_group_member_info','send_group_msg']);
-  const beforeUnauthorized=calls.length;peer!.send(JSON.stringify(event(B,'202',MEMBER,`/confirm ${notificationCode}`)));await wait(()=>output.includes('command.denied'),'nonowner confirmation denial');assert.equal(calls.length,beforeUnauthorized);
-  peer!.send(JSON.stringify(event(A,'102',OWNER_ID,`/confirm ${notificationCode}`)));await wait(()=>commandsEnded()===1,'wrong-group owner confirmation denial');assert.equal(sends.length,2);assert.equal(calls.length,beforeUnauthorized+1);assert.equal(mutations().length,1);
-  const beforeConfirmation=calls.length;peer!.send(JSON.stringify(event(B,'203',OWNER_ID,`/confirm ${notificationCode}`)));await wait(()=>commandsEnded()===2,'owner confirms in original group');
+  const beforeUnauthorized=calls.length;peer!.send(JSON.stringify(event(B,'202',OWNER_ID,`/confirm ${notificationCode}`)));await wait(()=>output.includes('command.denied'),'nonowner confirmation denial');assert.equal(calls.length,beforeUnauthorized);
+  peer!.send(JSON.stringify(event(A,'102',LOCAL_OWNER,`/confirm ${notificationCode}`)));await wait(()=>commandsEnded()===1,'wrong-group owner confirmation denial');assert.equal(sends.length,2);assert.equal(calls.length,beforeUnauthorized+1);assert.equal(mutations().length,1);
+  const beforeConfirmation=calls.length;peer!.send(JSON.stringify(event(B,'203',LOCAL_OWNER,`/confirm ${notificationCode}`)));await wait(()=>commandsEnded()===2,'owner confirms in original group');
   assert.deepEqual(calls.slice(beforeConfirmation).map(c=>c.action),['get_login_info','get_group_member_info','get_group_member_info','set_group_ban','send_group_msg']);
   assert.deepEqual(mutations().map(c=>c.params),[{group_id:A,user_id:TARGET,duration:120},{group_id:B,user_id:TARGET,duration:120}]);assert.equal(sends.length,3);assert.equal(requests.length,5);
-  assert.ok(!output.includes(BODY));assert.ok(!output.includes(notificationCode));assert.equal(child.kill('SIGTERM'),true);assert.deepEqual(await bounded(exit),{code:0,signal:null});assert.ok(output.includes('app.stopped'));
+  const denied=()=>[...output.matchAll(/\bcommand\.denied\b/g)].length;
+   const beforeReset=calls.length;
+   peer!.send(JSON.stringify(event(B,'204',OWNER_ID,'/reset')));peer!.send(JSON.stringify(event(B,'205',MEMBER,'/reset')));
+   await wait(()=>denied()===3,'fallback owner and ordinary member cannot reset');assert.equal(calls.length,beforeReset);
+   await delay(2100);peer!.send(JSON.stringify(event(A,'103',LOCAL_OWNER,'/reset')));
+   await wait(()=>commandsEnded()===3,'local owner resets only group A');assert.equal(sends.length,4);assert.equal(requests.length,5);
+   assert.ok(!output.includes(BODY));assert.ok(!output.includes(notificationCode));assert.equal(child.kill('SIGTERM'),true);assert.deepEqual(await bounded(exit),{code:0,signal:null});assert.ok(output.includes('app.stopped'));
   for(const [group,input,other] of [[A,'101','201'],[B,'201','101']]){
    const db=new DatabaseSync(join(dir,`data/groups/${group}/listener.sqlite`),{readOnly:true});try{
     const rows=db.prepare('SELECT entry FROM listener_messages ORDER BY seq').all().map(row=>JSON.parse(row.entry as string));
-    assert.deepEqual(rows.map(row=>row.messageId),group===A?['101','102','9002']:['201','9001','202','203','9003']);
-    assert.equal(rows.filter(row=>!row.bot).length,group===A?2:3);assert.ok(rows.some(row=>row.messageId===input));assert.ok(!rows.some(row=>row.messageId===other));
+    assert.deepEqual(rows.map(row=>row.messageId),group===A?['9004']:['201','9001','202','203','9003','204','205']);
+    assert.equal(rows.filter(row=>!row.bot).length,group===A?0:5);assert.equal(rows.some(row=>row.messageId===input),group===B);assert.ok(!rows.some(row=>row.messageId===other));
     assert.equal(rows.filter(row=>row.bot).length,group===A?1:2);assert.equal(db.prepare('SELECT COUNT(*) AS n FROM listener_summary').get()!.n,0);
    }finally{db.close();}
   }

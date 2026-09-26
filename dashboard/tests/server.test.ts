@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { buildApp } from "../server/app.js";
+import { status as statusLabel } from "../web/src/api/client.js";
 const sentinel = "PRIVATE_ARGUMENT_RESULT_MESSAGE_CHECKPOINT_PATH";
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), "dashboard-"));
@@ -138,6 +139,23 @@ function fixture() {
     cleanup: () => rmSync(dir, { recursive: true, force: true }),
   };
 }
+for (const [outcome, label] of [["operation_submitted", "操作已提交"], ["message_submitted", "消息已提交"], ["reaction_submitted", "回应已提交"]]) {
+  test(`normal ${outcome} remains submitted rather than unknown in dashboard projection`, async () => {
+    const f=fixture();
+    const db=new DatabaseSync(f.sessionPath);
+    db.prepare("UPDATE model_session_journal SET payload=? WHERE kind='wake_finish'").run(JSON.stringify({reason:outcome,private:sentinel}));
+    db.close();
+    const app=buildApp(f.options);
+    try {
+      const response=await app.inject("/api/wakes/wake-one?groupId=11");
+      assert.equal(response.statusCode,200);
+      assert.equal(response.json().wake.outcome,outcome);
+      assert.equal(statusLabel(outcome!),label);
+      assert.doesNotMatch(response.body,new RegExp(sentinel));
+    } finally { await app.close();f.cleanup(); }
+  });
+}
+
 test("safe metadata, weighted usage, missing coverage, and enabled-group isolation", async () => {
   const f = fixture(),
     app = buildApp(f.options);

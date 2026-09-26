@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setImmediate as tick } from 'node:timers/promises';
 import { ReactionTools, createReactionTool, type ReactionTurn } from '../src/reaction-tools.js';
+import { submittedResult } from '../src/operation-result.js';
 import { LISTENER_GROUP, type Api, type Memory, type TimelineEntry, type TurnContext, type JsonObject } from '../src/contracts.js';
 
 const group = '22';
@@ -34,7 +35,7 @@ function gate<T>() {
 
 test('verifies even local messages before a native own-account reaction', async () => {
   const f = fixture();
-  assert.deepEqual(await f.tools.react(args(), context, f.state), { status: 'ok', message_id: '1', emoji_id: '76', action: 'add' });
+  assert.deepEqual(await f.tools.react(args(), context, f.state), submittedResult({ message_id: '1', emoji_id: '76', action: 'add' }));
   assert.deepEqual(f.calls, [{ action: 'get_msg', params: { message_id: '1' } }, { action: 'set_msg_emoji_like', params: { message_id: '1', emoji_id: '76', set: true } }]);
   assert.equal(createReactionTool().function.name, 'react_message');
 });
@@ -135,11 +136,11 @@ test('lookup failure is non-mutating and raw private API errors never leak', asy
   assert.equal((await f.tools.react(args(), context, f.state)).duplicate, true); assert.equal(f.calls.length, 1);
 });
 
-test('accepts only explicit native numeric zero or boolean true success', async () => {
+test('common native numeric zero or boolean true means submitted, not observed effect', async () => {
   for (const result of [0, true]) {
     const f = fixture({ native: { result, errMsg: 'PRIVATE_NATIVE_TEXT', hidden: { body: 'SECRET' } } });
     const response = await f.tools.react(args(), context, f.state);
-    assert.deepEqual(response, { status: 'ok', message_id: '1', emoji_id: '76', action: 'add' });
+    assert.deepEqual(response, submittedResult({ message_id: '1', emoji_id: '76', action: 'add' }));
     assert.doesNotMatch(JSON.stringify(response), /PRIVATE|SECRET/);
   }
 });
@@ -154,10 +155,10 @@ test('known native rejection exposes only sanitized tuple and permits an opposit
 });
 
 test('unknown/malformed native responses block same and opposite retries', async () => {
-  for (const native of [undefined, null, {}, [], true, false, 0, { result: '0' }, { result: 'true' }, { result: null }, { result: NaN }, { result: Infinity }, { status: 'ok', data: { result: 0 } }]) {
+  for (const native of [undefined, NaN, Infinity, { result: NaN }, { result: Infinity }, new Date(), ()=>true]) {
     const f = fixture({ native });
     const first = await f.tools.react(args(), context, f.state);
-    assert.deepEqual(first, { status: 'unknown', error: 'reaction_result_unknown', message_id: '1', emoji_id: '76', action: 'add' });
+    assert.deepEqual(first, { status: 'unknown', error: 'reaction_result_unknown', effect_unknown:true, retry_allowed:false, message_id: '1', emoji_id: '76', action: 'add' });
     const duplicate = await f.tools.react(args(), context, f.state);
     assert.equal(duplicate.status, 'unknown'); assert.equal(duplicate.duplicate, true);
     const opposite = await f.tools.react(args('1', 'remove'), context, f.state);
@@ -174,15 +175,16 @@ test('a thrown dispatched write is unknown and never blindly retried', async () 
   await f.tools.react(args('1', 'remove'), context, f.state); assert.equal(f.calls.length, 2);
 });
 
-test('duplicate desired states are cached but add/remove/add is a real sequence', async () => {
+test('duplicate desired states preserve submission while explicit add/remove/add is a new state sequence', async () => {
   const f = fixture();
   const first = await f.tools.react(args(), context, f.state);
   first.action = 'remove'; // External mutation cannot poison the cached result.
   const second = await f.tools.react(args(), context, f.state);
   assert.equal(second.action, 'add'); assert.equal(second.duplicate, true); assert.equal(f.calls.length, 2);
-  assert.equal((await f.tools.react(args('1', 'remove'), context, f.state)).status, 'ok');
-  assert.equal((await f.tools.react(args(), context, f.state)).status, 'ok');
-  assert.deepEqual(f.calls.filter(c => c.action === 'set_msg_emoji_like').map(c => c.params.set), [true, false, true]);
+  const opposite=await f.tools.react(args('1', 'remove'), context, f.state);
+  assert.equal(opposite.submitted,true);assert.equal(opposite.action,'remove');assert.equal(opposite.duplicate,undefined);
+  assert.equal((await f.tools.react(args(), context, f.state)).submitted, true);
+  assert.deepEqual(f.calls.filter(c => c.action === 'set_msg_emoji_like').map(c => c.params.set), [true,false,true]);
 });
 
 test('concurrent identical same-pair operations serialize and issue only one write', async () => {
@@ -245,12 +247,15 @@ test('more than 32 reaction pairs are accepted and invalid arguments never dispa
   assert.equal((await f.tools.react(args(), context, f.state)).duplicate, true);
 });
 
-test('alternating one pair has no local call ceiling and duplicates still return cached results', async () => {
+test('explicit alternating states have no local call ceiling and same-action submissions remain cached', async () => {
   const f = fixture();
-  for (let i = 0; i < 64; i++) assert.equal((await f.tools.react(args('1', i % 2 ? 'remove' : 'add'), context, f.state)).status, 'ok');
-  assert.equal(f.calls.length, 128);
-  assert.equal((await f.tools.react(args('1', 'remove'), context, f.state)).duplicate, true);
-  assert.equal(f.calls.length, 128);
-  assert.equal((await f.tools.react(args(), context, f.state)).status, 'ok');
-  assert.equal(f.calls.length, 130);
+  for (let i = 0; i < 64; i++) {
+    const result=await f.tools.react(args('1', i % 2 ? 'remove' : 'add'), context, f.state);
+    assert.equal(result.submitted,true);assert.equal(result.effect_confirmed,false);assert.equal(result.duplicate,undefined);
+  }
+  assert.equal(f.calls.length,128);
+  assert.equal((await f.tools.react(args('1','remove'),context,f.state)).duplicate,true);
+  assert.equal(f.calls.length,128);
+  assert.equal((await f.tools.react(args(),context,f.state)).submitted,true);
+  assert.equal(f.calls.length,130);
 });

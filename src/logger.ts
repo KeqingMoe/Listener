@@ -4,6 +4,7 @@ import { constants } from 'node:fs';
 import { chmod, lstat, mkdir, open, readdir, unlink, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
 import pino from 'pino';
+import { EXTENDED_TOOL_NAMES } from './extended-tool-config.js';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 export interface LoggingConfig {
@@ -13,12 +14,12 @@ export interface LoggingConfig {
 const levels: LogLevel[] = ['debug', 'info', 'warn', 'error'];
 const domains = /^(app|onebot|message|trigger|turn|model|tool|image|forward|memory|moderation|command|send|logging|attention|session)\.[a-z][a-z0-9_]{0,39}$/;
 const owned = /^listener-(\d{4}-\d{2}-\d{2})-T\d{9}-[a-f0-9]{24}\.jsonl$/;
-const tools = new Set(['send_message', 'finish', 'get_group_members', 'get_member_info', 'read_message', 'view_images', 'read_forward', 'mute_member', 'unmute_member', 'recall_message', 'set_member_card', 'manage_attention', 'react_message', 'get_reaction_users', 'get_wake_state', 'get_time', 'read_events', 'read_messages', 'ack_events', 'invalid']);
-const actions = new Set([...tools, 'get_login_info', 'get_msg', 'get_group_member_info', 'get_group_member_list', 'send_group_msg', 'set_group_ban', 'set_group_card', 'delete_msg', 'get_group_msg_history', 'get_image', 'get_forward_msg', 'set_msg_emoji_like', 'fetch_emoji_like']);
+const tools = new Set([...EXTENDED_TOOL_NAMES, 'send_message', 'finish', 'get_group_members', 'get_member_info', 'read_message', 'view_images', 'read_forward', 'mute_member', 'unmute_member', 'recall_message', 'set_member_card', 'manage_attention', 'react_message', 'get_reaction_users', 'get_wake_state', 'get_time', 'read_events', 'read_messages', 'ack_events', 'invalid']);
+const actions = new Set([...tools, 'get_login_info', 'get_msg', 'get_group_member_info', 'get_group_member_list', 'send_group_msg', 'set_group_ban', 'set_group_card', 'delete_msg', 'get_group_msg_history', 'get_image', 'get_forward_msg', 'set_msg_emoji_like', 'fetch_emoji_like', 'get_group_honor_info', 'get_group_shut_list', '_get_group_notice', 'get_essence_msg_list', 'send_poke', 'group_poke', 'set_group_sign', 'set_group_special_title', 'set_group_whole_ban', 'set_group_kick', 'set_essence_msg', 'delete_essence_msg', '_send_group_notice', '_del_group_notice', 'set_group_leave', 'forward_group_single_msg', 'send_group_forward_msg', 'get_group_file_system_info', 'get_group_root_files', 'get_group_files_by_folder', 'get_group_file_url', 'upload_group_file', 'create_group_file_folder', 'delete_group_file', 'delete_group_folder', 'get_ai_characters', 'send_group_ai_record', 'get_group_system_msg', 'set_group_add_request']);
 export function managedLogFilename(name: string): boolean { return owned.test(name); }
-const numeric = ['duration_ms','wait_ms','round','sent_messages','images','width','height','bytes','input_bytes','output_bytes','prompt_tokens','completion_tokens','total_tokens','input_tokens','output_tokens','cached_input_tokens','reasoning_tokens','cache_hit_rate','http_status','retcode','attempt','rows_before','rows_after','chars_before','chars_after','seconds','count','dropped','retry','start','end','total','depth','direct_count','omitted_direct','reactions','reaction_unknown','reaction_failures','tool_calls','model_rounds','tool_calls_limit','management_executed','management_unknown'];
+const numeric = ['duration_ms','wait_ms','round','sent_messages','images','width','height','bytes','input_bytes','output_bytes','prompt_tokens','completion_tokens','total_tokens','input_tokens','output_tokens','cached_input_tokens','reasoning_tokens','cache_hit_rate','http_status','retcode','attempt','rows_before','rows_after','chars_before','chars_after','seconds','count','dropped','retry','start','end','total','depth','direct_count','omitted_direct','reactions','reaction_unknown','reaction_failures','tool_calls','model_rounds','tool_calls_limit','management_executed','management_unknown','management_submitted','sent_submissions','reaction_submitted'];
 const ids = ['group_id','actor_id','message_id','target_id','reply_to'];
-const bools = ['ai_enabled','images_enabled','forward_enabled','attention_enabled','reactions_enabled','first_frame_only'];
+const bools = ['ai_enabled','images_enabled','forward_enabled','attention_enabled','reactions_enabled','first_frame_only','submitted','effect_confirmed','effect_unknown','provider_reported_failure','cancelled_after_dispatch','local_projection_failed','cached','duplicate','dispatched'];
 const codes = ['outcome','reason','status','phase','trigger'];
 const context = new AsyncLocalStorage<Record<string, unknown>>();
 let secrets: string[] = [];

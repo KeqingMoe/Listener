@@ -213,7 +213,7 @@ test('snapshots request args/context and returned action; uncertain dispatch con
   const pending = m.request('mute_member', original, originalContext); original.seconds = 600; originalContext.groupId = '77'; originalContext.selfId = target;
   const result = await pending; assert.equal(result.status, 'confirmation_required'); (result.action as JsonObject).seconds = 599;
   api.failMutation = true; const response = await m.confirm(String(result.code), context);
-  assert.deepEqual(response, { status: 'unknown', error: 'delivery_unknown' }); assert.ok(!JSON.stringify(response).includes('SECRET'));
+  assert.deepEqual(response, { status: 'unknown', error: 'delivery_unknown', effect_unknown:true, retry_allowed:false }); assert.ok(!JSON.stringify(response).includes('SECRET'));
   assert.equal(api.writes()[0]?.params.duration, 60); assert.equal((await m.confirm(String(result.code), context)).status, 'error'); assert.equal(api.writes().length, 1);
 });
 

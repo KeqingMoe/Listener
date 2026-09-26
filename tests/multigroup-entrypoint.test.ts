@@ -67,7 +67,7 @@ test('actual entrypoint shares local transports, isolates two group databases, a
   http.listen(0,'127.0.0.1');await Promise.all([once(http,'listening'),wsListening]);
   const httpPort=(http.address() as AddressInfo).port,wsPort=(ws.address() as AddressInfo).port;
   mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'You are Listener in a local integration fixture.');
-  writeFileSync(join(dir,'config.toml'),`[onebot]\nurl="ws://127.0.0.1:${wsPort}"\ntoken_env="FIXTURE_ONEBOT_TOKEN"\n[ai]\nenabled=true\nbase_url="http://127.0.0.1:${httpPort}/v1"\nmodel="fixture-model"\napi_key_env="FIXTURE_MODEL_KEY"\ntimeout_ms=10000\nmax_concurrent_turns=1\n[reply]\ndelay_ms=[100,100]\ncooldown_ms=1000\nrandom_probability=0\n[logging]\nlevel="debug"\nconsole=true\nfile=false\n[groups."${A}"]\n[groups."${B}"]\n`);
+  writeFileSync(join(dir,'config.toml'),`[bot]\nowner_id="778899"\n[onebot]\nurl="ws://127.0.0.1:${wsPort}"\ntoken_env="FIXTURE_ONEBOT_TOKEN"\n[ai]\nenabled=true\nbase_url="http://127.0.0.1:${httpPort}/v1"\nmodel="fixture-model"\napi_key_env="FIXTURE_MODEL_KEY"\ntimeout_ms=10000\nmax_concurrent_turns=1\n[reply]\ndelay_ms=[100,100]\ncooldown_ms=1000\nrandom_probability=0\n[logging]\nlevel="debug"\nconsole=true\nfile=false\n[groups."${A}"]\n[groups."${B}"]\n`);
   child=spawn(process.execPath,['--import',import.meta.resolve('tsx'),fileURLToPath(new URL('../src/index.ts',import.meta.url))],{
    cwd:dir,env:{PATH:process.env.PATH??'',HOME:dir,NODE_NO_WARNINGS:'1',FIXTURE_ONEBOT_TOKEN:'fixture-onebot-token',FIXTURE_MODEL_KEY:'fixture-model-key'},stdio:['ignore','pipe','pipe'],
   });
@@ -99,7 +99,7 @@ test('actual entrypoint shares local transports, isolates two group databases, a
   assert.deepEqual(exit,{code:0,signal:null});assert.ok(output.includes('app.stopped'));
   await wait(()=>heldCancelled&&peers.size===0&&sockets.size===0,'all child network resources closed');
   assert.equal(connectionCount,1);assert.equal(requests.length,5);assert.equal(sends().length,3);
-  const paths=[[A,join(dir,'data/listener.sqlite')],[B,join(dir,'data/groups/22/listener.sqlite')]] as const;
+  const paths=[[A,join(dir,`data/groups/${A}/listener.sqlite`)],[B,join(dir,'data/groups/22/listener.sqlite')]] as const;
   for(const [group,path]of paths){
    const db=new DatabaseSync(path,{readOnly:true});try{
     assert.equal(db.prepare('SELECT group_id FROM listener_identity WHERE singleton=1').get()!.group_id,group);

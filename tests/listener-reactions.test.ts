@@ -56,7 +56,7 @@ test('one batch may react to several people and several emoji without creating f
   assert.equal(s.requests.length,1);assert.deepEqual(payload(s.requests[0]!).current_batch.messages.map((e:TimelineEntry)=>e.messageId),['1','2']);
   assert.deepEqual(mutations(s).map(c=>c.params),[{message_id:'1',emoji_id:'76',set:true},{message_id:'2',emoji_id:'128077',set:true}]);
   assert.equal(s.memory.rows.length,2);assert.ok(s.memory.rows.every(e=>!e.bot));assert.ok(!s.memory.context().includes('emoji_id'));
-  await s.receive(event('3'));await settled(s,2);assert.equal(state(s.requests[1]!).last_turn.outcome,'reacted');assert.equal(state(s.requests[1]!).last_turn.confirmed,2);assert.equal(state(s.requests[1]!).recent.length,2);
+  await s.receive(event('3'));await settled(s,2);assert.equal(state(s.requests[1]!).last_turn.outcome,'reaction_submitted');assert.equal(state(s.requests[1]!).last_turn.confirmed,0);assert.equal(state(s.requests[1]!).last_turn.submitted,2);assert.equal(state(s.requests[1]!).recent.length,2);assert.ok(state(s.requests[1]!).recent.every((r:any)=>r.status==='ok'&&r.submitted===true&&r.effect_confirmed===false));
  }finally{await s.close();}
 });
 
@@ -71,7 +71,7 @@ for(const order of ['before','after'] as const)test(`reaction ${order} send exec
 test('finish after reactions and attention commits the plan on normal completion',async()=>{
  const s=setup({respond:r=>r.index===0?complete(react(),next(),silent()):complete(silent())});try{
   await s.receive(event('1'));await settled(s,1);assert.equal(mutations(s).length,1);assert.equal(sends(s).length,0);assert.equal(plans(s).length,1);
-  await s.receive(event('2',B,false));await settled(s,2);assert.equal(payload(s.requests[1]!).trigger_kind,'attention');assert.equal(state(s.requests[1]!).last_turn.outcome,'reacted');assert.deepEqual(plans(s),[]);
+  await s.receive(event('2',B,false));await settled(s,2);assert.equal(payload(s.requests[1]!).trigger_kind,'attention');assert.equal(state(s.requests[1]!).last_turn.outcome,'reaction_submitted');assert.deepEqual(plans(s),[]);
  }finally{await s.close();}
 });
 
@@ -81,18 +81,18 @@ test('reaction-only intermediate round continues to a normal terminal tool',asyn
  }finally{await s.close();}
 });
 
-for(const unknown of [false,true])test(`identical reaction calls are deduplicated even when native result is ${unknown?'unknown':'confirmed'}`,async()=>{
+for(const unknown of [false,true])test(`identical reaction calls are deduplicated even when native result is ${unknown?'unknown':'submitted'}`,async()=>{
  const s=setup({respond:r=>r.index===0?complete(react(),react(),...(unknown?[react('1','76','remove')]:[])):complete(silent()),api:action=>{if(unknown&&action==='set_msg_emoji_like')throw Error('transport uncertain');}});try{
   await s.receive(event('1'));await settled(s,2);assert.equal(mutations(s).length,1);assert.equal(s.calls.filter(c=>c.action==='get_msg').length,2); // Observation plus fresh mutation verification.
   const returned=results(s.requests[1]!);assert.equal(returned[0].status,unknown?'unknown':'ok');assert.equal(returned[1].duplicate,true);if(unknown){assert.equal(returned[2].duplicate,true);assert.equal(returned[2].requested_action,'remove');}
-  await s.receive(event('2'));await settled(s,3);assert.equal(state(s.requests[2]!).last_turn.confirmed,unknown?0:1);assert.equal(state(s.requests[2]!).last_turn.unknown,unknown?1:0);
+  await s.receive(event('2'));await settled(s,3);assert.equal(state(s.requests[2]!).last_turn.confirmed,0);assert.equal(state(s.requests[2]!).last_turn.submitted,unknown?0:1);assert.equal(state(s.requests[2]!).last_turn.unknown,unknown?1:0);
  }finally{await s.close();}
 });
 
 test('add remove add are three intentional operations on one pair',async()=>{
  const s=setup({respond:r=>r.index===0?complete(react(),react('1','76','remove'),react(),silent()):complete(silent())});try{
   await s.receive(event('1'));await settled(s,1);assert.deepEqual(mutations(s).map(c=>c.params.set),[true,false,true]);
-  await s.receive(event('2'));await settled(s,2);assert.equal(state(s.requests[1]!).recent.length,1);assert.equal(state(s.requests[1]!).recent[0].action,'add');assert.equal(state(s.requests[1]!).last_turn.confirmed,3);
+  await s.receive(event('2'));await settled(s,2);assert.equal(state(s.requests[1]!).recent.length,1);assert.equal(state(s.requests[1]!).recent[0].action,'add');assert.equal(state(s.requests[1]!).last_turn.confirmed,0);assert.equal(state(s.requests[1]!).last_turn.submitted,3);assert.equal(state(s.requests[1]!).recent[0].submitted,true);assert.equal(state(s.requests[1]!).recent[0].effect_confirmed,false);
  }finally{await s.close();}
 });
 
@@ -118,7 +118,7 @@ for(const ending of ['model','prose','timeout'] as const)test(`reaction remains 
  if(ending==='timeout')t.mock.timers.enable({apis:['setTimeout'],now:Date.now()});
  const held=gate<Completion>();const s=setup({settings:{wakeTimeoutMs:1000},respond:r=>{if(r.index===0)return complete(next(),react());if(ending==='model')throw Error('model failed');if(ending==='prose')return {content:'ordinary prose',tool_calls:[]};return abortable(held.promise,r.signal);}});try{
   await s.receive(event('1'));if(ending==='timeout'){t.mock.timers.tick(3);await flush();await flush();assert.equal(s.requests.length,2);t.mock.timers.tick(1001);await flush();}else await settled(s,2);
-  assert.equal(mutations(s).length,1);assert.deepEqual(plans(s),[]);assert.equal((s.bot as any).recentReactions.size,1);assert.equal((s.bot as any).lastReactionTurn.confirmed,1);
+  assert.equal(mutations(s).length,1);assert.deepEqual(plans(s),[]);assert.equal((s.bot as any).recentReactions.size,1);assert.equal((s.bot as any).lastReactionTurn.confirmed,0);assert.equal((s.bot as any).lastReactionTurn.submitted,1);
  }finally{held.resolve(complete(silent()));await flush();await s.close();if(ending==='timeout')t.mock.timers.reset();}
 });
 
