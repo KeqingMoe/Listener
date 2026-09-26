@@ -29,6 +29,18 @@ npm start
 
 修改配置或人设后重启 Bot，暂不热加载。开发用 `npm run dev`，测试用 `npm test`；不要同时启动多个实例。需要做一次受控的真实模型观察验证时，明确执行 `npx tsx scripts/probe-observation.ts --allow-model-network`；该脚本使用合成事件、限制请求数，不连接OneBot、不发送QQ消息。
 
+## 只读 Web 控制台
+
+使用 Vue 3 + TypeScript，独立于 Bot 运行，展示模型用量、缓存趋势、唤醒执行元数据和工具统计。默认仅本机访问，不提供发送消息或修改配置的功能。
+
+```sh
+npm run dashboard:build
+npm run dashboard:start
+# 打开 http://127.0.0.1:3210
+```
+
+开发使用 `npm run dashboard:dev`。安全访问方式、数据缺失口径及测试命令见 [面板说明](dashboard/README.md)。无认证面板不要直接暴露公网。
+
 ## 多群支持
 
 一个进程共享 OneBot 连接、人设和表情目录；每个启用的群都有独立 Listener、模型实例与状态，不共享模型续接链。每个启用群按解析后的 `memoryPath` 创建 `${memoryPath}.events.sqlite`（追加式世界事实）和 `${memoryPath}.session.sqlite`（追加式模型会话与工具账本）；模型请求指标另存于全局 `${ai.memoryPath}.telemetry.sqlite`。这些是运行时路径派生规则，配置入口仍为全局／分群 `[memory].path`，不是新增的TOML路径字段。原有 memory SQLite 仍保留用于 legacy 历史和启动迁移，不把摘要当作原始事件。图片与转发读取必须核验本群来源，工具缓存不跨实例共享；私聊和未启用群的消息不进入群记忆，不处理命令。请勿为每个群再启动一个 Bot 进程。

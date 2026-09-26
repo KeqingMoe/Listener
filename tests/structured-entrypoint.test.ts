@@ -35,7 +35,8 @@ test('real entrypoint preserves native segments, literal marker text and structu
  const op=(name:string,args:unknown)=>({id:`op_${requests.length}`,type:'function',function:{name,arguments:JSON.stringify(args)}});
  const send=(segments:unknown[])=>op('send_message',{segments});
  const http=createServer((req,res)=>{void(async()=>{
-  let source='';for await(const chunk of req)source+=chunk.toString();const body=JSON.parse(source);requests.push(body);
+  req.setEncoding('utf8'); // Preserve multibyte characters split across HTTP chunks.
+  let source='';for await(const chunk of req)source+=chunk;const body=JSON.parse(source);requests.push(body);
   assert.equal(req.headers.authorization,'Bearer fixture-key');assert.equal(req.url,'/v1/chat/completions');assert.equal(body.model,'fixture-structured');
   const names=body.tools.map((t:any)=>t.function.name);assert.ok(names.includes('read_message'));assert.ok(!names.includes('get_group_members'));assert.ok(!names.includes('get_member_info'));assert.ok(!names.includes('react_message'));
   assert.ok(names.includes('read_messages'));assert.ok(names.includes('read_events'));assert.equal(payload(body).group_id,GROUP);assert.ok(!JSON.stringify(payload(body)).includes(LITERAL));

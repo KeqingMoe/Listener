@@ -11,20 +11,38 @@
     "config:check": "tsx src/config-check.ts",
     "config:migrate": "tsx scripts/migrate-config.ts",
     "logs": "tsx src/logs.ts",
-    "faces:sync": "tsx src/sync-faces.ts"
+    "faces:sync": "tsx src/sync-faces.ts",
+    "dashboard:dev": "tsx scripts/dashboard-dev.ts",
+    "dashboard:typecheck": "vue-tsc --noEmit -p dashboard/web/tsconfig.json && tsc --noEmit -p dashboard/tsconfig.server.json",
+    "dashboard:build": "npm run dashboard:typecheck && tsc -p dashboard/tsconfig.server.json && vite build --config dashboard/web/vite.config.ts",
+    "dashboard:start": "node dist-dashboard/server/dashboard/server/index.js",
+    "dashboard:test": "tsx --test dashboard/tests/*.test.ts",
+    "dashboard:test:browser": "playwright test --config dashboard/playwright.config.ts"
   },
   "dependencies": {
+    "@fastify/static": "^10.1.5",
     "dotenv": "^17.2.3",
+    "echarts": "^6.1.0",
+    "fastify": "^5.12.5",
     "ipaddr.js": "^2.5.0",
     "pino": "^10.3.1",
     "sharp": "^0.35.4",
     "smol-toml": "^1.9.0",
+    "vue": "^3.5.43",
+    "vue-echarts": "^8.3.0",
+    "vue-router": "^5.3.1",
     "ws": "^8.18.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.0.0",
     "@types/ws": "^8.18.1",
+    "@vitejs/plugin-vue": "^6.0.9",
+    "tailwindcss": "^4.3.3",
     "tsx": "^4.20.6",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite": "^8.3.1",
+    "vue-tsc": "^3.3.11"
   }
 }
