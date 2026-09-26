@@ -46,14 +46,14 @@ test('persisted reference sanitizer strips secrets and invalid counts, enforces 
 
 test('inline ancestor identity blocks a resource-only child cycle without fetching ancestor',async()=>{
  const id='9876543210123456789';const s=setup({origin:remote(native(id,[node([native(id)])]))});
- const result=await s.read();assert.equal(result.status,'ok');assert.match(rows(result)[0]!.text,/循环引用/);
+ const result=await s.read();assert.equal(result.status,'ok');assert.deepEqual(rows(result)[0]!.segments,[{type:'forward',content_status:'not_read',reason:'resource_cycle'}]);
  assert.equal(rows(result)[0]!.forwards,undefined);assert.equal(s.state.children.size,0);assert.deepEqual(s.calls.map(x=>x.action),['get_msg']);
 });
 test('serialized CQ compatibility strings never expose transport URLs or file identifiers',async()=>{
  for(const field of ['message','content']){
   const s=setup({response:{messages:[{[field]:'before [CQ:image,url=https://secret.invalid/token,file=SECRET_FILE] after'}]}});
   const result=await s.read();assert.equal(result.truncated,true);assert.deepEqual(result.partial_message_indices,[1]);
-  assert.match(rows(result)[0]!.text,/无法安全展开/);assert.ok(!JSON.stringify(result).includes('secret.invalid'));assert.ok(!JSON.stringify(result).includes('SECRET_FILE'));
+  assert.deepEqual(rows(result)[0]!.segments,[{type:'unsupported',kind:'serialized_cq'}]);assert.equal(rows(result)[0]!.representation,'legacy_text');assert.ok(!JSON.stringify(result).includes('secret.invalid'));assert.ok(!JSON.stringify(result).includes('SECRET_FILE'));
  }
 });
 
@@ -95,7 +95,7 @@ test('get_msg verifies group, identity and real selected segment before resource
 
 test('native inline expanded content is preferred to uncallable native internal id', async () => {
   const s = setup({ origin: remote(native('12345678901234567890', [node([text('inline')])])) });
-  const r = await s.read(); assert.equal(rows(r)[0]!.text, 'inline'); assert.equal(s.calls.length, 1);
+  const r = await s.read(); assert.deepEqual(rows(r)[0]!.segments, [{type:'text',text:'inline'}]);assert.equal(rows(r)[0]!.text,undefined); assert.equal(s.calls.length, 1);
   assert.equal(JSON.stringify(r).includes('12345678901234567890'), false);
 });
 
@@ -131,14 +131,14 @@ test('nested native inline preserves verified child count; depth three prevents 
   const s = setup({ origin: remote(native('internal', [node([native('internal', [middle])])])) });
   const r1 = await s.read(), ref1 = rows(r1)[0]!.forwards[0]; assert.equal(ref1.count, 1); assert.equal(ref1.countSource, 'verified');
   const r2 = await s.read(1, 1, ref1.id), ref2 = rows(r2)[0]!.forwards[0];
-  const r3 = await s.read(1, 1, ref2.id); assert.match(rows(r3)[0]!.text, /深度上限/); assert.equal(rows(r3)[0]!.forwards, undefined); assert.equal(s.state.children.size, 2); assert.equal(s.calls.length, 1);
+  const r3 = await s.read(1, 1, ref2.id); assert.deepEqual(rows(r3)[0]!.segments,[{type:'forward',content_status:'not_read',reason:'depth_limit'}]); assert.equal(rows(r3)[0]!.forwards, undefined); assert.equal(s.state.children.size, 2); assert.equal(s.calls.length, 1);
 });
 
 test('ancestor resource cycles unavailable without registration or autoexpansion', async () => {
   const s = setup({ response: { messages: [node([native('opaque+/=secret')])] } });
-  const r = await s.read(); assert.match(rows(r)[0]!.text, /循环引用/); assert.equal(s.state.children.size, 0); assert.equal(s.calls.length, 2);
+  const r = await s.read(); assert.deepEqual(rows(r)[0]!.segments,[{type:'forward',content_status:'not_read',reason:'resource_cycle'}]); assert.equal(s.state.children.size, 0); assert.equal(s.calls.length, 2);
   const t = setup({ onCall: (action, params) => action === 'get_msg' ? remote(native('a')) : (params as any).message_id === 'a' ? { messages: [node([native('b')])] } : { messages: [node([native('a')])] } });
-  const first = await t.read(), second = await t.read(1, 1, rows(first)[0]!.forwards[0].id); assert.match(rows(second)[0]!.text, /循环引用/); assert.equal(t.calls.length, 3);
+  const first = await t.read(), second = await t.read(1, 1, rows(first)[0]!.forwards[0].id); assert.deepEqual(rows(second)[0]!.segments,[{type:'forward',content_status:'not_read',reason:'resource_cycle'}]); assert.equal(t.calls.length, 3);
 });
 
 test('resource limits reject cycles, depth, oversized strings, excessive nodes and traversal budget safely', async () => {
@@ -152,8 +152,8 @@ test('resource limits reject cycles, depth, oversized strings, excessive nodes a
 
 test('whole JSON bounds include overhead, large text truncates honestly and cursor advances', async () => {
   const s = setup({ response: { messages: [node([text('"\\\n'.repeat(30000)), native('not-shown')]), node([text('after')])] } });
-  const r = await s.read(1, 2); assert.ok(JSON.stringify(r).length <= 12000); assert.equal(r.truncated, true); assert.deepEqual(r.partial_message_indices, [1]); assert.match(rows(r)[0]!.text, /内容已截断/); assert.equal(r.returned_end, 1); assert.equal(r.next_start, 2); assert.equal(s.state.children.size, 0);
-  const next = await s.read(2, 2); assert.equal(rows(next)[0]!.text, 'after'); assert.equal(next.has_more, false);
+  const r = await s.read(1, 2); assert.ok(JSON.stringify(r).length <= 12000); assert.equal(r.truncated, true); assert.deepEqual(r.partial_message_indices, [1]); assert.equal(rows(r)[0]!.content_truncated,true);assert.equal(rows(r)[0]!.segments[0].type,'text');assert.ok(rows(r)[0]!.segments[0].text.length>0);assert.equal(rows(r)[0]!.text,undefined); assert.equal(r.returned_end, 1); assert.equal(r.next_start, 2); assert.equal(s.state.children.size, 0);
+  const next = await s.read(2, 2); assert.deepEqual(rows(next)[0]!.segments,[{type:'text',text:'after'}]); assert.equal(next.has_more, false);
 });
 
 test('per-turn 30000 character bound remains strict across long repeated reads', async () => {
@@ -166,7 +166,7 @@ test('per-turn 30000 character bound remains strict across long repeated reads',
 test('all nontext payloads remain opaque, no image ids or JSON card leaks, literal user URLs preserved', async () => {
   const secret = 'HIDDEN_SECRET_RESOURCE_ID';
   const s = setup({ response: { messages: [node([{ type: 'image', data: { url: `https://x/${secret}`, file: secret } }, { type: 'at', data: { qq: secret } }, { type: 'json', data: { data: secret } }, { type: 'video', data: { url: secret } }, card({ tsum: 1 }, { resid: secret }), text('quoted https://example.com/visible')])] } });
-  const r = await s.read(), output = JSON.stringify(r); assert.equal(output.includes(secret), false); assert.equal(output.includes('img_'), false); assert.match(rows(r)[0]!.text, /图片：转发内图片本版不支持查看/); assert.match(output, /https:\/\/example.com\/visible/);
+  const r = await s.read(), output = JSON.stringify(r); assert.equal(output.includes(secret), false); assert.equal(output.includes('img_'), false); assert.deepEqual(rows(r)[0]!.segments[0],{type:'image',content_status:'not_viewed',reason:'forward_images_unsupported'}); assert.match(output, /https:\/\/example.com\/visible/);
 });
 
 test('abort before or during any await commits no newly cached content or children', async () => {
@@ -197,15 +197,15 @@ test('turn cache serialized budget is two MiB, failed loads do not commit', asyn
 
 test('node wrappers and content strings are compatible, unknown nodes explicitly partial', async () => {
   const s = setup({ response: { messages: [{ type: 'node', data: { name: 'someone', uin: '123', content: 'compatibility text' } }, {}, { content: [text('content array')] }] } });
-  const r = await s.read(1, 3); assert.equal(rows(r)[0]!.text, 'compatibility text'); assert.equal(rows(r)[0]!.claimed_sender.user_id, '123');
-  assert.match(rows(r)[1]!.text, /无法解析的转发消息/); assert.deepEqual(r.partial_message_indices, [2]); assert.equal(rows(r)[2]!.text, 'content array');
+  const r = await s.read(1, 3); assert.deepEqual(rows(r)[0]!.segments,[{type:'text',text:'compatibility text'}]);assert.equal(rows(r)[0]!.representation,'legacy_text'); assert.equal(rows(r)[0]!.claimed_sender.user_id, '123');
+  assert.deepEqual(rows(r)[1]!.segments,[{type:'unsupported',kind:'unparseable_forward_message'}]); assert.deepEqual(r.partial_message_indices, [2]); assert.deepEqual(rows(r)[2]!.segments,[{type:'text',text:'content array'}]);
   assert.throws(() => setup({ options: { enabled: true, maxPerRead: undefined } as any }));
   assert.throws(() => setup({ options: Object.assign(Object.create({}), { enabled: true, maxPerRead: 20 }) }));
 });
 
 test('nested hint becomes verified after explicit child read, never autoexpanded', async () => {
   const s = setup({ onCall: (action, params) => action === 'get_msg' ? remote() : (params as any).message_id === 'opaque+/=secret' ? { messages: [node([card({ tsum: 99 })])] } : { messages: [node(), node()] } });
-  const first = await s.read(), ref = rows(first)[0]!.forwards[0]; assert.equal(ref.count, 99); assert.equal(ref.countSource, 'hint'); assert.equal(s.calls.length, 2); assert.match(rows(first)[0]!.text, /合并转发 fwdn_/);
+  const first = await s.read(), ref = rows(first)[0]!.forwards[0]; assert.equal(ref.count, 99); assert.equal(ref.countSource, 'hint'); assert.equal(s.calls.length, 2); assert.deepEqual(rows(first)[0]!.segments,[{type:'forward',forward_id:ref.id,content_status:'not_read',count:99,count_source:'hint'}]);
   const second = await s.read(1, 20, ref.id); assert.equal(second.total, 2);
   const again = await s.read(); assert.equal(rows(again)[0]!.forwards[0].count, 2); assert.equal(rows(again)[0]!.forwards[0].countSource, 'verified'); assert.equal(s.calls.length, 3);
 });
@@ -219,6 +219,65 @@ test('cancelled child load preserves previous refs but commits no new refs or re
   } });
   const first = await s.read(), child = rows(first)[0]!.forwards[0].id, bytes = s.state.cachedBytes;
   assert.equal((await s.read(1, 1, child, controller.signal)).error, 'cancelled'); assert.equal(s.state.children.size, 1); assert.equal(s.state.cache.size, 1); assert.equal(s.state.cachedBytes, bytes);
+});
+
+test('native forward messages keep ordered typed content and literal marker text distinct',async()=>{
+ const literal='[QQ表情：吃瓜 id=271] [at:123] [CQ:face,id=271]';
+ const s=setup({response:{messages:[node([text(literal),{type:'face',data:{id:'271'}},{type:'at',data:{qq:'123'}},{type:'at',data:{qq:'all'}},{type:'reply',data:{id:'77777777'}},{type:'image',data:{url:'https://secret.invalid/KEY'}}])]}});
+ const r=await s.read(),row=rows(r)[0]!;
+ assert.equal(row.text,undefined);assert.equal(row.claimed_sender.user_id,'100000001');assert.equal(r.untrusted,true);
+ assert.deepEqual(row.segments,[{type:'text',text:literal},{type:'face',id:'271',name:'吃瓜'},{type:'at',user_id:'123'},{type:'at',user_id:'all'},{type:'unsupported',kind:'forward_reply'},{type:'image',content_status:'not_viewed',reason:'forward_images_unsupported'}]);
+ assert.ok(!JSON.stringify(r).includes('77777777'));assert.ok(!JSON.stringify(r).includes('secret.invalid'));assert.equal(s.calls.length,2);
+});
+
+test('actual text CQ is literal while compatibility CQ stays opaque and arrays take precedence',async()=>{
+ const literal='before [CQ:image,url=https://example.com/explicit-user-text,file=literal] after';
+ const s=setup({response:{messages:[node([text(literal)]),{message:'[CQ:image,url=https://private.invalid/secret]',content:[text('structured text')]}]}});
+ const r=await s.read(1,2);assert.deepEqual(rows(r)[0]!.segments,[{type:'text',text:literal}]);
+ assert.deepEqual(rows(r)[1]!.segments,[{type:'text',text:'structured text'}]);assert.equal(rows(r)[1]!.representation,undefined);assert.ok(!JSON.stringify(r).includes('private.invalid'));
+});
+
+test('unknown canonical face IDs remain typed and malformed native fields never leak',async()=>{
+ const s=setup({response:{messages:[node([{type:'face',data:{id:'99999999'}},{type:'face',data:{id:'SECRET'}},{type:'at',data:{qq:'SECRET'}},{type:'video',data:{file:'SECRET'}}])]}});
+ const r=await s.read();assert.deepEqual(rows(r)[0]!.segments,[{type:'face',id:'99999999'},{type:'unsupported',kind:'face'},{type:'unsupported',kind:'at'},{type:'unsupported',kind:'video'}]);
+ assert.equal(rows(r)[0]!.content_truncated,true);assert.ok(!JSON.stringify(r).includes('SECRET'));assert.equal(r.truncated,true);
+});
+
+test('typed literal legacy marker never authorizes a root forward capability',async()=>{
+ const s=setup({entries:[{...local(),forwards:undefined,segments:[{type:'text',text:'[非文本消息]'}]}]});
+ assert.equal((await s.read()).error,'forbidden_reference');assert.equal(s.calls.length,0);
+});
+
+test('budget truncation removes child refs whenever their typed segments are omitted',async()=>{
+ const s=setup({response:{messages:[node([text('x'.repeat(11850)),native('hidden-resource')])]}});
+ const r=await s.read(),row=rows(r)[0]!;assert.equal(r.status,'ok');assert.ok(JSON.stringify(r).length<=12000);
+ assert.equal(row.content_truncated,true);assert.ok(row.segments_omitted>=1);assert.ok(row.segments.every((p:any)=>p.type==='text'));assert.equal(row.forwards,undefined);
+ assert.equal(s.state.children.size,0);assert.equal(s.state.childKeys.size,0);assert.ok(!JSON.stringify(r).includes('hidden-resource'));
+});
+
+test('visible nested handles survive text clipping but omitted rows cannot mint children',async()=>{
+ const s=setup({response:{messages:[node([native('shown-resource'),text('x'.repeat(20000))]),node([native('unreturned-resource')])]}});
+ const r=await s.read(1,2),row=rows(r)[0]!;assert.equal(rows(r).length,1);assert.equal(r.next_start,2);assert.equal(row.content_truncated,true);
+ assert.equal(row.segments[0].type,'forward');assert.equal(row.segments[0].forward_id,row.forwards[0].id);
+ assert.equal(s.state.children.size,1);assert.equal(s.state.childKeys.size,1);assert.ok(s.state.children.has(row.forwards[0].id));assert.ok(!JSON.stringify(r).includes('resource'));
+});
+
+test('typed forward count hints become verified without flattening or automatic expansion',async()=>{
+ const s=setup({onCall:(action,params)=>action==='get_msg'?remote():(params as any).message_id==='opaque+/=secret'?{messages:[node([card({tsum:99})])]}:{messages:[node(),node()]}});
+ const initial=await s.read(),id=rows(initial)[0]!.segments[0].forward_id;
+ assert.deepEqual(rows(initial)[0]!.segments,[{type:'forward',forward_id:id,content_status:'not_read',count:99,count_source:'hint'}]);assert.equal(s.calls.length,2);
+ await s.read(1,20,id);const again=await s.read();assert.deepEqual(rows(again)[0]!.segments,[{type:'forward',forward_id:id,content_status:'not_read',count:2,count_source:'verified'}]);
+});
+
+test('forward-specific bounds preserve small segment arrays beyond root-message cap',async()=>{
+ const s=setup({response:{messages:[node(Array.from({length:200},()=>text('')))]}});
+ const r=await s.read();assert.equal(rows(r)[0]!.segments.length,200);assert.equal(r.truncated,false);assert.ok(JSON.stringify(r).length<=12000);
+});
+
+test('text clipping preserves unicode scalar boundaries and never adds marker prose',async()=>{
+ const s=setup({response:{messages:[node([text('😀'.repeat(12000)),native('not-visible')])]}});
+ const r=await s.read(),row=rows(r)[0]!;assert.equal(row.content_truncated,true);assert.ok(JSON.stringify(r).length<=12000);
+ const value=row.segments[0].text as string;assert.ok(value.length>0);assert.equal(value.replace(/😀/g,''),'');assert.equal(row.text,undefined);assert.equal(row.forwards,undefined);assert.equal(s.state.children.size,0);
 });
 
 test('API exceptions are static failures without body/token leakage', async () => {

@@ -62,6 +62,9 @@ test('event native inline and JSON card persist only stable refs and honest veri
     await until(() => s.requests.length === 1);
     assert.deepEqual(s.memory.find('1')?.forwards, [{ id: 'fwd_1_1', index: 1, count: 2, countSource: 'verified' }, { id: 'fwd_1_2', index: 2, count: 99, countSource: 'hint' }]);
     const persisted = s.memory.context(); assert.match(persisted, /已核实/); assert.match(persisted, /未核实/);
+    const payload=JSON.parse(String(s.requests[0]!.find(m=>m.role==='user')!.content));const context=JSON.parse(payload.untrusted_group_context);
+    const represented=(Array.isArray(context)?context:context.messages).find((m:any)=>m.messageId==='1');
+    assert.deepEqual(represented.segments,[{type:'at',user_id:self},{type:'forward',forward_id:'fwd_1_1',count:2,count_source:'verified',content_status:'not_read'},{type:'forward',forward_id:'fwd_1_2',count:99,count_source:'hint',content_status:'not_read'}]);assert.equal(represented.text,undefined);
     for (const secret of [resource, hidden, internal]) { assert.equal(persisted.includes(secret), false); assert.equal(JSON.stringify(s.requests).includes(secret), false); }
     assert.equal(s.apiCalls.length, 0);
   } finally { await s.bot.stop(); }
@@ -72,7 +75,7 @@ test('enabled forward executes then sends, tool content never enters timeline me
   try {
     await s.bot.receive(event(), self); await until(() => sent(s).length === 1);
     assert.equal(s.requests.length, 2); assert.ok(s.schemas.every(names => names.includes('read_forward')));
-    const result = toolResult(s.requests[1]!); assert.equal(result.status, 'ok'); assert.equal(result.messages[0].text, hidden); assert.equal(result.untrusted, true);
+    const result = toolResult(s.requests[1]!); assert.equal(result.status, 'ok'); assert.deepEqual(result.messages[0].segments,[{type:'text',text:hidden}]);assert.equal(result.messages[0].text,undefined); assert.equal(result.untrusted, true);
     assert.deepEqual(s.apiCalls.filter(c => c.action === 'get_forward_msg').map(c => c.params), [{ message_id: resource }]);
     for (const secret of [resource, hidden, internal]) assert.equal(s.memory.context().includes(secret), false);
     assert.equal(JSON.stringify(s.requests).includes(internal), false); assert.equal(JSON.stringify(s.requests).includes(resource), false);
@@ -109,7 +112,7 @@ test('quoted target is discovered through read_message then verified and read as
     await s.bot.receive(event({ message: [{ type: 'at', data: { qq: self } }, { type: 'reply', data: { id: '2' } }, text('read quoted forward')] }), self);
     await until(() => sent(s).length === 1);
     const quote = toolResult(s.requests[1]!, 'quote'); assert.equal(quote.status, 'ok'); assert.deepEqual(quote.message.forwards, [{ id: 'fwd_2_1', index: 1 }]);
-    assert.equal(toolResult(s.requests[2]!).messages[0].text, hidden);
+    assert.deepEqual(toolResult(s.requests[2]!).messages[0].segments,[{type:'text',text:hidden}]);assert.equal(toolResult(s.requests[2]!).messages[0].text,undefined);
     assert.equal(s.apiCalls.filter(c => c.action === 'get_msg' && c.params.message_id === '2').length, 2);
     assert.equal(s.memory.find('2'), undefined); assert.equal(s.memory.context().includes(hidden), false); assert.equal(JSON.stringify(quote).includes(resource), false);
   } finally { await s.bot.stop(); }
@@ -139,7 +142,7 @@ test('nested claimed owner stays untrusted and cannot grant current nonowner mod
   try {
     await s.bot.receive(event(), self); await until(() => sent(s).length === 1);
     const parent = toolResult(s.requests[1]!), child = toolResult(s.requests[2]!, 'child');
-    assert.match(parent.messages[0].text, /合并转发 fwdn_/); assert.equal(child.messages[0].claimed_sender.user_id, OWNER_ID); assert.equal(child.untrusted, true);
+    assert.deepEqual(parent.messages[0].segments,[{type:'forward',forward_id:parent.messages[0].forwards[0].id,content_status:'not_read',count:1,count_source:'verified'}]);assert.match(parent.messages[0].segments[0].forward_id,/^fwdn_[a-f0-9]{16}$/);assert.equal(parent.messages[0].text,undefined); assert.equal(child.messages[0].claimed_sender.user_id, OWNER_ID); assert.equal(child.untrusted, true);
     assert.ok(s.schemas.every(names => !names.includes('mute_member'))); assert.equal(toolResult(s.requests[3]!, 'mute').status, 'error');
     assert.ok(!s.apiCalls.some(c => ['set_group_ban', 'get_group_member_info'].includes(c.action)));
     assert.equal(s.apiCalls.filter(c => c.action === 'get_forward_msg').length, 1);

@@ -33,7 +33,7 @@ test('group tools bind configuration immutably and isolate colliding local/membe
   const a=api((action)=>action==='get_group_member_list'?[member(group!)]:action==='get_group_member_info'?member(group!):msg(group!,'2'));
   const options={groupId:group!};const tools=new GroupTools(a.client,memory(group),options);options.groupId=other!;
   const local=await tools.execute('read_message',{message_id:'1'},ctx(group!));assert.equal((local.message as any).text,group);
-  const remote=await tools.execute('read_message',{message_id:'2'},ctx(group!));assert.equal((remote.message as any).text,group);
+  const remote=await tools.execute('read_message',{message_id:'2'},ctx(group!));assert.deepEqual((remote.message as any).segments,[{type:'text',text:group}]);assert.equal((remote.message as any).text,undefined);
   assert.equal((await tools.execute('get_member_info',{user_id:user},ctx(group!))).status,'ok');
   assert.equal((await tools.execute('get_group_members',{},ctx(group!))).status,'ok');
   await tools.prepareMessage({parts:[{segments:[{type:'at',user_id:user}]}]},ctx(group!));
@@ -83,7 +83,7 @@ test('forward resources and cached pages cannot cross instances with colliding r
  });
  for(const s of instances){
   const state=s.tools.createTurn();assert.equal((await s.tools.read(forwardArgs,ctx(s.group===A?B:A),state)).error,'forbidden_group');assert.equal(s.calls.length,0);
-  const result=await s.tools.read(forwardArgs,ctx(s.group),state);assert.equal(result.status,'ok');assert.equal((result.messages as any[])[0].text,`private-${s.group}`);
+  const result=await s.tools.read(forwardArgs,ctx(s.group),state);assert.equal(result.status,'ok');assert.deepEqual((result.messages as any[])[0].segments,[{type:'text',text:`private-${s.group}`}]);assert.equal((result.messages as any[])[0].text,undefined);
   const before=s.calls.length;assert.equal((await s.tools.read(forwardArgs,ctx(s.group),state)).status,'ok');assert.equal(s.calls.length,before);
   const other=instances.find(i=>i!==s)!;const otherBefore=other.calls.length;
   assert.equal((await other.tools.read(forwardArgs,ctx(other.group),state)).error,'invalid_arguments');assert.equal(other.calls.length,otherBefore);

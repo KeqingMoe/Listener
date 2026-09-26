@@ -64,7 +64,8 @@ function faceSchema(configOverrides: Partial<ListenerConfig> = {}) {
 test('send tool includes strict ordinary and animated face choices without adding a quota', () => {
   const { params, face } = faceSchema({ maxParts: 10 });
   assert.ok(face); assert.equal(face.additionalProperties, false); assert.deepEqual(face.required, ['type', 'id']);
-  assert.deepEqual(Object.keys(face.properties).sort(), ['id', 'type']);
+  assert.deepEqual(Object.keys(face.properties).sort(), ['id', 'name', 'type']);
+  assert.equal(face.properties.name.maxLength,80);
   assert.equal(face.properties.id.type, 'string');
   for (const id of ['0', '6', '14', '20', '21', '22', '32', '375']) assert.ok(face.properties.id.enum.includes(id), id);
   assert.ok(!face.properties.id.enum.includes('999999'));
@@ -74,7 +75,7 @@ test('send tool includes strict ordinary and animated face choices without addin
 
 test('mention-disabled tool schema keeps face variant and removes only at', () => {
   const { variants, face } = faceSchema({ tools: { members: false, mention: false,
-    moderation: { mute: false, recall: false, memberCard: false, confirmationTtlSeconds: 60, maxMuteSeconds: 600 } } });
+    moderation: { mute:false, recall:false, memberCard:false, confirmationTtlSeconds: 60, maxMuteSeconds: 600 } } });
   assert.ok(face); assert.ok(face.properties.id.enum.includes('375'));
   assert.deepEqual(variants.map(v => v.properties.type.const).sort(), ['face', 'text']);
 });

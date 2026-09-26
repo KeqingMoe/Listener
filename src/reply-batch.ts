@@ -1,6 +1,7 @@
 import { OWNER_ID, type JsonObject, type Memory, type TimelineEntry, type TurnContext } from './contracts.js';
 import { newTraceId } from './logger.js';
 import type { AttentionHit } from './attention.js';
+import { projectMessage } from './message-content.js';
 
 export interface BatchItem {
   entry: TimelineEntry;
@@ -85,25 +86,23 @@ export class ReplyBatch {
     const trusted = this.direct.map(({ entry, trigger }) => ({
       message_id: entry.messageId, user_id: entry.userId, trigger,
     }));
-    const render = (limit: number, names: boolean): JsonObject => {
+    const render = (limit: number, names: boolean, compactMetadata=false): JsonObject => {
       const truncated: string[] = [];
       const messages = this.items.map(({ entry }) => {
-        const cut = entry.text.length > limit;
-        if (cut) truncated.push(entry.messageId);
-        return {
-          messageId: entry.messageId, userId: entry.userId, time: entry.time,
-          ...(entry.replyTo !== undefined ? { replyTo: entry.replyTo } : {}),
-          ...(entry.bot ? { bot: true } : {}),
-          ...(names ? { nickname: entry.nickname.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').slice(0, 24) } : {}),
-          text: entry.text.slice(0, limit), ...(cut ? { text_truncated: true } : {}),
-        };
+        const message=projectMessage(entry,limit);
+        // Typed media segments carry their references; do not duplicate the root lists.
+        delete message.images;delete message.forwards;
+        if(names)message.nickname=entry.nickname.replace(/[\u0000-\u001f\u007f-\u009f]/g,'').slice(0,24);
+        else delete message.nickname;
+        if(message.content_truncated||message.text_truncated)truncated.push(entry.messageId);
+        return message;
       });
       return {
         current_batch: {
           messages, omitted_messages: this.omittedMessages, omitted_direct: this.omittedDirect,
           unverified_references: this.hasUnverifiedQuote,
-          truncated_message_ids: truncated,
-          ...(truncated.length ? { reason: 'payload_character_limit' } : {}),
+          ...(compactMetadata?{truncated_messages:truncated.length,truncated_ids_omitted:truncated.length}: {truncated_message_ids:truncated}),
+          ...(truncated.length ? { reason: Number.isFinite(limit)?'payload_character_limit':'source_content_incomplete' } : {}),
         },
         trusted_direct_requests: trusted, trigger_kind: this.kind,
       };
@@ -114,8 +113,14 @@ export class ReplyBatch {
     const withoutNames = render(Infinity, false);
     if (JSON.stringify(withoutNames).length <= MAX_PAYLOAD) return withoutNames;
     let low = 0;
-    let high = Math.max(...this.items.map(item => item.entry.text.length));
+    let high = Math.max(16000,...this.items.map(item => JSON.stringify(item.entry.text).length));
+    let compactMetadata=false;
     let best = render(0, false);
+    if(JSON.stringify(best).length>MAX_PAYLOAD){
+      // The same IDs already accompany every per-message truncation flag.
+      // Drop only this duplicate roster, never message/caller/reply provenance.
+      compactMetadata=true;best=render(0,false,true);
+    }
     if (JSON.stringify(best).length > MAX_PAYLOAD) {
       // Valid OneBot IDs (at most 32 digits) always fit, even with all 64 callers.
       throw new RangeError('Reply batch provenance exceeds payload limit');
@@ -124,7 +129,7 @@ export class ReplyBatch {
     // Measure serialized JSON, including escaping, framing, roster and truncation flags.
     while (low <= high) {
       const middle = Math.floor((low + high) / 2);
-      const candidate = render(middle, false);
+      const candidate = render(middle, false,compactMetadata);
       if (JSON.stringify(candidate).length <= MAX_PAYLOAD) {
         best = candidate;
         low = middle + 1;

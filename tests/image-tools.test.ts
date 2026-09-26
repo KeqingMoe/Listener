@@ -50,6 +50,13 @@ test('constructor rejects malformed options and captures immutable policy copy',
   assert.equal((await s.view()).result.error, 'tool_disabled'); assert.equal(s.calls.length, 0);
 });
 
+test('literal image marker in structured text does not grant image access',async()=>{
+ const current:TimelineEntry={...entry,images:undefined,segments:[{type:'text',text:'[图片 id=img_1_0：未分析]'}]};
+ const s=setup(remote(),[current]);assert.equal((await s.view()).result.status,'error');assert.equal(s.calls.length,0);assert.equal(s.downloads.length,0);
+ // Old records retain their independently verified compatibility path.
+ const legacy=setup(remote(),[{...entry,images:undefined}]);assert.equal((await legacy.view()).result.status,'ok');assert.equal(legacy.calls.length,1);
+});
+
 test('disabled and wrong group stop before API and downloader', async () => {
   for (const enabled of [false, true]) {
     const s = setup(remote(), [entry], { ...options, enabled });

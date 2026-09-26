@@ -2,7 +2,8 @@ import { chmodSync, closeSync, openSync, existsSync, statSync } from 'node:fs';
 import { log } from './logger.js';
 import { sanitizeForwardReferences } from './forward-references.js';
 import { DatabaseSync } from 'node:sqlite';
-import { resolveGroupId, type Memory, type Model, type TimelineEntry } from './contracts.js';
+import { resolveGroupId, type JsonObject, type Memory, type Model, type TimelineEntry } from './contracts.js';
+import { projectMessage, sanitizeMessageContent } from './message-content.js';
 
 export interface SQLiteMemoryOptions { path: string; maxContextChars: number; retentionDays: number; groupId?: string }
 type Row = { seq: number; entry: string; time: number };
@@ -92,6 +93,13 @@ export class SQLiteMemory implements Memory {
         .slice(0,3).map(image => ({id:image.id,index:image.index}));
     }
     if (Array.isArray(entry.forwards)) safe.forwards = sanitizeForwardReferences(entry.messageId,entry.forwards);
+    const content = sanitizeMessageContent(entry.messageId, entry.segments, safe.images, safe.forwards);
+    if (content) {
+      Object.assign(safe, content);
+      const omitted = typeof entry.segments_omitted === 'number' && Number.isSafeInteger(entry.segments_omitted) && entry.segments_omitted > 0 ? Math.min(entry.segments_omitted, 1_000_000) : 0;
+      if (omitted) safe.segments_omitted = Math.min(1_000_000, omitted + (content.segments_omitted ?? 0));
+      if (entry.content_truncated === true) safe.content_truncated = true;
+    }
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const inserted = this.db.prepare('INSERT OR IGNORE INTO listener_seen VALUES (?, ?)').run(safe.messageId, safe.time);
@@ -111,35 +119,42 @@ export class SQLiteMemory implements Memory {
     const row = this.db.prepare('SELECT entry FROM listener_messages WHERE message_id=?').get(messageId);
     return row ? JSON.parse(row.entry as string) as TimelineEntry : undefined;
   }
-  private encode(messages: TimelineEntry[], summary?: string): string {
+  private encode(messages: JsonObject[], summary?: string): string {
     return JSON.stringify({ groupId: this.groupId, untrusted: true,
       summary: summary ? { untrusted: true, text: summary } : null, messages });
+  }
+  /** Fit only the display projection. Never rewrite authoritative raw text or
+   * typed content merely to satisfy one model input's framing/escaping budget. */
+  private fitMessage(entry: TimelineEntry, summary?: string): JsonObject | undefined {
+    let low = 0, high = JSON.stringify(projectMessage(entry)).length;
+    let fitted: JsonObject | undefined;
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2);
+      const candidate = projectMessage(entry, middle);
+      if (this.encode([candidate], summary).length <= this.options.maxContextChars) {
+        fitted = candidate; low = middle + 1;
+      } else high = middle - 1;
+    }
+    return fitted;
   }
   context(): string {
     const messages = this.recent();
     const summary = this.summary()?.text;
-    const selected: TimelineEntry[] = [];
+    const selected: JsonObject[] = [];
     let length = this.encode([], summary).length;
     for (let i = messages.length - 1; i >= 0; i--) {
       const entry = messages[i]!;
-      const addition = JSON.stringify(entry).length + (selected.length ? 1 : 0);
+      const projected = projectMessage(entry);
+      const addition = JSON.stringify(projected).length + (selected.length ? 1 : 0);
       if (length + addition > this.options.maxContextChars) {
         if (!selected.length) {
-          // Keep the latest message's provenance even when its text needs truncation.
-          let low = 0, high = entry.text.length;
-          let fitted: TimelineEntry | undefined;
-          while (low <= high) {
-            const middle = Math.floor((low + high) / 2);
-            const candidate = { ...entry, text: entry.text.slice(0, middle) + ' [truncated]' };
-            if (length + JSON.stringify(candidate).length <= this.options.maxContextChars) {
-              fitted = candidate; low = middle + 1;
-            } else high = middle - 1;
-          }
+          // Keep provenance and report content omissions without injecting marker text.
+          const fitted = this.fitMessage(entry, summary);
           if (fitted) selected.push(fitted);
         }
         break;
       }
-      selected.unshift(entry); length += addition;
+      selected.unshift(projected); length += addition;
     }
     const result = this.encode(selected, summary);
     // Summary is capped well below the context limit, including JSON escaping.
@@ -151,7 +166,7 @@ export class SQLiteMemory implements Memory {
     const rows = this.rows();
     const prior = this.summary();
     if (rows.length <= KEEP_RAW) return;
-    const charsBefore = this.encode(rows.map(r => JSON.parse(r.entry) as TimelineEntry), prior?.text).length;
+    const charsBefore = this.encode(rows.map(r => projectMessage(JSON.parse(r.entry) as TimelineEntry)), prior?.text).length;
     if (charsBefore <= this.options.maxContextChars) return;
     const started = performance.now();
     const metrics = () => ({ rows_before: rows.length, chars_before: charsBefore, duration_ms: performance.now() - started });
@@ -162,19 +177,20 @@ export class SQLiteMemory implements Memory {
     const prefix = rows.slice(0, -KEEP_RAW);
     try {
       // Summarize only a bounded oldest prefix; never delete records not in the input.
-      const source: TimelineEntry[] = [];
+      const source: JsonObject[] = [];
       let lastSeq = 0;
       let oldest = prior?.oldest ?? Infinity;
       for (const row of prefix) {
         const entry = JSON.parse(row.entry) as TimelineEntry;
-        if (this.encode([...source, entry], prior?.text).length > this.options.maxContextChars) {
+        let projected = projectMessage(entry);
+        if (this.encode([...source, projected], prior?.text).length > this.options.maxContextChars) {
           if (source.length) break;
-          // One oversized message: preserve provenance and explicitly mark truncation.
-          entry.text = entry.text.slice(0, Math.floor(this.options.maxContextChars / 2)) + ' [truncated]';
-          while (entry.text.length && this.encode([entry], prior?.text).length > this.options.maxContextChars) entry.text = entry.text.slice(0, -1);
-          if (this.encode([entry], prior?.text).length > this.options.maxContextChars) { skipped('input_too_large'); return; }
+          // Truncate typed content as well as legacy text, never mutate the stored entry.
+          const fitted = this.fitMessage(entry, prior?.text);
+          if (!fitted) { skipped('input_too_large'); return; }
+          projected = fitted;
         }
-        source.push(entry);
+        source.push(projected);
         lastSeq = row.seq;
         oldest = Math.min(oldest, row.time);
       }
@@ -199,7 +215,7 @@ export class SQLiteMemory implements Memory {
       } catch (error) { this.db.exec('ROLLBACK'); throw error; }
       const after = this.rows();
       log('info', 'memory.compact_complete', { ...metrics(), rows_after: after.length,
-        chars_after: this.encode(after.map(row => JSON.parse(row.entry) as TimelineEntry), this.summary()?.text).length, outcome: 'success' });
+        chars_after: this.encode(after.map(row => projectMessage(JSON.parse(row.entry) as TimelineEntry)), this.summary()?.text).length, outcome: 'success' });
     } catch {
       log(signal?.aborted ? 'info' : 'warn', 'memory.compact_failed', { ...metrics(), reason: signal?.aborted ? 'cancelled' : this.closed || generation !== this.generation ? 'stale' : 'summarizer_failed' });
       // A failed summarizer must not interrupt the bot or discard raw records.

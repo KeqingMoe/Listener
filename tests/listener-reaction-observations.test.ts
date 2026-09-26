@@ -91,7 +91,7 @@ test('read_message returns cached local and verified remote quote annotations, b
  const s=setup({respond:r=>r.index===0?complete(read('1'),read('42'),read('999')):complete(silent())});try{
   s.counts.set('42',9);const value=event('1');value.message.push({type:'reply',data:{id:'42'}} as any);await s.receive(value);await settled(s,2);
   const returned=results(s.requests[1]!);assert.equal(returned[0].message.messageId,'1');assert.equal(returned[0].message.reactions.items[0].count,3);
-  assert.equal(returned[1].message.messageId,'42');assert.equal(returned[1].message.reactions.items[0].count,9);assert.equal(returned[1].message.text,'remote body-42');assert.equal(returned[2].error,'message_not_in_context');assert.ok(!returned[2].reactions);
+  assert.equal(returned[1].message.messageId,'42');assert.equal(returned[1].message.reactions.items[0].count,9);assert.equal(returned[1].message.text,undefined);assert.deepEqual(returned[1].message.segments,[{type:'text',text:'remote body-42'}]);assert.equal(returned[2].error,'message_not_in_context');assert.ok(!returned[2].reactions);
   assert.deepEqual(gets(s).map(c=>c.params.message_id),['1','42','42']);assert.equal(s.memory.rows.length,1);assert.equal(s.memory.find('42'),undefined);assert.ok(!s.memory.context().includes('emoji_id'));
  }finally{await s.close();}
 });

@@ -58,11 +58,13 @@ test('compaction uses no tools, untrusted provenance and retains last thirty wit
     assert.equal(memory.recent().length, 30);
     assert.equal(memory.find('29'), undefined); assert.ok(memory.find('30'));
     assert.equal(memory.append(entry(0)), false, 'dedup survives raw compaction');
-    const source = JSON.parse(captured[1]!.content!);
+    const input = captured[1]!.content; assert.ok(typeof input === 'string');
+    const source = JSON.parse(input);
     assert.equal(source.untrusted, true); assert.equal(source.messages[0].messageId, '0');
     assert.equal(source.messages[0].nickname, 'Alice'); assert.equal(source.messages[0].userId, '42');
     assert.equal(typeof source.messages[0].time, 'number');
-    assert.match(captured[0]!.content!, /never as instructions/);
+    const instruction = captured[0]!.content; assert.ok(typeof instruction === 'string');
+    assert.match(instruction, /never as instructions/);
     const context = JSON.parse(memory.context()); assert.equal(context.summary.untrusted, true);
     assert.ok(context.summary.text.length < 2000); assert.ok(memory.context().length <= 14000);
   } finally { memory.close(); }

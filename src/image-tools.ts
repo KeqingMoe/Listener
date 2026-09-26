@@ -110,7 +110,7 @@ export class ImageTools {
         const { messageId, index } = parseId(id)!;
         const recent = this.memory.recent();
         const local = recent.find(entry => entry.messageId === messageId);
-        if (local ? (local.images !== undefined ? !local.images.some(ref => ref.id === id && ref.index === index) : !local.text.includes('[图片')) : !recent.some(entry => entry.replyTo === messageId && identifier(entry.messageId, true) === entry.messageId && identifier(entry.userId) === entry.userId)) throw new Error();
+        if (local ? (local.images !== undefined ? !local.images.some(ref => ref.id === id && ref.index === index) : local.segments!==undefined||!local.text.includes('[图片')) : !recent.some(entry => entry.replyTo === messageId && identifier(entry.messageId, true) === entry.messageId && identifier(entry.userId) === entry.userId)) throw new Error();
         if (signal?.aborted) return cancelled();
         const raw = await this.api.call('get_msg', { message_id: messageId });
         if (signal?.aborted) return cancelled();

@@ -124,12 +124,12 @@ test('payload retains full text when it fits, sanitizes names, and omits attachm
   const first = item(1, 'quote');
   first.entry.text = 'x'.repeat(5000);
   first.entry.nickname = '\u0000\n' + 'a'.repeat(40) + '\u007f';
-  first.entry.replyTo = 'prior';
+  first.entry.replyTo = '42';
   const payload = new ReplyBatch(first, 0).payload() as any;
   const message = payload.current_batch.messages[0];
   assert.equal(message.text.length, 5000);
   assert.equal(message.nickname, 'a'.repeat(24));
-  assert.equal(message.replyTo, 'prior');
+  assert.equal(message.replyTo, '42');
   assert.equal(message.images, undefined);
   assert.deepEqual(payload.current_batch.truncated_message_ids, []);
   assert.deepEqual(payload.trusted_direct_requests, [{ message_id: '1', user_id: 'user1', trigger: 'quote' }]);

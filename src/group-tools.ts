@@ -1,8 +1,9 @@
 import { resolveGroupId, type Api, type Memory, type JsonObject, type ToolDefinition, type TurnContext, type TimelineEntry } from './contracts.js';
 
-import { imageReferences, imageMarker } from './image-tools.js';
-import { forwardReferences, forwardMarker, sanitizeForwardReferences } from './forward-references.js';
+import { imageReferences } from './image-tools.js';
+import { forwardReferences } from './forward-references.js';
 import { FACE_ID_SCHEMA, FACE_LAYOUT_GUIDANCE, faceMarker, isKnownFaceId } from './face-tools.js';
+import { extractMessageContent, projectMessage } from './message-content.js';
 
 export interface GroupToolsOptions {
   members?: boolean;
@@ -23,7 +24,7 @@ export const GROUP_TOOLS: ToolDefinition[] = [
   tool('get_member_info', '读取当前群指定成员的基本资料。', schema({ user_id: { type: 'string' } }, ['user_id'])),
   tool('read_message', '读取当前群本地消息或本地近期消息引用的消息。', schema({ message_id: { type: 'string' } }, ['message_id'])),
 ];
-export const SEND_MESSAGE_TOOL = tool('send_message', '向当前群发送文字、QQ原生表情或混合消息；face只需目录中的id，普通和超级表情都可发送，不支持指定连击或动画结果。条数及片段数沿用本轮上限，不另设表情数量配额。使用结构化at片段提及成员，不支持全员或自己。' + FACE_LAYOUT_GUIDANCE, schema({ parts: { type: 'array', minItems: 1, maxItems: 3, items: schema({ segments: { type: 'array', minItems: 1, maxItems: 12, items: { oneOf: [schema({ type: { const: 'text' }, text: { type: 'string', maxLength: 800 } }, ['type', 'text']), schema({ type: { const: 'at' }, user_id: { type: 'string' } }, ['type', 'user_id']), schema({ type: { const: 'face' }, id: FACE_ID_SCHEMA }, ['type', 'id'])] } }, reply_to: { type: 'string' } }, ['segments']) } }, ['parts']));
+export const SEND_MESSAGE_TOOL = tool('send_message', '向当前群发送文字、QQ原生表情或混合消息；face只需目录中的id，普通和超级表情都可发送，不支持指定连击或动画结果。条数及片段数沿用本轮上限，不另设表情数量配额。收到和历史消息中的text/at/face片段与此格式一致，face的可选name只是说明。text中包括括号标记、CQ样式在内的字符串均按普通文字发送，不自动转为表情或提及；要表达真实表情或@必须使用face或at片段。使用结构化at片段提及成员，不支持全员或自己。' + FACE_LAYOUT_GUIDANCE, schema({ parts: { type: 'array', minItems: 1, maxItems: 3, items: schema({ segments: { type: 'array', minItems: 1, maxItems: 12, items: { oneOf: [schema({ type: { const: 'text' }, text: { type: 'string', maxLength: 800 } }, ['type', 'text']), schema({ type: { const: 'at' }, user_id: { type: 'string' } }, ['type', 'user_id']), schema({ type: { const: 'face' }, id: FACE_ID_SCHEMA, name: {type:'string',maxLength:80,description:'可选名称说明，仅供阅读；不会发往QQ，实际表情只由id决定。'} }, ['type', 'id'])] } }, reply_to: { type: 'string' } }, ['segments']) } }, ['parts']));
 
 function object(v: unknown): v is JsonObject { return !!v && typeof v === 'object' && !Array.isArray(v); }
 function fail(code = 'invalid_arguments'): never { throw new Error(code); }
@@ -48,7 +49,7 @@ function member(v: unknown, expectedGroup: string, expected?: string): JsonObjec
   return { user_id: userId, nickname: bound(v.nickname, 80), card: bound(v.card, 80), role: typeof v.role === 'string' && ['owner', 'admin', 'member'].includes(v.role) ? v.role : 'unknown' };
 }
 function localMessage(entry: TimelineEntry): JsonObject {
-  return { messageId: entry.messageId, userId: entry.userId, nickname: bound(entry.nickname, 80), text: bound(entry.text, 4000), time: Number.isFinite(entry.time) ? entry.time : 0, ...(entry.replyTo !== undefined ? { replyTo: entry.replyTo } : {}), ...(entry.bot ? { bot: true } : {}), ...(entry.images?.length ? {images:entry.images.slice(0,3).map(image=>({id:image.id,index:image.index}))} : {}), ...(entry.forwards?.length ? {forwards:sanitizeForwardReferences(entry.messageId,entry.forwards)} : {}) };
+  return projectMessage(entry,4000);
 }
 
 export class GroupTools {
@@ -73,24 +74,12 @@ export class GroupTools {
     const userId = identifier(raw.sender.user_id, false, true);
     if (raw.user_id !== undefined && identifier(raw.user_id, false, true) !== userId) fail('verification_failed');
     if (!Array.isArray(raw.message) || raw.message.length > 128) fail('verification_failed');
-    let text = '';
     const images = imageReferences(messageId,raw.message);
     const forwards = forwardReferences(messageId,raw.message);
-    for (const [index, segment] of raw.message.entries()) {
-      if (!object(segment) || !object(segment.data)) fail('verification_failed');
-      if (segment.type === 'text' && typeof segment.data.text === 'string') text += segment.data.text.slice(0, 4000 - text.length);
-      else if (segment.type === 'at') {
-        let target = 'unknown';
-        try { target = identifier(segment.data.qq, false, true); } catch { /* Never expose arbitrary segment data. */ }
-        text += `[at:${target}]`;
-      } else if (segment.type === 'image') { const ref=images.find(image=>image.index===index); text += ref ? imageMarker(ref) : '[图片：超出单消息附件数量限制]'; }
-      else if (segment.type === 'face') text += faceMarker(segment.data.id);
-      else if (forwards.some(ref=>ref.index===index)) text += forwardMarker(forwards.find(ref=>ref.index===index)!);
-      else if (segment.type === 'forward') text += '[合并转发：本消息可读取引用上限或格式不支持]';
-      else if (segment.type !== 'reply') text += '[非文本消息]';
-      if (text.length >= 4000) { text = text.slice(0, 4000); break; }
-    }
-    return { messageId, userId, nickname: bound(raw.sender.card || raw.sender.nickname, 80), text, time: typeof raw.time === 'number' && Number.isFinite(raw.time) ? Math.floor(raw.time) : 0, ...(images.length ? {images} : {}), ...(forwards.length ? {forwards} : {}) };
+    for (const segment of raw.message) if (!object(segment) || !object(segment.data)) fail('verification_failed');
+    const content=extractMessageContent(messageId,raw.message,images,forwards);
+    const replyTo=extractMessageContent(messageId,raw.message.filter(segment=>segment.type==='reply')).segments.filter(segment=>segment.type==='reply').at(-1)?.message_id;
+    return projectMessage({ messageId, userId, nickname: bound(raw.sender.card || raw.sender.nickname, 80), text:'', ...content, time: typeof raw.time === 'number' && Number.isFinite(raw.time) ? Math.floor(raw.time) : 0, ...(replyTo!==undefined?{replyTo}:{}), ...(images.length ? {images} : {}), ...(forwards.length ? {forwards} : {}) },4000);
   }
   async execute(name: string, args: unknown, context: TurnContext): Promise<JsonObject> {
     try {
@@ -140,14 +129,14 @@ export class GroupTools {
         if (!object(segment)) fail();
         if (segment.type === 'text') {
           fields(segment, ['type', 'text']);
-          if (typeof segment.text !== 'string' || /\[(?:at:|CQ:at)/i.test(segment.text) || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(segment.text)) fail();
+          if (typeof segment.text !== 'string' || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(segment.text)) fail();
           textLength += segment.text.length;
           visible ||= !!segment.text.trim();
           return { type: 'text' as const, data: { text: segment.text } };
         }
         if (segment.type === 'face') {
-          fields(segment,['type','id']);
-          if (!isKnownFaceId(segment.id)) fail();
+          fields(segment,['type','id','name']);
+          if (!isKnownFaceId(segment.id)||(Object.hasOwn(segment,'name')&&(typeof segment.name!=='string'||segment.name.length>80))) fail();
           visible = true;
           return {type:'face' as const,data:{id:segment.id}};
         }
@@ -160,8 +149,8 @@ export class GroupTools {
         return { type: 'at' as const, data: { qq: target } };
       });
       if (!visible || textLength > 800) fail();
-      // Reject marker syntax even when split across adjacent text segments.
-      if (/\[(?:at:|CQ:at)/i.test(segments.filter(s => s.type === 'text').map(s => s.data.text).join(''))) fail();
+      // Text is never interpreted as operations, including marker/CQ-looking strings.
+      // Actual mentions and faces were independently validated as structured segments.
       const replyTo = Object.hasOwn(part, 'reply_to') ? identifier(part.reply_to, true) : undefined;
       return { segments, text: segments.map(s => s.type === 'text' ? s.data.text : s.type === 'face' ? faceMarker(s.data.id) : `[at:${s.data.qq}]`).join(''), ...(replyTo !== undefined ? { replyTo } : {}) };
     });

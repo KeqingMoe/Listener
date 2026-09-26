@@ -94,13 +94,13 @@ test('remote read_message renders face names and IDs without raw transport metad
   });
   const result = await s.tools.execute('read_message', { message_id: '2' }, context);
   assert.equal(result.status, 'ok');
-  const text = (result.message as any).text as string;
-  assert.ok(text.startsWith('before')); assert.match(text, /偷笑.*20/); assert.match(text, /超级鼓掌.*375/);
-  assert.match(text, /999999/); assert.match(text, /未知/);
+  const message=result.message as any;assert.equal(message.text,undefined);
+  assert.deepEqual(message.segments,[{type:'text',text:'before'},{type:'face',id:'20',name:'偷笑'},{type:'face',id:'375',name:'超级鼓掌'},{type:'face',id:'999999'},{type:'unsupported',kind:'face'}]);
+  assert.equal(message.content_truncated,true);
   assert.ok(!JSON.stringify(result).includes('SECRET')); assert.ok(!JSON.stringify(result).includes('chainCount'));
 });
 
-test('forward read node faces use the same semantic markers and never expose raw face data', async () => {
+test('forward read node faces use the same typed segments and never expose raw face data', async () => {
   const entries: TimelineEntry[] = [{ ...entry, forwards: [{ id: 'fwd_1_0', index: 0 }] }];
   const calls: string[] = [];
   const api: Api = { async call(action) {
@@ -116,8 +116,7 @@ test('forward read node faces use the same semantic markers and never expose raw
   const tools = new ForwardTools(api, memory(entries), { enabled: true, maxPerRead: 20 });
   const result = await tools.read({ forward_id: 'fwd_1_0', start: 1, end: 1 }, context, tools.createTurn());
   assert.equal(result.status, 'ok');
-  const text = (result.messages as any[])[0]!.text;
-  assert.equal(text, faceMarker('20') + faceMarker('375') + faceMarker('BAD_SECRET'));
-  assert.match(text, /偷笑.*20/); assert.match(text, /超级鼓掌.*375/);
+  const row=(result.messages as any[])[0]!;assert.equal(row.text,undefined);
+  assert.deepEqual(row.segments,[{type:'face',id:'20',name:'偷笑'},{type:'face',id:'375',name:'超级鼓掌'},{type:'unsupported',kind:'face'}]);
   assert.ok(!JSON.stringify(result).includes('SECRET')); assert.deepEqual(calls, ['get_msg']);
 });

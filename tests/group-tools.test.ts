@@ -100,19 +100,18 @@ test('entire batch syntax validation precedes any remote verification', async ()
   assert.equal(calls.length, 0);
 });
 
-test('reject extras, spoofed mentions, whitespace ids, all/self, mixed representations and limits', async () => {
+test('reject extras, invalid structured mentions, whitespace ids, all/self, mixed representations and limits', async () => {
   const { tools, calls } = setup();
   const badParts = [
     { text: 'hello', group_id: LISTENER_GROUP }, { text: 'hello', segments: [] },
-    { text: 'hello [at:123]' }, { text: '[CQ:at,qq=123]' }, { text: '  ' }, { text: 'a'.repeat(801) },
+    { text: '  ' }, { text: 'a'.repeat(801) },
     { segments: [{ type: 'text', text: 'a'.repeat(500) }, { type: 'text', text: 'b'.repeat(301) }] },
-    { segments: [{ type: 'text', text: '[a' }, { type: 'text', text: 't:123]' }] },
     { segments: Array.from({ length: 13 }, () => ({ type: 'text', text: 'x' })) },
     ...['all', '0', '999', '999\n', '123\n', ' 123', '123 ', '01'].map(user_id => ({ segments: [{ type: 'at', user_id }] })),
     { segments: [{ type: 'at', user_id: '123', qq: 'all' }] }, { segments: [{ type: 'text', text: 'a', extra: true }] },
     { text: 'hello', reply_to: ' 1' }, { text: 'hello', reply_to: 1 },
   ];
-  for (const part of badParts) await assert.rejects(tools.prepareMessage({ parts: [part] }, context), undefined, JSON.stringify(part));
+  for (const part of badParts) await assert.rejects(tools.prepareMessage({ parts: [part] }, context), /invalid_arguments/, JSON.stringify(part));
   for (const args of [{ parts: [], group_id: LISTENER_GROUP }, { parts: Array(4).fill({ text: 'a' }) }, { parts: [{ segments: Array(4).fill({ type: 'at', user_id: '123' }) }] }]) await assert.rejects(tools.prepareMessage(args, context));
   assert.equal(calls.length, 0);
 });
@@ -191,7 +190,7 @@ test('read uses local memory first, remote only for local reference; normalized 
   assert.equal((await tools.execute('read_message', { message_id: '500' }, context)).error, 'message_not_in_context');
   assert.equal(calls.length, 0);
   const result = await tools.execute('read_message', { message_id: '2' }, context);
-  assert.deepEqual(result, { status: 'ok', message: { messageId: '2', userId: '123', nickname: 'Alice', text: 'hello[at:456][图片 id=img_2_2：未分析]', time: 42, images:[{id:'img_2_2',index:2}] } });
+  assert.deepEqual(result, { status: 'ok', message: { messageId: '2', userId: '123', nickname: 'Alice', representation:'segments',segments:[{type:'text',text:'hello'},{type:'at',user_id:'456'},{type:'image',content_status:'not_viewed',image_id:'img_2_2'}], time: 42, images:[{id:'img_2_2',index:2}] } });
   assert.ok(!JSON.stringify(result).includes('secret'));
   assert.deepEqual(calls, [{ action: 'get_msg', params: { message_id: '2' } }]);
 });
@@ -215,7 +214,9 @@ test('mention limit spans all parts and remote output fields stay bounded', asyn
   assert.equal(calls.length, 0);
   const bounded = setup(remote({ sender: { user_id: '123', nickname: 'n'.repeat(1000) }, message: [{ type: 'text', data: { text: 'x'.repeat(10000) } }] }));
   const result = await bounded.tools.execute('read_message', { message_id: '2' }, context);
-  assert.equal((result.message as any).text.length, 4000);
+  const message=result.message as any;
+  assert.equal(message.text,undefined);assert.equal(message.content_truncated,true);
+  assert.ok(JSON.stringify(message.segments).length<=4000);assert.ok(message.segments[0].text.length>3900);
   assert.equal((result.message as any).nickname.length, 80);
 });
 
