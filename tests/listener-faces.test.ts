@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { Listener, normalizeEvent, buildToolDefinitions } from '../src/listener.js';
-import { faceMarker } from '../src/face-tools.js';
+import { Listener, normalizeEvent, buildToolDefinitions, buildSystemPrompt } from '../src/listener.js';
+import { faceMarker, FACE_LAYOUT_GUIDANCE } from '../src/face-tools.js';
 import type { ListenerConfig } from '../src/listener-config.js';
 import { LISTENER_GROUP, type Memory, type TimelineEntry, type Api, type Model, type Completion, type ChatMessage } from '../src/contracts.js';
 
@@ -37,6 +37,21 @@ function setup(reply: unknown) {
   return { bot, memory, calls, requests };
 }
 async function until(check: () => boolean) { for (let i = 0; i < 200; i++) { if (check()) return; await delay(5); } assert.fail('listener did not settle'); }
+
+test('super face layout guidance survives both mention modes without restricting the schema', () => {
+  assert.ok(buildSystemPrompt(config).includes(FACE_LAYOUT_GUIDANCE));
+  assert.match(FACE_LAYOUT_GUIDANCE, /不设置 reply_to/);
+  assert.match(FACE_LAYOUT_GUIDANCE, /独立作为一个 part/);
+  for(const mention of [true,false]){
+    const cfg:ListenerConfig={...config,maxParts:10,tools:{members:true,mention,moderation:{mute:false,recall:false,memberCard:false,confirmationTtlSeconds:60,maxMuteSeconds:600}}};
+    const send=buildToolDefinitions(cfg,false).find(t=>t.function.name==='send_message')!;
+    assert.ok(send.function.description.includes(FACE_LAYOUT_GUIDANCE));
+    const params:any=send.function.parameters;
+    assert.equal(params.properties.parts.maxItems,10);
+    assert.equal(params.properties.parts.items.properties.segments.maxItems,12);
+    assert.ok(params.properties.parts.items.properties.reply_to);
+  }
+});
 
 function faceSchema(configOverrides: Partial<ListenerConfig> = {}) {
   const tools = buildToolDefinitions({ ...config, ...configOverrides }, false);

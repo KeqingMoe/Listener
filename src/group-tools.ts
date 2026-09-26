@@ -2,7 +2,7 @@ import { resolveGroupId, type Api, type Memory, type JsonObject, type ToolDefini
 
 import { imageReferences, imageMarker } from './image-tools.js';
 import { forwardReferences, forwardMarker, sanitizeForwardReferences } from './forward-references.js';
-import { FACE_ID_SCHEMA, faceMarker, isKnownFaceId } from './face-tools.js';
+import { FACE_ID_SCHEMA, FACE_LAYOUT_GUIDANCE, faceMarker, isKnownFaceId } from './face-tools.js';
 
 export interface GroupToolsOptions {
   members?: boolean;
@@ -23,7 +23,7 @@ export const GROUP_TOOLS: ToolDefinition[] = [
   tool('get_member_info', '读取当前群指定成员的基本资料。', schema({ user_id: { type: 'string' } }, ['user_id'])),
   tool('read_message', '读取当前群本地消息或本地近期消息引用的消息。', schema({ message_id: { type: 'string' } }, ['message_id'])),
 ];
-export const SEND_MESSAGE_TOOL = tool('send_message', '向当前群发送文字、QQ原生表情或混合消息；face只需目录中的id，普通和超级表情都可发送，不支持指定连击或动画结果。条数及片段数沿用本轮上限，不另设表情数量配额。使用结构化at片段提及成员，不支持全员或自己。', schema({ parts: { type: 'array', minItems: 1, maxItems: 3, items: schema({ segments: { type: 'array', minItems: 1, maxItems: 12, items: { oneOf: [schema({ type: { const: 'text' }, text: { type: 'string', maxLength: 800 } }, ['type', 'text']), schema({ type: { const: 'at' }, user_id: { type: 'string' } }, ['type', 'user_id']), schema({ type: { const: 'face' }, id: FACE_ID_SCHEMA }, ['type', 'id'])] } }, reply_to: { type: 'string' } }, ['segments']) } }, ['parts']));
+export const SEND_MESSAGE_TOOL = tool('send_message', '向当前群发送文字、QQ原生表情或混合消息；face只需目录中的id，普通和超级表情都可发送，不支持指定连击或动画结果。条数及片段数沿用本轮上限，不另设表情数量配额。使用结构化at片段提及成员，不支持全员或自己。' + FACE_LAYOUT_GUIDANCE, schema({ parts: { type: 'array', minItems: 1, maxItems: 3, items: schema({ segments: { type: 'array', minItems: 1, maxItems: 12, items: { oneOf: [schema({ type: { const: 'text' }, text: { type: 'string', maxLength: 800 } }, ['type', 'text']), schema({ type: { const: 'at' }, user_id: { type: 'string' } }, ['type', 'user_id']), schema({ type: { const: 'face' }, id: FACE_ID_SCHEMA }, ['type', 'id'])] } }, reply_to: { type: 'string' } }, ['segments']) } }, ['parts']));
 
 function object(v: unknown): v is JsonObject { return !!v && typeof v === 'object' && !Array.isArray(v); }
 function fail(code = 'invalid_arguments'): never { throw new Error(code); }
