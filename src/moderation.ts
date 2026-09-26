@@ -4,15 +4,15 @@ import type { ModerationPolicy } from './listener-config.js';
 import { LISTENER_GROUP, resolveGroupId, OWNER_ID, type Api, type JsonObject, type ToolDefinition, type TurnContext } from './contracts.js';
 
 type Mode = 'off' | 'confirm' | 'direct';
-const userIdSchema = { type: 'string', maxLength: 32, pattern: '^[1-9][0-9]*$', description: 'Target QQ user ID in this group, never the owner or bot; nicknames do not authorize operations.' };
+const userIdSchema = { type: 'string', maxLength: 32, pattern: '^[1-9][0-9]*$', description: 'Target QQ user ID in this group; actual QQ permissions apply. Nicknames are not identity proof.' };
 const parameters = (properties: JsonObject, required: string[]): JsonObject => ({ type: 'object', additionalProperties: false, properties, required });
 export const MODERATION_TOOLS: ToolDefinition[] = [
   { type: 'function', function: { name: 'mute_member', description: 'Mute an eligible current-group member under the configured capability policy.', parameters: parameters({ user_id: userIdSchema, seconds: { type: 'integer', minimum: 1, maximum: 600 } }, ['user_id', 'seconds']) } },
   { type: 'function', function: { name: 'unmute_member', description: 'Unmute an eligible current-group member under the configured capability policy.', parameters: parameters({ user_id: userIdSchema }, ['user_id']) } },
-  { type: 'function', function: { name: 'recall_message', description: 'Recall a verified, eligible current-group message under the configured capability policy.', parameters: parameters({ message_id: { type: 'string', maxLength: 17, pattern: '^(0|-?[1-9][0-9]*)$' } }, ['message_id']) } },
+  { type: 'function', function: { name: 'recall_message', description: 'Recall a verified current-group message under the configured capability policy, including messages sent by the bot itself. Recalling own messages does not require a group administrator role; QQ may still reject expired or otherwise ineligible messages.', parameters: parameters({ message_id: { type: 'string', maxLength: 17, pattern: '^(0|-?[1-9][0-9]*)$' } }, ['message_id']) } },
   { type: 'function', function: { name: 'set_member_card', description: 'Change an eligible current-group member card under the configured capability policy.', parameters: parameters({ user_id: userIdSchema, card: { type: 'string', minLength: 1, maxLength: 60 } }, ['user_id', 'card']) } },
 ];
-export const HELP = 'Management capabilities are independently configured as off (disabled by default), confirm (the bot may autonomously request an operation; only the owner can /confirm CODE), or direct (the bot may autonomously execute). Mute and unmute are separate capabilities. Confirmation codes are scoped, expiring and single-use. Group, identity, QQ permissions and target protections always apply.';
+export const HELP = 'Management capabilities are independently configured as off (disabled by default), confirm (the bot may autonomously request an operation; only the owner can /confirm CODE), or direct (the bot may autonomously execute). Mute and unmute are separate capabilities. Confirmation codes are scoped, expiring and single-use. Group, identity and actual QQ permissions always apply; owner and bot identities do not have special target immunity.';
 type Action = { name: 'mute_member'; user_id: string; seconds: number } |
   { name: 'unmute_member'; user_id: string } |
   { name: 'set_member_card'; user_id: string; card: string } |
@@ -90,7 +90,6 @@ export class Moderation {
     return deny('invalid_arguments');
   }
   private mode(action: Action): Mode { return this.policy[policyKey[action.name]]; }
-  private protected(target: string, context: TurnContext): void { if (target === OWNER_ID || target === context.selfId) deny('protected_target'); }
   private async read(action: string, params: JsonObject, signal?: AbortSignal, expires?: number): Promise<unknown> {
     this.check(signal, expires);
     let value: unknown;
@@ -106,13 +105,10 @@ export class Moderation {
     // This proof comes only from the caller's frozen memory, never model arguments.
     if (expectedSender !== undefined) {
       if (action.name !== 'recall_message' || typeof expectedSender !== 'string' || id(expectedSender) !== expectedSender) return deny('verification_failed');
-      this.protected(expectedSender, context);
     }
-    if (action.name !== 'recall_message') this.protected(action.user_id, context);
     const login = await this.read('get_login_info', {}, signal, expires);
     if (!record(login) || id(login.user_id) !== context.selfId) return deny('identity_mismatch');
     const botRole = this.member(await this.read('get_group_member_info', { group_id: this.groupId, user_id: context.selfId, no_cache: true }, signal, expires), context.selfId);
-    if (botRole === 'member') return deny('permission_denied');
     let target: string;
     if (action.name === 'recall_message') {
       const message = await this.read('get_msg', { message_id: action.message_id }, signal, expires);
@@ -121,9 +117,15 @@ export class Moderation {
       if (!sender || (Object.hasOwn(message, 'user_id') && id(message.user_id) !== sender) || (expectedSender !== undefined && sender !== expectedSender)) return deny();
       target = sender;
     } else target = action.user_id;
-    this.protected(target, context);
+    // Own-message recall and own-card edits are account operations, not moderation
+    // of another member. Keep the group/login/message proofs above, including the
+    // frozen sender check, but do not require an administrator role for these.
+    if (target === context.selfId && (action.name === 'recall_message' || action.name === 'set_member_card')) return target;
+    if (botRole === 'member') return deny('permission_denied');
     const role = this.member(await this.read('get_group_member_info', { group_id: this.groupId, user_id: target, no_cache: true }, signal, expires), target);
-    if (role === 'owner' || ((action.name === 'mute_member' || action.name === 'unmute_member' || botRole !== 'owner') && role !== 'member')) return deny('permission_denied');
+    // Do not invent an action-specific administrator immunity when the bot owns
+    // the group. The native API determines whether the requested operation succeeds.
+    if (role === 'owner' || (botRole !== 'owner' && role !== 'member')) return deny('permission_denied');
     return target;
   }
   private audit(action: string, context: TurnContext | undefined, target: string | undefined, outcome: string, seconds?: number, phase: 'request' | 'confirm' | 'direct' = 'request'): void {

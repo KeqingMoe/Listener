@@ -112,7 +112,9 @@ test('autonomous moderation proposals remain groupbound and only the owner can c
  assert.equal((await a.tools.confirm(code,ctx(A,OWNER_ID))).status,'error');
  const bProposal=await b.tools.request('set_member_card',{user_id:user,card:'new card'},ctx(B,OWNER_ID));assert.equal(bProposal.status,'confirmation_required');
  const before=b.calls.length;assert.equal((await b.tools.confirm(String(bProposal.code),ctx(A,OWNER_ID))).status,'error');assert.equal(b.calls.length,before);
- for(const target of [OWNER_ID,self])assert.equal((await b.tools.request('mute_member',{user_id:target,seconds:1},ctx(B,OWNER_ID))).status,'error');
+ const ownerProposal=await b.tools.request('mute_member',{user_id:OWNER_ID,seconds:1},ctx(B,OWNER_ID));assert.equal(ownerProposal.status,'confirmation_required');
+ assert.equal((await b.tools.request('mute_member',{user_id:self,seconds:1},ctx(B,OWNER_ID))).error,'permission_denied'); // Actual admin role, not identity immunity.
+ assert.ok(!b.calls.some(c=>c.action==='set_group_ban'));
 });
 
 test('moderation rejects foreign member/message data in proposals and repeated confirmation checks',async()=>{

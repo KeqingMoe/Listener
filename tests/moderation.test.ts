@@ -149,15 +149,7 @@ test('strict argument allowlist rejects arbitrary actions, fields and malformed 
   assert.equal(api.calls.length, 0);
 });
 
-test('all actions protect owner and bot; target member identity/group/role fail closed', async () => {
-  for (const user_id of [OWNER_ID, context.selfId]) {
-    const api = new FakeApi(), m = new Moderation(api, Date.now, CONFIRM);
-    for (const [name, value] of [['mute_member', { user_id, seconds: 1 }], ['unmute_member', { user_id }], ['set_member_card', { user_id, card: 'x' }]] as const)
-      assert.equal((await m.request(name, value, context)).error, 'protected_target');
-    assert.equal(api.calls.length, 0);
-    api.message = { group_id: LISTENER_GROUP, message_type: 'group', message_id: '-99', sender: { user_id } };
-    assert.equal((await m.request('recall_message', { message_id: '-99' }, context)).error, 'protected_target'); assert.equal(api.writes().length, 0);
-  }
+test('target member identity, group and actual QQ role still fail closed', async () => {
   for (const member of [{}, { group_id: LISTENER_GROUP }, { user_id: target }, { group_id: '1', user_id: target, role: 'member' }, { group_id: LISTENER_GROUP, user_id: '999', role: 'member' }, ...['owner', 'admin', undefined, 'unknown'].map(role => ({ group_id: LISTENER_GROUP, user_id: target, role }))]) {
     const api = new FakeApi(); api.member = member;
     assert.equal((await new Moderation(api, Date.now, CONFIRM).request('mute_member', args, context)).status, 'error'); assert.equal(api.writes().length, 0);

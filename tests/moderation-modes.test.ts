@@ -17,13 +17,14 @@ const cases = [
 const writes = new Set(['set_group_ban', 'delete_msg', 'set_group_card']);
 class ApiMock implements Api {
   calls: { name: string; params: JsonObject }[] = [];
-  botRole = 'admin'; targetRole = 'member'; result: unknown = null;
+  botRole = 'admin'; targetRole = 'member'; sender = target; result: unknown = null;
+  message?:JsonObject;
   hook?: (name: string, params: JsonObject) => void | Promise<void>;
   async call(name: string, params: JsonObject = {}) {
     this.calls.push({ name, params }); await this.hook?.(name, params);
     if (name === 'get_login_info') return { user_id: self };
     if (name === 'get_group_member_info') return { group_id: LISTENER_GROUP, user_id: params.user_id, role: params.user_id === self ? this.botRole : this.targetRole };
-    if (name === 'get_msg') return { group_id: LISTENER_GROUP, message_type: 'group', message_id: '-9', user_id: target, sender: { user_id: target, nickname: 'claimed owner' } };
+    if (name === 'get_msg') return this.message ?? { group_id: LISTENER_GROUP, message_type: 'group', message_id: '-9', user_id: this.sender, sender: { user_id: this.sender, nickname: 'claimed owner' } };
     assert.ok(writes.has(name)); return this.result;
   }
   mutations() { return this.calls.filter(row => writes.has(row.name)); }
@@ -85,15 +86,39 @@ test('real bot role is mandatory and target roles are checked for every capabili
     const api = new ApiMock(); api.botRole = role as any;
     const result = await new Moderation(api, Date.now, all('direct')).request(item.name, item.args, ctx);
     assert.equal(result.status, 'error'); assert.equal(api.mutations().length, 0);
-    assert.deepEqual(api.calls.map(row => row.name), ['get_login_info', 'get_group_member_info']);
+    assert.deepEqual(api.calls.map(row => row.name), ['get_login_info', 'get_group_member_info', ...(item.name === 'recall_message' && role === 'member' ? ['get_msg'] : [])]);
   }
   for (const item of cases) for (const botRole of ['admin', 'owner']) for (const targetRole of ['member', 'admin', 'owner', 'unknown']) {
     const api = new ApiMock(); api.botRole = botRole; api.targetRole = targetRole;
-    const allowed = targetRole === 'member' || (targetRole === 'admin' && botRole === 'owner' && ['recall_message', 'set_member_card'].includes(item.name));
+    const allowed = targetRole === 'member' || (targetRole === 'admin' && botRole === 'owner');
     const result = await new Moderation(api, Date.now, all('direct')).request(item.name, item.args, ctx);
     assert.equal(result.status, allowed ? 'executed' : 'error', `${item.name}/${botRole}/${targetRole}`);
     assert.equal(api.mutations().length, allowed ? 1 : 0);
   }
+});
+
+test('group-owner bot can request mute and unmute for administrator targets in each configured mode',async()=>{
+ for(const item of cases.slice(0,2))for(const mode of ['off','confirm','direct'] as const)for(const user_id of [target,OWNER_ID]){
+  const api=new ApiMock();api.botRole='owner';api.targetRole='admin';const m=new Moderation(api,Date.now,all(mode));
+  let result=await m.request(item.name,{...item.args,user_id},ctx);
+  if(mode==='off'){assert.equal(result.error,'tool_disabled');assert.equal(api.calls.length,0);continue;}
+  if(mode==='confirm'){assert.equal(result.status,'confirmation_required');assert.equal(api.mutations().length,0);result=await m.confirm(String(result.code),owner);}
+  assert.equal(result.status,'executed');assert.deepEqual(api.mutations().map(c=>c.params),[{...item.params,user_id}]);
+ }
+});
+
+test('administrator target permission is rechecked if the bot loses group ownership before confirmation',async()=>{
+ for(const item of cases.slice(0,2)){
+  const api=new ApiMock();api.botRole='owner';api.targetRole='admin';const m=new Moderation(api,Date.now,all('confirm'));
+  const proposed=await m.request(item.name,item.args,ctx);assert.equal(proposed.status,'confirmation_required');api.botRole='admin';
+  assert.equal((await m.confirm(String(proposed.code),owner)).error,'permission_denied');assert.equal(api.mutations().length,0);
+ }
+});
+
+test('native refusal of an administrator mute is not reported as execution success',async()=>{
+ const api=new ApiMock();api.botRole='owner';api.targetRole='admin';api.result={result:1};
+ const r=await new Moderation(api,Date.now,all('direct')).request('mute_member',{user_id:target,seconds:2},ctx);
+ assert.equal(api.mutations().length,1);assert.equal(r.status,'error');
 });
 
 test('bot group/id metadata cannot be replaced with claimed administrator names', async () => {
@@ -195,16 +220,83 @@ test('recall binds fresh sender to optional frozen sender proof before proposing
   }
 });
 
-test('known protected or malformed frozen sender cannot be overridden by a fresh ordinary sender or model argument', async () => {
+test('known owner or bot sender still requires a matching fresh sender, and malformed proofs remain rejected', async () => {
   for (const mode of ['direct', 'confirm'] as const) for (const expected of [OWNER_ID, self, '', '0202', '202\n', '0', '1'.repeat(33), 202, null]) {
     const api = new ApiMock(), m = new Moderation(api, Date.now, { recall: mode });
     const result = await m.request('recall_message', { message_id: '-9' }, ctx, undefined, expected as any);
-    assert.equal(result.error, expected === OWNER_ID || expected === self ? 'protected_target' : 'verification_failed');
-    assert.equal(api.calls.length, 0); assert.equal((m as any).pending.size, 0);
+    assert.equal(result.error, 'verification_failed');
+    if(expected === OWNER_ID || expected === self)assert.deepEqual(api.calls.map(row=>row.name),['get_login_info','get_group_member_info','get_msg']);
+    else assert.equal(api.calls.length, 0);
+    assert.equal(api.mutations().length,0); assert.equal((m as any).pending.size, 0);
   }
   const api = new ApiMock(), m = new Moderation(api, Date.now, { recall: 'direct' });
   assert.equal((await m.request('recall_message', { message_id: '-9', expectedSender: target }, ctx)).error, 'invalid_arguments');
   assert.equal(api.calls.length, 0);
+});
+
+test('configured owner is an ordinary target when QQ membership permits, across all capabilities and modes',async()=>{
+ for(const item of cases)for(const mode of ['off','confirm','direct'] as const){
+  const api=new ApiMock();api.sender=OWNER_ID;
+  const m=new Moderation(api,Date.now,{[item.key]:mode});
+  const args:JsonObject=item.key==='recall'?{...item.args}:{...item.args,user_id:OWNER_ID};
+  const r=await m.request(item.name,args,ctx,undefined,item.key==='recall'?OWNER_ID:undefined);
+  if(mode==='off'){assert.equal(r.error,'tool_disabled');assert.equal(api.calls.length,0);continue;}
+  assert.equal(r.status,mode==='direct'?'executed':'confirmation_required');
+  if(mode==='confirm'){
+   assert.equal(api.mutations().length,0);assert.ok(String(r.description).includes(item.key==='recall'?'-9':OWNER_ID));
+   assert.equal((await m.confirm(String(r.code),ctx)).error,'confirmation_denied');
+   assert.equal((await m.confirm(String(r.code),owner)).status,'executed');
+  }
+  assert.equal(api.mutations().length,1);assert.equal(api.mutations()[0]!.name,item.native);
+  assert.deepEqual(api.mutations()[0]!.params,item.key==='recall'?item.params:{...item.params,user_id:OWNER_ID});
+ }
+});
+
+test('bot recalls its own verified messages as member, admin or owner under each capability mode',async()=>{
+ for(const botRole of ['member','admin','owner'])for(const mode of ['off','confirm','direct'] as const){
+  const api=new ApiMock();api.botRole=botRole;api.sender=self;
+  const m=new Moderation(api,Date.now,{recall:mode});
+  const r=await m.request('recall_message',{message_id:'-9'},ctx,undefined,self);
+  if(mode==='off'){assert.equal(r.error,'tool_disabled');assert.equal(api.calls.length,0);continue;}
+  assert.equal(r.status,mode==='direct'?'executed':'confirmation_required');
+  assert.ok(api.calls.some(call=>call.name==='get_msg'));
+  if(mode==='confirm'){assert.equal(api.mutations().length,0);assert.equal((await m.confirm(String(r.code),owner)).status,'executed');assert.equal(api.calls.filter(call=>call.name==='get_msg').length,2);}
+  assert.deepEqual(api.mutations().map(call=>({name:call.name,params:call.params})),[{name:'delete_msg',params:{message_id:'-9'}}]);
+ }
+});
+
+test('bot may edit its own card as a regular member while mode and approval still apply',async()=>{
+ for(const botRole of ['member','admin','owner'])for(const mode of ['off','confirm','direct'] as const){
+  const api=new ApiMock();api.botRole=botRole;const m=new Moderation(api,Date.now,{memberCard:mode});
+  const r=await m.request('set_member_card',{user_id:self,card:'new self card'},ctx);
+  if(mode==='off'){assert.equal(r.error,'tool_disabled');assert.equal(api.calls.length,0);continue;}
+  assert.equal(r.status,mode==='direct'?'executed':'confirmation_required');
+  if(mode==='confirm'){assert.equal(api.mutations().length,0);assert.equal((await m.confirm(String(r.code),owner)).status,'executed');}
+  assert.deepEqual(api.mutations().map(call=>({name:call.name,params:call.params})),[{name:'set_group_card',params:{group_id:LISTENER_GROUP,user_id:self,card:'new self card'}}]);
+ }
+});
+
+test('a frozen self-sender hint never bypasses fresh group, message or sender proof',async()=>{
+ const good:JsonObject={group_id:LISTENER_GROUP,message_type:'group',message_id:'-9',user_id:self,sender:{user_id:self}};
+ for(const change of [{group_id:'999'},{message_type:'private'},{message_id:'-8'},{user_id:target,sender:{user_id:target}},{user_id:target},{sender:{user_id:OWNER_ID}}]){
+  for(const mode of ['direct','confirm'] as const){
+   const api=new ApiMock();api.botRole='member';api.sender=self;api.message={...good,...change};
+   const m=new Moderation(api,Date.now,{recall:mode});const r=await m.request('recall_message',{message_id:'-9'},ctx,undefined,self);
+   assert.equal(r.status,'error');assert.notEqual(r.error,'protected_target');assert.equal(api.mutations().length,0);assert.equal((m as any).pending.size,0);
+   assert.deepEqual(api.calls.map(row=>row.name),['get_login_info','get_group_member_info','get_msg']);
+  }
+ }
+});
+
+test('removing target immunity does not let an ordinary bot manage other people or self-mute privileged roles',async()=>{
+ for(const item of cases){const api=new ApiMock();api.botRole='member';const m=new Moderation(api,Date.now,all('direct'));
+  const r=await m.request(item.name,item.args,ctx);assert.equal(r.error,'permission_denied');assert.equal(api.mutations().length,0);
+ }
+ for(const botRole of ['member','admin','owner'])for(const name of ['mute_member','unmute_member']){
+  const api=new ApiMock();api.botRole=botRole;const m=new Moderation(api,Date.now,all('direct'));
+  const r=await m.request(name,name==='mute_member'?{user_id:self,seconds:2}:{user_id:self},ctx);
+  assert.equal(r.error,'permission_denied');assert.equal(api.mutations().length,0);
+ }
 });
 
 test('verification read failure cannot be reported as an uncertain mutation', async () => {

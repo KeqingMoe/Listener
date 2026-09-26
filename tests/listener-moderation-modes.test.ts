@@ -75,6 +75,24 @@ test('direct recall is limited to frozen visible messages, not arbitrary guessed
  }finally{await s.bot.stop();}
 });
 
+test('ordinary-member bot can recall its own verified historical message through the full listener path',async()=>{
+ const s=setup({recall:'direct'},i=>i===0?response(call('recall_message',{message_id:'900'})):response(call('stay_silent')),{},async(action,params)=>{
+  if(action==='get_group_member_info'&&params.user_id===self)return{group_id:LISTENER_GROUP,user_id:self,role:'member'};
+  if(action==='get_msg')return{message_type:'group',group_id:LISTENER_GROUP,message_id:params.message_id,user_id:self,sender:{user_id:self},message:[{type:'text',data:{text:'own message'}}]};
+ });
+ s.memory.append({messageId:'900',userId:self,nickname:'bot',bot:true,time:Math.floor(Date.now()/1000),text:'own message',segments:[{type:'text',text:'own message'}]});
+ try{await s.receive();await settled(s,2);assert.equal(results(s.requests[1]!)[0].status,'executed');
+  assert.deepEqual(s.calls.filter(c=>c.action==='delete_msg').map(c=>c.params),[{message_id:'900'}]);
+  assert.deepEqual(s.calls.filter(c=>c.action==='get_group_member_info').map(c=>c.params.user_id),[self]);
+  assert.equal(s.calls.filter(c=>c.action==='send_group_msg').length,0);
+ }finally{await s.bot.stop();}
+});
+
+test('owner-authored visible messages have no special recall immunity',async()=>{
+ const s=setup({recall:'direct'},i=>i===0?response(call('recall_message',{message_id:'1'})):response(call('stay_silent')),{},async(action,params)=>action==='get_msg'?{message_type:'group',group_id:LISTENER_GROUP,message_id:params.message_id,sender:{user_id:OWNER_ID},message:[{type:'text',data:{text:'owner message'}}]}:undefined);
+ try{await s.receive(event('1',OWNER_ID));await settled(s,2);assert.equal(results(s.requests[1]!)[0].status,'executed');assert.equal(s.calls.filter(c=>c.action==='delete_msg').length,1);}finally{await s.bot.stop();}
+});
+
 test('unknown direct delivery is not claimed successful and cannot be dispatched again that turn',async()=>{
  const s=setup({mute:'direct'},i=>i===0?response(call('mute_member',{user_id:target,seconds:120})):i===1?response(call('mute_member',{seconds:120,user_id:target})):response(call('stay_silent')),{},async action=>{if(action==='set_group_ban')throw Error('sensitive transport secret');});
  try{await s.receive();await settled(s,3);const first=results(s.requests[1]!)[0],retry=results(s.requests[2]!).at(-1);assert.equal(first.status,'unknown');assert.equal(retry.status,'unknown');assert.equal(retry.duplicate,true);
