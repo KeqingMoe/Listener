@@ -101,7 +101,7 @@ export function createReactionTool(): ToolDefinition {
   const catalog = getReactionCatalog();
   return { type: 'function', function: {
     name: 'react_message',
-    description: '对当前群可核验消息添加或取消本账号自己的表情回应，不发送一条新消息，也不是群管理授权。add添加，remove取消；即时执行，后续取消本轮不回滚已执行操作。成功不自动结束本轮；若仅回应表情，最后调用stay_silent结束。可与send_message、stay_silent、manage_attention在同一次响应中任意顺序组合，也可回应多个人的消息；stay_silent表示不再发文字。目录是NapCat候选表，不保证QQ接受每个ID；失败不要捏造成功，结果未知不要重试。通常无需再发一句“已点赞”。',
+    description: '对当前群可核验消息添加或取消本账号自己的表情回应，不发送一条新消息，也不是群管理授权。add添加，remove取消；即时执行，后续取消本轮不回滚已执行操作。成功不自动结束本轮；若仅回应表情，最后调用finish结束。可与send_message、finish、manage_attention在同一次响应中按顺序组合，也可回应多个人的消息；finish必须放在最后，其后的所有工具都不执行。目录是NapCat候选表，不保证QQ接受每个ID；失败不要捏造成功，结果未知不要重试。通常无需再发一句“已点赞”。',
     parameters: { type: 'object', additionalProperties: false, required: ['message_id', 'emoji_id', 'action'], properties: {
       message_id: { type: 'string', minLength: 1, maxLength: 17, pattern: '^(0|[1-9][0-9]*|-[1-9][0-9]*)$', description: '当前群本轮可见消息或其可核验引用的OneBot消息ID，不是转发内的声称ID或QQ内部长ID；必须可精确转换成安全整数。' },
       emoji_id: { type: 'string', enum: catalog.map(entry => entry.id), description: '使用候选目录的ID字符串，不要直接传emoji字符。QQ与Unicode是不同类别：' + catalog.map(entry => entry.kind === 'face' ? `[QQ]${entry.id}:${entry.name}` : `[Unicode]${entry.id}:${entry.emoji} ${entry.name}`).join('；') },

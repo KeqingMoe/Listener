@@ -40,6 +40,11 @@ function num(t: Table, key: string, path: string, fallback: number, min: number,
   if (typeof value !== 'number' || !Number.isFinite(value) || (integer && !Number.isSafeInteger(value)) || value < min || value > max) return fail(`${path}.${key}`, '数值超出允许范围或类型错误');
   return value;
 }
+function wakeNumber(t: Table, key: string, path: string, fallback: number, min: number, max: number): number {
+  const value = Object.hasOwn(t, key) ? t[key] : fallback;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) return fail(`${path}.${key}`, '必须是允许范围内的正整数');
+  return value;
+}
 function url(value: string, path: string, ai = false): string {
   let parsed: URL;
   try { parsed = new URL(value); } catch { return fail(path, '网址无效'); }
@@ -78,9 +83,10 @@ function groupId(value: unknown, field: string): string {
 }
 function groupSettings(id: string, raw: unknown, defaults: ListenerConfig, base: string): { enabled: boolean; config: ListenerConfig } {
   const path = `groups.${id}`;
-  const group = table(raw,path,['enabled','reply','tools','images','forward','attention','memory','persona']);
+  const group = table(raw,path,['enabled','ai','reply','tools','images','forward','attention','memory','persona']);
+   const groupAi = table(group.ai,`${path}.ai`,['max_tool_calls_per_wake','wake_timeout_ms']);
   const enabled = bool(group,'enabled',path,true);
-  const reply = table(group.reply,`${path}.reply`,['mention','quote_bot','random_probability','delay_ms','cooldown_ms','max_parts','random']);
+  const reply = table(group.reply,`${path}.reply`,['mention','quote_bot','random_probability','delay_ms','cooldown_ms','random']);
   const random = table(reply.random,`${path}.reply.random`,['cooldown_ms','max_per_minute']);
   const tools = table(group.tools,`${path}.tools`,['members','mention','reactions','moderation']);
   const moderation = table(tools.moderation,`${path}.tools.moderation`,['mute','unmute','recall','member_card','confirmation_ttl_seconds','max_mute_seconds']);
@@ -101,13 +107,14 @@ function groupSettings(id: string, raw: unknown, defaults: ListenerConfig, base:
   const append=Object.hasOwn(extra,'append_file')?persona(filePath(text(extra,'append_file',`${path}.persona`,''),base,`${path}.persona.append_file`),`${path}.persona.append_file`):undefined;
   return {enabled,config:{
     ...defaults,groupId:id,debounceMs,delayMaxMs,
+     maxToolCallsPerWake:wakeNumber(groupAi,'max_tool_calls_per_wake',`${path}.ai`,defaults.maxToolCallsPerWake!,1,4096),
+     wakeTimeoutMs:wakeNumber(groupAi,'wake_timeout_ms',`${path}.ai`,defaults.wakeTimeoutMs!,1000,600000),
     cooldownMs:num(reply,'cooldown_ms',`${path}.reply`,defaults.cooldownMs,1000,60000),
     randomReplyProbability:num(reply,'random_probability',`${path}.reply`,defaults.randomReplyProbability!,0,1,false),
     randomCooldownMs:num(random,'cooldown_ms',`${path}.reply.random`,defaults.randomCooldownMs!,1000,3600000),
     randomMaxPerMinute:num(random,'max_per_minute',`${path}.reply.random`,defaults.randomMaxPerMinute!,1,10),
     mentionEnabled:bool(reply,'mention',`${path}.reply`,defaults.mentionEnabled!),
     quoteBotEnabled:bool(reply,'quote_bot',`${path}.reply`,defaults.quoteBotEnabled!),
-    maxParts:num(reply,'max_parts',`${path}.reply`,defaults.maxParts!,1,10),
     memoryPath,retentionDays:num(memory,'retention_days',`${path}.memory`,defaults.retentionDays,1,30),
     maxContextChars:num(memory,'context_chars',`${path}.memory`,defaults.maxContextChars,8000,100000),
     tools:{members:bool(tools,'members',`${path}.tools`,dTools.members),mention:bool(tools,'mention',`${path}.tools`,dTools.mention),reactions:bool(tools,'reactions',`${path}.tools`,dTools.reactions ?? false),moderation:{
@@ -157,9 +164,9 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
   const root = table(parsed, 'config', ['bot', 'onebot', 'ai', 'persona', 'reply', 'memory', 'tools', 'images', 'logging', 'forward', 'attention', 'groups']);
   const bot = table(root.bot, 'bot', ['name', 'owner_id', 'owner_name']);
   const one = table(root.onebot, 'onebot', ['url', 'token_env', 'api_timeout_ms', 'reconnect_base_ms', 'reconnect_max_ms', 'heartbeat_ms']);
-  const ai = table(root.ai, 'ai', ['enabled', 'base_url', 'model', 'api_key_env', 'timeout_ms', 'max_output_tokens', 'max_concurrent_turns']);
+  const ai = table(root.ai, 'ai', ['enabled', 'base_url', 'model', 'api_key_env', 'timeout_ms', 'max_output_tokens', 'max_concurrent_turns', 'max_tool_calls_per_wake', 'wake_timeout_ms']);
   const p = table(root.persona, 'persona', ['file']);
-  const reply = table(root.reply, 'reply', ['mention', 'quote_bot', 'random_probability', 'delay_ms', 'cooldown_ms', 'max_parts', 'random']);
+  const reply = table(root.reply, 'reply', ['mention', 'quote_bot', 'random_probability', 'delay_ms', 'cooldown_ms', 'random']);
   const random = table(reply.random, 'reply.random', ['cooldown_ms', 'max_per_minute']);
   const memory = table(root.memory, 'memory', ['path', 'retention_days', 'context_chars']);
   const tools = table(root.tools, 'tools', ['members', 'mention', 'reactions', 'moderation']);
@@ -213,12 +220,13 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
   const listener: ListenerConfig = {
     enabled, apiKey, model, baseUrl: url(text(ai, 'base_url', 'ai', 'https://api.openai.com/v1'), 'ai.base_url', true),
     timeoutMs: num(ai, 'timeout_ms', 'ai', 45000, 1000, 120000), maxTokens: num(ai, 'max_output_tokens', 'ai', 1200, 128, 4096),
+     maxToolCallsPerWake: wakeNumber(ai,'max_tool_calls_per_wake','ai',96,1,4096),
+     wakeTimeoutMs: wakeNumber(ai,'wake_timeout_ms','ai',90000,1000,600000),
     debounceMs, delayMaxMs, cooldownMs: num(reply, 'cooldown_ms', 'reply', 5000, 1000, 60000),
     randomReplyProbability: num(reply, 'random_probability', 'reply', 0.03, 0, 1, false),
     randomCooldownMs: num(random, 'cooldown_ms', 'reply.random', 60000, 1000, 3600000),
     randomMaxPerMinute: num(random, 'max_per_minute', 'reply.random', 2, 1, 10),
     mentionEnabled: bool(reply, 'mention', 'reply', true), quoteBotEnabled: bool(reply, 'quote_bot', 'reply', true),
-    maxParts: num(reply, 'max_parts', 'reply', 3, 1, 10),
     memoryPath: filePath(text(memory, 'path', 'memory', 'data/listener.sqlite'), base, 'memory.path'),
     retentionDays: num(memory, 'retention_days', 'memory', 7, 1, 30), maxContextChars: num(memory, 'context_chars', 'memory', 24000, 8000, 100000),
     botName: text(bot, 'name', 'bot', 'Listener'), ownerName: text(bot, 'owner_name', 'bot', '時雨てる'),

@@ -23,7 +23,8 @@ test('real entrypoint queries reaction users on demand, keeps pagination opaque,
  const stored=new Map<string,ReturnType<typeof message>>(),calls:Array<{action:string;params:Record<string,unknown>}>=[],requests:any[]=[];
  const op=(name:string,args:unknown)=>({id:`op_${requests.length}`,type:'function',function:{name,arguments:JSON.stringify(args)}});
  const query=(cursor?:string)=>op('get_reaction_users',{message_id:TARGET,emoji_id:'76',emoji_type:'1',user_id:OWNER_ID,...(cursor?{cursor}:{})});
- const send=(body:string)=>op('send_message',{parts:[{segments:[{type:'text',text:body}]}]});
+ const send=(body:string)=>op('send_message',{segments:[{type:'text',text:body}]});
+  const finish=()=>op('finish',{});
  const http=createServer((req,res)=>{void(async()=>{
   let source='';for await(const chunk of req)source+=chunk.toString();const body=JSON.parse(source);assert.equal(req.headers.authorization,'Bearer fixture-key');assert.equal(body.model,'fixture-reaction-users');requests.push(body);
   assert.ok(body.tools.some((t:any)=>t.function.name==='get_reaction_users'));
@@ -37,7 +38,7 @@ test('real entrypoint queries reaction users on demand, keeps pagination opaque,
    else if(requests.length===4){assert.equal(result.target_found,true);assert.equal(result.complete,false);assert.equal(result.has_more,true);assert.ok(result.users.some((u:any)=>u.user_id===OWNER_ID&&u.nickname==='fixture owner'));proofAfter=calls.length;next=query(result.next_cursor);}
    else{assert.equal(requests.length,5);assert.equal(result.target_found,true,'finding the target on an earlier page survives a final empty EOF page');assert.equal(result.complete,true);assert.equal(result.has_more,false);next=send('verified reaction membership');}
   }
-  res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[next]}}]}));notify();
+  res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:next.function.name==='send_message'?[next,{...finish(),id:`finish_${requests.length}`}]:[next]}}]}));notify();
  })().catch(error=>{fail(error);if(!res.headersSent)res.writeHead(500);res.end();});});
  http.on('connection',socket=>{sockets.add(socket);socket.once('close',()=>{sockets.delete(socket);notify();});});http.on('error',fail);
  const ws=new WebSocketServer({host:'127.0.0.1',port:0});ws.on('error',fail);ws.on('connection',socket=>{

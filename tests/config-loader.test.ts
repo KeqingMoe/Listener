@@ -22,6 +22,8 @@ test('minimal config has empty group scope, disabled AI, complete defaults and r
   const c = f.load();
   assert.equal(c.listener.enabled, false);
   assert.equal(c.maxConcurrentTurns,2);
+  assert.equal(c.listener.maxToolCallsPerWake,96);
+  assert.equal(c.listener.wakeTimeoutMs,90000);
   assert.deepEqual(c.groups,[]);
   assert.equal(c.listener.botName, 'Listener');
   assert.equal(c.listener.ownerName, '時雨てる');
@@ -30,7 +32,7 @@ test('minimal config has empty group scope, disabled AI, complete defaults and r
   assert.deepEqual([...c.onebot.adminUsers], [OWNER_ID]);
   assert.equal(c.onebot.allowPrivate, false);
   assert.equal(c.onebot.rateLimitMs, 2000);
-  assert.equal(c.listener.maxParts, 3);
+  assert.equal(Object.hasOwn(c.listener,'maxParts'),false);
   assert.deepEqual(c.listener.tools?.moderation, {mute:'off',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600});
   assert.deepEqual(c.listener.images,{enabled:false,maxPerTurn:3,maxDownloadMb:10});
   assert.deepEqual(c.listener.forward,{enabled:false,maxPerRead:20});
@@ -38,6 +40,14 @@ test('minimal config has empty group scope, disabled AI, complete defaults and r
   assert.equal(c.listener.memoryPath, join(f.dir, 'data/listener.sqlite'));
   assert.equal(c.configPath, join(f.dir, 'config.toml'));
   assert.deepEqual(c.logging,{level:'info',console:true,file:true,directory:join(f.dir,'data/logs'),retentionDays:7,maxFileMb:20,maxTotalMb:200});
+});
+
+test('removed max_parts is an unknown field globally, per group and in disabled groups',t=>{
+ const f=fixture(t);
+ for(const scope of ['[reply]','[groups."22".reply]','[groups."22"]\nenabled=false\n[groups."22".reply]'])for(const value of ['1','3','10','0','false','"3"']){
+  f.config(`${scope}\nmax_parts=${value}`);
+  assert.throws(()=>f.load(),e=>e instanceof ConfigError&&e.message.includes('reply')&&e.message.includes('未知字段'));
+ }
 });
 
 test('forward feature is optional and validates explicit switches and range caps',t=>{
@@ -92,8 +102,8 @@ test('all numeric bounds are strict, finite and integers except probability', t 
   const ranges: [string, string, number, number][] = [
     ['onebot', 'api_timeout_ms', 1, 2147483647], ['onebot', 'heartbeat_ms', 1, 2147483647],
     ['onebot', 'reconnect_base_ms', 1, 2147483647], ['onebot', 'reconnect_max_ms', 1, 2147483647],
-    ['ai', 'timeout_ms', 1000, 120000], ['ai', 'max_output_tokens', 128, 4096], ['ai','max_concurrent_turns',1,8],
-    ['reply', 'cooldown_ms', 1000, 60000], ['reply', 'max_parts', 1, 10],
+    ['ai', 'timeout_ms', 1000, 120000], ['ai', 'max_output_tokens', 128, 4096], ['ai','max_concurrent_turns',1,8], ['ai','max_tool_calls_per_wake',1,4096], ['ai','wake_timeout_ms',1000,600000],
+    ['reply', 'cooldown_ms', 1000, 60000],
     ['reply.random', 'cooldown_ms', 1000, 3600000], ['reply.random', 'max_per_minute', 1, 10],
     ['memory', 'retention_days', 1, 30], ['memory', 'context_chars', 8000, 100000],
     ['tools.moderation', 'confirmation_ttl_seconds', 1, 60], ['tools.moderation', 'max_mute_seconds', 1, 600],

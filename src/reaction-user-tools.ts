@@ -16,7 +16,8 @@ export interface ReactionUserTurn { readonly reaction_user_turn:true }
 interface Query { message_id:string;emoji_id:string;emoji_type:'1'|'2';user_id?:string }
 interface Chain { seen:Set<string>; cookies:Set<string>; tainted:boolean; pages:number }
 interface Cursor { binding:string;pair:string;cookie:string;chain:Chain }
-interface State { attempts:number;queue:Promise<void>;cache:Map<string,{pair:string;result:JsonObject}>;cursors:Map<string,Cursor>;epoch:number;revisions:Map<string,number> }
+const MAX_RESOURCES=4096; // Cache/cursor memory capacity, not a per-tool call allowance.
+interface State { queue:Promise<void>;cache:Map<string,{pair:string;result:JsonObject}>;cursors:Map<string,Cursor>;epoch:number;revisions:Map<string,number> }
 const fail=(reason:string):JsonObject=>({status:'error',error:reason,reason});
 function object(value:unknown):value is JsonObject{
  if(!value||typeof value!=='object'||Array.isArray(value))return false;
@@ -38,13 +39,13 @@ export class ReactionUserTools {
  constructor(private readonly api:Api,private readonly memory:Memory,groupId=LISTENER_GROUP){this.groupId=resolveGroupId(groupId);}
  createTurn():ReactionUserTurn{
   const token:ReactionUserTurn=Object.freeze({reaction_user_turn:true});
-  this.turns.set(token,{attempts:0,queue:Promise.resolve(),cache:new Map(),cursors:new Map(),epoch:0,revisions:new Map()});return token;
+  this.turns.set(token,{queue:Promise.resolve(),cache:new Map(),cursors:new Map(),epoch:0,revisions:new Map()});return token;
  }
- /** A dispatched mutation invalidates all type/target views of this pair, not the page budget. */
+ /** A dispatched mutation invalidates all type/target views of this pair, without changing the wake runner's call budget. */
  invalidate(token:ReactionUserTurn,messageId:string,emojiId:string):void{
   if(!token||typeof token!=='object'||!short(messageId)||!short(emojiId)||emojiId.startsWith('-')||emojiId.length>16)return;
   const state=this.turns.get(token);if(!state)return;const pair=`${messageId}:${emojiId}`;
-  if(!state.revisions.has(pair)&&state.revisions.size>=32){
+  if(!state.revisions.has(pair)&&state.revisions.size>=MAX_RESOURCES){
    state.epoch++;state.revisions.clear();state.cache.clear();state.cursors.clear();
   }
   state.revisions.set(pair,(state.revisions.get(pair)??0)+1);
@@ -79,7 +80,7 @@ export class ReactionUserTools {
   const failure=(reason:string):JsonObject=>({...fail(reason),message_id:query.message_id,emoji_id:query.emoji_id,emoji_type:query.emoji_type,
    users:[],returned:0,seen_users:previous?.chain.seen.size??0,complete:false,has_more:null,observed_at:Date.now(),untrusted:true,
    ...(query.user_id?{target_user_id:query.user_id,target_found:previous?.chain.seen.has(query.user_id)?true:null}:{})});
-  if(state.attempts>=8)return failure('call_limit');state.attempts++;
+  if(state.cache.size>=MAX_RESOURCES)return failure('resource_limit');
   const pair=`${query.message_id}:${query.emoji_id}`,epoch=state.epoch,revision=state.revisions.get(pair)??0;
   const current=()=>state.epoch===epoch&&(state.revisions.get(pair)??0)===revision;
   const save=(result:JsonObject):JsonObject=>{if(!current())return fail('query_invalidated');state.cache.set(key,{pair,result:structuredClone(result)});return result;};
@@ -115,7 +116,7 @@ export class ReactionUserTools {
   if(hasMore===true){
    if(!list.length||!users.length||!cookie(raw.cookie)||!raw.cookie){chain.tainted=true;reason='pagination_unavailable';}
    else if(chain.cookies.has(raw.cookie)){chain.tainted=true;reason='pagination_cycle';}
-   else if(state.attempts>=8||state.cursors.size>=8){reason='call_limit';}
+   else if(state.cursors.size>=MAX_RESOURCES){reason='resource_limit';}
    else{
     chain.cookies.add(raw.cookie);
     nextCursor=`ru_${randomBytes(16).toString('hex')}`;

@@ -120,7 +120,7 @@ test('rejects redirects, HTTP errors, encoded bodies and declared or streamed ov
     { headers: { 'content-length': '1025' } }, { headers: { 'content-length': 'SECRET' } },
     { headers: { 'content-encoding': 'gzip' } }, { headers: { 'content-length': '1' } },
     { chunks: [Buffer.alloc(600), Buffer.alloc(600)] },
-  ]) {
+  ] as NonNullable<Parameters<typeof fakeNetwork>[1]>[]) {
     const fake = fakeNetwork(body, settings);
     await assert.rejects(createImageDownloader(fake)(URL, 1024), error => {
       assert.equal((error as Error).message, 'Image download failed'); return true;

@@ -54,7 +54,7 @@ interface Target { root: string; depth: number; source: ExtractedForward; ancest
 interface Root { sender: string; target: Target }
 interface Cached { nodes: unknown[] }
 export interface ForwardTurnState {
-  calls: number; returned: number; outputChars: number; cachedBytes: number;
+  returned: number; outputChars: number; cachedBytes: number;
   roots: Map<string, Root>; children: Map<string, Target>; cache: Map<string, Cached>; childKeys: Map<string, string>;
   busy: boolean;
 }
@@ -84,7 +84,7 @@ export class ForwardTools {
     if (!Number.isInteger(max) || max < 1 || max > 20) throw new Error('Invalid forward tool options');
     this.options = { enabled: options.enabled, maxPerRead: max };
   }
-  createTurn(): ForwardTurnState { const state: ForwardTurnState = { calls: 0, returned: 0, outputChars: 0, cachedBytes: 0, roots: new Map(), children: new Map(), cache: new Map(), childKeys: new Map(), busy: false }; this.turns.add(state); return state; }
+  createTurn(): ForwardTurnState { const state: ForwardTurnState = { returned: 0, outputChars: 0, cachedBytes: 0, roots: new Map(), children: new Map(), cache: new Map(), childKeys: new Map(), busy: false }; this.turns.add(state); return state; }
   private scope(rootId: string, sender?: string) {
     const match = ROOT.exec(rootId)!;
     const messageId = match[1]!, index = Number(match[2]);
@@ -113,8 +113,8 @@ export class ForwardTools {
       const start = args.start as number, end = args.end as number;
       if (start < 1 || end < start || end - start + 1 > this.options.maxPerRead) return errorResult('invalid_range');
       if (state.busy) return errorResult('read_in_progress');
-      if (state.calls >= 6 || state.returned >= 120 || state.outputChars >= 29500) return errorResult('budget_exhausted');
-      state.busy = true; locked = true; state.calls++;
+      if (state.returned >= 120 || state.outputChars >= 29500) return errorResult('budget_exhausted');
+      state.busy = true; locked = true;
       const roots = new Map(state.roots), children = new Map(state.children), cache = new Map(state.cache), childKeys = new Map(state.childKeys);
       let cachedBytes = state.cachedBytes;
       const reserve = (bytes: number) => { cachedBytes += bytes; if (cachedBytes > 2097152) fail('cache_limit'); };

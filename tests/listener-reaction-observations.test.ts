@@ -15,7 +15,7 @@ const row=(messageId:string):TimelineEntry=>({messageId,userId:A,nickname:'fixtu
 const notice=(id:string,group=GROUP)=>({post_type:'notice',notice_type:'group_msg_emoji_like',group_id:group,message_id:id,likes:[{emoji_id:'76',count:999999}],is_add:true});
 const call=(name:string,args:unknown={})=>({id:`call_${name}`,type:'function' as const,function:{name,arguments:JSON.stringify(args)}});
 const complete=(...calls:ReturnType<typeof call>[]):Completion=>({content:null,tool_calls:calls.map((c,i)=>({...c,id:`${c.id}_${i}`}))});
-const silent=()=>call('stay_silent');
+const silent=()=>call('finish');
 const read=(id:string)=>call('read_message',{message_id:id});
 const react=(id='1')=>call('react_message',{message_id:id,emoji_id:'76',action:'add'});
 const next=()=>call('manage_attention',{operation:'create',any_of:[{type:'next_message'}],expires_in_seconds:60});

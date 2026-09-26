@@ -53,19 +53,19 @@ test('marker and CQ-looking text is allowed even with mentions disabled and neve
  const memory=new Mem();const api:Api={async call(){assert.fail('literal text must not cause membership or message lookup');}};
  for(const mention of [true,false]){
   const tools=new GroupTools(api,memory,{mention});
-  const parts=await tools.prepareMessage({parts:[{segments:[{type:'text',text:literal}]},{segments:[{type:'text',text:'[CQ:'},{type:'text',text:'at,qq=all]'}]}]},context);
+  const parts=[await tools.prepareMessage({segments:[{type:'text',text:literal}]},context),await tools.prepareMessage({segments:[{type:'text',text:'[CQ:'},{type:'text',text:'at,qq=all]'}]},context)];
   assert.deepEqual(parts[0]!.segments,[text(literal)]);assert.ok(parts.every(p=>p.segments.every(s=>s.type==='text')));
-  await assert.rejects(tools.prepareMessage({parts:[{segments:[{type:'at',user_id:'all'}]}]},context));
-  await assert.rejects(tools.prepareMessage({parts:[{segments:[{type:'at',user_id:self}]}]},context));
+  await assert.rejects(tools.prepareMessage({segments:[{type:'at',user_id:'all'}]},context));
+  await assert.rejects(tools.prepareMessage({segments:[{type:'at',user_id:self}]},context));
  }
- const tools=new GroupTools(api,memory);const result=await tools.prepareMessage({parts:[{segments:[{type:'face',id:'0',name:'辅助说明不会发送'}]}]},context);
- assert.deepEqual(result[0]!.segments,[{type:'face',data:{id:'0'}}]);
+ const tools=new GroupTools(api,memory);const result=await tools.prepareMessage({segments:[{type:'face',id:'0',name:'辅助说明不会发送'}]},context);
+ assert.deepEqual(result.segments,[{type:'face',data:{id:'0'}}]);
 });
 
 test('model sees typed received and own historical faces without duplicated flattened body; wire text stays literal',async()=>{
  const memory=new Mem(),requests:ChatMessage[][]=[],wire:any[]=[];
  const api:Api={async call(action,params){assert.equal(action,'send_group_msg');wire.push(structuredClone(params));return {message_id:'900'};}};
- const model:Model={async complete(messages){requests.push(structuredClone(messages));return requests.length===1?completion('send_message',{parts:[{segments:[{type:'face',id:'0',name:'微笑'},{type:'text',text:literal}]}]}):completion('stay_silent',{});}};
+ const model:Model={async complete(messages){requests.push(structuredClone(messages));return requests.length===1?completion('send_message',{segments:[{type:'face',id:'0',name:'微笑'},{type:'text',text:literal}]}):completion('finish',{});}};
  const bot=new Listener(api,model,memory,cfg);
  try{
   await bot.receive(event('1',[{type:'at',data:{qq:self}},text(literal),{type:'face',data:{id:271}}]),self);await settled(bot);
@@ -73,7 +73,7 @@ test('model sees typed received and own historical faces without duplicated flat
   const payload=JSON.parse(String(requests[0]![1]!.content));assert.equal(payload.current_request.text,undefined);
   assert.ok(payload.current_request.segments.some((s:any)=>s.type==='face'&&s.id==='271'));
   await bot.receive(event('2',[{type:'at',data:{qq:self}},text('继续')]),self);await settled(bot);
-  const next=JSON.parse(String(requests[1]![1]!.content)),history=JSON.parse(next.untrusted_group_context);
+  assert.equal(requests.length,3);const next=JSON.parse(String(requests[2]![1]!.content)),history=JSON.parse(next.untrusted_group_context);
   assert.equal(history.summary.text,'old summary remains unchanged');const own=history.messages.find((r:any)=>r.messageId==='900');
   assert.equal(own.text,undefined);assert.equal(own.bot,true);assert.ok(own.segments.some((s:any)=>s.type==='face'&&s.id==='0'));
   assert.ok(own.segments.some((s:any)=>s.type==='text'&&s.text===literal));assert.ok(memory.find('900')!.segments);

@@ -33,7 +33,7 @@ test('real entrypoint preserves native segments, literal marker text and structu
  const peers=new Set<WebSocket>(),sockets=new Set<Socket>();let peer:WebSocket|undefined,sent=0;
  const calls:Array<{action:string;params:Record<string,any>}>=[],requests:any[]=[];
  const op=(name:string,args:unknown)=>({id:`op_${requests.length}`,type:'function',function:{name,arguments:JSON.stringify(args)}});
- const send=(segments:unknown[])=>op('send_message',{parts:[{segments}]});
+ const send=(segments:unknown[])=>op('send_message',{segments});
  const http=createServer((req,res)=>{void(async()=>{
   let source='';for await(const chunk of req)source+=chunk.toString();const body=JSON.parse(source);requests.push(body);
   assert.equal(req.headers.authorization,'Bearer fixture-key');assert.equal(req.url,'/v1/chat/completions');assert.equal(body.model,'fixture-structured');
@@ -52,7 +52,7 @@ test('real entrypoint preserves native segments, literal marker text and structu
     next=send([{type:'text',text:REPLY_LITERAL}]);
    }
   }
-  res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[next]}}]}));notify();
+  res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[next,...(next.function.name==='send_message'?[{...op('finish',{}),id:`finish_${requests.length}`}]:[])]}}]}));notify();
  })().catch(error=>{fail(error);if(!res.headersSent)res.writeHead(500);res.end();});});
  http.on('connection',socket=>{sockets.add(socket);socket.once('close',()=>{sockets.delete(socket);notify();});});http.on('error',fail);
  const ws=new WebSocketServer({host:'127.0.0.1',port:0});ws.on('error',fail);ws.on('connection',(socket,req)=>{

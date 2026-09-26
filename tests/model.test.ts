@@ -45,15 +45,15 @@ test('native image content arrays are serialized as image_url blocks, not text',
   } finally {stop(fixture.server);}
 });
 
-test('rejects malformed, oversized, excessive, unknown and truncated responses without leaking secrets', async () => {
+test('rejects malformed envelopes, oversized, excessive and truncated responses without leaking secrets', async () => {
   const call = { id: 'x', type: 'function', function: { name: 'lookup', arguments: '{}' } };
   const cases: unknown[] = [
     { error: secret }, reply({ role: 'assistant', content: 42 }),
     reply({ role: 'assistant', content: null, tool_calls: null }),
     reply({ role: 'assistant', content: 'partial' }, 'length'),
     reply({ role: 'assistant', content: null, tool_calls: Array.from({ length: 9 }, (_, n) => ({ ...call, id: String(n) })) }, 'tool_calls'),
-    reply({ role: 'assistant', content: null, tool_calls: [{ ...call, function: { name: 'lookup', arguments: '[]' } }] }, 'tool_calls'),
-    reply({ role: 'assistant', content: null, tool_calls: [{ ...call, function: { name: 'other', arguments: '{}' } }] }, 'tool_calls'),
+    ...['', 'x'.repeat(129), 'lookup\n'].map(name => reply({ role: 'assistant', tool_calls: [{ ...call, function: { name, arguments: '{}' } }] }, 'tool_calls')),
+    reply({ role: 'assistant', tool_calls: [{ ...call, function: { name: 'lookup', arguments: {} } }] }, 'tool_calls'),
     reply({ role: 'assistant', content: null, tool_calls: [{ ...call, function: { name: 'lookup', arguments: JSON.stringify({ x: 'a'.repeat(17000) }) } }] }, 'tool_calls'),
     reply({ role: 'assistant', content: null, tool_calls: [call, call] }, 'tool_calls'),
     reply({ role: 'assistant', content: 'a'.repeat(270000) }),
@@ -66,6 +66,14 @@ test('rejects malformed, oversized, excessive, unknown and truncated responses w
       assert.equal(requests, 1);
     } finally { stop(fixture.server); }
   }
+});
+
+test('bounded unknown tools and invalid argument JSON reach the dispatcher unchanged',async()=>{
+ for(const name of ['lookup','not_advertised'])for(const args of ['{','[]','null','42','"literal"','']){
+  const toolCall={id:'x',type:'function',function:{name,arguments:args}};
+  const fixture=await server((_req,res)=>res.end(JSON.stringify(reply({role:'assistant',tool_calls:[toolCall]},'tool_calls'))));
+  try{const result=await fixture.model.complete([],[tool]);assert.deepEqual(result.tool_calls,[toolCall]);}finally{stop(fixture.server);}
+ }
 });
 
 test('plain summary completion omits tools; invalid JSON and chunked oversized bodies fail', async () => {

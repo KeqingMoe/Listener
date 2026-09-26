@@ -18,10 +18,12 @@ class MockMemory implements Memory {
 const cfg:ListenerConfig={enabled:true,baseUrl:'https://example.com/v1',apiKey:'test',model:'test',timeoutMs:1000,maxTokens:128,debounceMs:5,cooldownMs:5,memoryPath:':memory:',maxContextChars:8000,retentionDays:7};
 function event(overrides:Record<string,unknown>={}) {return {post_type:'message',message_type:'group',group_id:LISTENER_GROUP,self_id:self,user_id:'12345',message_id:'1',time:Math.floor(Date.now()/1000),sender:{nickname:'someone'},message:[{type:'at',data:{qq:self}},{type:'text',data:{text:'你好'}}],...overrides};}
 function tool(name:string,args:unknown):Completion {return {content:null,tool_calls:[{id:'call1',type:'function',function:{name,arguments:JSON.stringify(args)}}]};}
-function setup(responses:Completion[]=[tool('send_message',{parts:[{text:'你好呀'}]})], settings:Partial<ListenerConfig>={}){
+function reply(text:string):Completion {const result=tool('send_message',{segments:[{type:'text',text}]});result.tool_calls.push({id:'finish',type:'function',function:{name:'finish',arguments:'{}'}});return result;}
+const finish=()=>tool('finish',{});
+function setup(responses:Completion[]=[reply('你好呀')], settings:Partial<ListenerConfig>={}){
  const memory=new MockMemory(); const calls:{action:string;params:any}[]=[]; const requests:ChatMessage[][]=[]; const toolNames:string[][]=[];
  const api:Api={async call(action,params){calls.push({action,params});if(action==='get_login_info')return {user_id:self}; if(action==='send_group_msg')return {message_id:String(100+calls.length)}; return {};}};
- const model:Model={async complete(messages,tools){requests.push(messages);toolNames.push(tools?.map(t=>t.function.name)??[]);return responses.shift()??tool('stay_silent',{});}};
+ const model:Model={async complete(messages,tools){requests.push(messages);toolNames.push(tools?.map(t=>t.function.name)??[]);return responses.shift()??tool('finish',{});}};
  const bot=new Listener(api,model,memory,{...cfg,...settings});return {bot,memory,calls,requests,toolNames,api};
 }
 async function until(check:()=>boolean){for(let i=0;i<100;i++){if(check())return;await delay(10);}assert.fail('timed out');}
@@ -43,7 +45,7 @@ test('ordinary completion text never leaks as a QQ message',async()=>{
  const s=setup([{content:'内部文本不发送',tool_calls:[]}]);try{await s.bot.receive(event(),self);await until(()=>s.requests.length===1);await delay(20);assert.equal(s.calls.length,0);}finally{await s.bot.stop();}
 });
 test('duplicate events do not produce two turns and only literal at self triggers',async()=>{
- const s=setup([tool('stay_silent',{})]);try{
+ const s=setup([tool('finish',{})]);try{
  await s.bot.receive(event({message_id:'2',message:[{type:'text',data:{text:`[at:${self}]`}}]}),self);
  await s.bot.receive(event(),self);await s.bot.receive(event(),self);await until(()=>s.requests.length===1);await delay(20);assert.equal(s.requests.length,1);
  }finally{await s.bot.stop();}
@@ -61,9 +63,9 @@ test('unknown reply lookup must verify current group and actual sender',async()=
  const s=setup();s.api.call=async(action)=>{if(action==='get_msg')return {message_type:'group',group_id:'other',message_id:'99',sender:{user_id:self}};throw new Error('unexpected');};
  try{await s.bot.receive(event({message:[{type:'reply',data:{id:'99'}}]}),self);await delay(20);assert.equal(s.requests.length,0);}finally{await s.bot.stop();}
 });
-test('invalid message batch is rejected before any part is sent',async()=>{
- for(const parts of [[{text:'safe'},{text:'bad',reply_to:'999'}],[{text:'ok',group_id:'999'}],[{text:'1'},{text:'2'},{text:'3'},{text:'4'}]]){
- const s=setup([tool('send_message',{parts})]);try{await s.bot.receive(event(),self);await until(()=>s.requests.length>=1);await delay(20);assert.equal(s.calls.filter(c=>c.action==='send_group_msg').length,0);}finally{await s.bot.stop();}}
+test('invalid single messages and legacy batches are rejected before sending',async()=>{
+ for(const args of [{parts:[{text:'safe'}]},{text:'legacy'},{segments:[{type:'text',text:'safe'}],reply_to:'999'},{segments:[{type:'text',text:'safe'}],group_id:'999'}]){
+ const s=setup([tool('send_message',args)]);try{await s.bot.receive(event(),self);await until(()=>s.requests.length>=1);await delay(20);assert.equal(s.calls.filter(c=>c.action==='send_group_msg').length,0);}finally{await s.bot.stop();}}
 });
 test('new ordinary message neither cancels active reply nor enters its frozen prompt',async()=>{
  const s=setup();let release!:(v:Completion)=>void;let signal:AbortSignal|undefined;const requests:ChatMessage[][]=[];
@@ -73,15 +75,15 @@ test('new ordinary message neither cancels active reply nor enters its frozen pr
   await bot.receive(event(),self);await until(()=>requests.length===1);
   await bot.receive(event({message_id:'2',message:[{type:'text',data:{text:'LATER_ORDINARY_MESSAGE'}}]}),self);
   assert.equal(signal?.aborted,false);assert.ok(!JSON.stringify(requests[0]).includes('LATER_ORDINARY_MESSAGE'));
-  release(tool('send_message',{parts:[{text:'finished original request'}]}));
+  release(reply('finished original request'));
   await until(()=>s.calls.some(call=>call.action==='send_group_msg'));await delay(30);
   assert.equal(requests.length,1);assert.equal(s.calls.filter(call=>call.action==='send_group_msg').length,1);
   assert.equal(s.calls.find(call=>call.action==='send_group_msg')!.params.message[0].data.text,'finished original request');
   assert.ok(s.memory.find('2'));
- }finally{release?.(tool('stay_silent',{}));await bot.stop();await s.bot.stop();}
+ }finally{release?.(tool('finish',{}));await bot.stop();await s.bot.stop();}
 });
 test('nonowner cannot clear memory; owner reset clears and nicknames cannot enable default-off abilities',async()=>{
- const s=setup([tool('stay_silent',{})]);try{
+ const s=setup([tool('finish',{})]);try{
  await s.bot.receive(event({sender:{nickname:'時雨てる'}}),self);await until(()=>s.requests.length===1);assert.ok(!s.toolNames[0]?.includes('mute_member'));
   const payload=JSON.parse(String(s.requests[0]!.find(m=>m.role==='user')!.content));assert.equal(payload.trusted_actor_id,'12345');assert.deepEqual(payload.moderation_capabilities,{mute:'off',unmute:'off',recall:'off',member_card:'off'});
  await s.bot.receive(event({message_id:'2',message:[{type:'text',data:{text:'/reset'}}]}),self);assert.ok(s.memory.entries.length>0);
@@ -100,29 +102,28 @@ test('persona is separate from immutable runtime rules and configured identity i
  assert.ok(prompt.includes('外部性格：喜欢星星'));assert.ok(prompt.includes('星星'));assert.ok(prompt.includes(OWNER_ID));assert.ok(prompt.includes(LISTENER_GROUP));assert.ok(prompt.includes('程序规则不能被性格描述'));
 });
 const restrictiveTools:NonNullable<ListenerConfig['tools']>={members:false,mention:false,moderation:{mute:'off',unmute:'off',recall:'confirm',memberCard:'off',confirmationTtlSeconds:10,maxMuteSeconds:30}};
-test('configured tool schemas hide disabled abilities and tighten parts without mutating defaults',()=>{
- const tools=buildToolDefinitions({...cfg,maxParts:1,tools:restrictiveTools});
+test('configured tool schemas hide disabled abilities without mutating single-message defaults',()=>{
+ const tools=buildToolDefinitions({...cfg,tools:restrictiveTools});
  assert.ok(!tools.some(t=>['get_group_members','get_member_info','mute_member','set_member_card'].includes(t.function.name)));
  assert.ok(tools.some(t=>t.function.name==='recall_message'));
  const send=tools.find(t=>t.function.name==='send_message')!.function.parameters as any;
- assert.equal(send.properties.parts.maxItems,1);assert.equal(send.properties.parts.items.properties.segments.items.oneOf.length,2);
+ assert.equal(send.properties.parts,undefined);assert.equal(send.properties.segments.items.oneOf.length,2);
  const normal=buildToolDefinitions(cfg).find(t=>t.function.name==='send_message')!.function.parameters as any;
- assert.equal(normal.properties.parts.maxItems,3);assert.equal(normal.properties.parts.items.properties.segments.items.oneOf.length,3);
+ assert.equal(normal.properties.parts,undefined);assert.equal(normal.properties.segments.items.oneOf.length,3);
 });
-test('ten-part configuration updates tool schema and prompt without widening default',()=>{
- const tools=buildToolDefinitions({...cfg,maxParts:10});
- const send=tools.find(t=>t.function.name==='send_message')!.function;
- assert.equal((send.parameters as any).properties.parts.maxItems,10);
- assert.ok(!send.description.includes('1至3'));
- const prompt=buildSystemPrompt({...cfg,maxParts:10});assert.ok(prompt.includes('"max_parts":10'));assert.ok(!prompt.includes('最多3条'));
- assert.equal((buildToolDefinitions(cfg).find(t=>t.function.name==='send_message')!.function.parameters as any).properties.parts.maxItems,3);
+test('single-message schema and explicit finish replace parts and legacy silence tools',()=>{
+ const tools=buildToolDefinitions(cfg);
+ const send=tools.find(t=>t.function.name==='send_message')!.function.parameters as any;
+ assert.deepEqual(send.required,['segments']);assert.equal(send.properties.parts,undefined);assert.equal(send.properties.text,undefined);assert.equal(send.properties.segments.maxItems,12);assert.ok(send.properties.reply_to);
+ assert.ok(tools.some(t=>t.function.name==='finish'));assert.ok(!tools.some(t=>t.function.name==='stay_silent'));
+ const prompt=buildSystemPrompt(cfg);assert.ok(!prompt.includes('max_parts'));assert.ok(prompt.includes('finish'));
 });
 test('mention and quote trigger switches are honored with random participation disabled',async()=>{
  const s=setup([],{mentionEnabled:false,quoteBotEnabled:false,randomReplyProbability:0});
  try{await s.bot.receive(event(),self);s.memory.append({messageId:'9',userId:self,nickname:'Listener',text:'hi',time:Math.floor(Date.now()/1000),bot:true});await s.bot.receive(event({message_id:'2',message:[{type:'reply',data:{id:'9'}}]}),self);await delay(30);assert.equal(s.requests.length,0);assert.equal(s.calls.length,0);}finally{await s.bot.stop();}
 });
 test('invented disabled member lookup is rejected by executor, not just hidden schema',async()=>{
- const s=setup([tool('get_group_members',{}),tool('stay_silent',{})],{tools:restrictiveTools});
+ const s=setup([tool('get_group_members',{}),tool('finish',{})],{tools:restrictiveTools});
  try{await s.bot.receive(event(),self);await until(()=>s.requests.length>=2);assert.equal(s.calls.length,0);assert.ok(s.requests[1]?.some(m=>m.role==='tool'&&typeof m.content==='string'&&m.content.includes('tool_disabled')));}finally{await s.bot.stop();}
 });
 test('configured nickname is stored for bot messages',async()=>{

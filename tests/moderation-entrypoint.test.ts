@@ -40,9 +40,9 @@ test('real entrypoint authorizes autonomous direct and owner-confirmed moderatio
   if(requests.length===1){assert.equal(group,A);assert.equal(input.current_request.messageId,'101');next=op('mute_member',{user_id:TARGET,seconds:120});}
   else if(requests.length===2){
    assert.equal(group,A);assert.deepEqual(JSON.parse(body.messages.filter((m:any)=>m.role==='tool').at(-1).content),{status:'executed'});
-   assert.deepEqual(mutations().map(c=>c.params),[{group_id:A,user_id:TARGET,duration:120}]);assert.equal(sends.length,0);next=op('stay_silent',{});
+   assert.deepEqual(mutations().map(c=>c.params),[{group_id:A,user_id:TARGET,duration:120}]);assert.equal(sends.length,0);next=op('finish',{});
   }else{assert.equal(requests.length,3);assert.equal(group,B);assert.equal(input.current_request.messageId,'201');next=op('mute_member',{user_id:TARGET,seconds:120});}
-  res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[next]}}]}));notify();
+  res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[next,...(group===B?[{...op('finish',{}),id:'finish_B'}]:[])]}}]}));notify();
  })().catch(error=>{fail(error);if(!res.headersSent)res.writeHead(500);res.end();});});
  http.on('connection',socket=>{sockets.add(socket);socket.once('close',()=>{sockets.delete(socket);notify();});});http.on('error',fail);
  const ws=new WebSocketServer({host:'127.0.0.1',port:0});ws.on('error',fail);ws.on('connection',(socket,req)=>{

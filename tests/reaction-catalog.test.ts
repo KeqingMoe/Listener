@@ -133,7 +133,7 @@ test('tool has exact argument schema and full labeled candidate enum without eag
   assert.deepEqual(schema.properties.action.enum, ['add', 'remove']);
   assert.match(schema.properties.emoji_id.description, /\[QQ\]/); assert.match(schema.properties.emoji_id.description, /\[Unicode\]/);
   assert.match(tool.function.description, /候选/); assert.match(tool.function.description, /不自动结束/);
-  assert.match(tool.function.description, /最后调用stay_silent结束/);
+  assert.match(tool.function.description, /最后调用finish结束/);
   assert.ok(isKnownReactionId('0')); assert.ok(isKnownReactionId('76')); assert.ok(isKnownReactionId('128077'));
   for (const value of [0, '00', '76\n', '👍', '-1', '9999999', null]) assert.equal(isKnownReactionId(value), false);
   schema.properties.emoji_id.enum.length = 0;

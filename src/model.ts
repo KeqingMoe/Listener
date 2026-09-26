@@ -8,7 +8,7 @@ export class ModelError extends Error {
     this.name = 'ModelError';
   }
 }
-const KNOWN_TOOLS = new Set(['send_message', 'stay_silent', 'get_group_members', 'get_member_info', 'read_message', 'view_images', 'read_forward', 'mute_member', 'unmute_member', 'recall_message', 'set_member_card', 'manage_attention', 'react_message', 'get_reaction_users']);
+const KNOWN_TOOLS = new Set(['send_message', 'finish', 'get_group_members', 'get_member_info', 'read_message', 'view_images', 'read_forward', 'mute_member', 'unmute_member', 'recall_message', 'set_member_card', 'manage_attention', 'react_message', 'get_reaction_users']);
 function usageFields(value: unknown): Record<string, number> {
   const fields: Record<string, number> = {};
   if (object(value) && object(value.usage)) {
@@ -28,7 +28,7 @@ const MAX_ARGUMENT_BYTES = 16 * 1024;
 const object = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-function validate(value: unknown, tools: ToolDefinition[]): Completion {
+function validate(value: unknown): Completion {
   if (!object(value) || !Array.isArray(value.choices) || value.choices.length !== 1) throw Error();
   const choice: unknown = value.choices[0];
   if (!object(choice) || !object(choice.message)) throw Error();
@@ -39,13 +39,15 @@ function validate(value: unknown, tools: ToolDefinition[]): Completion {
   if (!Array.isArray(calls) || calls.length > 8) throw Error();
   if ((choice.finish_reason === 'tool_calls') !== (calls.length > 0)) throw Error();
   const ids = new Set<string>();
-  const allowed = new Set(tools.map(t => t.function.name));
   const validated: ToolCall[] = calls.map((call: unknown) => {
     if (!object(call) || typeof call.id !== 'string' || !call.id || call.id.length > 256 || ids.has(call.id)
       || call.type !== 'function' || !object(call.function)) throw Error();
     const fn = call.function;
-    if (typeof fn.name !== 'string' || !allowed.has(fn.name) || typeof fn.arguments !== 'string'
-      || Buffer.byteLength(fn.arguments) > MAX_ARGUMENT_BYTES || !object(JSON.parse(fn.arguments))) throw Error();
+    // Validate the transport envelope, not tool semantics: unknown/disabled tools
+    // and invalid argument JSON must reach the dispatcher, consume its shared
+    // wake budget, and return a tool result the model can correct.
+    if (typeof fn.name !== 'string' || !fn.name.length || fn.name.length > 128 || /[\u0000-\u001f\u007f]/.test(fn.name)
+      || typeof fn.arguments !== 'string' || Buffer.byteLength(fn.arguments) > MAX_ARGUMENT_BYTES) throw Error();
     ids.add(call.id);
     return { id: call.id, type: 'function', function: { name: fn.name, arguments: fn.arguments } };
   });
@@ -111,7 +113,7 @@ export class OpenAIModel implements Model {
       if (object(value) && Array.isArray(value.choices) && value.choices.some((choice: unknown) => object(choice) && choice.finish_reason === 'length')) {
         failure = 'truncated_response'; throw Error();
       }
-      const result = validate(value, tools);
+      const result = validate(value);
       if (controller.signal.aborted) throw Error();
       log('info', 'model.complete', { duration_ms: performance.now() - started, tools: toolNames, outcome: 'success', ...usageFields(value) });
       return result;

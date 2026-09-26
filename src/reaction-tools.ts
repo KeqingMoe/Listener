@@ -6,7 +6,8 @@ export { createReactionTool } from './reaction-catalog.js';
 export interface ReactionTurn { readonly reaction_turn: true }
 type Action = 'add'|'remove';
 interface PairState { queue: Promise<void>; last?: { action: Action; result: JsonObject }; unknown?: JsonObject }
-interface TurnState { attempts: number; pairs: Map<string, PairState> }
+interface TurnState { pairs: Map<string, PairState> }
+const MAX_PAIR_RESOURCES = 4096; // Memory bound; call accounting belongs to the wake runner.
 const error = (code: string): JsonObject => ({ status: 'error', error: code });
 function record(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -37,7 +38,7 @@ export class ReactionTools {
   }
   createTurn(): ReactionTurn {
     const token: ReactionTurn = Object.freeze({ reaction_turn: true });
-    this.turns.set(token, { attempts: 0, pairs: new Map() });
+    this.turns.set(token, { pairs: new Map() });
     return token;
   }
   async react(args: unknown, context: TurnContext, state: ReactionTurn, signal?: AbortSignal): Promise<JsonObject> {
@@ -61,7 +62,7 @@ export class ReactionTools {
     const key = `${id}:${emoji}`;
     let pair = turn.pairs.get(key);
     if (!pair) {
-      if (turn.pairs.size >= 32) return error('call_limit');
+      if (turn.pairs.size >= MAX_PAIR_RESOURCES) return error('resource_limit');
       pair = { queue: Promise.resolve() };
       turn.pairs.set(key, pair);
     }
@@ -69,12 +70,12 @@ export class ReactionTools {
     // memory, but even a caller mutating the source entry cannot alter this proof.
     const sender = local?.userId;
     const ownedPair = pair;
-    const operation = pair.queue.then(() => this.perform(id, emoji, action, sender, turn, ownedPair, signal));
+    const operation = pair.queue.then(() => this.perform(id, emoji, action, sender, ownedPair, signal));
     pair.queue = operation.then(() => undefined, () => undefined);
     return operation;
   }
   private async perform(id: string, emoji: string, action: Action, sender: string|undefined,
-    turn: TurnState, pair: PairState, signal?: AbortSignal): Promise<JsonObject> {
+    pair: PairState, signal?: AbortSignal): Promise<JsonObject> {
     const duplicate = (result: JsonObject): JsonObject => structuredClone({ ...result, duplicate: true });
     // Never retry either desired state after an uncertain dispatched write.
     // Preserve the original dispatched tuple; requested_action identifies a
@@ -82,8 +83,6 @@ export class ReactionTools {
     if (pair.unknown) return duplicate({ ...pair.unknown, ...(pair.unknown.action !== action ? { requested_action: action } : {}) });
     if (pair.last?.action === action) return duplicate(pair.last.result);
     if (signal?.aborted) return error('cancelled');
-    if (turn.attempts >= 32) return error('call_limit');
-    turn.attempts++;
     const remember = (result: JsonObject): JsonObject => {
       pair.last = { action, result: structuredClone(result) };
       if (result.status === 'unknown') pair.unknown = structuredClone(result);

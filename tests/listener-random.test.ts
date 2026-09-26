@@ -30,6 +30,7 @@ function event(messageId = '1', direct = false, overrides: Record<string, unknow
 function tool(name: string, args: unknown = {}): Completion {
   return { content: null, tool_calls: [{ id: 'call1', type: 'function', function: { name, arguments: JSON.stringify(args) } }] };
 }
+function sendAndFinish(args:unknown):Completion {return {content:null,tool_calls:[...tool('send_message',args).tool_calls,...tool('finish').tool_calls.map(c=>({...c,id:'finish'}))]};}
 function setup(options: { config?: Partial<ListenerConfig>; random?: () => number; complete?: Model['complete'] } = {}) {
   const memory = new MockMemory();
   const calls: { action: string; params: Record<string, unknown> }[] = [];
@@ -45,7 +46,7 @@ function setup(options: { config?: Partial<ListenerConfig>; random?: () => numbe
   } };
   const model: Model = { async complete(messages, tools, signal) {
     requests.push({ messages: structuredClone(messages), tools: tools?.map(t => t.function.name) ?? [], signal });
-    return options.complete ? options.complete(messages, tools, signal) : tool('stay_silent');
+    return options.complete ? options.complete(messages, tools, signal) : tool('finish');
   } };
   const bot = new Listener(api, model, memory, { ...cfg, ...options.config }, () => { draws++; return options.random?.() ?? 0.5; });
   return { bot, api, memory, calls, requests, get draws() { return draws; } };
@@ -110,7 +111,7 @@ test('direct at bypasses zero probability and random cooldown/cap with real dire
 test('owner random turn cannot enable default-off moderation and rejects invented mute before APIs', async () => {
   let rounds = 0;
   const s = setup({ complete: async () => ++rounds === 1
-    ? tool('mute_member', { user_id: '12345', seconds: 60 }) : tool('stay_silent') });
+    ? tool('mute_member', { user_id: '12345', seconds: 60 }) : tool('finish') });
   try {
     await s.bot.receive(event('1', false, { user_id: OWNER_ID }), self);
     await until(() => s.requests.length === 2); await settled();
@@ -123,11 +124,11 @@ test('owner random turn cannot enable default-off moderation and rejects invente
 });
 
 test('nonowner random turn may autonomously propose configured moderation but only owner confirms',async()=>{
- let rounds=0;const s=setup({config:{tools:{members:true,mention:true,moderation:{mute:'confirm',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600}}},complete:async()=>++rounds===1?tool('mute_member',{user_id:'12345',seconds:60}):tool('stay_silent')});
+ let rounds=0;const s=setup({config:{tools:{members:true,mention:true,moderation:{mute:'confirm',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600}}},complete:async()=>++rounds===1?tool('mute_member',{user_id:'12345',seconds:60}):tool('finish')});
  try{
   await s.bot.receive(event('1',false,{user_id:'55555'}),self);
   await until(()=>s.calls.some(c=>c.action==='send_group_msg'&&JSON.stringify(c.params).includes('/confirm')));await settled();
-  assert.equal(s.requests.length,1);assert.equal(request(s).trigger_kind,'random');assert.equal(request(s).current_request.userId,'55555');
+  assert.equal(s.requests.length,2);assert.equal(request(s).trigger_kind,'random');assert.equal(request(s).current_request.userId,'55555');
   assert.ok(s.requests[0]!.tools.includes('mute_member'));assert.equal(request(s).moderation_capabilities.mute,'confirm');
   assert.ok(!s.calls.some(c=>c.action==='set_group_ban'));
   const notification=s.calls.find(c=>c.action==='send_group_msg')!,code=/\/confirm ([a-f0-9]{32})/.exec(JSON.stringify(notification.params))![1]!;
@@ -169,35 +170,35 @@ test('pending random upgrades to direct and retains every caller in arrival orde
 
 test('new direct requests preserve running random reply and form one next batch', async () => {
   let release!:(value:Completion)=>void;let rounds=0;
-  const s=setup({complete:async()=>++rounds===1?new Promise<Completion>(resolve=>{release=resolve;}):tool('stay_silent')});
+  const s=setup({complete:async()=>++rounds===1?new Promise<Completion>(resolve=>{release=resolve;}):tool('finish')});
   try {
     await s.bot.receive(event(),self);await until(()=>s.requests.length===1);
     await s.bot.receive(event('2',true),self);
     await s.bot.receive(event('3',true,{user_id:'67890'}),self);
     await settled();assert.equal(s.requests.length,1);assert.equal(s.requests[0]!.signal!.aborted,false);
     assert.deepEqual(request(s).current_batch.messages.map((m:TimelineEntry)=>m.messageId),['1']);
-    release(tool('send_message',{parts:[{text:'finish original random reply'}]}));
+    release(sendAndFinish({segments:[{type:'text',text:'finish original random reply'}]}));
     await until(()=>s.requests.length===2);await settled();
     assert.equal(s.calls.filter(c=>c.action==='send_group_msg').length,1);
     assert.equal(s.requests.length,2);assert.equal(request(s,1).trigger_kind,'direct');
     assert.deepEqual(request(s,1).trusted_direct_requests.map((r:{message_id:string})=>r.message_id),['2','3']);
     assert.deepEqual(request(s,1).current_batch.messages.map((m:TimelineEntry)=>m.messageId),['2','3']);
-  }finally{release?.(tool('stay_silent'));await s.bot.stop();}
+  }finally{release?.(tool('finish'));await s.bot.stop();}
 });
 
 test('ordinary messages collected while busy receive one random decision at turn end',async()=>{
  for(const probability of [0,1]){
   let release!:(value:Completion)=>void;let rounds=0;
-  const s=setup({config:{randomReplyProbability:probability},complete:async()=>++rounds===1?new Promise<Completion>(resolve=>{release=resolve;}):tool('stay_silent')});
+  const s=setup({config:{randomReplyProbability:probability},complete:async()=>++rounds===1?new Promise<Completion>(resolve=>{release=resolve;}):tool('finish')});
   try{
    await s.bot.receive(event('1',true),self);await until(()=>s.requests.length===1);const before=s.draws;
    for(let n=2;n<=51;n++)await s.bot.receive(event(String(n)),self);
    assert.equal(s.draws,before,'collection must not sample each message');assert.equal(s.requests.length,1);
-   release(tool('stay_silent'));await until(()=>!(s.bot as any).running);await settled();
+   release(tool('finish'));await until(()=>!(s.bot as any).running);await settled();
    assert.equal(s.requests.length,1+probability);
    assert.equal(s.draws,before+1+probability,'one participation draw plus one delay draw only when selected');
    if(probability){assert.equal(request(s,1).trigger_kind,'random');assert.equal(request(s,1).current_batch.messages.length,50);assert.deepEqual(request(s,1).trusted_direct_requests,[]);}
-  }finally{release?.(tool('stay_silent'));await s.bot.stop();}
+  }finally{release?.(tool('finish'));await s.bot.stop();}
  }
 });
 
@@ -243,9 +244,9 @@ test('random decision cooldown and rolling minute cap count silence, not only se
 });
 
 test('structured send_message at becomes native OneBot at, never marker text', async () => {
-  const s = setup({ complete: async () => tool('send_message', { parts: [{ segments: [
+  const s = setup({ complete: async () => sendAndFinish({ segments: [
     { type: 'at', user_id: '12345' }, { type: 'text', text: 'hi' },
-  ] }] }) });
+  ] }) });
   try {
     await s.bot.receive(event('1', true), self); await until(() => s.calls.some(c => c.action === 'send_group_msg'));
     const lookup = s.calls.find(c => c.action === 'get_group_member_info');

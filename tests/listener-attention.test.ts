@@ -12,8 +12,8 @@ function gate<T>(){let resolve!:(v:T)=>void;const promise=new Promise<T>(r=>{res
 function abortable<T>(promise:Promise<T>,signal?:AbortSignal):Promise<T>{return new Promise((resolve,reject)=>{const abort=()=>reject(new DOMException('cancelled','AbortError'));if(signal?.aborted)return abort();signal?.addEventListener('abort',abort,{once:true});promise.then(v=>{signal?.removeEventListener('abort',abort);resolve(v);},e=>{signal?.removeEventListener('abort',abort);reject(e);});});}
 const call=(name:string,args:unknown={})=>({id:`call_${name}`,type:'function' as const,function:{name,arguments:JSON.stringify(args)}});
 const complete=(...calls:ReturnType<typeof call>[]):Completion=>({content:null,tool_calls:calls.map((c,i)=>({...c,id:`${c.id}_${i}`}))});
-const silent=()=>call('stay_silent');
-const send=(text='fixture reply')=>call('send_message',{parts:[{segments:[{type:'text',text}]}]});
+const silent=()=>call('finish');
+const send=(text='fixture reply')=>call('send_message',{segments:[{type:'text',text}]});
 const plan=(any_of:unknown[],purpose?:string)=>call('manage_attention',{operation:'create',any_of,expires_in_seconds:60,...(purpose?{purpose}:{})});
 const member=(user:string,purpose?:string)=>plan([{type:'member_message',user_ids:[user]}],purpose);
 const next=()=>plan([{type:'next_message'}]);
@@ -39,7 +39,7 @@ async function until(check:()=>boolean){for(let n=0;n<300;n++){if(check())return
 const settled=async(s:ReturnType<typeof setup>,count:number)=>until(()=>s.requests.length>=count&&idle(s));
 
 test('two plans after a send coexist, member A consumes only its plan and member B remains awaited',async()=>{
- const s=setup({settings:{tools:{members:true,mention:true,moderation:{mute:'confirm',unmute:'confirm',recall:'confirm',memberCard:'confirm',confirmationTtlSeconds:60,maxMuteSeconds:600}}},respond:r=>r.index===0?complete(send(),member(A,'wait A'),member(B,'wait B')):complete(silent())});try{
+ const s=setup({settings:{tools:{members:true,mention:true,moderation:{mute:'confirm',unmute:'confirm',recall:'confirm',memberCard:'confirm',confirmationTtlSeconds:60,maxMuteSeconds:600}}},respond:r=>r.index===0?complete(send(),member(A,'wait A'),member(B,'wait B'),silent()):complete(silent())});try{
   await s.receive(event('1',OWNER_ID,true));await settled(s,1);assert.equal(plans(s).length,2);assert.equal(s.calls.length,1);
   await s.receive(event('2',A));await settled(s,2);assert.equal(payload(s.requests[1]!).trigger_kind,'attention');assert.equal(state(s.requests[1]!).triggered.length,1);assert.equal(state(s.requests[1]!).triggered[0].purpose,'wait A');
   assert.deepEqual(plans(s).map(p=>p.purpose),['wait B']);assert.deepEqual(payload(s.requests[1]!).moderation_capabilities,{mute:'confirm',unmute:'confirm',recall:'confirm',member_card:'confirm'});assert.ok(s.requests[1]!.tools.some(t=>t.function.name==='mute_member'));
@@ -82,7 +82,7 @@ test('timer latches without unread messages, does not spin, and later inspects n
 });
 
 test('next-message baseline starts after completed sending and ignores bot, foreign, private and duplicate events',async()=>{
- const held=gate<unknown>();const s=setup({respond:r=>r.index===0?complete(next(),send()):complete(silent()),api:async()=>held.promise});try{
+ const held=gate<unknown>();const s=setup({respond:r=>r.index===0?complete(next(),send(),silent()):complete(silent()),api:async()=>held.promise});try{
   await s.receive(event('1',OWNER_ID,true));await until(()=>s.calls.length===1);await s.receive(event('2',A));assert.deepEqual(plans(s),[]);
   held.resolve({message_id:'90000'});await settled(s,1);await delay(15);assert.equal(s.requests.length,1);assert.equal(plans(s).length,1);
   await s.receive(event('3',SELF));await s.receive(event('4',A,false,'foreign','33'));await s.bot.receive({...event('5'),message_type:'private'},SELF);await s.receive(event('2',A));await delay(15);assert.equal(s.requests.length,1);
@@ -98,31 +98,31 @@ test('plan-only round commits after later silence; prose-only end discards stagi
 });
 
 for(const failure of ['model','send','reset','timeout'] as const)test(`staged plans are discarded on ${failure} failure or cancellation`,async()=>{
- const hold=gate<Completion>();const s=setup({settings:{timeoutMs:failure==='timeout'?20:2000},respond:r=>r.index===0?complete(next(),...(failure==='send'?[send()]:[])):failure==='model'?Promise.reject(Error('mock failure')):abortable(hold.promise,r.signal),api:failure==='send'?async()=>{throw Error('mock send failure');}:undefined});try{
+ const hold=gate<Completion>();const s=setup({settings:{timeoutMs:2000,wakeTimeoutMs:failure==='timeout'?1000:90000},respond:r=>r.index===0?complete(next(),...(failure==='send'?[send()]:[])):failure==='model'?Promise.reject(Error('mock failure')):failure==='send'?Promise.reject(Error('send failure follow-up')):abortable(hold.promise,r.signal),api:failure==='send'?async()=>{throw Error('mock send failure');}:undefined});try{
   await s.receive(event('1',OWNER_ID,true));await until(()=>s.requests.length>=(failure==='send'?1:2));
   if(failure==='reset')await s.receive(event('90',OWNER_ID,false,'/reset'));
   await until(()=>idle(s));assert.deepEqual(plans(s),[]);assert.equal((s.bot as any).unread.size,0);
  }finally{hold.resolve(complete(silent()));await s.close();}
 });
 
-test('terminal completion executes trailing attention tools but no extra send, reads or moderation',async()=>{
- const s=setup({settings:{tools:{members:true,mention:true,moderation:{mute:'confirm',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600}}},respond:()=>complete(send('first'),send('extra'),call('get_group_members'),call('mute_member',{user_id:A,seconds:10}),member(B))});try{
-  await s.receive(event('1',OWNER_ID,true));await settled(s,1);assert.equal(s.calls.length,1);assert.equal(s.calls[0]!.action,'send_group_msg');assert.equal(plans(s).length,1);assert.equal(s.requests.length,1);
+test('finish stops trailing attention, extra send, reads and moderation after an earlier send',async()=>{
+ const s=setup({settings:{tools:{members:true,mention:true,moderation:{mute:'confirm',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600}}},respond:()=>complete(send('first'),silent(),send('extra'),call('get_group_members'),call('mute_member',{user_id:A,seconds:10}),member(B))});try{
+  await s.receive(event('1',OWNER_ID,true));await settled(s,1);assert.equal(s.calls.length,1);assert.equal(s.calls[0]!.action,'send_group_msg');assert.equal(plans(s).length,0);assert.equal(s.requests.length,1);
  }finally{await s.close();}
 });
 
-for(const terminal of ['send','silent'] as const)test(`invalid attention after terminal ${terminal} is reported next turn without another planning request`,async()=>{
+for(const terminal of ['send','silent'] as const)test(`invalid attention after finish ${terminal} is ignored rather than staged`,async()=>{
  const invalid=()=>call('manage_attention',{operation:'create',any_of:[{type:'after',delay_seconds:[5,5]}],expires_in_seconds:5});
- const s=setup({respond:r=>r.index===0?complete(terminal==='send'?send():silent(),invalid()):complete(silent())});try{
+ const s=setup({respond:r=>r.index===0?complete(...(terminal==='send'?[send()]:[]),silent(),invalid()):complete(silent())});try{
   await s.receive(event('1',OWNER_ID,true));await settled(s,1);assert.deepEqual(plans(s),[]);assert.equal(s.calls.length,terminal==='send'?1:0);
   await delay(15);assert.equal(s.requests.length,1);
   await s.receive(event('2',OWNER_ID,true));await settled(s,2);
-  assert.deepEqual(state(s.requests[1]!).last_commit.rejected_operations,['invalid_arguments']);assert.deepEqual(state(s.requests[1]!).last_commit.applied,[]);assert.deepEqual(plans(s),[]);
+  assert.equal(state(s.requests[1]!).last_commit,undefined);assert.deepEqual(plans(s),[]);
  }finally{await s.close();}
 });
 
 test('valid trailing attention commits independently of a later invalid operation',async()=>{
- const s=setup({respond:r=>r.index===0?complete(send(),member(B,'valid wait'),call('manage_attention',{operation:'create',any_of:[{type:'after',delay_seconds:[5,5]}],expires_in_seconds:5})):complete(silent())});try{
+ const s=setup({respond:r=>r.index===0?complete(send(),member(B,'valid wait'),call('manage_attention',{operation:'create',any_of:[{type:'after',delay_seconds:[5,5]}],expires_in_seconds:5}),silent()):complete(silent())});try{
   await s.receive(event('1',OWNER_ID,true));await settled(s,1);assert.equal(s.calls.length,1);assert.equal(plans(s).length,1);const id=plans(s)[0]!.plan_id;
   await delay(15);assert.equal(s.requests.length,1);
   await s.receive(event('2',OWNER_ID,true));await settled(s,2);const committed=state(s.requests[1]!).last_commit;

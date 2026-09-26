@@ -35,18 +35,18 @@ const settled=(s:ReturnType<typeof setup>,count:number)=>until(()=>s.requests.le
 const results=(messages:ChatMessage[])=>messages.filter(m=>m.role==='tool').map(m=>JSON.parse(String(m.content)));
 
 test('nonowner direct management executes autonomously, deduplicates, and reports independent modes',async()=>{
- const s=setup({mute:'direct',unmute:'direct'},i=>i===0?response(call('mute_member',{user_id:target,seconds:120})):i===1?response(call('mute_member',{seconds:120,user_id:target}),call('unmute_member',{user_id:target}),call('stay_silent')):response(call('stay_silent')));
+ const s=setup({mute:'direct',unmute:'direct'},i=>i===0?response(call('mute_member',{user_id:target,seconds:120})):i===1?response(call('mute_member',{seconds:120,user_id:target}),call('unmute_member',{user_id:target}),call('finish')):response(call('finish')));
  try{await s.receive();await settled(s,2);
   const payload=JSON.parse(String(s.requests[0]![1]!.content));assert.equal(payload.trusted_actor_id,actor);assert.equal(payload.trusted_moderation_allowed,undefined);
   assert.deepEqual(payload.moderation_capabilities,{mute:'direct',unmute:'direct',recall:'off',member_card:'off'});
   assert.equal(results(s.requests[1]!)[0].status,'executed');
-  assert.deepEqual(s.calls.filter(c=>c.action==='set_group_ban').map(c=>c.params),[{group_id:LISTENER_GROUP,user_id:target,duration:120}]);
+  assert.deepEqual(s.calls.filter(c=>c.action==='set_group_ban').map(c=>c.params),[{group_id:LISTENER_GROUP,user_id:target,duration:120},{group_id:LISTENER_GROUP,user_id:target,duration:0}]);
   assert.equal(s.calls.filter(c=>c.action==='send_group_msg').length,0);
  }finally{await s.bot.stop();}
 });
 
 test('random participation can autonomously unmute without owner request or a mute capability',async()=>{
- const s=setup({unmute:'direct'},i=>i===0?response(call('unmute_member',{user_id:target})):response(call('stay_silent')),{randomReplyProbability:1,randomCooldownMs:0});
+ const s=setup({unmute:'direct'},i=>i===0?response(call('unmute_member',{user_id:target})):response(call('finish')),{randomReplyProbability:1,randomCooldownMs:0});
  try{await s.receive(event('1',actor,'普通群聊',false));await settled(s,2);
   assert.equal(results(s.requests[1]!)[0].status,'executed');assert.deepEqual(s.calls.filter(c=>c.action==='set_group_ban').map(c=>c.params),[{group_id:LISTENER_GROUP,user_id:target,duration:0}]);
   assert.equal(s.calls.filter(c=>c.action==='send_group_msg').length,0);
@@ -54,12 +54,12 @@ test('random participation can autonomously unmute without owner request or a mu
 });
 
 test('default off also blocks owner hallucinated calls without a native lookup',async()=>{
- const s=setup(undefined,i=>i===0?response(call('mute_member',{user_id:target,seconds:120}),call('unmute_member',{user_id:target})):response(call('stay_silent')));
+ const s=setup(undefined,i=>i===0?response(call('mute_member',{user_id:target,seconds:120}),call('unmute_member',{user_id:target})):response(call('finish')));
  try{await s.receive(event('1',OWNER_ID));await settled(s,2);assert.deepEqual(results(s.requests[1]!).map(r=>r.error),['tool_disabled','tool_disabled']);assert.equal(s.calls.length,0);}finally{await s.bot.stop();}
 });
 
 test('a nonowner-triggered autonomous proposal is described and only the owner can confirm it',async()=>{
- const s=setup({mute:'confirm'},()=>response(call('mute_member',{user_id:target,seconds:120})));
+ const s=setup({mute:'confirm'},()=>response(call('mute_member',{user_id:target,seconds:120}),call('finish')));
  try{await s.receive();await settled(s,1);const notices=s.calls.filter(c=>c.action==='send_group_msg');assert.equal(notices.length,1);
   const notice=notices[0]!.params.message.map((x:any)=>x.data.text??'').join('');assert.match(notice,/456/);assert.match(notice,/120/);assert.ok(!notice.includes('undefined'));
   const code=/\/confirm ([a-f0-9]+)/.exec(notice)![1]!;assert.equal(s.calls.filter(c=>c.action==='set_group_ban').length,0);
@@ -69,14 +69,14 @@ test('a nonowner-triggered autonomous proposal is described and only the owner c
 });
 
 test('direct recall is limited to frozen visible messages, not arbitrary guessed IDs',async()=>{
- const s=setup({recall:'direct'},i=>i===0?response(call('recall_message',{message_id:'888'}),call('recall_message',{message_id:'1'})):response(call('stay_silent')));
+ const s=setup({recall:'direct'},i=>i===0?response(call('recall_message',{message_id:'888'}),call('recall_message',{message_id:'1'})):response(call('finish')));
  try{await s.receive();await settled(s,2);const r=results(s.requests[1]!);assert.equal(r[0].error,'message_not_in_context');assert.equal(r[1].status,'executed');
   assert.deepEqual(s.calls.filter(c=>c.action==='get_msg').map(c=>c.params.message_id),['1']);assert.deepEqual(s.calls.filter(c=>c.action==='delete_msg').map(c=>c.params),[{message_id:'1'}]);
  }finally{await s.bot.stop();}
 });
 
 test('ordinary-member bot can recall its own verified historical message through the full listener path',async()=>{
- const s=setup({recall:'direct'},i=>i===0?response(call('recall_message',{message_id:'900'})):response(call('stay_silent')),{},async(action,params)=>{
+ const s=setup({recall:'direct'},i=>i===0?response(call('recall_message',{message_id:'900'})):response(call('finish')),{},async(action,params)=>{
   if(action==='get_group_member_info'&&params.user_id===self)return{group_id:LISTENER_GROUP,user_id:self,role:'member'};
   if(action==='get_msg')return{message_type:'group',group_id:LISTENER_GROUP,message_id:params.message_id,user_id:self,sender:{user_id:self},message:[{type:'text',data:{text:'own message'}}]};
  });
@@ -89,12 +89,12 @@ test('ordinary-member bot can recall its own verified historical message through
 });
 
 test('owner-authored visible messages have no special recall immunity',async()=>{
- const s=setup({recall:'direct'},i=>i===0?response(call('recall_message',{message_id:'1'})):response(call('stay_silent')),{},async(action,params)=>action==='get_msg'?{message_type:'group',group_id:LISTENER_GROUP,message_id:params.message_id,sender:{user_id:OWNER_ID},message:[{type:'text',data:{text:'owner message'}}]}:undefined);
+ const s=setup({recall:'direct'},i=>i===0?response(call('recall_message',{message_id:'1'})):response(call('finish')),{},async(action,params)=>action==='get_msg'?{message_type:'group',group_id:LISTENER_GROUP,message_id:params.message_id,sender:{user_id:OWNER_ID},message:[{type:'text',data:{text:'owner message'}}]}:undefined);
  try{await s.receive(event('1',OWNER_ID));await settled(s,2);assert.equal(results(s.requests[1]!)[0].status,'executed');assert.equal(s.calls.filter(c=>c.action==='delete_msg').length,1);}finally{await s.bot.stop();}
 });
 
 test('unknown direct delivery is not claimed successful and cannot be dispatched again that turn',async()=>{
- const s=setup({mute:'direct'},i=>i===0?response(call('mute_member',{user_id:target,seconds:120})):i===1?response(call('mute_member',{seconds:120,user_id:target})):response(call('stay_silent')),{},async action=>{if(action==='set_group_ban')throw Error('sensitive transport secret');});
+ const s=setup({mute:'direct'},i=>i===0?response(call('mute_member',{user_id:target,seconds:120})):i===1?response(call('mute_member',{seconds:120,user_id:target})):response(call('finish')),{},async action=>{if(action==='set_group_ban')throw Error('sensitive transport secret');});
  try{await s.receive();await settled(s,3);const first=results(s.requests[1]!)[0],retry=results(s.requests[2]!).at(-1);assert.equal(first.status,'unknown');assert.equal(retry.status,'unknown');assert.equal(retry.duplicate,true);
   assert.equal(s.calls.filter(c=>c.action==='set_group_ban').length,1);assert.ok(!JSON.stringify(s.requests).includes('sensitive transport secret'));
  }finally{await s.bot.stop();}
@@ -102,7 +102,7 @@ test('unknown direct delivery is not claimed successful and cannot be dispatched
 
 test('failed or unknown direct results defer prewritten replies until the model reviews the result',async()=>{
  for(const failure of ['unknown','rejected'] as const){
-  const s=setup({mute:'direct'},i=>i===0?response(call('mute_member',{user_id:target,seconds:120}),call('send_message',{parts:[{segments:[{type:'text',text:'PREWRITTEN_SUCCESS_CLAIM'}]}]})):response(call('send_message',{parts:[{segments:[{type:'text',text:'已看到结果，暂不声称成功。'}]}]})),{},async action=>{if(action==='set_group_ban'){if(failure==='unknown')throw Error('transport');return{result:1};}});
+  const s=setup({mute:'direct'},i=>i===0?response(call('mute_member',{user_id:target,seconds:120}),call('send_message',{segments:[{type:'text',text:'PREWRITTEN_SUCCESS_CLAIM'}]})):response(call('send_message',{segments:[{type:'text',text:'已看到结果，暂不声称成功。'}]}),call('finish')),{},async action=>{if(action==='set_group_ban'){if(failure==='unknown')throw Error('transport');return{result:1};}});
   try{await s.receive();await settled(s,2);assert.equal(results(s.requests[1]!)[1].error,'management_result_review_required');
    const sends=s.calls.filter(c=>c.action==='send_group_msg');assert.equal(sends.length,1);assert.ok(!JSON.stringify(sends).includes('PREWRITTEN_SUCCESS_CLAIM'));
    assert.equal(s.calls.filter(c=>c.action==='set_group_ban').length,1);
@@ -111,17 +111,17 @@ test('failed or unknown direct results defer prewritten replies until the model 
 });
 
 test('recall refuses a fresh message whose sender differs from the frozen known sender',async()=>{
- const s=setup({recall:'direct'},i=>i===0?response(call('recall_message',{message_id:'1'})):response(call('stay_silent')),{},async(action,params)=>action==='get_msg'?{message_type:'group',group_id:LISTENER_GROUP,message_id:params.message_id,sender:{user_id:'789'},message:[{type:'text',data:{text:'different message'}}]}:undefined);
+ const s=setup({recall:'direct'},i=>i===0?response(call('recall_message',{message_id:'1'})):response(call('finish')),{},async(action,params)=>action==='get_msg'?{message_type:'group',group_id:LISTENER_GROUP,message_id:params.message_id,sender:{user_id:'789'},message:[{type:'text',data:{text:'different message'}}]}:undefined);
  try{await s.receive();await settled(s,2);assert.equal(results(s.requests[1]!)[0].status,'error');assert.equal(s.calls.filter(c=>c.action==='delete_msg').length,0);}finally{await s.bot.stop();}
 });
 
 test('terminal silence prevents later management calls in the same response',async()=>{
- const s=setup({mute:'direct'},()=>response(call('stay_silent'),call('mute_member',{user_id:target,seconds:120})));
+ const s=setup({mute:'direct'},()=>response(call('finish'),call('mute_member',{user_id:target,seconds:120})));
  try{await s.receive();await settled(s,1);assert.equal(s.calls.length,0);}finally{await s.bot.stop();}
 });
 
 test('media-first gating also defers direct management until a later model response',async()=>{
- const s=setup({mute:'direct'},i=>i===0?response(call('view_images',{image_ids:['img_1_0']}),call('mute_member',{user_id:target,seconds:120})):response(call('stay_silent')));
+ const s=setup({mute:'direct'},i=>i===0?response(call('view_images',{image_ids:['img_1_0']}),call('mute_member',{user_id:target,seconds:120})):response(call('finish')));
  try{await s.receive();await settled(s,2);assert.equal(results(s.requests[1]!)[1].error,'先接收本轮图片内容，再在下一轮决定回复或操作。');assert.equal(s.calls.length,0);}finally{await s.bot.stop();}
 });
 

@@ -13,7 +13,7 @@ const config: ListenerConfig = {
   randomReplyProbability: 0, randomCooldownMs: 0, randomMaxPerMinute: 100,
 };
 function gate<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { promise, resolve }; }
-const silent = (): Completion => tool('stay_silent');
+const silent = (): Completion => tool('finish');
 function tool(name: string, args: unknown = {}): Completion {
   return { content: null, tool_calls: [{ id: `call_${name}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }] };
 }
@@ -141,9 +141,9 @@ test('active model is not interrupted and elapsed pending deadline does not rest
   } finally { active.resolve(silent()); await flush(); await s.bot.stop(); }
 });
 
-test('new caller during first send does not cancel remaining multipart output', async () => {
+test('new caller during first send does not cancel later single-message calls before finish', async () => {
   const sending = gate<unknown>(); let sends = 0; let rounds = 0;
-  const s = setup({ complete: async () => ++rounds === 1 ? tool('send_message', { parts: [{ text: 'first' }, { text: 'second' }] }) : silent(),
+  const s = setup({ complete: async () => ++rounds === 1 ? {content:null,tool_calls:[...tool('send_message',{segments:[{type:'text',text:'first'}]}).tool_calls,...tool('send_message',{segments:[{type:'text',text:'second'}]}).tool_calls.map(c=>({...c,id:'second'})),...silent().tool_calls]} : silent(),
     api: async action => action === 'send_group_msg' && ++sends === 1 ? sending.promise : { message_id: '90002' } });
   try {
     await s.bot.receive(event('1'), self); await until(() => sends === 1);

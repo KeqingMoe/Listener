@@ -35,8 +35,8 @@ test('actual entrypoint shares local transports, isolates two group databases, a
   const group=/本轮只服务群 (\d+)/.exec(body.messages[0].content)?.[1];assert.ok(group===A||group===B);
   requests.push({group,body});
   if(holdModel){held=res;res.once('close',()=>{heldCancelled=!res.writableEnded;notify();});notify();return;}
-  const args={parts:[{segments:group===A?[{type:'face',id:'20'}]:[{type:'text',text:'reply-only-B'}]}]};
-  res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[{id:`fixture_${requests.length}`,type:'function',function:{name:'send_message',arguments:JSON.stringify(args)}}]}}]}));notify();
+  const args={segments:group===A?[{type:'face',id:'20'}]:[{type:'text',text:'reply-only-B'}]};
+  res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[{id:`fixture_${requests.length}`,type:'function',function:{name:'send_message',arguments:JSON.stringify(args)}},{id:`finish_${requests.length}`,type:'function',function:{name:'finish',arguments:'{}'}}]}}]}));notify();
  })().catch(error=>{fail(error);if(!res.headersSent)res.writeHead(500);res.end();});});
  http.on('connection',socket=>{sockets.add(socket);socket.on('close',()=>{sockets.delete(socket);notify();});});http.on('error',fail);
  const ws=new WebSocketServer({host:'127.0.0.1',port:0});ws.on('error',fail);

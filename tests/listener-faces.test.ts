@@ -32,7 +32,7 @@ function setup(reply: unknown) {
   const calls: Array<{ action: string; params: any }> = [];
   const requests: ChatMessage[][] = [];
   const api: Api = { async call(action, params) { calls.push({ action, params }); if (action === 'send_group_msg') return { message_id: String(900 + calls.length) }; return {}; } };
-  const model: Model = { async complete(messages) { requests.push(structuredClone(messages)); return requests.length === 1 ? completion('send_message', reply) : completion('stay_silent', {}); } };
+  const model: Model = { async complete(messages) { requests.push(structuredClone(messages)); return requests.length === 1 ? completion('send_message', reply) : completion('finish', {}); } };
   const bot = new Listener(api, model, memory, config);
   return { bot, memory, calls, requests };
 }
@@ -41,15 +41,15 @@ async function until(check: () => boolean) { for (let i = 0; i < 200; i++) { if 
 test('super face layout guidance survives both mention modes without restricting the schema', () => {
   assert.ok(buildSystemPrompt(config).includes(FACE_LAYOUT_GUIDANCE));
   assert.match(FACE_LAYOUT_GUIDANCE, /不设置 reply_to/);
-  assert.match(FACE_LAYOUT_GUIDANCE, /独立作为一个 part/);
+  assert.match(FACE_LAYOUT_GUIDANCE, /单独调用.*send_message/);
   for(const mention of [true,false]){
-    const cfg:ListenerConfig={...config,maxParts:10,tools:{members:true,mention,moderation:{mute:'off',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600}}};
+    const cfg:ListenerConfig={...config,tools:{members:true,mention,moderation:{mute:'off',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600}}};
     const send=buildToolDefinitions(cfg).find(t=>t.function.name==='send_message')!;
     assert.ok(send.function.description.includes(FACE_LAYOUT_GUIDANCE));
     const params:any=send.function.parameters;
-    assert.equal(params.properties.parts.maxItems,10);
-    assert.equal(params.properties.parts.items.properties.segments.maxItems,12);
-    assert.ok(params.properties.parts.items.properties.reply_to);
+    assert.equal(params.properties.parts,undefined);
+    assert.equal(params.properties.segments.maxItems,12);
+    assert.ok(params.properties.reply_to);
   }
 });
 
@@ -57,20 +57,20 @@ function faceSchema(configOverrides: Partial<ListenerConfig> = {}) {
   const tools = buildToolDefinitions({ ...config, ...configOverrides });
   const send = tools.find(t => t.function.name === 'send_message')!;
   const params: any = send.function.parameters;
-  const variants = params.properties.parts.items.properties.segments.items.oneOf as any[];
+  const variants = params.properties.segments.items.oneOf as any[];
   return { params, variants, face: variants.find(v => v.properties.type.const === 'face') };
 }
 
 test('send tool includes strict ordinary and animated face choices without adding a quota', () => {
-  const { params, face } = faceSchema({ maxParts: 10 });
+  const { params, face } = faceSchema();
   assert.ok(face); assert.equal(face.additionalProperties, false); assert.deepEqual(face.required, ['type', 'id']);
   assert.deepEqual(Object.keys(face.properties).sort(), ['id', 'name', 'type']);
   assert.equal(face.properties.name.maxLength,80);
   assert.equal(face.properties.id.type, 'string');
   for (const id of ['0', '6', '14', '20', '21', '22', '32', '375']) assert.ok(face.properties.id.enum.includes(id), id);
   assert.ok(!face.properties.id.enum.includes('999999'));
-  assert.equal(params.properties.parts.maxItems, 10);
-  assert.equal(params.properties.parts.items.properties.segments.maxItems, 12);
+  assert.equal(params.properties.parts, undefined);
+  assert.equal(params.properties.segments.maxItems, 12);
 });
 
 test('mention-disabled tool schema keeps face variant and removes only at', () => {
@@ -100,7 +100,7 @@ test('unknown and malformed incoming IDs keep safe generic markers rather than r
 });
 
 test('face-only model reply sends native OneBot face and persists semantic marker', async () => {
-  const s = setup({ parts: [{ segments: [{ type: 'face', id: '375' }] }] });
+  const s = setup({ segments: [{ type: 'face', id: '375' }] });
   try {
     await s.bot.receive(event([{ type: 'at', data: { qq: self } }, { type: 'face', data: { id: '20', raw: 'SECRET_RAW' } }]), self);
     await until(() => s.memory.entries.some(e => e.bot));
@@ -113,7 +113,7 @@ test('face-only model reply sends native OneBot face and persists semantic marke
 });
 
 test('mixed native face reply retains text ordering and verified local reply target', async () => {
-  const s = setup({ parts: [{ reply_to: '1', segments: [{ type: 'text', text: 'before' }, { type: 'face', id: '0' }, { type: 'text', text: 'after' }, { type: 'face', id: '20' }] }] });
+  const s = setup({ reply_to: '1', segments: [{ type: 'text', text: 'before' }, { type: 'face', id: '0' }, { type: 'text', text: 'after' }, { type: 'face', id: '20' }] });
   try {
     await s.bot.receive(event([{ type: 'at', data: { qq: self } }, { type: 'text', data: { text: 'hello' } }]), self);
     await until(() => s.memory.entries.some(e => e.bot));
@@ -126,10 +126,10 @@ test('mixed native face reply retains text ordering and verified local reply tar
   } finally { await s.bot.stop(); }
 });
 
-test('invalid later face prevents every earlier message and membership lookup', async () => {
-  const s = setup({ parts: [
-    { segments: [{ type: 'text', text: 'must not send' }, { type: 'at', user_id: '456' }] },
-    { segments: [{ type: 'face', id: '375', chainCount: 3 }] },
+test('invalid face in a single message prevents that message and membership lookup', async () => {
+  const s = setup({ segments: [
+    { type: 'text', text: 'must not send' }, { type: 'at', user_id: '456' },
+    { type: 'face', id: '375', chainCount: 3 },
   ] });
   try {
     await s.bot.receive(event([{ type: 'at', data: { qq: self } }]), self);

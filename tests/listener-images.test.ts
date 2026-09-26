@@ -26,7 +26,7 @@ function event(overrides: Record<string, unknown> = {}) {
 }
 function call(id: string, name: string, args: unknown): ToolCall { return { id, type: 'function', function: { name, arguments: JSON.stringify(args) } }; }
 const view = (ids = ['img_1_1'], id = 'view') => call(id, 'view_images', { image_ids: ids });
-const send = (text = 'after seeing image') => call('send', 'send_message', { parts: [{ segments: [{ type: 'text', text }] }] });
+const send = (text = 'after seeing image') => call('send', 'send_message', { segments: [{ type: 'text', text }] });
 const completion = (...tool_calls: ToolCall[]): Completion => ({ content: null, tool_calls });
 async function until(check: () => boolean) { for (let i = 0; i < 100; i++) { if (check()) return; await delay(5); } assert.fail('timed out'); }
 function setup(responses: Completion[], settings: Partial<ListenerConfig> = {}, downloader?: ImageDownloader) {
@@ -39,7 +39,7 @@ function setup(responses: Completion[], settings: Partial<ListenerConfig> = {}, 
     if (action === 'send_group_msg') return { message_id: String(100 + apiCalls.length) };
     throw new Error('unexpected API');
   } };
-  const model: Model = { async complete(messages, tools) { requests.push(structuredClone(messages)); schemas.push(tools?.map(t => t.function.name) ?? []); onComplete?.(requests.length); return responses.shift() ?? completion(call('silent', 'stay_silent', {})); } };
+  const model: Model = { async complete(messages, tools) { requests.push(structuredClone(messages)); schemas.push(tools?.map(t => t.function.name) ?? []); onComplete?.(requests.length); return responses.shift() ?? completion(call('silent', 'finish', {})); } };
   const bot = new Listener(api, model, memory, { ...cfg, ...settings }, () => 1, async (...args) => { downloads.push(args[0]); return downloader ? downloader(...args) : { dataUrl: bytes, width: 1, height: 1, firstFrameOnly: false }; });
   return { bot, memory, requests, schemas, apiCalls, downloads, setOnComplete(fn: typeof onComplete) { onComplete = fn; } };
 }
@@ -54,7 +54,7 @@ function assertNativeSequence(messages: ChatMessage[], ids: string[]) {
 }
 
 test('native image viewing uses same model then sends; memory holds only image references', async () => {
-  const s = setup([completion(view()), completion(send())]);
+  const s = setup([completion(view()), completion(send(),call('finish','finish',{}))]);
   try {
     await s.bot.receive(event(), self);
     await until(() => s.apiCalls.some(c => c.action === 'send_group_msg'));
@@ -72,7 +72,7 @@ test('native image viewing uses same model then sends; memory holds only image r
 test('mixed view/send/read batch responds to every call before image user content and defers send', async () => {
   for (const sendFirst of [false, true]) {
     const batch = sendFirst ? [send('premature'), view(), call('read', 'read_message', { message_id: '1' })] : [view(), send('premature'), call('read', 'read_message', { message_id: '1' })];
-    const s = setup([completion(...batch), completion(send('verified reply'))]);
+    const s = setup([completion(...batch), completion(send('verified reply'),call('finish','finish',{}))]);
     let sentBeforeSecond = false;
     s.setOnComplete(round => { if (round === 2) sentBeforeSecond = s.apiCalls.some(c => c.action === 'send_group_msg'); });
     try {
@@ -87,7 +87,7 @@ test('mixed view/send/read batch responds to every call before image user conten
 });
 
 test('quoted image is discovered through read_message then remotely verified before viewing', async () => {
-  const s = setup([completion(call('read', 'read_message', { message_id: '2' })), completion(view(['img_2_1'])), completion(send())]);
+  const s = setup([completion(call('read', 'read_message', { message_id: '2' })), completion(view(['img_2_1'])), completion(send(),call('finish','finish',{}))]);
   try {
     await s.bot.receive(event({ message: [{ type: 'at', data: { qq: self } }, { type: 'reply', data: { id: '2' } }, { type: 'text', data: { text: 'what is in that picture?' } }] }), self);
     await until(() => s.apiCalls.some(c => c.action === 'send_group_msg'));
@@ -103,7 +103,7 @@ test('quoted image is discovered through read_message then remotely verified bef
 });
 
 test('disabled images hide schema and reject forged view calls without API or downloader', async () => {
-  const s = setup([completion(view()), completion(call('silent', 'stay_silent', {}))], { images: { ...cfg.images!, enabled: false } });
+  const s = setup([completion(view()), completion(call('silent', 'finish', {}))], { images: { ...cfg.images!, enabled: false } });
   try {
     await s.bot.receive(event(), self); await until(() => s.requests.length === 2);
     assert.ok(s.schemas.every(names => !names.includes('view_images'))); assert.equal(s.apiCalls.length, 0); assert.equal(s.downloads.length, 0);
@@ -113,7 +113,7 @@ test('disabled images hide schema and reject forged view calls without API or do
 });
 
 test('image turn budget spans model calls and duplicates do not reload', async () => {
-  const s = setup([completion(view(['img_1_1'], 'v1')), completion(view(['img_1_1', 'img_1_2'], 'v2')), completion(view(['img_1_3'], 'v3')), completion(send())], { images: { ...cfg.images!, maxPerTurn: 2 } });
+  const s = setup([completion(view(['img_1_1'], 'v1')), completion(view(['img_1_1', 'img_1_2'], 'v2')), completion(view(['img_1_3'], 'v3')), completion(send(),call('finish','finish',{}))], { images: { ...cfg.images!, maxPerTurn: 2 } });
   try {
     await s.bot.receive(event({ message: [{ type: 'at', data: { qq: self } }, attachment, attachment, attachment] }), self);
     await until(() => s.apiCalls.some(c => c.action === 'send_group_msg'));

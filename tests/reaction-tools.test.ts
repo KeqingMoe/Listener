@@ -235,21 +235,22 @@ test('already dispatched writes report success or unknown despite subsequent can
   }
 });
 
-test('32-operation budget is shared across pairs, bounds the map, and invalid input costs nothing', async () => {
+test('more than 32 reaction pairs are accepted and invalid arguments never dispatch', async () => {
   const f = fixture({ entries: Array.from({ length: 33 }, (_, i) => entry(String(i + 1))) });
   for (let i = 0; i < 100; i++) await f.tools.react({ ...args(), action: 'invalid' }, context, f.state);
   const results = await Promise.all(Array.from({ length: 33 }, (_, i) => f.tools.react(args(String(i + 1)), context, f.state)));
-  assert.equal(results.filter(r => r.status === 'ok').length, 32); assert.equal(results[32]!.error, 'call_limit');
-  assert.equal(f.calls.filter(c => c.action === 'get_msg').length, 32);
-  assert.equal(f.calls.filter(c => c.action === 'set_msg_emoji_like').length, 32);
+  assert.equal(results.filter(r => r.status === 'ok').length, 33); assert.equal(results[32]!.status, 'ok');
+  assert.equal(f.calls.filter(c => c.action === 'get_msg').length, 33);
+  assert.equal(f.calls.filter(c => c.action === 'set_msg_emoji_like').length, 33);
   assert.equal((await f.tools.react(args(), context, f.state)).duplicate, true);
 });
 
-test('alternating one pair cannot bypass budget, duplicates still return cached results at the limit', async () => {
+test('alternating one pair has no local call ceiling and duplicates still return cached results', async () => {
   const f = fixture();
-  for (let i = 0; i < 32; i++) assert.equal((await f.tools.react(args('1', i % 2 ? 'remove' : 'add'), context, f.state)).status, 'ok');
-  assert.equal(f.calls.length, 64);
-  assert.equal((await f.tools.react(args(), context, f.state)).error, 'call_limit');
+  for (let i = 0; i < 64; i++) assert.equal((await f.tools.react(args('1', i % 2 ? 'remove' : 'add'), context, f.state)).status, 'ok');
+  assert.equal(f.calls.length, 128);
   assert.equal((await f.tools.react(args('1', 'remove'), context, f.state)).duplicate, true);
-  assert.equal(f.calls.length, 64);
+  assert.equal(f.calls.length, 128);
+  assert.equal((await f.tools.react(args(), context, f.state)).status, 'ok');
+  assert.equal(f.calls.length, 130);
 });

@@ -97,7 +97,7 @@ test('follow tolerates truncation and replacement without repeating old records'
 
 test('malformed and injected raw fields are never printed', async t => {
   const root = await fixture(t);
-  const malicious = { body: 'private-body', msg: 'private-msg', content: 'private-content', headers: { Authorization: 'private-token' }, err: { stack: 'private-stack' }, card: 'private-card', confirmationcode: 'private-code', url: 'https://private.example/path', status: 'private status', tool: 'private-tool', tools: ['private-tool', 'stay_silent'] };
+  const malicious = { body: 'private-body', msg: 'private-msg', content: 'private-content', headers: { Authorization: 'private-token' }, err: { stack: 'private-stack' }, card: 'private-card', confirmationcode: 'private-code', url: 'https://private.example/path', status: 'private status', tool: 'private-tool', tools: ['private-tool', 'finish'] };
   await writeFile(join(root, name(1)), [
     'private-malformed\n', 'null\n', '[]\n', '42\n',
     row(1, malicious), row(2, { event: 'app.event\nprivate-injection' }),
@@ -108,7 +108,7 @@ test('malformed and injected raw fields are never printed', async t => {
   const lines = await new LogReader(root, options).scan(true);
   assert.deepEqual(counts(lines), [1, 6, 7]);
   assert.ok(!lines.join('\n').includes('private'));
-  assert.ok(lines[0]!.includes('tools=["stay_silent"]'));
+  assert.ok(lines[0]!.includes('tools=["finish"]'));
 });
 
 test('owned symlink files and directories are skipped, final directory symlink is rejected', async t => {

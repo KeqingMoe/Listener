@@ -24,51 +24,47 @@ function setup(options: GroupToolsOptions = {}, response?: unknown) {
 test('ordinary zero and animated faces are independently visible without text', async () => {
   const s = setup();
   for (const id of ['0', '20', '375']) {
-    const result = await s.tools.prepareMessage({ parts: [part([face(id)])] }, context);
-    assert.deepEqual(result[0]!.segments, [{ type: 'face', data: { id } }]);
-    assert.equal(result[0]!.text, faceMarker(id));
+    const result = await s.tools.prepareMessage(part([face(id)]), context);
+    assert.deepEqual(result.segments, [{ type: 'face', data: { id } }]);
+    assert.equal(result.text, faceMarker(id));
   }
   assert.equal(s.calls.length, 0);
 });
 
 test('text at and face retain exact segment order and local reply target', async () => {
   const s = setup();
-  const result = await s.tools.prepareMessage({ parts: [{ reply_to: '1', segments: [
+  const result = await s.tools.prepareMessage({reply_to:'1',segments:[
     { type: 'text', text: 'hello' }, { type: 'at', user_id: '456' }, face('20'), { type: 'text', text: 'bye' }, face('375'),
-  ] }] }, context);
-  assert.deepEqual(result[0]!.segments, [
+  ] }, context);
+  assert.deepEqual(result.segments, [
     { type: 'text', data: { text: 'hello' } }, { type: 'at', data: { qq: '456' } },
     { type: 'face', data: { id: '20' } }, { type: 'text', data: { text: 'bye' } }, { type: 'face', data: { id: '375' } },
   ]);
-  assert.equal(result[0]!.replyTo, '1');
-  assert.equal(result[0]!.text, `hello[at:456]${faceMarker('20')}bye${faceMarker('375')}`);
+  assert.equal(result.replyTo, '1');
+  assert.equal(result.text, `hello[at:456]${faceMarker('20')}bye${faceMarker('375')}`);
   assert.deepEqual(s.calls.map(c => c.action), ['get_group_member_info']);
 });
 
-test('face quantities use only existing 12 segments and configured ten parts caps', async () => {
-  const s = setup({ maxParts: 10 });
-  const twelve = Array.from({ length: 12 }, () => face('375'));
-  assert.equal((await s.tools.prepareMessage({ parts: [part(twelve)] }, context))[0]!.segments.length, 12);
-  const result = await s.tools.prepareMessage({ parts: Array.from({ length: 10 }, () => part(twelve)) }, context);
-  assert.equal(result.length, 10);
-  assert.equal(result.flatMap(p => p.segments).length, 120);
-  await assert.rejects(s.tools.prepareMessage({ parts: [part([...twelve, face('0')])] }, context), /invalid_arguments/);
-  await assert.rejects(s.tools.prepareMessage({ parts: Array.from({ length: 11 }, () => part([face('0')])) }, context), /invalid_arguments/);
-  assert.equal(s.calls.length, 0);
+test('one message supports twelve faces without a separate face or parts quota',async()=>{
+ const s=setup(),twelve=Array.from({length:12},()=>face('375'));
+ assert.equal((await s.tools.prepareMessage(part(twelve),context)).segments.length,12);
+ await assert.rejects(s.tools.prepareMessage(part([...twelve,face('0')]),context),/invalid_arguments/);
+ await assert.rejects(s.tools.prepareMessage({parts:[part(twelve)]},context),/invalid_arguments/);
+ assert.equal(s.calls.length,0);
 });
 
 test('faces do not consume mention quota and disabling mentions preserves faces', async () => {
   const s = setup();
   const ats = ['456', '457', '458'].map(user_id => ({ type: 'at', user_id }));
-  const result = await s.tools.prepareMessage({ parts: [part([...ats, ...Array.from({ length: 9 }, () => face('20'))])] }, context);
-  assert.equal(result[0]!.segments.length, 12);
+  const result = await s.tools.prepareMessage(part([...ats, ...Array.from({ length: 9 }, () => face('20'))]), context);
+  assert.equal(result.segments.length, 12);
   assert.equal(s.calls.length, 3);
   const denied = setup();
-  await assert.rejects(denied.tools.prepareMessage({ parts: [part([...ats, { type: 'at', user_id: '459' }, face('0')])] }, context));
+  await assert.rejects(denied.tools.prepareMessage(part([...ats, { type: 'at', user_id: '459' }, face('0')]), context));
   assert.equal(denied.calls.length, 0);
   const noMention = setup({ mention: false });
-  assert.equal((await noMention.tools.prepareMessage({ parts: [part([face('375')])] }, context)).length, 1);
-  await assert.rejects(noMention.tools.prepareMessage({ parts: [part([face('20'), ats[0]])] }, context), /tool_disabled/);
+  assert.equal((await noMention.tools.prepareMessage(part([face('375')]), context)).segments.length, 1);
+  await assert.rejects(noMention.tools.prepareMessage(part([face('20'), ats[0]]), context), /tool_disabled/);
   assert.equal(noMention.calls.length, 0);
 });
 
@@ -79,10 +75,7 @@ test('all invalid face IDs and extra animation fields fail before earlier member
   ];
   for (const segment of invalid) {
     const s = setup();
-    await assert.rejects(s.tools.prepareMessage({ parts: [
-      { segments: [{ type: 'at', user_id: '456' }], reply_to: '2' },
-      part([segment]),
-    ] }, context), /invalid_arguments/);
+    await assert.rejects(s.tools.prepareMessage({segments:[{type:'at',user_id:'456'},segment],reply_to:'2'}, context), /invalid_arguments/);
     assert.equal(s.calls.length, 0, JSON.stringify(segment));
   }
 });

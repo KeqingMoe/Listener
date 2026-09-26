@@ -203,5 +203,6 @@ export class Moderation {
       return await this.execute(action, fixed, target, signal, pending.expires);
     } catch (error) { this.audit(pending?.action.name ?? 'invalid', fixed, pending?.target, 'confirmation_denied', undefined, 'confirm'); return this.resultError(error); }
   }
+  cancelPending(code: string): boolean { return this.pending.delete(code); }
   dispose(): void { this.disposed = true; this.pending.clear(); }
 }

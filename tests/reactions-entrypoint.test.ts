@@ -16,7 +16,7 @@ const A=LISTENER_GROUP,B='22',SELF='99999';
 function event(group:string,id:string,body:string){return {post_type:'message',message_type:'group',group_id:group,user_id:group===A?'111':'222',self_id:SELF,message_id:id,time:Math.floor(Date.now()/1000),sender:{nickname:group===A?'user-A':'user-B'},message:[{type:'at',data:{qq:SELF}},{type:'text',data:{text:body}}]};}
 const tool=(name:string,args:unknown={})=>({id:`fixture_${name}`,type:'function',function:{name,arguments:JSON.stringify(args)}});
 const react=(id:string,emoji='76',action:'add'|'remove'='add')=>tool('react_message',{message_id:id,emoji_id:emoji,action});
-const send=(body:string)=>tool('send_message',{parts:[{segments:[{type:'text',text:body}]}]});
+const send=(body:string)=>tool('send_message',{segments:[{type:'text',text:body}]});
 async function bounded<T>(promise:Promise<T>,ms:number):Promise<T>{let timer:NodeJS.Timeout|undefined;try{return await Promise.race([promise,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error('fixture operation timed out')),ms);})]);}finally{clearTimeout(timer);}}
 
 test('real entrypoint performs isolated reactions, exposes only local ledger state, and cancels an in-flight mutation on SIGTERM',{timeout:30000},async()=>{
@@ -34,12 +34,12 @@ test('real entrypoint performs isolated reactions, exposes only local ledger sta
   assert.ok(body.tools.some((t:any)=>t.function.name==='react_message'));const payload=JSON.parse(body.messages.find((m:any)=>m.role==='user').content);
   const round=(rounds.get(group)??0)+1;rounds.set(group,round);requests.push({group,round,body,payload});
   let operations;
-  if(group===A&&round===1)operations=[send('only-A-reaction-reply'),react('101')];
-  else if(group===B&&round===1)operations=[tool('stay_silent'),react('201','128077')];
-  else if(group===A&&round===2)operations=[react('201'),react('101','76','remove'),tool('stay_silent')];
-  else if(group===B&&round===2)operations=[send('only-B-reaction-reply'),react('202')];
-  else if(group===A&&round===3)operations=[tool('stay_silent')];
-  else if(group===B&&round===3)operations=[react('203'),send('must-not-send-after-cancel'),react('201','128077','remove'),tool('stay_silent')];
+  if(group===A&&round===1)operations=[send('only-A-reaction-reply'),react('101'),tool('finish')];
+  else if(group===B&&round===1)operations=[react('201','128077'),tool('finish')];
+  else if(group===A&&round===2)operations=[react('201'),react('101','76','remove'),tool('finish')];
+  else if(group===B&&round===2)operations=[send('only-B-reaction-reply'),react('202'),tool('finish')];
+  else if(group===A&&round===3)operations=[tool('finish')];
+  else if(group===B&&round===3)operations=[react('203'),send('must-not-send-after-cancel'),react('201','128077','remove'),tool('finish')];
   else throw Error('unexpected fixture model request');
   for(const op of operations){if(op.function.name!=='react_message')continue;const args=JSON.parse(op.function.arguments),original=events.get(args.message_id);if(original?.group_id!==group)continue;const floors=verificationFloors.get(args.message_id)??[];floors.push(verified.get(args.message_id)??0);verificationFloors.set(args.message_id,floors);}
   res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:operations.map((op,i)=>({...op,id:`${op.id}_${group}_${round}_${i}`}))}}]}));notify();

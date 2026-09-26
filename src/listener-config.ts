@@ -19,10 +19,11 @@ export interface ListenerConfig {
   groupId?: string;
   enabled: boolean; baseUrl: string; apiKey: string; model: string;
   timeoutMs: number; maxTokens: number; debounceMs: number; cooldownMs: number;
+  maxToolCallsPerWake?: number; wakeTimeoutMs?: number;
   memoryPath: string; maxContextChars: number; retentionDays: number;
   randomReplyProbability?: number; randomCooldownMs?: number; randomMaxPerMinute?: number; delayMaxMs?: number;
   persona?: string; botName?: string; ownerName?: string;
-  mentionEnabled?: boolean; quoteBotEnabled?: boolean; maxParts?: number;
+  mentionEnabled?: boolean; quoteBotEnabled?: boolean;
   tools?: ToolsConfig;
   images?: ImagesConfig;
   forward?: ForwardConfig;

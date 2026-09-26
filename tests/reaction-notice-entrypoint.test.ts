@@ -28,8 +28,8 @@ test('real entrypoint receives wire reaction notices and refreshes the bot messa
   let source='';for await(const chunk of req)source+=chunk.toString();
   const body=JSON.parse(source);assert.equal(req.headers.authorization,'Bearer fixture-key');
   assert.equal(body.model,'fixture-notice-model');const payload=JSON.parse(body.messages.find((m:any)=>m.role==='user').content);payloads.push(payload);
-  const op=payloads.length===1?{name:'send_message',arguments:JSON.stringify({parts:[{segments:[{type:'text',text:'bot message to receive reaction'}]}]})}:{name:'stay_silent',arguments:'{}'};
-  res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[{id:`op_${payloads.length}`,type:'function',function:op}]}}]}));notify();
+  const op=payloads.length===1?{name:'send_message',arguments:JSON.stringify({segments:[{type:'text',text:'bot message to receive reaction'}]})}:{name:'finish',arguments:'{}'};
+  res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[{id:`op_${payloads.length}`,type:'function',function:op},...(op.name==='send_message'?[{id:`finish_${payloads.length}`,type:'function',function:{name:'finish',arguments:'{}'}}]:[])]}}]}));notify();
  })().catch(error=>{fail(error);if(!res.headersSent)res.writeHead(500);res.end();});});
  http.on('connection',socket=>{sockets.add(socket);socket.once('close',()=>{sockets.delete(socket);notify();});});http.on('error',fail);
  const ws=new WebSocketServer({host:'127.0.0.1',port:0});ws.on('error',fail);

@@ -11,8 +11,8 @@ const base:ListenerConfig={groupId:GROUP,enabled:true,baseUrl:'https://example.i
 const call=(name:string,args:unknown={})=>({id:`call_${name}`,type:'function' as const,function:{name,arguments:JSON.stringify(args)}});
 const complete=(...calls:ReturnType<typeof call>[]):Completion=>({content:null,tool_calls:calls.map((c,i)=>({...c,id:`${c.id}_${i}`}))});
 const query=(extra:JsonObject={})=>call('get_reaction_users',{message_id:'8',emoji_id:'76',emoji_type:'1',...extra});
-const silent=()=>call('stay_silent');
-const send=(body='fixture answer')=>call('send_message',{parts:[{segments:[{type:'text',text:body}]}]});
+const silent=()=>call('finish');
+const send=(body='fixture answer')=>call('send_message',{segments:[{type:'text',text:body}]});
 const plan=()=>call('manage_attention',{operation:'create',any_of:[{type:'next_message'}],expires_in_seconds:60});
 const text=(body:string)=>({type:'text',data:{text:body}});
 const row=(messageId:string,userId=SELF):TimelineEntry=>({messageId,userId,nickname:'fixture',text:`body-${messageId}`,time:Math.floor(Date.now()/1000),...(userId===SELF?{bot:true}:{})});
@@ -58,7 +58,7 @@ test('disabled reactions hide the actor-list tool and reject forged calls withou
 });
 
 test('own bot message target is verified afresh and the model receives sanitized users rather than avatar URLs',async()=>{
- const s=setup({respond:r=>r.index===0?complete(query({user_id:OWNER_ID})):complete(send('verified answer'))});try{await s.receive(event('1',OWNER_ID));await settled(s,2);
+ const s=setup({respond:r=>r.index===0?complete(query({user_id:OWNER_ID})):complete(send('verified answer'),silent())});try{await s.receive(event('1',OWNER_ID));await settled(s,2);
  assert.equal(fetches(s).length,1);assert.deepEqual(fetches(s)[0]!.params,{message_id:'8',emojiId:'76',emojiType:'1',count:20,cookie:''});
  const index=s.calls.indexOf(fetches(s)[0]!);assert.equal(s.calls[index-1]!.action,'get_msg');assert.equal(s.calls[index-1]!.params.message_id,'8');assert.equal(s.calls[index-1]!.round,1,'automatic aggregate lookup cannot replace the per-page live proof');
  const result=latest(s.requests[1]!);assert.equal(result.status,'ok');assert.equal(result.target_user_id,OWNER_ID);assert.equal(result.target_found,true);assert.equal(result.complete,true);assert.equal(result.has_more,false);assert.ok(result.users.some((u:any)=>u.user_id===OWNER_ID&&u.nickname==='fixture owner'));
@@ -104,24 +104,24 @@ test('opaque cursor cannot change its bound target filter or survive into a new 
  try{await s.receive(event('1'));await settled(s,3);assert.notEqual(latest(s.requests[2]!).status,'ok');assert.equal(fetches(s).length,1);await s.receive(event('2'));await settled(s,5);assert.notEqual(latest(s.requests[4]!).status,'ok');assert.equal(fetches(s).length,1);}finally{await s.close();}
 });
 
-test('actor page budget allows eight reads and blocks the ninth without another fetch',async()=>{
+test('shared wake budget allows all nine independent actor reads without a per-tool quota',async()=>{
  const s=setup({respond:r=>r.index===0?complete(...Array.from({length:9},(_,i)=>query({message_id:String(20+i)}))):complete(silent())});try{
   for(let i=20;i<29;i++)s.memory.append(row(String(i)));await s.receive(event('1'));await settled(s,2);
-  assert.equal(fetches(s).length,8);const returned=results(s.requests[1]!);assert.equal(returned.length,9);assert.ok(returned.slice(0,8).every(r=>r.status==='ok'));assert.notEqual(returned[8].status,'ok');
+  assert.equal(fetches(s).length,9);const returned=results(s.requests[1]!);assert.equal(returned.length,9);assert.ok(returned.every(r=>r.status==='ok'));
  }finally{await s.close();}
 });
 
-test('eight actor pages ending with empty EOF still allow a ninth model round to answer',async()=>{
+test('twelve actor pages and a thirteenth answer round use the shared budget without an old page or round cap',async()=>{
  let pages=0;
  const s=setup({respond:r=>{
   if(r.index===0)return complete(query({user_id:OWNER_ID}));
   const result=latest(r);
-  if(r.index<8){assert.equal(result.complete,false);assert.equal(result.target_found,null);assert.equal(typeof result.next_cursor,'string');return complete(query({user_id:OWNER_ID,cursor:result.next_cursor}));}
-  assert.equal(r.index,8);assert.equal(result.complete,true);assert.equal(result.has_more,false);assert.equal(result.target_found,false);assert.equal(result.users.length,0);return complete(send('all eight actor pages checked'));
+  if(r.index<12){assert.equal(result.complete,false);assert.equal(result.target_found,null);assert.equal(typeof result.next_cursor,'string');return complete(query({user_id:OWNER_ID,cursor:result.next_cursor}));}
+  assert.equal(r.index,12);assert.equal(result.complete,true);assert.equal(result.has_more,false);assert.equal(result.target_found,false);assert.equal(result.users.length,0);return complete(send('all twelve actor pages checked'),silent());
  },api:(action,params)=>{
   if(action!=='fetch_emoji_like')return;pages++;assert.equal(params.cookie,pages===1?'':`native-page-${pages-1}`);
-  return native(pages===8?[]:[{tinyId:String(200+pages),nickName:`member ${pages}`}],{cookie:pages===8?'':`native-page-${pages}`,isLastPage:pages===8,isFirstPage:pages===1});
- }});try{await s.receive(event('1'));await settled(s,9);assert.equal(pages,8);assert.equal(fetches(s).length,8);assert.equal(s.requests.length,9);assert.equal(sends(s).length,1);assert.ok(s.memory.context().includes('all eight actor pages checked'));}finally{await s.close();}
+  return native(pages===12?[]:[{tinyId:String(200+pages),nickName:`member ${pages}`}],{cookie:pages===12?'':`native-page-${pages}`,isLastPage:pages===12,isFirstPage:pages===1});
+ }});try{await s.receive(event('1'));await settled(s,13);assert.equal(pages,12);assert.equal(fetches(s).length,12);assert.equal(s.requests.length,13);assert.equal(sends(s).length,1);assert.ok(s.memory.context().includes('all twelve actor pages checked'));}finally{await s.close();}
 });
 
 for(const feature of ['images','forward'] as const)test(`actor lookup remains a readonly operation alongside a ${feature} read request`,async()=>{
@@ -137,8 +137,8 @@ test('messages arriving while the model thinks never widen the frozen user-query
  const held=gate<Completion>();const s=setup({respond:r=>r.index===0?held.promise:complete(silent())});try{await s.receive(event('1'));await until(()=>s.requests.length===1);await s.receive(event('2',B,false));held.resolve(complete(query({message_id:'2'})));await settled(s,2);assert.equal(fetches(s).length,0);assert.notEqual(latest(s.requests[1]!).status,'ok');assert.ok(!s.calls.some(c=>c.action==='get_msg'&&c.params.message_id==='2'));}finally{held.resolve(complete(silent()));await s.close();}
 });
 
-for(const terminal of ['send','silent'] as const)test(`actor query after terminal ${terminal} is not executed`,async()=>{
- const s=setup({respond:r=>r.index===0?complete(terminal==='send'?send():silent(),query()):complete(silent())});try{await s.receive(event('1'));await settled(s,1);assert.equal(fetches(s).length,0);assert.equal(s.requests.length,1);assert.equal(sends(s).length,terminal==='send'?1:0);}finally{await s.close();}
+for(const terminal of ['send','silent'] as const)test(`actor query after finish ${terminal} is not executed`,async()=>{
+ const s=setup({respond:r=>r.index===0?complete(...(terminal==='send'?[send()]:[]),silent(),query()):complete(silent())});try{await s.receive(event('1'));await settled(s,1);assert.equal(fetches(s).length,0);assert.equal(s.requests.length,1);assert.equal(sends(s).length,terminal==='send'?1:0);}finally{await s.close();}
 });
 
 test('reset during fresh actor-query verification prevents dispatching the fetch',async()=>{
@@ -147,7 +147,7 @@ test('reset during fresh actor-query verification prevents dispatching the fetch
 });
 
 test('reset during actor fetch suppresses late identities and trailing replies',async()=>{
- const held=gate<JsonObject>();const s=setup({respond:r=>r.index===0?complete(query(),send('MUST NOT SEND LATE')):complete(silent()),api:action=>action==='fetch_emoji_like'?held.promise:undefined});try{await s.receive(event('1'));await until(()=>fetches(s).length===1);await s.receive(event('99',OWNER_ID,true,'/reset'));const before=sends(s).length;held.resolve(native([{tinyId:OWNER_ID,nickName:'LATE_PRIVATE_NAME'}]));await until(()=>idle(s));assert.equal(sends(s).length,before);assert.equal(s.requests.length,1);assert.ok(!JSON.stringify(s.requests).includes('LATE_PRIVATE_NAME'));assert.ok(!s.memory.context().includes('LATE_PRIVATE_NAME'));}finally{held.resolve(native());await s.close();}
+ const held=gate<JsonObject>();const s=setup({respond:r=>r.index===0?complete(query(),send('MUST NOT SEND LATE'),silent()):complete(silent()),api:action=>action==='fetch_emoji_like'?held.promise:undefined});try{await s.receive(event('1'));await until(()=>fetches(s).length===1);await s.receive(event('99',OWNER_ID,true,'/reset'));const before=sends(s).length;held.resolve(native([{tinyId:OWNER_ID,nickName:'LATE_PRIVATE_NAME'}]));await until(()=>idle(s));assert.equal(sends(s).length,before);assert.equal(s.requests.length,1);assert.ok(!JSON.stringify(s.requests).includes('LATE_PRIVATE_NAME'));assert.ok(!s.memory.context().includes('LATE_PRIVATE_NAME'));}finally{held.resolve(native());await s.close();}
 });
 
 for(const mode of ['throw','native_failure','malformed'] as const)test(`actor ${mode} is visible to the model as failure, never complete empty membership`,async()=>{

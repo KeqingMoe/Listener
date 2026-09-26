@@ -77,7 +77,7 @@ test('context propagates through async work without leaking between turns', asyn
   await Promise.all([first, second].map((turn_id, index) => withLogContext({ turn_id, actor_id: index }, async () => {
     await new Promise(resolve => setTimeout(resolve, 2 - index));
     log('info', 'turn.start');
-    withLogContext({ status: 'nested', body: 'private' }, () => log('info', 'tool.start', { tool: 'stay_silent' }));
+    withLogContext({ status: 'nested', body: 'private' }, () => log('info', 'tool.start', { tool: 'finish' }));
     log('info', 'turn.end', { actor_id: 10 + index });
   })));
   log('info', 'app.idle');
@@ -108,9 +108,9 @@ test('viewer revalidates untrusted records and ignores freeform messages', () =>
   let reads = 0;
   const alternating = { get ai_enabled() { return ++reads === 1 ? true : { body: 'private' }; } };
   assert.deepEqual(sanitizeLogFields(alternating), { ai_enabled: true });
-  const customArray = ['stay_silent'];
+  const customArray = ['finish'];
   customArray.slice = () => { throw new Error('must not invoke user method'); };
-  assert.deepEqual(sanitizeLogFields({ tools: customArray }), { tools: ['stay_silent'] });
+  assert.deepEqual(sanitizeLogFields({ tools: customArray }), { tools: ['finish'] });
 });
 
 test('rotates at size, enforces aggregate cap, and bounds all records', async t => {

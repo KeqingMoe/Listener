@@ -136,10 +136,10 @@ test('invalid stage is atomic and strict, including self waiting and undefined/e
  assert.equal(e.stage(tx,{operation:'update',plan_id:'att_0000000000000000',any_of:[next],expires_in_seconds:10},0).error,'plan_not_found');
  assert.deepEqual(e.commit(tx,0,0),{status:'committed',applied:[id],skipped:[]});observe(e,1);assert.equal(e.evaluate(1000,true)[0]!.plan_id,id);
 });
-test('operation limit counts valid stages and cannot damage staged state',()=>{
+test('many attention updates are accepted here and budgeted by the wake runner',()=>{
  const e=make(),tx=e.begin(0,'99'),id=create(e,tx);
- for(let n=1;n<32;n++)assert.equal(e.stage(tx,{operation:'update',plan_id:id,any_of:[next],expires_in_seconds:10},0).status,'staged');
- assert.equal(e.stage(tx,{operation:'cancel',plan_id:id},0).error,'operation_limit');assert.equal(e.commit(tx,0,0).status,'committed');assert.equal(e.snapshot(0).length,1);
+ for(let n=1;n<=64;n++)assert.equal(e.stage(tx,{operation:'update',plan_id:id,any_of:[next],expires_in_seconds:10},0).status,'staged');
+ assert.equal(e.stage(tx,{operation:'cancel',plan_id:id},0).status,'staged');assert.equal(e.commit(tx,0,0).status,'committed');assert.equal(e.snapshot(0).length,0);
 });
 test('snapshot and caller arguments cannot mutate installed private state',()=>{
  const e=make(),tx=e.begin(0,'99');const c=member('1');const id=create(e,tx,[c]);c.user_ids[0]='2';e.commit(tx,0,0);

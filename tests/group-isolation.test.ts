@@ -36,11 +36,11 @@ test('group tools bind configuration immutably and isolate colliding local/membe
   const remote=await tools.execute('read_message',{message_id:'2'},ctx(group!));assert.deepEqual((remote.message as any).segments,[{type:'text',text:group}]);assert.equal((remote.message as any).text,undefined);
   assert.equal((await tools.execute('get_member_info',{user_id:user},ctx(group!))).status,'ok');
   assert.equal((await tools.execute('get_group_members',{},ctx(group!))).status,'ok');
-  await tools.prepareMessage({parts:[{segments:[{type:'at',user_id:user}]}]},ctx(group!));
+  await tools.prepareMessage({segments:[{type:'at',user_id:user}]},ctx(group!));
   for(const call of a.calls.filter(c=>c.action.startsWith('get_group_member')))assert.equal(call.params.group_id,group);
   const before=a.calls.length;
   assert.equal((await tools.execute('get_member_info',{user_id:user},ctx(other!))).error,'forbidden_group');
-  await assert.rejects(tools.prepareMessage({parts:[{text:'no'}]},ctx(other!)),/forbidden_group/);
+  await assert.rejects(tools.prepareMessage({segments:[{type:'text',text:'no'}]},ctx(other!)),/forbidden_group/);
   assert.equal(a.calls.length,before);
  }
 });
@@ -51,8 +51,8 @@ test('group tools reject foreign response provenance even with identical request
   const a=api(action=>action==='get_group_member_list'?[member(other)]:action==='get_group_member_info'?member(other):msg(other,'2'));
   const tools=new GroupTools(a.client,memory(),{groupId:group});
   for(const [name,args] of [['get_group_members',{}],['get_member_info',{user_id:user}],['read_message',{message_id:'2'}]] as const)assert.equal((await tools.execute(name,args,ctx(group))).status,'error');
-  await assert.rejects(tools.prepareMessage({parts:[{segments:[{type:'at',user_id:user}]}]},ctx(group)),/verification_failed/);
-  await assert.rejects(tools.prepareMessage({parts:[{text:'no',reply_to:'2'}]},ctx(group)),/verification_failed/);
+  await assert.rejects(tools.prepareMessage({segments:[{type:'at',user_id:user}]},ctx(group)),/verification_failed/);
+  await assert.rejects(tools.prepareMessage({segments:[{type:'text',text:'no'}],reply_to:'2'},ctx(group)),/verification_failed/);
  }
 });
 

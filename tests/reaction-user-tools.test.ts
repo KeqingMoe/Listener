@@ -130,15 +130,15 @@ test('repeated and cyclic native cookies stop paging without retry or false abse
 test('terminal native cookie is never exposed and does not fabricate another page',async()=>{
  const s=setup([page(['1'],{cookie:'SECRET_FINAL_COOKIE'})]);const r=await s.read();assert.equal(r.complete,true);assert.equal(r.has_more,false);assert.equal(r.next_cursor,undefined);assert.ok(!JSON.stringify(r).includes('SECRET'));
 });
-test('eight page attempts globally bound RPCs and last partial response has no usable next cursor',async()=>{
- const s=setup(Array.from({length:8},(_,i)=>page([String(i+1)],{cookie:`page${i}`,isLastPage:false,isFirstPage:i===0})));let cursor:unknown,r:JsonObject={};
- for(let i=0;i<8;i++){r=await s.read({...q,user_id:'99',...(cursor?{cursor}:{})});cursor=r.next_cursor;}
- assert.equal(s.calls.length,16);assert.equal(r.reason,'call_limit');assert.equal(r.has_more,true);assert.equal(r.target_found,null);assert.equal(cursor,undefined);
- assert.equal((await s.read({...q,emoji_id:'99'})).error,'call_limit');assert.equal(s.calls.length,16);
+test('more than eight pages continue until native EOF without a local call quota',async()=>{
+ const pages=Array.from({length:12},(_,i)=>page([String(i+1)],{cookie:`page${i}`,isLastPage:i===11,isFirstPage:i===0}));
+ const s=setup(pages);let cursor:unknown,r:JsonObject={};
+ for(let i=0;i<12;i++){r=await s.read({...q,user_id:'99',...(cursor?{cursor}:{})});cursor=r.next_cursor;assert.equal(r.status,'ok'===r.status?'ok':'partial');}
+ assert.equal(s.calls.length,24);assert.equal(r.complete,true);assert.equal(r.has_more,false);assert.equal(r.target_found,false);assert.equal(cursor,undefined);
 });
-test('mixed queries share budget and serialize all native page calls',async()=>{
- let active=0,peak=0;const s=setup(Array.from({length:8},()=>page()),async action=>{if(action==='fetch_emoji_like'){active++;peak=Math.max(peak,active);await Promise.resolve();active--;}});
- const results=await Promise.all(Array.from({length:12},(_,i)=>s.read({...q,emoji_id:String(i)})));assert.equal(peak,1);assert.equal(s.calls.length,16);assert.equal(results.filter(r=>r.error==='call_limit').length,4);
+test('mixed queries serialize many native page calls without sharing a local call quota',async()=>{
+ let active=0,peak=0;const s=setup(Array.from({length:12},()=>page()),async action=>{if(action==='fetch_emoji_like'){active++;peak=Math.max(peak,active);await Promise.resolve();active--;}});
+ const results=await Promise.all(Array.from({length:12},(_,i)=>s.read({...q,emoji_id:String(i)})));assert.equal(peak,1);assert.equal(s.calls.length,24);assert.equal(results.filter(r=>r.error==='call_limit').length,0);
 });
 test('strict native success code and required list, errors never leak or retry',async()=>{
  for(const response of [null,{}, {result:0},page([],{result:true}),page([],{result:1}),page([],{result:'0'}),page([],{result:undefined})]){
@@ -181,12 +181,12 @@ test('invalidation revokes all type and target views but preserves unrelated cur
 });
 
 test('only owned canonical invalidations can affect cache and never reset page budget',async()=>{
- const s=setup(Array.from({length:8},()=>page()));const other=new ReactionUserTools(s.api,s.memory,'22');await s.read();
+ const s=setup(Array.from({length:9},()=>page()));const other=new ReactionUserTools(s.api,s.memory,'22');await s.read();
  s.tools.invalidate(other.createTurn(),'1','476');s.tools.invalidate({reaction_user_turn:true},'1','476');
  for(const [message,emoji] of [['01','476'],['1','-1'],['1','01'],['1','9007199254740992']])s.tools.invalidate(s.state,message!,emoji!);
  assert.equal((await s.read()).duplicate,true);assert.equal(s.calls.length,2);
  for(let i=0;i<7;i++)await s.read({...q,emoji_id:String(i)});
- s.tools.invalidate(s.state,'1','476');assert.equal((await s.read()).error,'call_limit');assert.equal(s.calls.length,16);
+ s.tools.invalidate(s.state,'1','476');assert.equal((await s.read()).status,'ok');assert.equal(s.calls.length,18);
 });
 
 test('invalidation during peer verification prevents page fetch and late result caching',async()=>{
@@ -207,13 +207,13 @@ test('invalidation during native page fetch discards late users and cursor creat
 
 test('revision overflow conservatively invalidates every cache and cursor without resetting budget',async()=>{
  const s=setup([page(['1'],{cookie:'A',isLastPage:false}),page(['2'])]);const a=await s.read();
- for(let i=0;i<33;i++)s.tools.invalidate(s.state,'1',String(1000+i));
+ for(let i=0;i<4097;i++)s.tools.invalidate(s.state,'1',String(1000+i));
  assert.equal((await s.read({...q,cursor:a.next_cursor})).error,'invalid_cursor');const fresh=await s.read();assert.equal(fresh.duplicate,undefined);assert.deepEqual(fresh.users,[{user_id:'2',nickname:'Nickname'}]);
 });
 
 test('overflow epoch prevents an unrelated old pending request from committing',async()=>{
  const wait=deferred<unknown>(),reached=deferred<void>();const s=setup([],action=>{if(action==='fetch_emoji_like'){reached.resolve();return wait.promise;}});
- const task=s.read();await reached.promise;for(let i=0;i<33;i++)s.tools.invalidate(s.state,'1',String(1000+i));
+ const task=s.read();await reached.promise;for(let i=0;i<4097;i++)s.tools.invalidate(s.state,'1',String(1000+i));
  wait.resolve(page(['1'],{cookie:'SECRET',isLastPage:false}));assert.equal((await task).error,'query_invalidated');
 });
 

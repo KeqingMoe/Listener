@@ -20,8 +20,8 @@ function abortable<T>(promise:Promise<T>,signal?:AbortSignal):Promise<T>{
  });
 }
 const tool=(name:string,args:unknown={}):Completion=>({content:null,tool_calls:[{id:'call',type:'function',function:{name,arguments:JSON.stringify(args)}}]});
-const silent=()=>tool('stay_silent');
-const reply=(text:string,replyTo?:string)=>tool('send_message',{parts:[{text,...(replyTo?{reply_to:replyTo}:{})}]});
+const silent=()=>tool('finish');
+const reply=(text:string,replyTo?:string):Completion=>({content:null,tool_calls:[{id:'send',type:'function',function:{name:'send_message',arguments:JSON.stringify({segments:[{type:'text',text}],...(replyTo?{reply_to:replyTo}:{})})}},{id:'finish',type:'function',function:{name:'finish',arguments:'{}'}}]});
 function event(groupId:string,id:string,direct=true,text=`body-${groupId}-${id}`,userId='12345',replyTo?:string){return {post_type:'message',message_type:'group',group_id:groupId,self_id:SELF,user_id:userId,message_id:id,time:Math.floor(Date.now()/1000),sender:{nickname:`member-${groupId}`},message:[...(direct?[{type:'at',data:{qq:SELF}}]:[]),...(replyTo?[{type:'reply',data:{id:replyTo}}]:[]),{type:'text',data:{text}}]};}
 class TestMemory implements Memory {
  entries:TimelineEntry[]=[];closed=false;clears=0;

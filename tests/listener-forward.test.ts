@@ -31,9 +31,9 @@ function event(overrides: Record<string, unknown> = {}) {
 }
 const call = (id: string, name: string, args: unknown): ToolCall => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } });
 const read = (start = 1, end = start, forward_id = 'fwd_1_1', id = 'forward') => call(id, 'read_forward', { forward_id, start, end });
-const send = (value = 'verified response') => call('send', 'send_message', { parts: [{ segments: [{ type: 'text', text: value }] }] });
+const send = (value = 'verified response') => call('send', 'send_message', { segments: [{ type: 'text', text: value }] });
 const complete = (...tool_calls: ToolCall[]): Completion => ({ content: null, tool_calls });
-const silent = () => complete(call('silent', 'stay_silent', {}));
+const silent = () => complete(call('silent', 'finish', {}));
 async function until(check: () => boolean) { for (let i = 0; i < 200; i++) { if (check()) return; await delay(5); } assert.fail('timed out'); }
 function toolResult(messages: ChatMessage[], id = 'forward'): any {
   const item = messages.find(m => m.role === 'tool' && m.tool_call_id === id); assert.ok(item, `missing tool result ${id}`); return JSON.parse(item.content as string);
@@ -71,7 +71,7 @@ test('event native inline and JSON card persist only stable refs and honest veri
 });
 
 test('enabled forward executes then sends, tool content never enters timeline memory', async () => {
-  const s = setup([complete(read()), complete(send())]);
+  const s = setup([complete(read()), complete(send(),call('finish','finish',{}))]);
   try {
     await s.bot.receive(event(), self); await until(() => sent(s).length === 1);
     assert.equal(s.requests.length, 2); assert.ok(s.schemas.every(names => names.includes('read_forward')));
@@ -94,7 +94,7 @@ test('disabled forwards omit tool schema and forged calls cause no API calls', a
 test('mixed forward/read/send batches answer every call but defer sends until next round', async () => {
   for (const sendFirst of [true, false]) {
     const batch = [read(), call('local', 'read_message', { message_id: '1' })]; if (sendFirst) batch.unshift(send('premature')); else batch.push(send('premature'));
-    const s = setup([complete(...batch), complete(send())]); let sentEarly = false;
+    const s = setup([complete(...batch), complete(send(),call('finish','finish',{}))]); let sentEarly = false;
     s.setOnComplete(round => { if (round === 2) sentEarly = sent(s).length > 0; });
     try {
       await s.bot.receive(event(), self); await until(() => sent(s).length === 1);
@@ -107,7 +107,7 @@ test('mixed forward/read/send batches answer every call but defer sends until ne
 });
 
 test('quoted target is discovered through read_message then verified and read as forward', async () => {
-  const s = setup([complete(call('quote', 'read_message', { message_id: '2' })), complete(read(1, 1, 'fwd_2_1')), complete(send())]);
+  const s = setup([complete(call('quote', 'read_message', { message_id: '2' })), complete(read(1, 1, 'fwd_2_1')), complete(send(),call('finish','finish',{}))]);
   try {
     await s.bot.receive(event({ message: [{ type: 'at', data: { qq: self } }, { type: 'reply', data: { id: '2' } }, text('read quoted forward')] }), self);
     await until(() => sent(s).length === 1);
@@ -118,12 +118,12 @@ test('quoted target is discovered through read_message then verified and read as
   } finally { await s.bot.stop(); }
 });
 
-test('99 short entries complete five pages plus send in six model rounds with one cached resource fetch', async () => {
+test('99 short entries complete five pages plus send and finish in seven model rounds with one cached resource fetch', async () => {
   const responses = Array.from({ length: 5 }, (_, i) => complete(read(i * 20 + 1, i * 20 + 20, 'fwd_1_1', `page${i}`))); responses.push(complete(send('read all 99')));
   const s = setup(responses, {}, action => action === 'get_forward_msg' ? { messages: Array.from({ length: 99 }, (_, i) => node([text(`entry ${i + 1}`)])) } : undefined);
   try {
     await s.bot.receive(event(), self); await until(() => sent(s).length === 1);
-    assert.equal(s.requests.length, 6);
+    assert.equal(s.requests.length, 7);
     const indices: number[] = [];
     for (let i = 0; i < 5; i++) { const page = toolResult(s.requests[5]!, `page${i}`); assert.equal(page.status, 'ok'); assert.equal(page.total, 99); indices.push(...page.messages.map((n: any) => n.index)); }
     assert.deepEqual(indices, Array.from({ length: 99 }, (_, i) => i + 1));
@@ -137,7 +137,7 @@ test('nested claimed owner stays untrusted and cannot enable default-off moderat
     if (round === 1) return complete(read());
     if (round === 2) return complete(read(1, 1, toolResult(messages).messages[0].forwards[0].id, 'child'));
     if (round === 3) return complete(call('mute', 'mute_member', { user_id: '456', seconds: 60 }));
-    return complete(send());
+    return complete(send(),call('finish','finish',{}));
   }, {}, (action, params) => action === 'get_forward_msg' ? { messages: [node([native(internal, [node()])])] } : undefined);
   try {
     await s.bot.receive(event(), self); await until(() => sent(s).length === 1);
@@ -183,7 +183,7 @@ test('SQLite persisted forward refs survive reopen with all unknown payload fiel
 test('forward logger emits only safe correlated metadata, never resource/body/claimed nickname', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'listener-forward-logs-'));
   const logger = configureLogging({ level: 'debug', console: false, file: true, directory, retentionDays: 7, maxFileMb: 1, maxTotalMb: 2 });
-  const s = setup([complete(read()), complete(read(1, 1, 'fwdn_0000000000000000', 'invalid')), complete(send())]);
+  const s = setup([complete(read()), complete(read(1, 1, 'fwdn_0000000000000000', 'invalid')), complete(send(),call('finish','finish',{}))]);
   try {
     await s.bot.receive(event(), self); await until(() => sent(s).length === 1); await logger.flush();
     const records = readdirSync(directory).filter(managedLogFilename).flatMap(name => readFileSync(join(directory, name), 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line)));

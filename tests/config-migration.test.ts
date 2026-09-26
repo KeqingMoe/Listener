@@ -21,9 +21,10 @@ test('one-time migration preserves chat settings/secrets, disables management an
  assert.equal(result.listener.model,'test-model');assert.equal(result.listener.baseUrl,'https://example.test/v1');assert.equal(result.listener.enabled,true);
  assert.deepEqual(result.listener.tools!.moderation,{mute:'off',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600});
  assert.equal(result.listener.randomReplyProbability,0);assert.equal(result.listener.debounceMs,1000);assert.equal(result.listener.delayMaxMs,2800);assert.equal(result.listener.maxTokens,999);
+ assert.equal(result.listener.maxToolCallsPerWake,96);assert.equal(result.listener.wakeTimeoutMs,90000);
  assert.equal(result.onebot.token,'original-onebot-secret');assert.equal(result.listener.apiKey,'original-api-secret');
  const secrets=parseEnv(readFileSync(join(root,'.env'),'utf8'));assert.deepEqual(Object.keys(secrets).sort(),['ONEBOT_ACCESS_TOKEN','OPENAI_API_KEY']);
- const config=readFileSync(join(root,'config.toml'),'utf8');assert.ok(!config.includes('original-api-secret'));assert.ok(!config.includes('original-onebot-secret'));
+ const config=readFileSync(join(root,'config.toml'),'utf8');assert.ok(!config.includes('max_parts'));assert.ok(!config.includes('original-api-secret'));assert.ok(!config.includes('original-onebot-secret'));
  const doc=parseToml(config);assert.equal(Object.hasOwn(doc.bot as object,'group_id'),false);
  assert.deepEqual(Object.keys(doc.groups as object),[LISTENER_GROUP]);
  assert.equal(((doc.groups as Record<string,unknown>)[LISTENER_GROUP] as Record<string,unknown>).enabled,true);

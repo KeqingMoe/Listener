@@ -33,71 +33,63 @@ test('members disabled denies invented member tools without disabling message re
   assert.deepEqual(calls.map(c => c.action), ['get_msg']);
 });
 
+const message=(text:string,reply_to?:string)=>({segments:[{type:'text',text}],...(reply_to?{reply_to}:{})});
+
 test('disabled mentions reject invented at during preparation before reply lookup', async () => {
   const { tools, calls } = setup(record(), [entry], { mention: false });
-  await assert.rejects(tools.prepareMessage({ parts: [{ text: 'reply', reply_to: '2' }, { segments: [{ type: 'at', user_id: '123' }] }] }, context), /tool_disabled/);
-  assert.equal(calls.length, 0);
-  assert.equal((await tools.prepareMessage({ parts: [{ text: 'hello' }] }, context)).length, 1);
-  assert.equal((await tools.execute('get_member_info', { user_id: '123' }, context)).status, 'ok');
+  await assert.rejects(tools.prepareMessage({reply_to:'2',segments:[{type:'text',text:'reply'},{type:'at',user_id:'123'}]},context),/tool_disabled/);
+  assert.equal(calls.length,0);assert.equal((await tools.prepareMessage(message('hello'),context)).text,'hello');
+  assert.equal((await tools.execute('get_member_info',{user_id:'123'},context)).status,'ok');
 });
 
 test('reply targets cannot fetch arbitrary messages outside the supplied snapshot',async()=>{
  const s=setup(remote({message_id:'99'}));
- await assert.rejects(s.tools.prepareMessage({parts:[{text:'reply',reply_to:'99'}]},context),/forbidden_reference/);
+ await assert.rejects(s.tools.prepareMessage(message('reply','99'),context),/forbidden_reference/);
  assert.equal(s.calls.length,0);
- const scoped=setup(remote());assert.equal((await scoped.tools.prepareMessage({parts:[{text:'reply',reply_to:'2'}]},context))[0]?.replyTo,'2');
+ const scoped=setup(remote());assert.equal((await scoped.tools.prepareMessage(message('reply','2'),context)).replyTo,'2');
  assert.deepEqual(scoped.calls.map(call=>call.action),['get_msg']);
 });
 
 test('mention verification remains allowed when member tools are disabled', async () => {
   const { tools, calls } = setup(record(), [entry], { members: false, mention: true });
-  assert.equal((await tools.prepareMessage({ parts: [{ segments: [{ type: 'at', user_id: '123' }] }] }, context)).length, 1);
+  assert.equal((await tools.prepareMessage({ segments: [{ type: 'at', user_id: '123' }] }, context)).segments.length, 1);
   assert.deepEqual(calls.map(c => c.action), ['get_group_member_info']);
   const wrongGroup = setup(record('123', { group_id: '1' }), [entry], { members: false });
-  await assert.rejects(wrongGroup.tools.prepareMessage({ parts: [{ segments: [{ type: 'at', user_id: '123' }] }] }, context), /verification_failed/);
+  await assert.rejects(wrongGroup.tools.prepareMessage({ segments: [{ type: 'at', user_id: '123' }] }, context), /verification_failed/);
 });
 
-test('reduced part caps apply before all API calls and options are captured by copy', async () => {
-  for (const maxParts of [1, 2, 3, 4, 10]) {
-    const options = { maxParts, members: false, mention: false };
-    const { tools, calls } = setup(record(), [entry], options);
-    options.maxParts = 3; options.members = true; options.mention = true;
-    await assert.rejects(tools.prepareMessage({ parts: Array(maxParts + 1).fill({ segments: [{ type: 'at', user_id: '123' }], reply_to: '2' }) }, context));
-    assert.equal(calls.length, 0);
-    assert.equal((await tools.prepareMessage({ parts: Array(maxParts).fill({ text: 'hello' }) }, context)).length, maxParts);
-    assert.equal((await tools.execute('get_member_info', { user_id: '123' }, context)).error, 'tool_disabled');
-    await assert.rejects(tools.prepareMessage({ parts: [{ segments: [{ type: 'at', user_id: '123' }] }] }, context), /tool_disabled/);
-    assert.equal(calls.length, 0);
-  }
+test('removed part options are rejected and remaining options are captured by copy', async () => {
+  for(const maxParts of [1,2,3,4,10])assert.throws(()=>setup(record(),[entry],{maxParts} as any),/Invalid group tool options/);
+  const options={members:false,mention:false};const {tools,calls}=setup(record(),[entry],options);
+  options.members=true;options.mention=true;
+  assert.equal((await tools.prepareMessage(message('hello'),context)).text,'hello');
+  assert.equal((await tools.execute('get_member_info',{user_id:'123'},context)).error,'tool_disabled');
+  await assert.rejects(tools.prepareMessage({segments:[{type:'at',user_id:'123'}]},context),/tool_disabled/);assert.equal(calls.length,0);
 });
 
 test('schemas advertise structured segments, fixed group tools, no legacy text', () => {
   assert.deepEqual(GROUP_TOOLS.map(t => t.function.name), ['get_group_members', 'get_member_info', 'read_message']);
   const parameters = SEND_MESSAGE_TOOL.function.parameters as any;
-  assert.equal(parameters.properties.parts.maxItems, 3);
-  assert.deepEqual(parameters.properties.parts.items.required, ['segments']);
-  assert.equal(parameters.properties.parts.items.properties.text, undefined);
+  assert.equal(parameters.properties.parts,undefined);assert.equal(parameters.properties.text,undefined);
+  assert.deepEqual(parameters.required,['segments']);assert.equal(parameters.properties.segments.maxItems,12);
 });
 
 test('prepare serializes native at without sending or mutating input; nonowner allowed', async () => {
   const { tools, calls } = setup();
-  const args = { parts: [{ segments: [{ type: 'text', text: 'Hello ' }, { type: 'at', user_id: '123' }], reply_to: '1' }] };
+  const args = { segments: [{ type: 'text', text: 'Hello ' }, { type: 'at', user_id: '123' }], reply_to: '1' };
   const original = structuredClone(args);
-  assert.deepEqual(await tools.prepareMessage(args, context), [{ segments: [{ type: 'text', data: { text: 'Hello ' } }, { type: 'at', data: { qq: '123' } }], text: 'Hello [at:123]', replyTo: '1' }]);
+  assert.deepEqual(await tools.prepareMessage(args, context), { segments: [{ type: 'text', data: { text: 'Hello ' } }, { type: 'at', data: { qq: '123' } }], text: 'Hello [at:123]', replyTo: '1' });
   assert.deepEqual(args, original);
   assert.deepEqual(calls, [{ action: 'get_group_member_info', params: { group_id: LISTENER_GROUP, user_id: '123', no_cache: true } }]);
 });
 
-test('legacy text and at-only parts accepted internally', async () => {
-  const { tools } = setup();
-  assert.equal((await tools.prepareMessage({ parts: [{ text: 'old style', reply_to: '1' }] }, context))[0]?.text, 'old style');
-  assert.equal((await tools.prepareMessage({ parts: [{ segments: [{ type: 'at', user_id: '123' }] }] }, context))[0]?.text, '[at:123]');
+test('legacy text and parts shapes are rejected while structured text remains literal', async () => {
+  const {tools}=setup();await assert.rejects(tools.prepareMessage({text:'old style'},context));await assert.rejects(tools.prepareMessage({parts:[{segments:[{type:'text',text:'old'}]}]},context));
+  assert.equal((await tools.prepareMessage({segments:[{type:'at',user_id:'123'}]},context)).text,'[at:123]');
 });
 
-test('entire batch syntax validation precedes any remote verification', async () => {
-  const { tools, calls } = setup();
-  await assert.rejects(tools.prepareMessage({ parts: [{ segments: [{ type: 'at', user_id: '123' }] }, { text: '' }] }, context));
-  assert.equal(calls.length, 0);
+test('single-message syntax validation precedes remote verification', async () => {
+  const {tools,calls}=setup();await assert.rejects(tools.prepareMessage({segments:[{type:'at',user_id:'123'},{type:'text',text:42}]},context));assert.equal(calls.length,0);
 });
 
 test('reject extras, invalid structured mentions, whitespace ids, all/self, mixed representations and limits', async () => {
@@ -111,8 +103,8 @@ test('reject extras, invalid structured mentions, whitespace ids, all/self, mixe
     { segments: [{ type: 'at', user_id: '123', qq: 'all' }] }, { segments: [{ type: 'text', text: 'a', extra: true }] },
     { text: 'hello', reply_to: ' 1' }, { text: 'hello', reply_to: 1 },
   ];
-  for (const part of badParts) await assert.rejects(tools.prepareMessage({ parts: [part] }, context), /invalid_arguments/, JSON.stringify(part));
-  for (const args of [{ parts: [], group_id: LISTENER_GROUP }, { parts: Array(4).fill({ text: 'a' }) }, { parts: [{ segments: Array(4).fill({ type: 'at', user_id: '123' }) }] }]) await assert.rejects(tools.prepareMessage(args, context));
+  for (const part of badParts) await assert.rejects(tools.prepareMessage(part, context), /invalid_arguments/, JSON.stringify(part));
+  for (const args of [{ segments: [] }, { parts: [{text:'a'}] }, { segments: Array(13).fill({type:'text',text:'x'}) }]) await assert.rejects(tools.prepareMessage(args,context));
   assert.equal(calls.length, 0);
 });
 
@@ -131,7 +123,7 @@ test('newline ids are rejected in reads, replies and remote member records', asy
   const { tools, calls } = setup();
   assert.equal((await tools.execute('get_member_info', { user_id: '123\n' }, context)).status, 'error');
   assert.equal((await tools.execute('read_message', { message_id: '2\n' }, context)).status, 'error');
-  await assert.rejects(tools.prepareMessage({ parts: [{ text: 'x', reply_to: '2\n' }] }, context));
+  await assert.rejects(tools.prepareMessage({ segments: [{type:'text',text:'x'}], reply_to:'2\n' }, context));
   assert.equal(calls.length, 0);
   const list = setup([record('123\n')]);
   assert.equal((await list.tools.execute('get_group_members', {}, context)).status, 'error');
@@ -141,7 +133,7 @@ test('fixed group scope independently enforced before calls', async () => {
   const { tools, calls } = setup();
   const wrong = { ...context, groupId: '123' };
   for (const name of GROUP_TOOLS.map(t => t.function.name)) assert.equal((await tools.execute(name, {}, wrong)).error, 'forbidden_group');
-  await assert.rejects(tools.prepareMessage({ parts: [{ text: 'x' }] }, wrong));
+  await assert.rejects(tools.prepareMessage(message('x'), wrong));
   assert.equal(calls.length, 0);
 });
 
@@ -178,7 +170,7 @@ test('member and at verification require exact group and user', async () => {
   for (const raw of [record('456'), record('123', { group_id: '1' }), { user_id: '123' }]) {
     const { tools, calls } = setup(raw);
     assert.equal((await tools.execute('get_member_info', { user_id: '123' }, context)).status, 'error');
-    await assert.rejects(tools.prepareMessage({ parts: [{ segments: [{ type: 'at', user_id: '123' }] }] }, context));
+    await assert.rejects(tools.prepareMessage({ segments: [{ type: 'at', user_id: '123' }] }, context));
     assert.ok(calls.every(c => c.action === 'get_group_member_info'));
   }
 });
@@ -199,18 +191,15 @@ test('remote read and reply verification reject wrong group, type and id', async
   for (const extra of [{ group_id: '1' }, { message_type: 'private' }, { message_id: '3' }, { sender: { user_id: 'all' } }]) {
     const { tools } = setup(remote(extra));
     assert.equal((await tools.execute('read_message', { message_id: '2' }, context)).status, 'error');
-    await assert.rejects(tools.prepareMessage({ parts: [{ text: 'reply', reply_to: '2' }] }, context));
+    await assert.rejects(tools.prepareMessage(message('reply','2'), context));
   }
   const { tools } = setup(remote());
-  assert.equal((await tools.prepareMessage({ parts: [{ text: 'reply', reply_to: '2' }] }, context))[0]?.replyTo, '2');
+  assert.equal((await tools.prepareMessage(message('reply','2'), context)).replyTo, '2');
 });
 
-test('mention limit spans all parts and remote output fields stay bounded', async () => {
+test('mention limit applies within one message and remote output fields stay bounded', async () => {
   const { tools, calls } = setup();
-  await assert.rejects(tools.prepareMessage({ parts: [
-    { segments: [{ type: 'at', user_id: '123' }, { type: 'at', user_id: '123' }] },
-    { segments: [{ type: 'at', user_id: '123' }, { type: 'at', user_id: '123' }] },
-  ] }, context));
+  await assert.rejects(tools.prepareMessage({segments:Array(4).fill({type:'at',user_id:'123'})},context));
   assert.equal(calls.length, 0);
   const bounded = setup(remote({ sender: { user_id: '123', nickname: 'n'.repeat(1000) }, message: [{ type: 'text', data: { text: 'x'.repeat(10000) } }] }));
   const result = await bounded.tools.execute('read_message', { message_id: '2' }, context);
@@ -225,5 +214,5 @@ test('safe errors never disclose API exception details', async () => {
   for (const [name, args] of [['get_group_members', {}], ['get_member_info', { user_id: '123' }], ['read_message', { message_id: '2' }]] as const) {
     assert.deepEqual(await tools.execute(name, args, context), { status: 'error', error: 'api_unavailable' });
   }
-  await assert.rejects(tools.prepareMessage({ parts: [{ segments: [{ type: 'at', user_id: '123' }] }] }, context), /^Error: api_unavailable$/);
+  await assert.rejects(tools.prepareMessage({ segments: [{ type: 'at', user_id: '123' }] }, context), /^Error: api_unavailable$/);
 });

@@ -106,13 +106,14 @@ test('true total overrides card hint; clipping, empty and out of bounds report h
   const empty = setup({ response: { messages: [] } }); const e = await empty.read(); assert.equal(e.status, 'ok'); assert.equal(e.total, 0); assert.deepEqual(e.messages, []); assert.equal(e.returned_start, null); assert.equal(e.has_more, false);
 });
 
-test('99 short nodes fully paginated in five calls, sixth allowed then turn call budget', async () => {
+test('99 short nodes paginate beyond the former six-call ceiling until resource budget', async () => {
   const s = setup({ response: { messages: Array.from({ length: 99 }, (_, i) => node([text(`node ${i + 1}`)])) } });
   const indices: number[] = [];
   for (let start = 1; start <= 99; start += 20) { const r = await s.read(start, start + 19); assert.equal(r.status, 'ok'); indices.push(...rows(r).map(n => n.index)); assert.equal(r.has_more, start < 81); }
   assert.deepEqual(indices, Array.from({ length: 99 }, (_, i) => i + 1)); assert.equal(s.state.returned, 99); assert.equal(s.calls.length, 2);
-  assert.equal((await s.read(1, 20)).status, 'ok'); assert.equal((await s.read()).error, 'budget_exhausted');
-  assert.equal(s.state.returned, 119); assert.ok(s.state.outputChars <= 30000);
+  assert.equal((await s.read(1, 20)).status, 'ok'); assert.equal((await s.read()).status, 'ok');
+  assert.equal(s.state.returned, 120); assert.ok(s.state.outputChars <= 30000);
+  assert.equal((await s.read()).error, 'budget_exhausted');
 });
 
 test('only selected and actually returned nodes register opaque nested refs; repeats reuse refs/cache', async () => {

@@ -12,8 +12,8 @@ function gate<T>(){let resolve!:(v:T)=>void;const promise=new Promise<T>(r=>{res
 function abortable<T>(promise:Promise<T>,signal?:AbortSignal):Promise<T>{return new Promise((resolve,reject)=>{const abort=()=>reject(new DOMException('cancelled','AbortError'));if(signal?.aborted)return abort();signal?.addEventListener('abort',abort,{once:true});promise.then(v=>{signal?.removeEventListener('abort',abort);resolve(v);},e=>{signal?.removeEventListener('abort',abort);reject(e);});});}
 const call=(name:string,args:unknown={})=>({id:`call_${name}`,type:'function' as const,function:{name,arguments:JSON.stringify(args)}});
 const complete=(...calls:ReturnType<typeof call>[]):Completion=>({content:null,tool_calls:calls.map((c,i)=>({...c,id:`${c.id}_${i}`}))});
-const silent=()=>call('stay_silent');
-const send=(text='fixture reply')=>call('send_message',{parts:[{segments:[{type:'text',text}]}]});
+const silent=()=>call('finish');
+const send=(text='fixture reply')=>call('send_message',{segments:[{type:'text',text}]});
 const react=(id='1',emoji='76',action:'add'|'remove'='add')=>call('react_message',{message_id:id,emoji_id:emoji,action});
 const next=()=>call('manage_attention',{operation:'create',any_of:[{type:'next_message'}],expires_in_seconds:60});
 const text=(value:string)=>({type:'text',data:{text:value}});
@@ -60,16 +60,16 @@ test('one batch may react to several people and several emoji without creating f
  }finally{await s.close();}
 });
 
-for(const order of ['before','after'] as const)test(`reaction ${order} send still executes and only one send block is allowed`,async()=>{
- const response=order==='before'?complete(react(),send(),react('1','128077'),send('must not send')):complete(send(),react(),react('1','128077'),send('must not send'));
+for(const order of ['before','after'] as const)test(`reaction ${order} send executes before finish and a send after finish is blocked`,async()=>{
+ const response=order==='before'?complete(react(),send(),react('1','128077'),silent(),send('must not send')):complete(send(),react(),react('1','128077'),silent(),send('must not send'));
  const s=setup({respond:r=>r.index===0?response:complete(silent())});try{
   await s.receive(event('1'));await settled(s,1);assert.equal(mutations(s).length,2);assert.equal(sends(s).length,1);assert.equal(s.requests.length,1);
   const actions=s.calls.map(c=>c.action);assert.ok(order==='before'?actions.indexOf('set_msg_emoji_like')<actions.indexOf('send_group_msg'):actions.indexOf('send_group_msg')<actions.indexOf('set_msg_emoji_like'));
  }finally{await s.close();}
 });
 
-test('stay_silent before reactions and attention still commits the plan on normal completion',async()=>{
- const s=setup({respond:r=>r.index===0?complete(silent(),react(),next()):complete(silent())});try{
+test('finish after reactions and attention commits the plan on normal completion',async()=>{
+ const s=setup({respond:r=>r.index===0?complete(react(),next(),silent()):complete(silent())});try{
   await s.receive(event('1'));await settled(s,1);assert.equal(mutations(s).length,1);assert.equal(sends(s).length,0);assert.equal(plans(s).length,1);
   await s.receive(event('2',B,false));await settled(s,2);assert.equal(payload(s.requests[1]!).trigger_kind,'attention');assert.equal(state(s.requests[1]!).last_turn.outcome,'reacted');assert.deepEqual(plans(s),[]);
  }finally{await s.close();}
@@ -116,8 +116,8 @@ test('pure attention wake may react and retains explicitly configured confirmati
 
 for(const ending of ['model','prose','timeout'] as const)test(`reaction remains visible but attention is not committed after ${ending} termination`,async t=>{
  if(ending==='timeout')t.mock.timers.enable({apis:['setTimeout'],now:Date.now()});
- const held=gate<Completion>();const s=setup({respond:r=>{if(r.index===0)return complete(next(),react());if(ending==='model')throw Error('model failed');if(ending==='prose')return {content:'ordinary prose',tool_calls:[]};return abortable(held.promise,r.signal);}});try{
-  await s.receive(event('1'));if(ending==='timeout'){t.mock.timers.tick(3);await flush();await flush();assert.equal(s.requests.length,2);t.mock.timers.tick(10001);await flush();}else await settled(s,2);
+ const held=gate<Completion>();const s=setup({settings:{wakeTimeoutMs:1000},respond:r=>{if(r.index===0)return complete(next(),react());if(ending==='model')throw Error('model failed');if(ending==='prose')return {content:'ordinary prose',tool_calls:[]};return abortable(held.promise,r.signal);}});try{
+  await s.receive(event('1'));if(ending==='timeout'){t.mock.timers.tick(3);await flush();await flush();assert.equal(s.requests.length,2);t.mock.timers.tick(1001);await flush();}else await settled(s,2);
   assert.equal(mutations(s).length,1);assert.deepEqual(plans(s),[]);assert.equal((s.bot as any).recentReactions.size,1);assert.equal((s.bot as any).lastReactionTurn.confirmed,1);
  }finally{held.resolve(complete(silent()));await flush();await s.close();if(ending==='timeout')t.mock.timers.reset();}
 });
@@ -166,10 +166,10 @@ test('reaction notices, bot messages, private messages and foreign groups do not
  }finally{await s.close();}
 });
 
-test('postterminal reaction errors appear next turn while send read and moderation stay blocked',async()=>{
+test('finish blocks trailing reactions, sends, reads and moderation without recording attempted reactions',async()=>{
  const s=setup({respond:r=>r.index===0?complete(silent(),react('999'),send(),call('get_member_info',{user_id:A}),call('mute_member',{user_id:A,seconds:60})):complete(silent())});try{
   await s.receive(event('1',OWNER_ID));await settled(s,1);assert.deepEqual(s.calls.map(c=>[c.action,c.params.message_id]),[['get_msg','1']]);await s.receive(event('2',OWNER_ID));await settled(s,2);
-  assert.deepEqual(state(s.requests[1]!).last_turn.errors,['message_not_in_context']);assert.equal(state(s.requests[1]!).last_turn.confirmed,0);assert.equal(state(s.requests[1]!).last_turn.rejected,1);
+  assert.equal(state(s.requests[1]!).last_turn,undefined);assert.deepEqual(state(s.requests[1]!).recent,[]);assert.equal(mutations(s).length,0);assert.equal(sends(s).length,0);
  }finally{await s.close();}
 });
 

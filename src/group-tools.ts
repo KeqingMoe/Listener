@@ -8,11 +8,10 @@ import { extractMessageContent, projectMessage } from './message-content.js';
 export interface GroupToolsOptions {
   members?: boolean;
   mention?: boolean;
-  maxParts?: number;
   groupId?: string;
 }
 
-export interface PreparedPart {
+export interface PreparedMessage {
   segments: Array<{ type: 'text'; data: { text: string } } | { type: 'at'; data: { qq: string } } | { type: 'face'; data: { id: string } }>;
   text: string;
   replyTo?: string;
@@ -24,7 +23,8 @@ export const GROUP_TOOLS: ToolDefinition[] = [
   tool('get_member_info', '读取当前群指定成员的基本资料。', schema({ user_id: { type: 'string' } }, ['user_id'])),
   tool('read_message', '读取当前群本地消息或本地近期消息引用的消息。', schema({ message_id: { type: 'string' } }, ['message_id'])),
 ];
-export const SEND_MESSAGE_TOOL = tool('send_message', '向当前群发送文字、QQ原生表情或混合消息；face只需目录中的id，普通和超级表情都可发送，不支持指定连击或动画结果。条数及片段数沿用本轮上限，不另设表情数量配额。收到和历史消息中的text/at/face片段与此格式一致，face的可选name只是说明。text中包括括号标记、CQ样式在内的字符串均按普通文字发送，不自动转为表情或提及；要表达真实表情或@必须使用face或at片段。使用结构化at片段提及成员，不支持全员或自己。' + FACE_LAYOUT_GUIDANCE, schema({ parts: { type: 'array', minItems: 1, maxItems: 3, items: schema({ segments: { type: 'array', minItems: 1, maxItems: 12, items: { oneOf: [schema({ type: { const: 'text' }, text: { type: 'string', maxLength: 800 } }, ['type', 'text']), schema({ type: { const: 'at' }, user_id: { type: 'string' } }, ['type', 'user_id']), schema({ type: { const: 'face' }, id: FACE_ID_SCHEMA, name: {type:'string',maxLength:80,description:'可选名称说明，仅供阅读；不会发往QQ，实际表情只由id决定。'} }, ['type', 'id'])] } }, reply_to: { type: 'string' } }, ['segments']) } }, ['parts']));
+const MESSAGE_SEGMENTS_SCHEMA = { type: 'array', minItems: 1, maxItems: 12, items: { oneOf: [schema({ type: { const: 'text' }, text: { type: 'string', maxLength: 800 } }, ['type', 'text']), schema({ type: { const: 'at' }, user_id: { type: 'string' } }, ['type', 'user_id']), schema({ type: { const: 'face' }, id: FACE_ID_SCHEMA, name: {type:'string',maxLength:80,description:'可选名称说明，仅供阅读；不会发往QQ，实际表情只由id决定。'} }, ['type', 'id'])] } };
+export const SEND_MESSAGE_TOOL = tool('send_message', '向当前群发送一条文字、QQ原生表情或混合消息；发送后返回message_id，可以继续使用工具，最后必须调用 finish。face必须使用目录id，可选name仅是说明且不传给QQ，不支持连击或指定动画结果。text包括括号标记和CQ样式在内都按原文发送，不转成操作；真正@须使用at片段并核验本群成员，不支持全体或自己。每条最多12片段、800文字字符。' + FACE_LAYOUT_GUIDANCE, schema({ segments: MESSAGE_SEGMENTS_SCHEMA, reply_to: { type: 'string' } }, ['segments']));
 
 function object(v: unknown): v is JsonObject { return !!v && typeof v === 'object' && !Array.isArray(v); }
 function fail(code = 'invalid_arguments'): never { throw new Error(code); }
@@ -57,11 +57,10 @@ export class GroupTools {
   private readonly groupId: string;
   constructor(private api: Api, private memory: Memory, options: GroupToolsOptions = {}) {
     if (!object(options) || ![Object.prototype, null].includes(Object.getPrototypeOf(options)) ||
-      Reflect.ownKeys(options).some(key => typeof key !== 'string' || !['members', 'mention', 'maxParts', 'groupId'].includes(key))) throw new Error('Invalid group tool options');
+      Reflect.ownKeys(options).some(key => typeof key !== 'string' || !['members', 'mention', 'groupId'].includes(key))) throw new Error('Invalid group tool options');
     this.groupId = resolveGroupId(options.groupId);
-    const policy = { members: true, mention: true, maxParts: 3, ...options, groupId: this.groupId };
-    if (typeof policy.members !== 'boolean' || typeof policy.mention !== 'boolean' ||
-      !Number.isInteger(policy.maxParts) || policy.maxParts < 1 || policy.maxParts > 10) throw new Error('Invalid group tool options');
+    const policy = { members: true, mention: true, ...options, groupId: this.groupId };
+    if (typeof policy.members !== 'boolean' || typeof policy.mention !== 'boolean') throw new Error('Invalid group tool options');
     this.options = Object.freeze(policy);
   }
   private scope(context: TurnContext): void { if (context.groupId !== this.groupId) fail('forbidden_group'); }
@@ -113,52 +112,39 @@ export class GroupTools {
       return { status: 'error', error: ['invalid_arguments', 'forbidden_group', 'verification_failed', 'api_unavailable', 'message_not_in_context', 'tool_disabled'].includes(code) ? code : 'tool_failed' };
     }
   }
-  async prepareMessage(args: unknown, context: TurnContext): Promise<PreparedPart[]> {
-    this.scope(context); fields(args, ['parts']);
-    if (!Array.isArray(args.parts) || args.parts.length < 1 || args.parts.length > this.options.maxParts) fail();
-    let atCount = 0;
+  async prepareMessage(args: unknown, context: TurnContext): Promise<PreparedMessage> {
+    this.scope(context); fields(args, ['segments', 'reply_to']);
+    if (!Array.isArray(args.segments) || args.segments.length < 1 || args.segments.length > 12) fail();
+    let atCount = 0, textLength = 0, visible = false;
     const targets = new Set<string>();
-    const parts: PreparedPart[] = args.parts.map(part => {
-      fields(part, ['segments', 'text', 'reply_to']);
-      const hasText = Object.hasOwn(part, 'text'), hasSegments = Object.hasOwn(part, 'segments');
-      if (hasText === hasSegments) fail();
-      const source = hasText ? [{ type: 'text', text: part.text }] : part.segments;
-      if (!Array.isArray(source) || source.length < 1 || source.length > 12) fail();
-      let textLength = 0, visible = false;
-      const segments: PreparedPart['segments'] = source.map(segment => {
-        if (!object(segment)) fail();
-        if (segment.type === 'text') {
-          fields(segment, ['type', 'text']);
-          if (typeof segment.text !== 'string' || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(segment.text)) fail();
-          textLength += segment.text.length;
-          visible ||= !!segment.text.trim();
-          return { type: 'text' as const, data: { text: segment.text } };
-        }
-        if (segment.type === 'face') {
-          fields(segment,['type','id','name']);
-          if (!isKnownFaceId(segment.id)||(Object.hasOwn(segment,'name')&&(typeof segment.name!=='string'||segment.name.length>80))) fail();
-          visible = true;
-          return {type:'face' as const,data:{id:segment.id}};
-        }
-        if (segment.type !== 'at') fail();
-        if (!this.options.mention) fail('tool_disabled');
-        fields(segment, ['type', 'user_id']);
-        const target = identifier(segment.user_id);
-        if (target === context.selfId || ++atCount > 3) fail();
-        targets.add(target); visible = true;
-        return { type: 'at' as const, data: { qq: target } };
-      });
-      if (!visible || textLength > 800) fail();
-      // Text is never interpreted as operations, including marker/CQ-looking strings.
-      // Actual mentions and faces were independently validated as structured segments.
-      const replyTo = Object.hasOwn(part, 'reply_to') ? identifier(part.reply_to, true) : undefined;
-      return { segments, text: segments.map(s => s.type === 'text' ? s.data.text : s.type === 'face' ? faceMarker(s.data.id) : `[at:${s.data.qq}]`).join(''), ...(replyTo !== undefined ? { replyTo } : {}) };
+    const segments: PreparedMessage['segments'] = args.segments.map(segment => {
+      if (!object(segment)) fail();
+      if (segment.type === 'text') {
+        fields(segment, ['type', 'text']);
+        if (typeof segment.text !== 'string' || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(segment.text)) fail();
+        textLength += segment.text.length; visible ||= !!segment.text.trim();
+        return { type: 'text' as const, data: { text: segment.text } };
+      }
+      if (segment.type === 'face') {
+        fields(segment,['type','id','name']);
+        if (!isKnownFaceId(segment.id)||(Object.hasOwn(segment,'name')&&(typeof segment.name!=='string'||segment.name.length>80))) fail();
+        visible = true; return {type:'face' as const,data:{id:segment.id}};
+      }
+      if (segment.type !== 'at') fail();
+      if (!this.options.mention) fail('tool_disabled');
+      fields(segment, ['type', 'user_id']);
+      const target = identifier(segment.user_id);
+      if (target === context.selfId || ++atCount > 3) fail();
+      targets.add(target); visible = true;
+      return { type: 'at' as const, data: { qq: target } };
     });
+    if (!visible || textLength > 800) fail();
+    const replyTo = Object.hasOwn(args, 'reply_to') ? identifier(args.reply_to, true) : undefined;
     for (const target of targets) member(await this.call('get_group_member_info', { group_id: this.groupId, user_id: target, no_cache: true }), this.groupId, target);
-    for (const part of parts) if (part.replyTo !== undefined && !this.memory.find(part.replyTo)) {
-      if (!this.memory.recent().some(entry=>entry.replyTo===part.replyTo)) fail('forbidden_reference');
-      await this.remoteMessage(part.replyTo);
+    if (replyTo !== undefined && !this.memory.find(replyTo)) {
+      if (!this.memory.recent().some(entry=>entry.replyTo===replyTo)) fail('forbidden_reference');
+      await this.remoteMessage(replyTo);
     }
-    return parts;
+    return { segments, text: segments.map(s => s.type === 'text' ? s.data.text : s.type === 'face' ? faceMarker(s.data.id) : `[at:${s.data.qq}]`).join(''), ...(replyTo !== undefined ? { replyTo } : {}) };
   }
 }

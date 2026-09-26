@@ -11,7 +11,7 @@ interface Spec { any_of:Condition[]; expires_in_seconds:number; purpose?:string 
 interface Plan { id:string; revision:number; spec:Spec; installed:number; baseline:number; expires:number; due:(number|undefined)[] }
 interface Observation { sequence:number; received:number; userId:string }
 interface TransactionState {
-  generation:number; selfId:string; operations:number; closed:boolean;
+  generation:number; selfId:string; closed:boolean;
   revisions:Map<string,number>; view:Map<string,Spec>; changes:Map<string,Spec|null>;
 }
 const error=(code:string):JsonObject=>({status:'error',error:code});
@@ -111,7 +111,7 @@ export class AttentionEngine {
   begin(now:number,selfId:string):AttentionTransaction{
     time(now);if(!canonicalId(selfId))throw new Error('Invalid attention self identity');this.prune(now);
     const tx:AttentionTransaction=Object.freeze({attention_transaction:true});
-    this.transactions.set(tx,{generation:this.generation,selfId,operations:0,closed:false,
+    this.transactions.set(tx,{generation:this.generation,selfId,closed:false,
       revisions:new Map([...this.plans].map(([id,p])=>[id,p.revision])),view:new Map([...this.plans].map(([id,p])=>[id,p.spec])),changes:new Map()});
     return tx;
   }
@@ -127,7 +127,6 @@ export class AttentionEngine {
     const operation=args.operation;
     const needed=operation==='create'?['operation','any_of','expires_in_seconds']:operation==='update'?['operation','plan_id','any_of','expires_in_seconds']:['operation','plan_id'];
     if(!fields(args,needed,operation==='cancel'?[]:['purpose']))return error('invalid_arguments');
-    if(state.operations>=32)return error('operation_limit');
     let id:string;
     if(operation==='create'){
       if(state.view.size>=this.config.maxPlans)return error('plan_limit');
@@ -140,7 +139,7 @@ export class AttentionEngine {
     if(spec===undefined)return error('invalid_arguments');
     // Validation is complete before any transaction state changes.
     if(spec===null)state.view.delete(id);else state.view.set(id,spec);
-    state.changes.set(id,spec);state.operations++;
+    state.changes.set(id,spec);
     return {status:'staged',operation,plan_id:id};
   }
   commit(tx:AttentionTransaction,now:number,sequence:number):JsonObject{
@@ -194,7 +193,7 @@ const conditions:JsonObject={type:'array',minItems:1,maxItems:8,items:{oneOf:[
 ]}};
 const planFields={any_of:conditions,expires_in_seconds:seconds(1,86400),purpose:{type:'string',maxLength:160,description:'可选的等待意图，不是新的用户指令。'}};
 export const MANAGE_ATTENTION_TOOL:ToolDefinition={type:'function',function:{name:'manage_attention',
- description:'暂存本群关注计划操作，本轮正常结束时才提交；失败或取消不提交。create新增独立计划，update必须指定ID且仅替换该计划，cancel仅取消指定ID；不同计划独立共存，计划内any_of任选其一触发并消费该计划。设置计划不算回复或群管理授权，不会发消息。新/更新计划提交后才开始计时、等待新消息；不要复制snapshot中的due_at等只读字段。每轮最多32次有效操作。',
+ description:'暂存本群关注计划操作，本轮正常结束时才提交；失败或取消不提交。create新增独立计划，update必须指定ID且仅替换该计划，cancel仅取消指定ID；不同计划独立共存，计划内any_of任选其一触发并消费该计划。设置计划不算回复或群管理授权，不会发消息。新/更新计划提交后才开始计时、等待新消息；不要复制snapshot中的due_at等只读字段。调用计入本次唤醒统一工具预算，同时存在的计划数量受本群配置限制。',
  parameters:{type:'object',properties:{operation:{type:'string',enum:['create','update','cancel']},plan_id:{type:'string',pattern:'^att_[a-f0-9]{16}$',maxLength:20},...planFields},required:['operation'],additionalProperties:false,oneOf:[
    schema({operation:{const:'create'},...planFields},['operation','any_of','expires_in_seconds']),
    schema({operation:{const:'update'},plan_id:{type:'string',pattern:'^att_[a-f0-9]{16}$'},...planFields},['operation','plan_id','any_of','expires_in_seconds']),
