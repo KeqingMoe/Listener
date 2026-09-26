@@ -94,6 +94,29 @@ test('invalid login identities reconnect without announcing ready until valid', 
   } finally { await f.close(); }
 });
 
+test('real WebSocket forwards only reaction notices on their dedicated event', { timeout: 3000 }, async () => {
+  const f = await fixture();
+  const notices: unknown[] = [], messages: unknown[] = [];
+  f.client.on('notice', packet => notices.push(packet));
+  f.client.on('message', packet => messages.push(packet));
+  try {
+    const reaction = { post_type: 'notice', notice_type: 'group_msg_emoji_like', group_id: '10', message_id: '20', likes: [{ emoji_id: '76', count: 3 }], is_add: true };
+    for (const packet of [
+      { post_type: 'notice', notice_type: 'group_increase' },
+      { post_type: 'notice', notice_type: 'friend_msg_emoji_like' },
+      { post_type: 'meta_event', meta_event_type: 'heartbeat' },
+      { ...reaction, echo: 'unknown-response' },
+      reaction,
+    ]) f.socket.send(JSON.stringify(packet));
+    const delivered = once(f.client, 'message');
+    const chat = { post_type: 'message', message_type: 'group', group_id: '10', message_id: '21' };
+    f.socket.send(JSON.stringify(chat));
+    await delivered;
+    assert.deepEqual(notices, [reaction]);
+    assert.deepEqual(messages, [chat], 'reaction notices never masquerade as chat messages');
+  } finally { await f.close(); }
+});
+
 test('missing pong triggers reconnect', { timeout: 3000 }, async () => {
   const f = await fixture(undefined, 20);
   try {

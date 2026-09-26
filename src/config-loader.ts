@@ -77,7 +77,7 @@ function groupSettings(id: string, raw: unknown, defaults: ListenerConfig, base:
   const enabled = bool(group,'enabled',path,true);
   const reply = table(group.reply,`${path}.reply`,['mention','quote_bot','random_probability','delay_ms','cooldown_ms','max_parts','random']);
   const random = table(reply.random,`${path}.reply.random`,['cooldown_ms','max_per_minute']);
-  const tools = table(group.tools,`${path}.tools`,['members','mention','moderation']);
+  const tools = table(group.tools,`${path}.tools`,['members','mention','reactions','moderation']);
   const moderation = table(tools.moderation,`${path}.tools.moderation`,['mute','recall','member_card','confirmation_ttl_seconds','max_mute_seconds']);
   const images = table(group.images,`${path}.images`,['enabled','max_per_turn','max_download_mb']);
   const forward = table(group.forward,`${path}.forward`,['enabled','max_per_read']);
@@ -105,7 +105,7 @@ function groupSettings(id: string, raw: unknown, defaults: ListenerConfig, base:
     maxParts:num(reply,'max_parts',`${path}.reply`,defaults.maxParts!,1,10),
     memoryPath,retentionDays:num(memory,'retention_days',`${path}.memory`,defaults.retentionDays,1,30),
     maxContextChars:num(memory,'context_chars',`${path}.memory`,defaults.maxContextChars,8000,100000),
-    tools:{members:bool(tools,'members',`${path}.tools`,dTools.members),mention:bool(tools,'mention',`${path}.tools`,dTools.mention),moderation:{
+    tools:{members:bool(tools,'members',`${path}.tools`,dTools.members),mention:bool(tools,'mention',`${path}.tools`,dTools.mention),reactions:bool(tools,'reactions',`${path}.tools`,dTools.reactions ?? false),moderation:{
       mute:bool(moderation,'mute',`${path}.tools.moderation`,dModeration.mute),recall:bool(moderation,'recall',`${path}.tools.moderation`,dModeration.recall),
       memberCard:bool(moderation,'member_card',`${path}.tools.moderation`,dModeration.memberCard),
       confirmationTtlSeconds:num(moderation,'confirmation_ttl_seconds',`${path}.tools.moderation`,dModeration.confirmationTtlSeconds,1,60),
@@ -157,7 +157,7 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
   const reply = table(root.reply, 'reply', ['mention', 'quote_bot', 'random_probability', 'delay_ms', 'cooldown_ms', 'max_parts', 'random']);
   const random = table(reply.random, 'reply.random', ['cooldown_ms', 'max_per_minute']);
   const memory = table(root.memory, 'memory', ['path', 'retention_days', 'context_chars']);
-  const tools = table(root.tools, 'tools', ['members', 'mention', 'moderation']);
+  const tools = table(root.tools, 'tools', ['members', 'mention', 'reactions', 'moderation']);
   const images = table(root.images, 'images', ['enabled', 'max_per_turn', 'max_download_mb']);
   const forward = table(root.forward, 'forward', ['enabled', 'max_per_read']);
   const attention = table(root.attention, 'attention', ['enabled', 'max_plans']);
@@ -217,7 +217,7 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
     memoryPath: filePath(text(memory, 'path', 'memory', 'data/listener.sqlite'), base, 'memory.path'),
     retentionDays: num(memory, 'retention_days', 'memory', 7, 1, 30), maxContextChars: num(memory, 'context_chars', 'memory', 24000, 8000, 100000),
     botName: text(bot, 'name', 'bot', 'Listener'), ownerName: text(bot, 'owner_name', 'bot', '時雨てる'),
-    tools: { members: bool(tools, 'members', 'tools', true), mention: bool(tools, 'mention', 'tools', true), moderation: {
+    tools: { members: bool(tools, 'members', 'tools', true), mention: bool(tools, 'mention', 'tools', true), reactions: bool(tools, 'reactions', 'tools', false), moderation: {
       mute: bool(moderation, 'mute', 'tools.moderation', true), recall: bool(moderation, 'recall', 'tools.moderation', true),
       memberCard: bool(moderation, 'member_card', 'tools.moderation', true),
       confirmationTtlSeconds: num(moderation, 'confirmation_ttl_seconds', 'tools.moderation', 60, 1, 60),

@@ -31,7 +31,9 @@ export class GroupRouter {
   async receive(event: unknown,selfId: string): Promise<void> {
     if(!this.connected||this.stopped||!event||typeof event!=='object')return;
     const raw=event as Record<string,unknown>;
-    if(raw.post_type!=='message'||raw.message_type!=='group')return;
+    const chat=raw.post_type==='message'&&raw.message_type==='group';
+    const reactions=raw.post_type==='notice'&&raw.notice_type==='group_msg_emoji_like';
+    if(!chat&&!reactions)return;
     const groupId=id(raw.group_id);
     if(!groupId)return;
     const handler=this.handlers.get(groupId);

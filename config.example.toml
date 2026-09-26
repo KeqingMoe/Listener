@@ -75,6 +75,12 @@ context_chars = 24000
 [tools]
 members = true
 mention = true
+# 给当前群消息添加／取消自己的表情回应，不是发送 face 消息，不需主人确认。
+# 同时自动在模型看到的消息旁展示已知 reaction 快照；通知只更新缓存，不唤醒模型。
+# 不依赖模型主动查询、不修改摘要；缺失或空快照不能断言无人回应。
+# 独立于 members、mention 和 moderation；关闭不会自动移除已有回应。
+# 候选目录来自完整 NapCat sysface（329）+ emoji（165），不表示逐项实测可用。
+reactions = false
 
 [tools.moderation]
 mute = true
@@ -93,6 +99,8 @@ enabled = true
 # enabled = true
 # [groups.'123456789'.reply]
 # random_probability = 0
+# [groups.'123456789'.tools]
+# reactions = true # 仅为这个群启用；其他 tools 字段继承全局
 # [groups.'123456789'.tools.moderation]
 # mute = false
 # recall = false

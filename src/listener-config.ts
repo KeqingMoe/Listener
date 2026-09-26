@@ -10,6 +10,7 @@ export interface ModerationPolicy {
 export interface ToolsConfig {
   members: boolean;
   mention: boolean;
+  reactions?: boolean;
   moderation: ModerationPolicy;
 }
 export interface ListenerConfig {

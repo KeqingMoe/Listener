@@ -41,7 +41,7 @@ test('nested group overrides inherit defaults deeply without mutating siblings o
  const {listener,groups}=f.load();const a=groups.find(g=>g.groupId==='22')!,b=groups.find(g=>g.groupId==='33')!;
  assert.equal(a.maxParts,10);assert.equal(a.randomReplyProbability,0.15);assert.equal(a.randomCooldownMs,10000);assert.equal(a.randomMaxPerMinute,4);
  assert.equal(a.debounceMs,1000);assert.equal(a.delayMaxMs,2500);
- assert.deepEqual(a.tools,{members:false,mention:true,moderation:{mute:false,recall:false,memberCard:true,confirmationTtlSeconds:60,maxMuteSeconds:100}});
+ assert.deepEqual(a.tools,{members:false,mention:true,reactions:false,moderation:{mute:false,recall:false,memberCard:true,confirmationTtlSeconds:60,maxMuteSeconds:100}});
  assert.deepEqual(a.images,{enabled:true,maxPerTurn:2,maxDownloadMb:2});assert.deepEqual(a.forward,{enabled:true,maxPerRead:5});
  assert.equal(a.retentionDays,3);assert.equal(a.maxContextChars,32000);assert.equal(b.retentionDays,12);
  a.tools!.moderation.mute=true;a.images!.enabled=false;a.forward!.enabled=false;

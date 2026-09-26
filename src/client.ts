@@ -79,6 +79,7 @@ export class OneBotClient extends EventEmitter {
         if (packet.status === 'ok' && packet.retcode === 0) pending.resolve(packet.data);
         else pending.reject(new OneBotError('api_failed',Number.isSafeInteger(packet.retcode)?packet.retcode:undefined));
       } else if (packet.post_type === 'message') this.emit('message', packet);
+      else if (packet.post_type === 'notice' && packet.notice_type === 'group_msg_emoji_like') this.emit('notice', packet);
     });
     ws.on('close', () => {
       if (this.socket !== ws) return;

@@ -11,6 +11,7 @@ import { GroupRouter } from './group-router.js';
 import { TurnScheduler } from './turn-scheduler.js';
 import { configureLogging, log } from './logger.js';
 import { FACE_CATALOG, EXAMPLE_FACE_CATALOG } from './face-catalog.js';
+import { getReactionCatalog } from './reaction-catalog.js';
 let logger: ReturnType<typeof configureLogging> | undefined;
 
 async function main(): Promise<void> {
@@ -18,6 +19,7 @@ async function main(): Promise<void> {
   logger=configureLogging(logging,[config.token,ai.apiKey]);
   log('info','app.start',{count:groups.length,ai_enabled:ai.enabled});
   log(FACE_CATALOG===EXAMPLE_FACE_CATALOG?'warn':'info','app.faces_ready',{count:FACE_CATALOG.length,reason:FACE_CATALOG===EXAMPLE_FACE_CATALOG?'example_catalog':'local_catalog'});
+  if(groups.some(group=>group.enabled&&group.tools?.reactions))log('info','app.reactions_ready',{count:getReactionCatalog().length});
   // Route only explicitly configured groups; private access and owner authority
   // cannot be widened by group overrides or model-selected parameters.
   const groupIds=groups.map(group=>resolveGroupId(group.groupId));
@@ -43,7 +45,7 @@ async function main(): Promise<void> {
           chmodSync(group.memoryPath,0o600);
         }
         entries.push([groupId,new Listener(client,model,memory,group,Math.random,undefined,scheduler)]);
-        log('info','app.group_ready',{group_id:groupId,ai_enabled:group.enabled,images_enabled:group.images?.enabled ?? false,forward_enabled:group.forward?.enabled ?? false,attention_enabled:group.attention?.enabled ?? false});
+        log('info','app.group_ready',{group_id:groupId,ai_enabled:group.enabled,images_enabled:group.images?.enabled ?? false,forward_enabled:group.forward?.enabled ?? false,attention_enabled:group.attention?.enabled ?? false,reactions_enabled:group.tools?.reactions ?? false});
       } catch(error){
         log('error','app.group_init_failed',{group_id:groupId,reason:error instanceof Error&&error.message==='Memory group mismatch'?'memory_group_mismatch':'group_initialization_failed'});
         throw error;
@@ -67,10 +69,12 @@ async function main(): Promise<void> {
     selfId = undefined; router.setConnected(false);
     if (!stopping) log('warn','onebot.disconnected');
   });
-  client.on('message', (event: unknown) => {
+  const receiveGroupEvent = (event: unknown) => {
     if (!selfId || stopping) return;
     void router.receive(event,selfId).catch(() => log('warn','message.failed',{reason:'event_handler_failed'}));
-  });
+  };
+  client.on('message', receiveGroupEvent);
+  client.on('notice', receiveGroupEvent);
   const stop = () => {
     if (stopping) return;
     stopping = true;
