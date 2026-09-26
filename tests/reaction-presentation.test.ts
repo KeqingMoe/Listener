@@ -13,7 +13,7 @@ class Mem implements Memory {
  context(){this.contextCalls++;return this.source;}recent(){this.recentCalls++;return this.rows;}find():never{throw Error('presentation must not query additional messages');}
  append():never{this.appendCalls++;throw Error('presentation must not persist anything');}async compact(){this.compactCalls++;throw Error('presentation must not summarize');}clear(){throw Error('presentation must not clear memory');}close(){throw Error('presentation must not close memory');}
 }
-function batch(messages:unknown[]):JsonObject{return {trigger_kind:'attention',trusted_actor_id:null,trusted_moderation_allowed:false,current_batch:{messages,omitted_count:3,first_message_id:'1',last_message_id:'2'},attention_hits:[{plan_id:'plan-1',purpose:'existing'}]};}
+function batch(messages:unknown[]):JsonObject{return {trigger_kind:'attention',trusted_actor_id:null,moderation_capabilities:{mute:'off',unmute:'off',recall:'off',member_card:'off'},current_batch:{messages,omitted_count:3,first_message_id:'1',last_message_id:'2'},attention_hits:[{plan_id:'plan-1',purpose:'existing'}]};}
 function strip(message:JsonObject){const {reactions:_,...rest}=message;return rest;}
 
 test('batch annotation is a clone and preserves text, provenance, authority and snapshot source',()=>{
@@ -65,7 +65,7 @@ test('older empty snapshots cannot starve recent real reactions in any presentat
 });
 
 test('SQL-shaped context annotates messages inline without changing summary or root metadata',()=>{
- const context={groupId:'22',untrusted:true,summary:{untrusted:true,text:'summary references messageId 999 but not an entry'},messages:[row('1'),row('2')],extra:{trusted_moderation_allowed:false}},raw=JSON.stringify(context,null,2),memory=new Mem(raw);
+ const context={groupId:'22',untrusted:true,summary:{untrusted:true,text:'summary references messageId 999 but not an entry'},messages:[row('1'),row('2')],extra:{moderation_capabilities:{mute:'off',unmute:'off',recall:'off',member_card:'off'}}},raw=JSON.stringify(context,null,2),memory=new Mem(raw);
  const calls:string[]=[];const output=JSON.parse(annotateReactionContext(memory,id=>{calls.push(id);return id==='2'?observed():undefined;}));
  assert.deepEqual(calls,['1','2']);assert.deepEqual(output.messages[1].reactions,expected());assert.ok(!Object.hasOwn(output.messages[0],'reactions'));assert.deepEqual({...output,messages:context.messages},context);assert.equal(memory.contextCalls,1);assert.equal(memory.source,raw);
 });
@@ -108,10 +108,10 @@ test('read results annotate only the successful actual local or verified remote 
 
 test('snapshots are bounded, trimmed with honest omissions, and never acquire own-membership or authority claims',()=>{
  for(const status of ['observed','stale','partial']){
-  const input=large(status);Object.assign(input,{contains_bot:true,messageId:'evil',text:'overwrite',summary:'overwrite',trusted_moderation_allowed:true});
+  const input=large(status);Object.assign(input,{contains_bot:true,messageId:'evil',text:'overwrite',summary:'overwrite',trusted_moderation_allowed:true,moderation_capabilities:{mute:'direct'}});
   const result={status:'ok',message:row('1')},output=annotateReactionReadResult(result,()=>input),annotation=(output.message as any).reactions;
   assert.ok(JSON.stringify(output).length-JSON.stringify(result).length<=1000);assert.ok(annotation.items.length<=8);assert.ok(annotation.items.length>0);assert.equal(annotation.omitted,33-annotation.items.length);assert.equal(annotation.status,status==='stale'?'stale':'partial');
-  assert.deepEqual(strip(output.message as JsonObject),row('1'));assert.ok(!JSON.stringify(annotation).includes('contains_bot'));assert.ok(!JSON.stringify(annotation).includes('overwrite'));assert.ok(!JSON.stringify(annotation).includes('trusted_moderation_allowed'));assert.ok(annotation.items.every((i:any)=>i.emoji_type==='2'&&[...i.name].length<=64&&[...i.emoji].length<=16));
+  assert.deepEqual(strip(output.message as JsonObject),row('1'));assert.ok(!JSON.stringify(annotation).includes('contains_bot'));assert.ok(!JSON.stringify(annotation).includes('overwrite'));assert.ok(!JSON.stringify(annotation).includes('trusted_moderation_allowed'));assert.ok(!JSON.stringify(annotation).includes('moderation_capabilities'));assert.ok(annotation.items.every((i:any)=>i.emoji_type==='2'&&[...i.name].length<=64&&[...i.emoji].length<=16));
  }
 });
 

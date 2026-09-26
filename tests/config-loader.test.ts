@@ -31,7 +31,7 @@ test('minimal config has empty group scope, disabled AI, complete defaults and r
   assert.equal(c.onebot.allowPrivate, false);
   assert.equal(c.onebot.rateLimitMs, 2000);
   assert.equal(c.listener.maxParts, 3);
-  assert.equal(c.listener.tools?.moderation.maxMuteSeconds, 600);
+  assert.deepEqual(c.listener.tools?.moderation, {mute:'off',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600});
   assert.deepEqual(c.listener.images,{enabled:false,maxPerTurn:3,maxDownloadMb:10});
   assert.deepEqual(c.listener.forward,{enabled:false,maxPerRead:20});
   assert.equal(c.personaPath, join(f.dir, 'prompts/listener.md'));

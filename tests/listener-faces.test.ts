@@ -43,8 +43,8 @@ test('super face layout guidance survives both mention modes without restricting
   assert.match(FACE_LAYOUT_GUIDANCE, /不设置 reply_to/);
   assert.match(FACE_LAYOUT_GUIDANCE, /独立作为一个 part/);
   for(const mention of [true,false]){
-    const cfg:ListenerConfig={...config,maxParts:10,tools:{members:true,mention,moderation:{mute:false,recall:false,memberCard:false,confirmationTtlSeconds:60,maxMuteSeconds:600}}};
-    const send=buildToolDefinitions(cfg,false).find(t=>t.function.name==='send_message')!;
+    const cfg:ListenerConfig={...config,maxParts:10,tools:{members:true,mention,moderation:{mute:'off',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600}}};
+    const send=buildToolDefinitions(cfg).find(t=>t.function.name==='send_message')!;
     assert.ok(send.function.description.includes(FACE_LAYOUT_GUIDANCE));
     const params:any=send.function.parameters;
     assert.equal(params.properties.parts.maxItems,10);
@@ -54,7 +54,7 @@ test('super face layout guidance survives both mention modes without restricting
 });
 
 function faceSchema(configOverrides: Partial<ListenerConfig> = {}) {
-  const tools = buildToolDefinitions({ ...config, ...configOverrides }, false);
+  const tools = buildToolDefinitions({ ...config, ...configOverrides });
   const send = tools.find(t => t.function.name === 'send_message')!;
   const params: any = send.function.parameters;
   const variants = params.properties.parts.items.properties.segments.items.oneOf as any[];
@@ -75,7 +75,7 @@ test('send tool includes strict ordinary and animated face choices without addin
 
 test('mention-disabled tool schema keeps face variant and removes only at', () => {
   const { variants, face } = faceSchema({ tools: { members: false, mention: false,
-    moderation: { mute:false, recall:false, memberCard:false, confirmationTtlSeconds: 60, maxMuteSeconds: 600 } } });
+    moderation: { mute: 'off', unmute:'off', recall: 'off', memberCard: 'off', confirmationTtlSeconds: 60, maxMuteSeconds: 600 } } });
   assert.ok(face); assert.ok(face.properties.id.enum.includes('375'));
   assert.deepEqual(variants.map(v => v.properties.type.const).sort(), ['face', 'text']);
 });

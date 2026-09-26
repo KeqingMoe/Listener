@@ -39,10 +39,10 @@ async function until(check:()=>boolean){for(let n=0;n<300;n++){if(check())return
 const settled=async(s:ReturnType<typeof setup>,count:number)=>until(()=>s.requests.length>=count&&idle(s));
 
 test('two plans after a send coexist, member A consumes only its plan and member B remains awaited',async()=>{
- const s=setup({respond:r=>r.index===0?complete(send(),member(A,'wait A'),member(B,'wait B')):complete(silent())});try{
+ const s=setup({settings:{tools:{members:true,mention:true,moderation:{mute:'confirm',unmute:'confirm',recall:'confirm',memberCard:'confirm',confirmationTtlSeconds:60,maxMuteSeconds:600}}},respond:r=>r.index===0?complete(send(),member(A,'wait A'),member(B,'wait B')):complete(silent())});try{
   await s.receive(event('1',OWNER_ID,true));await settled(s,1);assert.equal(plans(s).length,2);assert.equal(s.calls.length,1);
   await s.receive(event('2',A));await settled(s,2);assert.equal(payload(s.requests[1]!).trigger_kind,'attention');assert.equal(state(s.requests[1]!).triggered.length,1);assert.equal(state(s.requests[1]!).triggered[0].purpose,'wait A');
-  assert.deepEqual(plans(s).map(p=>p.purpose),['wait B']);assert.equal(payload(s.requests[1]!).trusted_moderation_allowed,false);assert.ok(!s.requests[1]!.tools.some(t=>t.function.name==='mute_member'));
+  assert.deepEqual(plans(s).map(p=>p.purpose),['wait B']);assert.deepEqual(payload(s.requests[1]!).moderation_capabilities,{mute:'confirm',unmute:'confirm',recall:'confirm',member_card:'confirm'});assert.ok(s.requests[1]!.tools.some(t=>t.function.name==='mute_member'));
   await s.receive(event('3',B));await settled(s,3);assert.equal(state(s.requests[2]!).triggered[0].purpose,'wait B');assert.deepEqual(plans(s),[]);
  }finally{await s.close();}
 });
@@ -106,7 +106,7 @@ for(const failure of ['model','send','reset','timeout'] as const)test(`staged pl
 });
 
 test('terminal completion executes trailing attention tools but no extra send, reads or moderation',async()=>{
- const s=setup({respond:()=>complete(send('first'),send('extra'),call('get_group_members'),call('mute_member',{user_id:A,seconds:10}),member(B))});try{
+ const s=setup({settings:{tools:{members:true,mention:true,moderation:{mute:'confirm',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600}}},respond:()=>complete(send('first'),send('extra'),call('get_group_members'),call('mute_member',{user_id:A,seconds:10}),member(B))});try{
   await s.receive(event('1',OWNER_ID,true));await settled(s,1);assert.equal(s.calls.length,1);assert.equal(s.calls[0]!.action,'send_group_msg');assert.equal(plans(s).length,1);assert.equal(s.requests.length,1);
  }finally{await s.close();}
 });
@@ -141,9 +141,10 @@ test('matched old plan during an active update cannot be resurrected; attention 
 });
 
 test('random participation remains independent, while disconnect and reset clear outstanding plans',async()=>{
- const s=setup({settings:{randomReplyProbability:1},respond:r=>r.index===0?complete(member(B),silent()):complete(silent())});try{
+ const s=setup({settings:{randomReplyProbability:1,tools:{members:true,mention:true,moderation:{mute:'confirm',unmute:'off',recall:'direct',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600}}},respond:r=>r.index===0?complete(member(B),silent()):complete(silent())});try{
   await s.receive(event('1',OWNER_ID,true));await settled(s,1);const id=plans(s)[0]!.plan_id;
   await s.receive(event('2',A));await settled(s,2);assert.equal(payload(s.requests[1]!).trigger_kind,'random');assert.equal(plans(s)[0]!.plan_id,id);
+   assert.deepEqual(payload(s.requests[1]!).moderation_capabilities,{mute:'confirm',unmute:'off',recall:'direct',member_card:'off'});assert.ok(s.requests[1]!.tools.some(t=>t.function.name==='mute_member'));assert.ok(s.requests[1]!.tools.some(t=>t.function.name==='recall_message'));assert.ok(!s.requests[1]!.tools.some(t=>t.function.name==='unmute_member'));
   s.bot.setConnected(false);assert.deepEqual(plans(s),[]);assert.equal((s.bot as any).unread.size,0);s.bot.setConnected(true);
   await s.receive(event('3',OWNER_ID,false,'/reset'));assert.deepEqual(plans(s),[]);
  }finally{await s.close();}

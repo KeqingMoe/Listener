@@ -17,17 +17,17 @@ test('reactions default off and do not implicitly enable groups or AI',t=>{
  const f=fixture(t);let c=f.load();
  assert.equal(c.listener.tools?.reactions,false);assert.deepEqual(c.groups,[]);assert.equal(c.listener.enabled,false);
  assert.equal(c.listener.tools?.members,true);assert.equal(c.listener.tools?.mention,true);
- assert.equal(c.listener.tools?.moderation.mute,true);assert.equal(c.listener.tools?.moderation.recall,true);assert.equal(c.listener.tools?.moderation.memberCard,true);
+ assert.equal(c.listener.tools?.moderation.mute,'off');assert.equal(c.listener.tools?.moderation.unmute,'off');assert.equal(c.listener.tools?.moderation.recall,'off');assert.equal(c.listener.tools?.moderation.memberCard,'off');
  f.config('[tools]\nreactions=true');c=f.load();assert.equal(c.listener.tools?.reactions,true);assert.deepEqual(c.groups,[]);assert.equal(c.listener.enabled,false);
  f.config('[groups."11"]\n[groups."22"]');c=f.load();assert.ok(c.groups.every(g=>g.tools?.reactions===false));
 });
 
 test('reaction overrides deeply inherit and leave siblings and other tools independent',t=>{
- const f=fixture(t,'[tools]\nreactions=true\nmembers=false\nmention=false\n[tools.moderation]\nmute=false\nrecall=false\nmember_card=false\n[groups."11".tools]\nreactions=false\n[groups."22".tools]\nmembers=true\n[groups."33"]');
+ const f=fixture(t,'[tools]\nreactions=true\nmembers=false\nmention=false\n[tools.moderation]\nmute="off"\nrecall="off"\nmember_card="off"\n[groups."11".tools]\nreactions=false\n[groups."22".tools]\nmembers=true\n[groups."33"]');
  const c=f.load(),a=c.groups.find(g=>g.groupId==='11')!,b=c.groups.find(g=>g.groupId==='22')!,d=c.groups.find(g=>g.groupId==='33')!;
  assert.equal(a.tools?.reactions,false);assert.equal(b.tools?.reactions,true);assert.equal(d.tools?.reactions,true);
  assert.equal(a.tools?.members,false);assert.equal(b.tools?.members,true);assert.equal(d.tools?.members,false);
- assert.ok(c.groups.every(g=>g.tools?.mention===false&&g.tools.moderation.mute===false&&g.tools.moderation.recall===false&&g.tools.moderation.memberCard===false));
+ assert.ok(c.groups.every(g=>g.tools?.mention===false&&g.tools.moderation.mute==='off'&&g.tools.moderation.unmute==='off'&&g.tools.moderation.recall==='off'&&g.tools.moderation.memberCard==='off'));
  for(const group of c.groups){assert.notEqual(group.tools,c.listener.tools);assert.notEqual(group.tools?.moderation,c.listener.tools?.moderation);}
  assert.notEqual(a.tools,b.tools);b.tools!.reactions=false;
  assert.equal(c.listener.tools?.reactions,true);assert.equal(d.tools?.reactions,true);
@@ -63,7 +63,7 @@ test('reaction toggles leave reply probability, attention and moderation policy 
  const c=f.load();assert.equal(c.listener.randomReplyProbability,0.42);
  for(const group of c.groups){
   assert.equal(group.randomReplyProbability,0.42);assert.deepEqual(group.attention,{enabled:false,maxPlans:16});
-  assert.deepEqual(group.tools?.moderation,{mute:true,recall:true,memberCard:true,confirmationTtlSeconds:60,maxMuteSeconds:600});
+  assert.deepEqual(group.tools?.moderation,{mute:'off',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600});
  }
  assert.deepEqual([...c.onebot.allowedGroups],['11','22']);assert.equal(c.onebot.allowPrivate,false);
 });

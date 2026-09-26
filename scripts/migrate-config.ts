@@ -40,7 +40,7 @@ export function migrateConfig(root = process.cwd(), env: NodeJS.ProcessEnv = pro
     persona:{file:'prompts/listener.md'},
     reply:{mention:true,quote_bot:true,random_probability:number('AI_RANDOM_REPLY_PROBABILITY',0.03),delay_ms:[minDelay,number('AI_DELAY_MAX_MS',Math.max(3000,minDelay))],cooldown_ms:number('AI_COOLDOWN_MS',5000),max_parts:3,random:{cooldown_ms:number('AI_RANDOM_COOLDOWN_MS',60000),max_per_minute:number('AI_RANDOM_MAX_PER_MINUTE',2)}},
     memory:{path:value('AI_MEMORY_PATH','data/listener.sqlite'),retention_days:number('AI_RETENTION_DAYS',7),context_chars:number('AI_CONTEXT_CHARS',24000)},
-    tools:{members:true,mention:true,moderation:{mute:true,recall:true,member_card:true,confirmation_ttl_seconds:60,max_mute_seconds:600}},
+    tools:{members:true,mention:true,moderation:{mute:'off',unmute:'off',recall:'off',member_card:'off',confirmation_ttl_seconds:60,max_mute_seconds:600}},
   };
   const token = value('ONEBOT_ACCESS_TOKEN',''); const key = value('OPENAI_API_KEY','');
   // Values are preserved via dotenv single quotes, with no interpolation or escaping.

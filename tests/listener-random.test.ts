@@ -38,7 +38,9 @@ function setup(options: { config?: Partial<ListenerConfig>; random?: () => numbe
   const api: Api = { async call(action, params = {}) {
     calls.push({ action, params });
     if (action === 'send_group_msg') return { message_id: String(10000 + calls.length) };
-    if (action === 'get_group_member_info') return { group_id: LISTENER_GROUP, user_id: params.user_id, nickname: 'member', role: 'member' };
+    if(action==='get_login_info')return {user_id:self};
+    if (action === 'get_group_member_info') return { group_id: LISTENER_GROUP, user_id: params.user_id, nickname: 'member', role: params.user_id===self?'admin':'member' };
+    if(action==='set_group_ban')return null;
     return {};
   } };
   const model: Model = { async complete(messages, tools, signal) {
@@ -49,7 +51,7 @@ function setup(options: { config?: Partial<ListenerConfig>; random?: () => numbe
   return { bot, api, memory, calls, requests, get draws() { return draws; } };
 }
 function request(s: ReturnType<typeof setup>, index = 0) {
-  return JSON.parse(s.requests[index]!.messages.find(m => m.role === 'user')!.content!);
+  const content=s.requests[index]!.messages.find(m => m.role === 'user')!.content;assert.ok(typeof content==='string');return JSON.parse(content);
 }
 async function until(check: () => boolean) {
   for (let i = 0; i < 100; i++) { if (check()) return; await delay(5); }
@@ -99,12 +101,13 @@ test('direct at bypasses zero probability and random cooldown/cap with real dire
       await until(() => s.requests.length === before + 1);
       assert.equal(request(s, before).trigger_kind, 'direct');
       assert.equal(request(s, before).trusted_actor_id, OWNER_ID);
-      assert.ok(s.requests[before]!.tools.includes('mute_member'));
+      assert.ok(!s.requests[before]!.tools.includes('mute_member'));
+      assert.deepEqual(request(s,before).moderation_capabilities,{mute:'off',unmute:'off',recall:'off',member_card:'off'});
     } finally { await s.bot.stop(); }
   }
 });
 
-test('owner random turn offers no moderation and rejects malicious mute with no API mutations', async () => {
+test('owner random turn cannot enable default-off moderation and rejects invented mute before APIs', async () => {
   let rounds = 0;
   const s = setup({ complete: async () => ++rounds === 1
     ? tool('mute_member', { user_id: '12345', seconds: 60 }) : tool('stay_silent') });
@@ -114,9 +117,24 @@ test('owner random turn offers no moderation and rejects malicious mute with no 
     assert.equal(request(s).trigger_kind, 'random');
     for (const turn of s.requests) for (const name of ['mute_member', 'recall_message', 'set_member_card']) assert.ok(!turn.tools.includes(name));
     const result = s.requests[1]!.messages.find(m => m.role === 'tool');
-    assert.equal(JSON.parse(result!.content!).status, 'error');
+    assert.ok(typeof result!.content==='string');assert.equal(JSON.parse(result!.content).status, 'error');
     assert.deepEqual(s.calls, []);
   } finally { await s.bot.stop(); }
+});
+
+test('nonowner random turn may autonomously propose configured moderation but only owner confirms',async()=>{
+ let rounds=0;const s=setup({config:{tools:{members:true,mention:true,moderation:{mute:'confirm',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600}}},complete:async()=>++rounds===1?tool('mute_member',{user_id:'12345',seconds:60}):tool('stay_silent')});
+ try{
+  await s.bot.receive(event('1',false,{user_id:'55555'}),self);
+  await until(()=>s.calls.some(c=>c.action==='send_group_msg'&&JSON.stringify(c.params).includes('/confirm')));await settled();
+  assert.equal(s.requests.length,1);assert.equal(request(s).trigger_kind,'random');assert.equal(request(s).current_request.userId,'55555');
+  assert.ok(s.requests[0]!.tools.includes('mute_member'));assert.equal(request(s).moderation_capabilities.mute,'confirm');
+  assert.ok(!s.calls.some(c=>c.action==='set_group_ban'));
+  const notification=s.calls.find(c=>c.action==='send_group_msg')!,code=/\/confirm ([a-f0-9]{32})/.exec(JSON.stringify(notification.params))![1]!;
+  const command=(id:string,user_id:string)=>event(id,false,{user_id,message:[{type:'text',data:{text:`/confirm ${code}`}}]});
+  await s.bot.receive(command('2','55555'),self);assert.ok(!s.calls.some(c=>c.action==='set_group_ban'));
+  await s.bot.receive(command('3',OWNER_ID),self);assert.deepEqual(s.calls.filter(c=>c.action==='set_group_ban').map(c=>c.params),[{group_id:LISTENER_GROUP,user_id:'12345',duration:60}]);
+ }finally{await s.bot.stop();}
 });
 
 test('pending direct cannot be replaced by ordinary random candidate', async () => {

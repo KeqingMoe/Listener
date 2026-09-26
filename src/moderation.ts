@@ -3,30 +3,59 @@ import { log } from './logger.js';
 import type { ModerationPolicy } from './listener-config.js';
 import { LISTENER_GROUP, resolveGroupId, OWNER_ID, type Api, type JsonObject, type ToolDefinition, type TurnContext } from './contracts.js';
 
-const userIdSchema = { type: 'string', pattern: '^[1-9][0-9]*$', description: 'Explicit target QQ user ID; never the owner or bot.' };
+type Mode = 'off' | 'confirm' | 'direct';
+const userIdSchema = { type: 'string', maxLength: 32, pattern: '^[1-9][0-9]*$', description: 'Target QQ user ID in this group, never the owner or bot; nicknames do not authorize operations.' };
+const parameters = (properties: JsonObject, required: string[]): JsonObject => ({ type: 'object', additionalProperties: false, properties, required });
 export const MODERATION_TOOLS: ToolDefinition[] = [
-  { type: 'function', function: { name: 'mute_member', description: 'Propose a Listener member mute (0 seconds unmutes). Requires owner /confirm; never executes immediately.', parameters: { type: 'object', additionalProperties: false, required: ['user_id', 'seconds'], properties: { user_id: userIdSchema, seconds: { type: 'integer', minimum: 0, maximum: 600 } } } } },
-  { type: 'function', function: { name: 'recall_message', description: 'Propose recalling a verified Listener message. Requires owner /confirm; never executes immediately.', parameters: { type: 'object', additionalProperties: false, required: ['message_id'], properties: { message_id: { type: 'string', pattern: '^-?(0|[1-9][0-9]*)$' } } } } },
-  { type: 'function', function: { name: 'set_member_card', description: 'Propose changing a Listener member card. Requires owner /confirm; never executes immediately.', parameters: { type: 'object', additionalProperties: false, required: ['user_id', 'card'], properties: { user_id: userIdSchema, card: { type: 'string', minLength: 1, maxLength: 60 } } } } },
+  { type: 'function', function: { name: 'mute_member', description: 'Mute an eligible current-group member under the configured capability policy.', parameters: parameters({ user_id: userIdSchema, seconds: { type: 'integer', minimum: 1, maximum: 600 } }, ['user_id', 'seconds']) } },
+  { type: 'function', function: { name: 'unmute_member', description: 'Unmute an eligible current-group member under the configured capability policy.', parameters: parameters({ user_id: userIdSchema }, ['user_id']) } },
+  { type: 'function', function: { name: 'recall_message', description: 'Recall a verified, eligible current-group message under the configured capability policy.', parameters: parameters({ message_id: { type: 'string', maxLength: 17, pattern: '^(0|-?[1-9][0-9]*)$' } }, ['message_id']) } },
+  { type: 'function', function: { name: 'set_member_card', description: 'Change an eligible current-group member card under the configured capability policy.', parameters: parameters({ user_id: userIdSchema, card: { type: 'string', minLength: 1, maxLength: 60 } }, ['user_id', 'card']) } },
 ];
-export const HELP = 'Only the owner in Listener may propose mute_member (0–600 seconds), recall_message, or set_member_card. Nothing changes until an explicit /confirm CODE within 60 seconds. Codes are single-use.';
-
+export const HELP = 'Management capabilities are independently configured as off (disabled by default), confirm (the bot may autonomously request an operation; only the owner can /confirm CODE), or direct (the bot may autonomously execute). Mute and unmute are separate capabilities. Confirmation codes are scoped, expiring and single-use. Group, identity, QQ permissions and target protections always apply.';
 type Action = { name: 'mute_member'; user_id: string; seconds: number } |
+  { name: 'unmute_member'; user_id: string } |
   { name: 'set_member_card'; user_id: string; card: string } |
   { name: 'recall_message'; message_id: string };
+const policyKey = { mute_member: 'mute', unmute_member: 'unmute', recall_message: 'recall', set_member_card: 'memberCard' } as const;
+type ActionName = keyof typeof policyKey;
 type Pending = { action: Action; context: TurnContext; target: string; expires: number };
-const record = (value: unknown): value is JsonObject => !!value && typeof value === 'object' && !Array.isArray(value);
-const id = (value: unknown): string | undefined => {
-  if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) return String(value);
-  if (typeof value === 'string' && value === value.trim() && /^[1-9]\d*$/.test(value)) return value;
-  return undefined;
-};
-const messageId = (value: unknown): string | undefined => {
-  if (typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
-  if (typeof value === 'string' && value === value.trim() && /^-?(0|[1-9]\d*)$/.test(value)) return value;
-  return undefined;
-};
-const deny = (): never => { throw new Error('Moderation denied'); };
+function record(value: unknown): value is JsonObject {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  try { return [Object.prototype, null].includes(Object.getPrototypeOf(value)) && Reflect.ownKeys(value).every(key =>
+    typeof key === 'string' && Object.hasOwn(Object.getOwnPropertyDescriptor(value, key)!, 'value')); }
+  catch { return false; }
+}
+function id(value: unknown): string | undefined {
+  if (typeof value === 'number') return Number.isSafeInteger(value) && value > 0 ? String(value) : undefined;
+  return typeof value === 'string' && value.length <= 32 && value.trim() === value && /^[1-9][0-9]*$/.test(value) ? value : undefined;
+}
+function messageId(value: unknown): string | undefined {
+  if (typeof value === 'number') return Number.isSafeInteger(value) && !Object.is(value, -0) ? String(value) : undefined;
+  return typeof value === 'string' && value.length <= 17 && /^(0|-?[1-9][0-9]*)$/.test(value) && Number.isSafeInteger(Number(value)) && String(Number(value)) === value ? value : undefined;
+}
+class Denied extends Error { constructor(readonly code: string) { super(code); } }
+const deny = (code = 'verification_failed'): never => { throw new Denied(code); };
+function policy(options: Partial<ModerationPolicy> = {}): Readonly<ModerationPolicy> {
+  const defaults: ModerationPolicy = { mute: 'off', unmute: 'off', recall: 'off', memberCard: 'off', confirmationTtlSeconds: 60, maxMuteSeconds: 600 };
+  if (!record(options) || Reflect.ownKeys(options).some(key => typeof key !== 'string' || !Object.hasOwn(defaults, key))) throw new Error('Invalid moderation options');
+  const value = { ...defaults, ...options };
+  if (['mute', 'unmute', 'recall', 'memberCard'].some(key => !['off', 'confirm', 'direct'].includes(value[key as keyof ModerationPolicy] as string)) ||
+    !Number.isInteger(value.confirmationTtlSeconds) || value.confirmationTtlSeconds < 1 || value.confirmationTtlSeconds > 60 ||
+    !Number.isInteger(value.maxMuteSeconds) || value.maxMuteSeconds < 1 || value.maxMuteSeconds > 600) throw new Error('Invalid moderation options');
+  return Object.freeze(value);
+}
+export function buildModerationTools(options: Partial<ModerationPolicy> = {}): ToolDefinition[] {
+  const configured = policy(options);
+  return MODERATION_TOOLS.filter(tool => configured[policyKey[tool.function.name as ActionName]] !== 'off').map(source => {
+    const tool = structuredClone(source), mode = configured[policyKey[tool.function.name as ActionName]];
+    tool.function.description += mode === 'confirm'
+      ? ` The bot may decide autonomously from current-group context. Requires owner /confirm within ${configured.confirmationTtlSeconds} seconds; confirmation_required is not execution.`
+      : ' The bot may decide autonomously from current-group context and execute immediately without approval. Only executed means success; unknown means delivery is uncertain and must not be blindly retried.';
+    if (tool.function.name === 'mute_member') ((tool.function.parameters.properties as JsonObject).seconds as JsonObject).maximum = configured.maxMuteSeconds;
+    return tool;
+  });
+}
 
 export class Moderation {
   private readonly pending = new Map<string, Pending>();
@@ -34,126 +63,143 @@ export class Moderation {
   private readonly policy: Readonly<ModerationPolicy>;
   private readonly groupId: string;
   constructor(private readonly api: Api, private readonly now: () => number = Date.now, options: Partial<ModerationPolicy> = {}, groupId: string = LISTENER_GROUP) {
-    this.groupId = resolveGroupId(groupId);
-    const defaults: ModerationPolicy = { mute: true, recall: true, memberCard: true, confirmationTtlSeconds: 60, maxMuteSeconds: 600 };
-    if (!record(options) || ![Object.prototype, null].includes(Object.getPrototypeOf(options)) ||
-      Reflect.ownKeys(options).some(key => typeof key !== 'string' || !Object.hasOwn(defaults, key))) throw new Error('Invalid moderation options');
-    const policy = { ...defaults, ...options };
-    if (['mute', 'recall', 'memberCard'].some(key => typeof policy[key as keyof ModerationPolicy] !== 'boolean') ||
-      !Number.isInteger(policy.confirmationTtlSeconds) || policy.confirmationTtlSeconds < 1 || policy.confirmationTtlSeconds > 60 ||
-      !Number.isInteger(policy.maxMuteSeconds) || policy.maxMuteSeconds < 1 || policy.maxMuteSeconds > 600) throw new Error('Invalid moderation options');
-    this.policy = Object.freeze(policy);
+    this.groupId = resolveGroupId(groupId); this.policy = policy(options);
   }
-
-  private enforcePolicy(action: Action): void {
-    if (action.name === 'mute_member' && (!this.policy.mute || action.seconds > this.policy.maxMuteSeconds) ||
-      action.name === 'recall_message' && !this.policy.recall ||
-      action.name === 'set_member_card' && !this.policy.memberCard) deny();
+  private check(signal?: AbortSignal, expires?: number): void {
+    if (this.disposed || signal?.aborted) deny('cancelled');
+    if (expires !== undefined && this.now() >= expires) deny('confirmation_expired');
   }
-
-  private prune(): void {
-    const now = this.now();
-    for (const [code, pending] of this.pending) if (now >= pending.expires) this.pending.delete(code);
+  private scope(context: TurnContext): TurnContext {
+    if (!record(context) || context.groupId !== this.groupId || typeof context.actorId !== 'string' || id(context.actorId) !== context.actorId ||
+      typeof context.selfId !== 'string' || id(context.selfId) !== context.selfId || context.selfId === OWNER_ID ||
+      typeof context.messageId !== 'string' || messageId(context.messageId) !== context.messageId) deny('forbidden_context');
+    return { groupId: this.groupId, actorId: context.actorId, selfId: context.selfId, messageId: context.messageId };
   }
-
-  private async authorize(context: TurnContext): Promise<void> {
-    if (this.disposed || context.actorId !== OWNER_ID || context.groupId !== this.groupId ||
-      !id(context.selfId) || context.selfId === OWNER_ID || !messageId(context.messageId)) deny();
-    const login = await this.api.call('get_login_info');
-    if (!record(login) || id(login.user_id) !== context.selfId || this.disposed) deny();
-  }
-
   private parse(name: string, args: unknown): Action {
-    if (!record(args) || (Object.getPrototypeOf(args) !== Object.prototype && Object.getPrototypeOf(args) !== null)) return deny();
-    const expected = name === 'mute_member' ? ['user_id', 'seconds'] : name === 'set_member_card' ? ['user_id', 'card'] : name === 'recall_message' ? ['message_id'] : [];
-    if (!expected.length || Reflect.ownKeys(args).length !== expected.length || expected.some(key => !Object.hasOwn(args, key))) return deny();
+    if (!Object.hasOwn(policyKey, name) || !record(args)) return deny('invalid_arguments');
+    const expected = name === 'mute_member' ? ['user_id', 'seconds'] : name === 'set_member_card' ? ['user_id', 'card'] : name === 'recall_message' ? ['message_id'] : ['user_id'];
+    if (Reflect.ownKeys(args).length !== expected.length || expected.some(key => !Object.hasOwn(args, key))) return deny('invalid_arguments');
     if (name === 'recall_message') {
-      if (typeof args.message_id !== 'string' || !messageId(args.message_id)) return deny();
+      if (typeof args.message_id !== 'string' || messageId(args.message_id) !== args.message_id) return deny('invalid_arguments');
       return { name, message_id: args.message_id };
     }
-    if (typeof args.user_id !== 'string' || !id(args.user_id)) return deny();
-    if (name === 'mute_member' && typeof args.seconds === 'number' && Number.isInteger(args.seconds) && args.seconds >= 0 && args.seconds <= 600) return { name, user_id: args.user_id, seconds: args.seconds };
+    if (typeof args.user_id !== 'string' || id(args.user_id) !== args.user_id) return deny('invalid_arguments');
+    if (name === 'unmute_member') return { name, user_id: args.user_id };
+    if (name === 'mute_member' && typeof args.seconds === 'number' && Number.isInteger(args.seconds) && args.seconds >= 1 && args.seconds <= this.policy.maxMuteSeconds) return { name, user_id: args.user_id, seconds: args.seconds };
     if (name === 'set_member_card' && typeof args.card === 'string' && Array.from(args.card).length >= 1 && Array.from(args.card).length <= 60 && !/[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u.test(args.card)) return { name, user_id: args.user_id, card: args.card };
-    return deny();
+    return deny('invalid_arguments');
   }
-
-  private async verify(action: Action, context: TurnContext): Promise<string> {
-    let target: string | undefined;
-    if (action.name === 'recall_message') {
-      const message = await this.api.call('get_msg', { message_id: action.message_id });
-      if (!record(message) || message.message_type !== 'group' || id(message.group_id) !== this.groupId || messageId(message.message_id) !== action.message_id || !record(message.sender)) return deny();
-      target = id(message.sender.user_id);
-    } else {
-      // Reject protected targets before even looking them up.
-      if (action.user_id === OWNER_ID || action.user_id === context.selfId) return deny();
-      const member = await this.api.call('get_group_member_info', { group_id: this.groupId, user_id: action.user_id, no_cache: true });
-      if (!record(member) || id(member.group_id) !== this.groupId || id(member.user_id) !== action.user_id) return deny();
-      // Unknown/missing roles cannot prove a target is an ordinary member.
-      if (action.name === 'mute_member' && member.role !== 'member') return deny();
-      target = id(member.user_id);
+  private mode(action: Action): Mode { return this.policy[policyKey[action.name]]; }
+  private protected(target: string, context: TurnContext): void { if (target === OWNER_ID || target === context.selfId) deny('protected_target'); }
+  private async read(action: string, params: JsonObject, signal?: AbortSignal, expires?: number): Promise<unknown> {
+    this.check(signal, expires);
+    let value: unknown;
+    try { value = await this.api.call(action, params); }
+    catch { this.check(signal, expires); return deny('verification_unavailable'); }
+    this.check(signal, expires); return value;
+  }
+  private member(value: unknown, expected: string): 'member' | 'admin' | 'owner' {
+    if (!record(value) || id(value.group_id) !== this.groupId || id(value.user_id) !== expected || !['member', 'admin', 'owner'].includes(value.role as string)) return deny();
+    return value.role as 'member' | 'admin' | 'owner';
+  }
+  private async verify(action: Action, context: TurnContext, signal?: AbortSignal, expires?: number, expectedSender?: string): Promise<string> {
+    // This proof comes only from the caller's frozen memory, never model arguments.
+    if (expectedSender !== undefined) {
+      if (action.name !== 'recall_message' || typeof expectedSender !== 'string' || id(expectedSender) !== expectedSender) return deny('verification_failed');
+      this.protected(expectedSender, context);
     }
-    if (!target || target === OWNER_ID || target === context.selfId || this.disposed) return deny();
+    if (action.name !== 'recall_message') this.protected(action.user_id, context);
+    const login = await this.read('get_login_info', {}, signal, expires);
+    if (!record(login) || id(login.user_id) !== context.selfId) return deny('identity_mismatch');
+    const botRole = this.member(await this.read('get_group_member_info', { group_id: this.groupId, user_id: context.selfId, no_cache: true }, signal, expires), context.selfId);
+    if (botRole === 'member') return deny('permission_denied');
+    let target: string;
+    if (action.name === 'recall_message') {
+      const message = await this.read('get_msg', { message_id: action.message_id }, signal, expires);
+      if (!record(message) || message.message_type !== 'group' || id(message.group_id) !== this.groupId || messageId(message.message_id) !== action.message_id || !record(message.sender)) return deny();
+      const sender = id(message.sender.user_id);
+      if (!sender || (Object.hasOwn(message, 'user_id') && id(message.user_id) !== sender) || (expectedSender !== undefined && sender !== expectedSender)) return deny();
+      target = sender;
+    } else target = action.user_id;
+    this.protected(target, context);
+    const role = this.member(await this.read('get_group_member_info', { group_id: this.groupId, user_id: target, no_cache: true }, signal, expires), target);
+    if (role === 'owner' || ((action.name === 'mute_member' || action.name === 'unmute_member' || botRole !== 'owner') && role !== 'member')) return deny('permission_denied');
     return target;
   }
-
-  private audit(action: string, context: TurnContext, target: string | undefined,
-    outcome: 'proposed' | 'proposal_denied' | 'executed' | 'delivery_unknown' | 'confirmation_denied', seconds?: number): void {
-    // Only validated identifiers and static outcomes; never card, code, chat or API error text.
-    log(outcome === 'proposed' || outcome === 'executed' ? 'info' : 'warn', 'moderation.audit', {
-      ...(['mute_member', 'recall_message', 'set_member_card'].includes(action) ? { action } : {}),
-      ...(id(context.actorId) ? { actor_id: id(context.actorId) } : {}),
-      ...(id(target) ? { target_id: id(target) } : {}),
-      ...(messageId(context.messageId) ? { message_id: messageId(context.messageId) } : {}),
-      ...(typeof seconds === 'number' && Number.isInteger(seconds) && seconds >= 0 && seconds <= 600 ? { seconds } : {}), outcome,
-    });
+  private audit(action: string, context: TurnContext | undefined, target: string | undefined, outcome: string, seconds?: number, phase: 'request' | 'confirm' | 'direct' = 'request'): void {
+    // In request/direct phases actor_id is only the source-message actor, not an authorizer.
+    log('info', 'moderation.audit', { action, group_id: this.groupId, actor_id: context?.actorId, message_id: context?.messageId, target_id: target, seconds, outcome, phase });
   }
-
-  async propose(name: string, args: unknown, context: TurnContext): Promise<JsonObject> {
-    const fixed = { ...context };
-    let target: string | undefined;
+  private resultError(error: unknown): JsonObject { return { status: 'error', error: error instanceof Denied ? error.code : 'moderation_failed' }; }
+  private async execute(action: Action, context: TurnContext, target: string, signal?: AbortSignal, expires?: number): Promise<JsonObject> {
+    this.check(signal, expires);
+    const phase = this.mode(action) === 'confirm' ? 'confirm' : 'direct';
+    let result: unknown;
     try {
-      const action = this.parse(name, args);
-      this.enforcePolicy(action);
-      await this.authorize(fixed);
-      target = await this.verify(action, fixed);
-      this.prune();
-      if (this.disposed || this.pending.size >= 10) deny();
+      if (action.name === 'mute_member' || action.name === 'unmute_member') result = await this.api.call('set_group_ban', { group_id: this.groupId, user_id: action.user_id, duration: action.name === 'mute_member' ? action.seconds : 0 });
+      else if (action.name === 'set_member_card') result = await this.api.call('set_group_card', { group_id: this.groupId, user_id: action.user_id, card: action.card });
+      else result = await this.api.call('delete_msg', { message_id: action.message_id });
+    } catch {
+      this.audit(action.name, context, target, 'delivery_unknown', undefined, phase);
+      return { status: 'unknown', error: 'delivery_unknown' };
+    }
+    // Dispatch is irreversible. Preserve its acknowledgement even after cancellation.
+    const objectResult = record(result) ? result : undefined;
+    const failedCode = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value !== 0;
+    const rejected = result === false || failedCode(result) || (objectResult !== undefined &&
+      (objectResult.result === false || objectResult.success === false || failedCode(objectResult.result) || failedCode(objectResult.retcode) || failedCode(objectResult.code) || objectResult.status === 'failed' || objectResult.status === 'error'));
+    if (rejected) { this.audit(action.name, context, target, 'rejected', undefined, phase); return { status: 'error', error: 'moderation_rejected' }; }
+    const malformedStatus = objectResult !== undefined && (
+      (Object.hasOwn(objectResult, 'result') && objectResult.result !== 0 && objectResult.result !== true) ||
+      ['retcode', 'code'].some(key => Object.hasOwn(objectResult, key) && objectResult[key] !== 0) ||
+      (Object.hasOwn(objectResult, 'success') && objectResult.success !== true) ||
+      (Object.hasOwn(objectResult, 'status') && !['ok', 'success'].includes(objectResult.status as string)));
+    const accepted = !malformedStatus && (result === null || result === undefined || result === true || result === 0 ||
+      (objectResult !== undefined && (Object.keys(objectResult).length === 0 || objectResult.result === 0 || objectResult.result === true)));
+    if (!accepted) { this.audit(action.name, context, target, 'delivery_unknown', undefined, phase); return { status: 'unknown', error: 'delivery_unknown' }; }
+    this.audit(action.name, context, target, 'executed', action.name === 'mute_member' ? action.seconds : action.name === 'unmute_member' ? 0 : undefined, phase);
+    return { status: 'executed' };
+  }
+  async request(name: string, args: unknown, context: TurnContext, signal?: AbortSignal, expectedSender?: string): Promise<JsonObject> {
+    let fixed: TurnContext | undefined, action: Action | undefined, target: string | undefined;
+    try {
+      this.check(signal); fixed = this.scope(context); action = this.parse(name, args);
+      const mode = this.mode(action); if (mode === 'off') return deny('tool_disabled');
+      for (const [code, pending] of this.pending) if (this.now() >= pending.expires) this.pending.delete(code);
+      if (mode === 'confirm' && this.pending.size >= 10) return deny('confirmation_limit');
+      target = await this.verify(action, fixed, signal, undefined, expectedSender);
+      this.check(signal);
+      if (mode === 'direct') return await this.execute(action, fixed, target, signal);
+      if (this.pending.size >= 10) return deny('confirmation_limit');
       const code = randomBytes(16).toString('hex');
       this.pending.set(code, { action, context: fixed, target, expires: this.now() + this.policy.confirmationTtlSeconds * 1000 });
-      const description = action.name === 'mute_member' ? `群 ${this.groupId}：${action.seconds === 0 ? '解除禁言' : '禁言'}成员 ${target}，时长 ${action.seconds} 秒` : action.name === 'recall_message' ? `群 ${this.groupId}：撤回成员 ${target} 的消息 ${action.message_id}` : `群 ${this.groupId}：将成员 ${target} 的群名片设置为 ${JSON.stringify(action.card)}`;
-      this.audit(name, fixed, target, 'proposed', action.name === 'mute_member' ? action.seconds : undefined);
-      return { status: 'confirmation_required', code, description: `${description}；请在 ${this.policy.confirmationTtlSeconds} 秒内使用 /confirm CODE 确认`, expires_in_seconds: this.policy.confirmationTtlSeconds };
-    } catch {
-      this.audit(name, fixed, target, 'proposal_denied');
-      return { status: 'error', error: 'Moderation proposal denied or verification unavailable.' };
-    }
+      this.audit(action.name, fixed, target, 'confirmation_required', action.name === 'mute_member' ? action.seconds : action.name === 'unmute_member' ? 0 : undefined);
+      const description = action.name === 'mute_member' ? `禁言 QQ ${action.user_id} ${action.seconds} 秒` :
+        action.name === 'unmute_member' ? `解除 QQ ${action.user_id} 的禁言` :
+        action.name === 'recall_message' ? `撤回本群消息 ${action.message_id}（发送者 QQ ${target}）` :
+        `将 QQ ${action.user_id} 的群名片改为 ${JSON.stringify(action.card)}`;
+      return { status: 'confirmation_required', code, expires_in_seconds: this.policy.confirmationTtlSeconds, description: `群 ${this.groupId}：${description}`, action: { ...action } };
+    } catch (error) { this.audit(action?.name ?? 'invalid', fixed, target, 'request_denied'); return this.resultError(error); }
   }
-
-  async confirm(code: string, context: TurnContext): Promise<JsonObject> {
-    const fixed = { ...context };
-    this.prune();
-    const pending = this.pending.get(code);
-    // Consume before the first await, including failed authorization/verification. Never retry.
-    this.pending.delete(code);
-    let attempted = false;
+  async confirm(code: string, context: TurnContext, signal?: AbortSignal): Promise<JsonObject> {
+    let fixed: TurnContext | undefined, pending: Pending | undefined;
     try {
-      if (!pending || fixed.actorId !== pending.context.actorId || fixed.groupId !== pending.context.groupId || fixed.selfId !== pending.context.selfId) return deny();
-      this.enforcePolicy(pending.action);
-      await this.authorize(fixed);
-      const target = await this.verify(pending.action, fixed);
-      if (target !== pending.target || this.disposed || this.now() >= pending.expires) return deny();
-      const action = pending.action;
-      attempted = true;
-      if (action.name === 'mute_member') await this.api.call('set_group_ban', { group_id: this.groupId, user_id: action.user_id, duration: action.seconds });
-      else if (action.name === 'set_member_card') await this.api.call('set_group_card', { group_id: this.groupId, user_id: action.user_id, card: action.card });
-      else await this.api.call('delete_msg', { message_id: action.message_id });
-      this.audit(action.name, fixed, target, 'executed', action.name === 'mute_member' ? action.seconds : undefined);
-      return { status: 'executed' };
-    } catch {
-      this.audit(pending?.action.name ?? 'invalid', fixed, pending?.target, attempted ? 'delivery_unknown' : 'confirmation_denied');
-      return { status: 'error', error: attempted ? 'Moderation action failed or delivery is unknown. Code consumed; do not blindly retry.' : 'Confirmation invalid, expired, unauthorized, or target verification failed.' };
-    }
+      this.check(signal); fixed = this.scope(context);
+      // A nonowner or another group/bot must not consume a valid owner's code.
+      if (fixed.actorId !== OWNER_ID) return deny('confirmation_denied');
+      if (typeof code !== 'string' || !/^[0-9a-f]{32}$/.test(code)) return deny('confirmation_denied');
+      pending = this.pending.get(code);
+      if (!pending || pending.context.groupId !== fixed.groupId || pending.context.selfId !== fixed.selfId) return deny('confirmation_denied');
+      this.pending.delete(code); // Consume before the first await: concurrent confirmations execute once.
+      const { name, ...args } = pending.action;
+      const action = this.parse(name, args);
+      if (this.mode(action) !== 'confirm') return deny('tool_disabled');
+      this.check(signal, pending.expires);
+      const target = await this.verify(action, fixed, signal, pending.expires, action.name === 'recall_message' ? pending.target : undefined);
+      if (target !== pending.target) return deny('verification_failed');
+      this.check(signal, pending.expires);
+      return await this.execute(action, fixed, target, signal, pending.expires);
+    } catch (error) { this.audit(pending?.action.name ?? 'invalid', fixed, pending?.target, 'confirmation_denied', undefined, 'confirm'); return this.resultError(error); }
   }
-
   dispose(): void { this.disposed = true; this.pending.clear(); }
 }

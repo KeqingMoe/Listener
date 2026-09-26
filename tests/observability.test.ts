@@ -83,19 +83,19 @@ test('moderation proposal and confirmation audits contain IDs but no card or cod
   const context: TurnContext = { groupId: LISTENER_GROUP, actorId: OWNER_ID, selfId: '999', messageId: '100' };
   let code = '';
   const rows = await capture(async () => {
-    const api: Api = { async call(action) {
+    const api: Api = { async call(action,params={}) {
       if (action === 'get_login_info') return { user_id: '999' };
-      if (action === 'get_group_member_info') return { group_id: LISTENER_GROUP, user_id: '123', role: 'member' };
+      if (action === 'get_group_member_info') return { group_id: LISTENER_GROUP, user_id: params.user_id, role: params.user_id==='999'?'admin':'member' };
       throw new Error(secret);
     } };
-    const moderation = new Moderation(api);
-    const proposal = await moderation.propose('set_member_card', { user_id: '123', card: secret }, context);
+    const moderation = new Moderation(api,Date.now,{memberCard:'confirm'});
+    const proposal = await moderation.request('set_member_card', { user_id: '123', card: secret }, context);
     code = String(proposal.code);
     assert.equal(proposal.status, 'confirmation_required');
     await moderation.confirm(code, { ...context, messageId: '101' });
   });
   const audits = rows.filter(row => row.event === 'moderation.audit');
-  assert.deepEqual(audits.map(row => row.outcome), ['proposed', 'delivery_unknown']);
+  assert.deepEqual(audits.map(row => row.outcome), ['confirmation_required', 'delivery_unknown']);
   assert.deepEqual(audits.map(row => row.message_id), ['100', '101']);
   assert.equal(audits[0]!.target_id, '123');
   assert.ok(!JSON.stringify(rows).includes(code));

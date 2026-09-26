@@ -14,11 +14,12 @@ function fixture(extra='') {
  const text=`ONEBOT_ACCESS_TOKEN=original-onebot-secret\nOPENAI_API_KEY=original-api-secret\nAI_ENABLED=true\nOPENAI_BASE_URL=https://example.test/v1\nOPENAI_MODEL=test-model\nAI_RANDOM_REPLY_PROBABILITY=0\nAI_DEBOUNCE_MS=1000\nAI_DELAY_MAX_MS=2800\nAI_MAX_TOKENS=999\n${extra}`;
  writeFileSync(join(root,'.env'),text,{mode:0o600});return {root,text};
 }
-test('one-time migration preserves behavior/secrets, backs up and writes private files',()=>{
+test('one-time migration preserves chat settings/secrets, disables management and writes private backups',()=>{
  const {root,text}=fixture();try{
  migrateConfig(root,{});
  const result=loadAppConfig({configPath:join(root,'config.toml'),env:{}});
  assert.equal(result.listener.model,'test-model');assert.equal(result.listener.baseUrl,'https://example.test/v1');assert.equal(result.listener.enabled,true);
+ assert.deepEqual(result.listener.tools!.moderation,{mute:'off',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600});
  assert.equal(result.listener.randomReplyProbability,0);assert.equal(result.listener.debounceMs,1000);assert.equal(result.listener.delayMaxMs,2800);assert.equal(result.listener.maxTokens,999);
  assert.equal(result.onebot.token,'original-onebot-secret');assert.equal(result.listener.apiKey,'original-api-secret');
  const secrets=parseEnv(readFileSync(join(root,'.env'),'utf8'));assert.deepEqual(Object.keys(secrets).sort(),['ONEBOT_ACCESS_TOKEN','OPENAI_API_KEY']);

@@ -82,10 +82,13 @@ mention = true
 # 候选目录来自完整 NapCat sysface（329）+ emoji（165），不表示逐项实测可用。
 reactions = false
 
+# 每项独立：off（默认禁用）、confirm（自主提出，由主人 /confirm 确认）、direct（自主决定并执行）。
+# 不接受旧 true/false；direct 不要求主人先发指令，仍校验本群目标及 QQ 实际权限。
 [tools.moderation]
-mute = true
-recall = true
-member_card = true
+mute = 'off'
+unmute = 'off' # 解禁独立于禁言授权
+recall = 'off'
+member_card = 'off'
 confirmation_ttl_seconds = 60
 max_mute_seconds = 600
 
@@ -102,9 +105,10 @@ enabled = true
 # [groups.'123456789'.tools]
 # reactions = true # 仅为这个群启用；其他 tools 字段继承全局
 # [groups.'123456789'.tools.moderation]
-# mute = false
-# recall = false
-# member_card = false
+# mute = 'confirm'
+# unmute = 'direct'
+# recall = 'off'
+# member_card = 'off'
 # [groups.'123456789'.images]
 # enabled = true
 # [groups.'123456789'.forward]
@@ -121,4 +125,4 @@ enabled = true
 
 # 原100000002群继续使用全局 memory.path，不迁移或重标记数据库。
 # 其他群默认使用全局 memory.path 所在目录下的 groups/<群号>/listener.sqlite。
-# 每群不能覆盖 AI/密钥/模型、连接、名字或主人身份；管理确认规则不能放宽。
+# 每群不能覆盖 AI/密钥/模型、连接、名字或主人身份；管理模式可逐项覆盖全局默认。

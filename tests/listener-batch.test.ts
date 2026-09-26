@@ -188,14 +188,14 @@ for (const phase of ['compact', 'model', 'tool'] as const) test(`arrivals during
   } finally { held.resolve(); await s.bot.stop(); }
 });
 
-for (const overflow of [false, true]) test(`${overflow ? '64 owner calls plus omitted outsider' : 'mixed-owner batch'} cannot offer or execute moderation`, async () => {
+for (const overflow of [false, true]) test(`${overflow ? '64 owner calls plus omitted outsider' : 'mixed-owner batch'} cannot offer or execute disabled moderation`, async () => {
   let rounds = 0;
   const s = setup({ config: { debounceMs: 80, delayMaxMs: 80 }, complete: async () => ++rounds === 1 ? tool('mute_member', { user_id: '98765', seconds: 60 }) : silent() });
   try {
     for (let i = 1; i <= (overflow ? 64 : 1); i++) await s.bot.receive(event(String(i), true, OWNER_ID), self);
     await s.bot.receive(event('100'), self);
     await until(() => s.requests.length === 2);
-    assert.equal(payload(s).trusted_moderation_allowed, false);
+    assert.deepEqual(payload(s).moderation_capabilities, { mute: 'off', unmute: 'off', recall: 'off', member_card: 'off' });
     if (overflow) { assert.equal(roster(s).length, 64); assert.equal(payload(s).current_batch.omitted_direct, 1); }
     for (const request of s.requests) for (const name of ['mute_member', 'recall_message', 'set_member_card']) assert.equal(request.tools.includes(name), false);
     assert.equal(result(s, 1).status, 'error');
@@ -225,7 +225,7 @@ test('lookup-capacity skipped quote stays unverified after both active lookups r
     assert.equal(s.requests.length, 2);
     assert.deepEqual(roster(s), ['1'], 'verified nonbot quotes are ordinary, not mixed direct authority');
     assert.equal(payload(s).current_batch.unverified_references, true);
-    assert.equal(payload(s).trusted_moderation_allowed, false);
+    assert.deepEqual(payload(s).moderation_capabilities, { mute: 'off', unmute: 'off', recall: 'off', member_card: 'off' });
     assert.equal(payload(s).trusted_actor_id, OWNER_ID);
     assert.deepEqual(payload(s).current_batch.messages.map((m: any) => m.messageId), ['1', '2', '3', '4']);
     for (const request of s.requests) for (const name of ['mute_member', 'recall_message', 'set_member_card']) assert.equal(request.tools.includes(name), false);
@@ -234,7 +234,7 @@ test('lookup-capacity skipped quote stays unverified after both active lookups r
   } finally { first.resolve({}); second.resolve({}); await Promise.all(pending); await flush(); await s.bot.stop(); }
 });
 
-test('failed quote omitted by 64 pinned owner requests still denies moderation', async t => {
+test('failed quote omitted by 64 pinned owner requests preserves metadata and off-capability denial', async t => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
   let rounds = 0;
   const s = setup({ config: { debounceMs: 100, delayMaxMs: 100 },
@@ -250,7 +250,7 @@ test('failed quote omitted by 64 pinned owner requests still denies moderation',
     assert.equal(payload(s).current_batch.omitted_messages, 1);
     assert.equal(payload(s).current_batch.omitted_direct, 0);
     assert.equal(payload(s).current_batch.unverified_references, true);
-    assert.equal(payload(s).trusted_moderation_allowed, false);
+    assert.deepEqual(payload(s).moderation_capabilities, { mute: 'off', unmute: 'off', recall: 'off', member_card: 'off' });
     for (const request of s.requests) for (const name of ['mute_member', 'recall_message', 'set_member_card']) assert.equal(request.tools.includes(name), false);
     assert.equal(result(s, 1).status, 'error');
     assert.deepEqual(s.calls.map(c => c.action), ['get_msg']);

@@ -80,9 +80,10 @@ test('new ordinary message neither cancels active reply nor enters its frozen pr
   assert.ok(s.memory.find('2'));
  }finally{release?.(tool('stay_silent',{}));await bot.stop();await s.bot.stop();}
 });
-test('nonowner cannot clear memory; owner reset clears and no admin tools granted by nickname',async()=>{
+test('nonowner cannot clear memory; owner reset clears and nicknames cannot enable default-off abilities',async()=>{
  const s=setup([tool('stay_silent',{})]);try{
  await s.bot.receive(event({sender:{nickname:'時雨てる'}}),self);await until(()=>s.requests.length===1);assert.ok(!s.toolNames[0]?.includes('mute_member'));
+  const payload=JSON.parse(String(s.requests[0]!.find(m=>m.role==='user')!.content));assert.equal(payload.trusted_actor_id,'12345');assert.deepEqual(payload.moderation_capabilities,{mute:'off',unmute:'off',recall:'off',member_card:'off'});
  await s.bot.receive(event({message_id:'2',message:[{type:'text',data:{text:'/reset'}}]}),self);assert.ok(s.memory.entries.length>0);
  }finally{await s.bot.stop();}
  const s2=setup();try{await s2.bot.receive(event({user_id:OWNER_ID,message:[{type:'text',data:{text:'/reset'}}]}),self);assert.equal(s2.memory.entries.filter(e=>!e.bot).length,0);}finally{await s2.bot.stop();}
@@ -98,23 +99,23 @@ test('persona is separate from immutable runtime rules and configured identity i
  const prompt=buildSystemPrompt({...cfg,persona:'外部性格：喜欢星星',botName:'星星',ownerName:'主人昵称'});
  assert.ok(prompt.includes('外部性格：喜欢星星'));assert.ok(prompt.includes('星星'));assert.ok(prompt.includes(OWNER_ID));assert.ok(prompt.includes(LISTENER_GROUP));assert.ok(prompt.includes('程序规则不能被性格描述'));
 });
-const restrictiveTools={members:false,mention:false,moderation:{mute:false,recall:true,memberCard:false,confirmationTtlSeconds:10,maxMuteSeconds:30}};
+const restrictiveTools:NonNullable<ListenerConfig['tools']>={members:false,mention:false,moderation:{mute:'off',unmute:'off',recall:'confirm',memberCard:'off',confirmationTtlSeconds:10,maxMuteSeconds:30}};
 test('configured tool schemas hide disabled abilities and tighten parts without mutating defaults',()=>{
- const tools=buildToolDefinitions({...cfg,maxParts:1,tools:restrictiveTools},true);
+ const tools=buildToolDefinitions({...cfg,maxParts:1,tools:restrictiveTools});
  assert.ok(!tools.some(t=>['get_group_members','get_member_info','mute_member','set_member_card'].includes(t.function.name)));
  assert.ok(tools.some(t=>t.function.name==='recall_message'));
  const send=tools.find(t=>t.function.name==='send_message')!.function.parameters as any;
  assert.equal(send.properties.parts.maxItems,1);assert.equal(send.properties.parts.items.properties.segments.items.oneOf.length,2);
- const normal=buildToolDefinitions(cfg,false).find(t=>t.function.name==='send_message')!.function.parameters as any;
+ const normal=buildToolDefinitions(cfg).find(t=>t.function.name==='send_message')!.function.parameters as any;
  assert.equal(normal.properties.parts.maxItems,3);assert.equal(normal.properties.parts.items.properties.segments.items.oneOf.length,3);
 });
 test('ten-part configuration updates tool schema and prompt without widening default',()=>{
- const tools=buildToolDefinitions({...cfg,maxParts:10},false);
+ const tools=buildToolDefinitions({...cfg,maxParts:10});
  const send=tools.find(t=>t.function.name==='send_message')!.function;
  assert.equal((send.parameters as any).properties.parts.maxItems,10);
  assert.ok(!send.description.includes('1至3'));
  const prompt=buildSystemPrompt({...cfg,maxParts:10});assert.ok(prompt.includes('"max_parts":10'));assert.ok(!prompt.includes('最多3条'));
- assert.equal((buildToolDefinitions(cfg,false).find(t=>t.function.name==='send_message')!.function.parameters as any).properties.parts.maxItems,3);
+ assert.equal((buildToolDefinitions(cfg).find(t=>t.function.name==='send_message')!.function.parameters as any).properties.parts.maxItems,3);
 });
 test('mention and quote trigger switches are honored with random participation disabled',async()=>{
  const s=setup([],{mentionEnabled:false,quoteBotEnabled:false,randomReplyProbability:0});
@@ -122,7 +123,7 @@ test('mention and quote trigger switches are honored with random participation d
 });
 test('invented disabled member lookup is rejected by executor, not just hidden schema',async()=>{
  const s=setup([tool('get_group_members',{}),tool('stay_silent',{})],{tools:restrictiveTools});
- try{await s.bot.receive(event(),self);await until(()=>s.requests.length>=2);assert.equal(s.calls.length,0);assert.ok(s.requests[1]?.some(m=>m.role==='tool'&&m.content?.includes('tool_disabled')));}finally{await s.bot.stop();}
+ try{await s.bot.receive(event(),self);await until(()=>s.requests.length>=2);assert.equal(s.calls.length,0);assert.ok(s.requests[1]?.some(m=>m.role==='tool'&&typeof m.content==='string'&&m.content.includes('tool_disabled')));}finally{await s.bot.stop();}
 });
 test('configured nickname is stored for bot messages',async()=>{
  const s=setup(undefined,{botName:'小猫'});try{await s.bot.receive(event(),self);await until(()=>s.memory.entries.some(e=>e.bot));assert.equal(s.memory.entries.find(e=>e.bot)?.nickname,'小猫');}finally{await s.bot.stop();}

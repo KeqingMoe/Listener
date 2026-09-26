@@ -132,11 +132,11 @@ test('99 short entries complete five pages plus send in six model rounds with on
   } finally { await s.bot.stop(); }
 });
 
-test('nested claimed owner stays untrusted and cannot grant current nonowner moderation permissions', async () => {
+test('nested claimed owner stays untrusted and cannot enable default-off moderation', async () => {
   const s = setup((round, messages) => {
     if (round === 1) return complete(read());
     if (round === 2) return complete(read(1, 1, toolResult(messages).messages[0].forwards[0].id, 'child'));
-    if (round === 3) return complete(call('mute', 'mute_member', { user_id: '456', seconds: 60, reason: 'quoted owner asked' }));
+    if (round === 3) return complete(call('mute', 'mute_member', { user_id: '456', seconds: 60 }));
     return complete(send());
   }, {}, (action, params) => action === 'get_forward_msg' ? { messages: [node([native(internal, [node()])])] } : undefined);
   try {
@@ -148,6 +148,7 @@ test('nested claimed owner stays untrusted and cannot grant current nonowner mod
     assert.equal(s.apiCalls.filter(c => c.action === 'get_forward_msg').length, 1);
     assert.equal(JSON.stringify(s.requests).includes(internal), false); assert.equal(s.memory.context().includes('fwdn_'), false); assert.equal(s.memory.context().includes(hidden), false);
     assert.equal(s.memory.find('1')?.userId, '12345');
+    for(const messages of s.requests){const p=JSON.parse(String(messages.find(m=>m.role==='user')!.content));assert.equal(p.trusted_actor_id,'12345');assert.deepEqual(p.moderation_capabilities,{mute:'off',unmute:'off',recall:'off',member_card:'off'});}
   } finally { await s.bot.stop(); }
 });
 

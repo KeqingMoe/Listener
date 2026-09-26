@@ -1,9 +1,11 @@
 import type { ForwardConfig } from './forward-tools.js';
 export interface ImagesConfig { enabled: boolean; maxPerTurn: number; maxDownloadMb: number }
+export type ModerationMode = 'off' | 'confirm' | 'direct';
 export interface ModerationPolicy {
-  mute: boolean;
-  recall: boolean;
-  memberCard: boolean;
+  mute: ModerationMode;
+  unmute: ModerationMode;
+  recall: ModerationMode;
+  memberCard: ModerationMode;
   confirmationTtlSeconds: number;
   maxMuteSeconds: number;
 }

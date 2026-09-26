@@ -93,32 +93,33 @@ test('forward resources and cached pages cannot cross instances with colliding r
 
 function moderationFixture(group:string){
  let foreign=false;
- const a=api((action,params)=>action==='get_login_info'?{user_id:self}:action==='get_group_member_info'?member(foreign?(group===A?B:A):group):action==='get_msg'?msg(foreign?(group===A?B:A):group,String(params.message_id)):{});
- return {...a,tools:new Moderation(a.client,Date.now,{},group),foreign(){foreign=true;}};
+ const a=api((action,params)=>action==='get_login_info'?{user_id:self}:action==='get_group_member_info'?{...member(foreign?(group===A?B:A):group),user_id:params.user_id,role:params.user_id===self?'admin':'member'}:action==='get_msg'?msg(foreign?(group===A?B:A):group,String(params.message_id)):{});
+ return {...a,tools:new Moderation(a.client,Date.now,{mute:'confirm',unmute:'confirm',recall:'confirm',memberCard:'confirm'},group),foreign(){foreign=true;}};
 }
-test('moderation code belongs to issuing instance and group, while fixed owner remains required',async()=>{
+test('autonomous moderation proposals remain groupbound and only the owner can confirm',async()=>{
  const a=moderationFixture(A), b=moderationFixture(B);
  for(const s of [a,b]){
   const group=s===a?A:B,other=group===A?B:A;
-  assert.equal((await s.tools.propose('mute_member',{user_id:user,seconds:1},ctx(other,OWNER_ID))).status,'error');
-  assert.equal((await s.tools.propose('mute_member',{user_id:user,seconds:1},ctx(group,user))).status,'error');assert.equal(s.calls.length,0);
+  assert.equal((await s.tools.request('mute_member',{user_id:user,seconds:1},ctx(other,OWNER_ID))).status,'error');
+  assert.equal(s.calls.length,0);
  }
- const proposal=await a.tools.propose('mute_member',{user_id:user,seconds:0},ctx(A,OWNER_ID));assert.equal(proposal.status,'confirmation_required');assert.match(String(proposal.description),new RegExp(A));
+ const proposal=await a.tools.request('unmute_member',{user_id:user},ctx(A,user));assert.equal(proposal.status,'confirmation_required');assert.match(String(proposal.description),new RegExp(A));
  const code=String(proposal.code);
+ const beforeUnauthorized=a.calls.length;assert.equal((await a.tools.confirm(code,ctx(A,user))).status,'error');assert.equal(a.calls.length,beforeUnauthorized);
  assert.equal((await b.tools.confirm(code,ctx(B,OWNER_ID))).status,'error');assert.equal(b.calls.length,0);
  assert.equal((await a.tools.confirm(code,ctx(A,OWNER_ID))).status,'executed');
  assert.deepEqual(a.calls.find(c=>c.action==='set_group_ban')?.params,{group_id:A,user_id:user,duration:0});
  assert.equal((await a.tools.confirm(code,ctx(A,OWNER_ID))).status,'error');
- const bProposal=await b.tools.propose('set_member_card',{user_id:user,card:'new card'},ctx(B,OWNER_ID));assert.equal(bProposal.status,'confirmation_required');
+ const bProposal=await b.tools.request('set_member_card',{user_id:user,card:'new card'},ctx(B,OWNER_ID));assert.equal(bProposal.status,'confirmation_required');
  const before=b.calls.length;assert.equal((await b.tools.confirm(String(bProposal.code),ctx(A,OWNER_ID))).status,'error');assert.equal(b.calls.length,before);
- for(const target of [OWNER_ID,self])assert.equal((await b.tools.propose('mute_member',{user_id:target,seconds:1},ctx(B,OWNER_ID))).status,'error');
+ for(const target of [OWNER_ID,self])assert.equal((await b.tools.request('mute_member',{user_id:target,seconds:1},ctx(B,OWNER_ID))).status,'error');
 });
 
 test('moderation rejects foreign member/message data in proposals and repeated confirmation checks',async()=>{
  for(const group of [A,B]){
   for(const [name,args] of [['mute_member',{user_id:user,seconds:1}],['set_member_card',{user_id:user,card:'x'}],['recall_message',{message_id:'42'}]] as const){
-   const s=moderationFixture(group);s.foreign();assert.equal((await s.tools.propose(name,args,ctx(group,OWNER_ID))).status,'error');assert.ok(!s.calls.some(c=>['set_group_ban','set_group_card','delete_msg'].includes(c.action)));
-   const t=moderationFixture(group);const proposal=await t.tools.propose(name,args,ctx(group,OWNER_ID));assert.equal(proposal.status,'confirmation_required');t.foreign();assert.equal((await t.tools.confirm(String(proposal.code),ctx(group,OWNER_ID))).status,'error');assert.ok(!t.calls.some(c=>['set_group_ban','set_group_card','delete_msg'].includes(c.action)));
+   const s=moderationFixture(group);s.foreign();assert.equal((await s.tools.request(name,args,ctx(group,OWNER_ID))).status,'error');assert.ok(!s.calls.some(c=>['set_group_ban','set_group_card','delete_msg'].includes(c.action)));
+   const t=moderationFixture(group);const proposal=await t.tools.request(name,args,ctx(group,OWNER_ID));assert.equal(proposal.status,'confirmation_required');t.foreign();assert.equal((await t.tools.confirm(String(proposal.code),ctx(group,OWNER_ID))).status,'error');assert.ok(!t.calls.some(c=>['set_group_ban','set_group_card','delete_msg'].includes(c.action)));
    assert.ok(t.calls.filter(c=>c.action==='get_group_member_info').every(c=>c.params.group_id===group));
   }
  }

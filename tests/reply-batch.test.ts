@@ -51,7 +51,7 @@ test('direct requests evict ordinary entries and the first 64 direct requests st
   assert.equal(batch.primary.sequence, 0);
 });
 
-test('omitted non-owner requests permanently mark the batch unsafe for owner-only actions', () => {
+test('omitted non-owner caller provenance remains recorded independently of capability policy', () => {
   const owned = (sequence: number) => {
     const value = item(sequence, 'mention');
     value.entry.userId = OWNER_ID;

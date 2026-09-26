@@ -6,7 +6,7 @@ import {OWNER_ID,type Api,type ChatMessage,type Completion,type Memory,type Mode
 import type {ListenerConfig} from '../src/listener-config.js';
 
 const GROUP='22',SELF='99999',A='111',B='222';
-const tools:NonNullable<ListenerConfig['tools']>={members:true,mention:true,reactions:true,moderation:{mute:true,recall:true,memberCard:true,confirmationTtlSeconds:60,maxMuteSeconds:600}};
+const tools:NonNullable<ListenerConfig['tools']>={members:true,mention:true,reactions:true,moderation:{mute:'confirm',unmute:'confirm',recall:'confirm',memberCard:'confirm',confirmationTtlSeconds:60,maxMuteSeconds:600}};
 const base:ListenerConfig={groupId:GROUP,enabled:true,baseUrl:'https://example.invalid/v1',apiKey:'fixture',model:'fixture',timeoutMs:2000,maxTokens:128,debounceMs:3,delayMaxMs:3,cooldownMs:0,memoryPath:':memory:',maxContextChars:8000,retentionDays:7,randomReplyProbability:0,randomCooldownMs:0,randomMaxPerMinute:10,attention:{enabled:true,maxPlans:16},tools};
 function gate<T>(){let resolve!:(v:T)=>void;const promise=new Promise<T>(r=>{resolve=r;});return {promise,resolve};}
 function abortable<T>(promise:Promise<T>,signal?:AbortSignal):Promise<T>{return new Promise((resolve,reject)=>{const abort=()=>reject(new DOMException('cancelled','AbortError'));if(signal?.aborted)return abort();signal?.addEventListener('abort',abort,{once:true});promise.then(v=>{signal?.removeEventListener('abort',abort);resolve(v);},e=>{signal?.removeEventListener('abort',abort);reject(e);});});}
@@ -104,12 +104,12 @@ test('frozen reaction scope excludes messages arriving during the active model c
  }finally{held.resolve(complete(silent()));await s.close();}
 });
 
-test('pure attention wake may react without gaining owner moderation authority',async()=>{
+test('pure attention wake may react and retains explicitly configured confirmation capabilities',async()=>{
  const s=setup({respond:r=>r.index===0?complete(next(),silent()):r.index===1?complete(react('2'),silent()):complete(silent())});try{
   await s.receive(event('1',OWNER_ID));await settled(s,1);await s.receive(event('2',OWNER_ID,false));await settled(s,2);
-  assert.equal(payload(s.requests[1]!).trigger_kind,'attention');assert.equal(payload(s.requests[1]!).trusted_moderation_allowed,false);
-  assert.equal(payload(s.requests[1]!).trusted_actor_id,OWNER_ID);
-  assert.ok(s.requests[1]!.tools.some(t=>t.function.name==='react_message'));assert.ok(!s.requests[1]!.tools.some(t=>t.function.name==='mute_member'));assert.equal(mutations(s).length,1);
+  assert.equal(payload(s.requests[1]!).trigger_kind,'attention');assert.equal(payload(s.requests[1]!).trusted_moderation_allowed,undefined);
+  assert.deepEqual(payload(s.requests[1]!).moderation_capabilities,{mute:'confirm',unmute:'confirm',recall:'confirm',member_card:'confirm'});
+  assert.ok(s.requests[1]!.tools.some(t=>t.function.name==='react_message'));assert.ok(s.requests[1]!.tools.some(t=>t.function.name==='mute_member'));assert.equal(mutations(s).length,1);
   assert.ok(!s.calls.some(c=>['set_group_ban','set_group_card','delete_msg'].includes(c.action)));
  }finally{await s.close();}
 });

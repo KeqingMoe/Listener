@@ -37,15 +37,15 @@ test('explicit groups exclusively define enabled scope while AI enabled remains 
 });
 
 test('nested group overrides inherit defaults deeply without mutating siblings or global defaults',t=>{
- const f=fixture(t,`[reply]\nmax_parts=10\nrandom_probability=0.15\ndelay_ms=[1000,2500]\n[reply.random]\ncooldown_ms=10000\nmax_per_minute=6\n[tools]\nmembers=false\n[tools.moderation]\nmute=false\nmax_mute_seconds=100\n[images]\nenabled=true\nmax_per_turn=2\n[forward]\nenabled=true\nmax_per_read=10\n[memory]\nretention_days=12\ncontext_chars=32000\n[groups."22".reply.random]\nmax_per_minute=4\n[groups."22".tools.moderation]\nrecall=false\n[groups."22".images]\nmax_download_mb=2\n[groups."22".forward]\nmax_per_read=5\n[groups."22".memory]\nretention_days=3\n[groups."33"]`);
+ const f=fixture(t,`[reply]\nmax_parts=10\nrandom_probability=0.15\ndelay_ms=[1000,2500]\n[reply.random]\ncooldown_ms=10000\nmax_per_minute=6\n[tools]\nmembers=false\n[tools.moderation]\nmute="off"\nrecall="confirm"\nmax_mute_seconds=100\n[images]\nenabled=true\nmax_per_turn=2\n[forward]\nenabled=true\nmax_per_read=10\n[memory]\nretention_days=12\ncontext_chars=32000\n[groups."22".reply.random]\nmax_per_minute=4\n[groups."22".tools.moderation]\nrecall="off"\n[groups."22".images]\nmax_download_mb=2\n[groups."22".forward]\nmax_per_read=5\n[groups."22".memory]\nretention_days=3\n[groups."33"]`);
  const {listener,groups}=f.load();const a=groups.find(g=>g.groupId==='22')!,b=groups.find(g=>g.groupId==='33')!;
  assert.equal(a.maxParts,10);assert.equal(a.randomReplyProbability,0.15);assert.equal(a.randomCooldownMs,10000);assert.equal(a.randomMaxPerMinute,4);
  assert.equal(a.debounceMs,1000);assert.equal(a.delayMaxMs,2500);
- assert.deepEqual(a.tools,{members:false,mention:true,reactions:false,moderation:{mute:false,recall:false,memberCard:true,confirmationTtlSeconds:60,maxMuteSeconds:100}});
+ assert.deepEqual(a.tools,{members:false,mention:true,reactions:false,moderation:{mute:'off',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:100}});
  assert.deepEqual(a.images,{enabled:true,maxPerTurn:2,maxDownloadMb:2});assert.deepEqual(a.forward,{enabled:true,maxPerRead:5});
  assert.equal(a.retentionDays,3);assert.equal(a.maxContextChars,32000);assert.equal(b.retentionDays,12);
- a.tools!.moderation.mute=true;a.images!.enabled=false;a.forward!.enabled=false;
- assert.equal(listener.tools!.moderation.mute,false);assert.equal(b.tools!.moderation.mute,false);
+ a.tools!.moderation.mute='direct';a.images!.enabled=false;a.forward!.enabled=false;
+ assert.equal(listener.tools!.moderation.mute,'off');assert.equal(b.tools!.moderation.mute,'off');assert.equal(b.tools!.moderation.recall,'confirm');
  assert.equal(listener.images!.enabled,true);assert.equal(b.images!.enabled,true);assert.equal(b.forward!.enabled,true);
 });
 

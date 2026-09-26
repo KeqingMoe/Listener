@@ -7,7 +7,7 @@ import {OWNER_ID,type Api,type ChatMessage,type Completion,type JsonObject,type 
 import type {ListenerConfig} from '../src/listener-config.js';
 
 const GROUP='22',SELF='99999',A='111';
-const tools:NonNullable<ListenerConfig['tools']>={members:true,mention:true,reactions:true,moderation:{mute:true,recall:true,memberCard:true,confirmationTtlSeconds:60,maxMuteSeconds:600}};
+const tools:NonNullable<ListenerConfig['tools']>={members:true,mention:true,reactions:true,moderation:{mute:'confirm',unmute:'confirm',recall:'confirm',memberCard:'confirm',confirmationTtlSeconds:60,maxMuteSeconds:600}};
 const base:ListenerConfig={groupId:GROUP,enabled:true,baseUrl:'https://example.invalid/v1',apiKey:'fixture',model:'fixture',timeoutMs:2000,maxTokens:128,debounceMs:3,delayMaxMs:3,cooldownMs:0,memoryPath:':memory:',maxContextChars:8000,retentionDays:7,randomReplyProbability:0,attention:{enabled:true,maxPlans:16},tools};
 const text=(value:string)=>({type:'text',data:{text:value}});
 function event(id:string,direct=true,body=`body-${id}`,user=A){return {post_type:'message',message_type:'group',group_id:GROUP,self_id:SELF,user_id:user,message_id:id,time:Math.floor(Date.now()/1000),sender:{nickname:'fixture'},message:[...(direct?[{type:'at',data:{qq:SELF}}]:[]),text(body)]};}

@@ -3,7 +3,7 @@ import { basename, dirname, resolve } from 'node:path';
 import { parse as parseToml } from 'smol-toml';
 import { parse as parseDotenv } from 'dotenv';
 import type { Config } from './config.js';
-import type { ListenerConfig } from './listener-config.js';
+import type { ListenerConfig, ModerationMode } from './listener-config.js';
 import type { LoggingConfig, LogLevel } from './logger.js';
 import { LISTENER_GROUP, OWNER_ID } from './contracts.js';
 
@@ -28,6 +28,11 @@ function text(t: Table, key: string, path: string, fallback: string, empty = fal
 function bool(t: Table, key: string, path: string, fallback: boolean): boolean {
   const value = t[key] ?? fallback;
   if (typeof value !== 'boolean') return fail(`${path}.${key}`, '必须是布尔值');
+  return value;
+}
+function moderationMode(t: Table, key: string, path: string, fallback: ModerationMode): ModerationMode {
+  const value = Object.hasOwn(t, key) ? t[key] : fallback;
+  if (value !== 'off' && value !== 'confirm' && value !== 'direct') return fail(`${path}.${key}`, '必须是 off、confirm 或 direct 字符串，不接受布尔值');
   return value;
 }
 function num(t: Table, key: string, path: string, fallback: number, min: number, max: number, integer = true): number {
@@ -78,7 +83,7 @@ function groupSettings(id: string, raw: unknown, defaults: ListenerConfig, base:
   const reply = table(group.reply,`${path}.reply`,['mention','quote_bot','random_probability','delay_ms','cooldown_ms','max_parts','random']);
   const random = table(reply.random,`${path}.reply.random`,['cooldown_ms','max_per_minute']);
   const tools = table(group.tools,`${path}.tools`,['members','mention','reactions','moderation']);
-  const moderation = table(tools.moderation,`${path}.tools.moderation`,['mute','recall','member_card','confirmation_ttl_seconds','max_mute_seconds']);
+  const moderation = table(tools.moderation,`${path}.tools.moderation`,['mute','unmute','recall','member_card','confirmation_ttl_seconds','max_mute_seconds']);
   const images = table(group.images,`${path}.images`,['enabled','max_per_turn','max_download_mb']);
   const forward = table(group.forward,`${path}.forward`,['enabled','max_per_read']);
   const attention = table(group.attention,`${path}.attention`,['enabled','max_plans']);
@@ -106,8 +111,8 @@ function groupSettings(id: string, raw: unknown, defaults: ListenerConfig, base:
     memoryPath,retentionDays:num(memory,'retention_days',`${path}.memory`,defaults.retentionDays,1,30),
     maxContextChars:num(memory,'context_chars',`${path}.memory`,defaults.maxContextChars,8000,100000),
     tools:{members:bool(tools,'members',`${path}.tools`,dTools.members),mention:bool(tools,'mention',`${path}.tools`,dTools.mention),reactions:bool(tools,'reactions',`${path}.tools`,dTools.reactions ?? false),moderation:{
-      mute:bool(moderation,'mute',`${path}.tools.moderation`,dModeration.mute),recall:bool(moderation,'recall',`${path}.tools.moderation`,dModeration.recall),
-      memberCard:bool(moderation,'member_card',`${path}.tools.moderation`,dModeration.memberCard),
+      mute:moderationMode(moderation,'mute',`${path}.tools.moderation`,dModeration.mute),unmute:moderationMode(moderation,'unmute',`${path}.tools.moderation`,dModeration.unmute),
+      recall:moderationMode(moderation,'recall',`${path}.tools.moderation`,dModeration.recall),memberCard:moderationMode(moderation,'member_card',`${path}.tools.moderation`,dModeration.memberCard),
       confirmationTtlSeconds:num(moderation,'confirmation_ttl_seconds',`${path}.tools.moderation`,dModeration.confirmationTtlSeconds,1,60),
       maxMuteSeconds:num(moderation,'max_mute_seconds',`${path}.tools.moderation`,dModeration.maxMuteSeconds,1,600),
     }},
@@ -162,7 +167,7 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
   const forward = table(root.forward, 'forward', ['enabled', 'max_per_read']);
   const attention = table(root.attention, 'attention', ['enabled', 'max_plans']);
   const logs = table(root.logging, 'logging', ['level', 'console', 'file', 'directory', 'retention_days', 'max_file_mb', 'max_total_mb']);
-  const moderation = table(tools.moderation, 'tools.moderation', ['mute', 'recall', 'member_card', 'confirmation_ttl_seconds', 'max_mute_seconds']);
+  const moderation = table(tools.moderation, 'tools.moderation', ['mute', 'unmute', 'recall', 'member_card', 'confirmation_ttl_seconds', 'max_mute_seconds']);
   if ((bot.owner_id ?? OWNER_ID)!==OWNER_ID) fail('bot.owner_id','必须使用本安装固定的身份字符串');
   const tokenEnv = text(one, 'token_env', 'onebot', 'ONEBOT_ACCESS_TOKEN');
   const keyEnv = text(ai, 'api_key_env', 'ai', 'OPENAI_API_KEY');
@@ -218,8 +223,8 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
     retentionDays: num(memory, 'retention_days', 'memory', 7, 1, 30), maxContextChars: num(memory, 'context_chars', 'memory', 24000, 8000, 100000),
     botName: text(bot, 'name', 'bot', 'Listener'), ownerName: text(bot, 'owner_name', 'bot', '時雨てる'),
     tools: { members: bool(tools, 'members', 'tools', true), mention: bool(tools, 'mention', 'tools', true), reactions: bool(tools, 'reactions', 'tools', false), moderation: {
-      mute: bool(moderation, 'mute', 'tools.moderation', true), recall: bool(moderation, 'recall', 'tools.moderation', true),
-      memberCard: bool(moderation, 'member_card', 'tools.moderation', true),
+      mute: moderationMode(moderation, 'mute', 'tools.moderation', 'off'), unmute: moderationMode(moderation, 'unmute', 'tools.moderation', 'off'),
+      recall: moderationMode(moderation, 'recall', 'tools.moderation', 'off'), memberCard: moderationMode(moderation, 'member_card', 'tools.moderation', 'off'),
       confirmationTtlSeconds: num(moderation, 'confirmation_ttl_seconds', 'tools.moderation', 60, 1, 60),
       maxMuteSeconds: num(moderation, 'max_mute_seconds', 'tools.moderation', 600, 1, 600),
     } },
