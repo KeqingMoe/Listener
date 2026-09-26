@@ -11,7 +11,7 @@ import type { ListenerConfig } from '../src/listener-config.js';
 import { LISTENER_GROUP, OWNER_ID, type Api, type ChatMessage, type Completion, type Memory, type Model, type TimelineEntry, type ToolCall } from '../src/contracts.js';
 
 const self = '900000001', resource = 'PRIVATE_FORWARD_RESOURCE+/=', hidden = 'PRIVATE_QUOTED_FORWARD_BODY', internal = '9988776655443322110099';
-const cfg: ListenerConfig = { enabled: true, baseUrl: 'https://example.invalid/v1', apiKey: 'test', model: 'model', timeoutMs: 2000, maxTokens: 128, debounceMs: 5, cooldownMs: 0, memoryPath: ':memory:', maxContextChars: 8000, retentionDays: 7, randomReplyProbability: 0, forward: { enabled: true, maxPerRead: 20 } };
+const cfg: ListenerConfig = { enabled: true, baseUrl: 'https://example.invalid/v1', apiKey: 'test', model: 'model', timeoutMs: 2000, maxTokens: 128, debounceMs: 5, cooldownMs: 0, memoryPath: ':memory:', maxContextChars: 8000, retentionDays: 7, randomReplyProbability: 0, forward: { enabled: true } };
 const text = (value: string) => ({ type: 'text', data: { text: value } });
 const native = (id = resource, content?: unknown[]) => ({ type: 'forward', data: { id, ...(content ? { content } : {}) } });
 const card = () => ({ type: 'json', data: { data: JSON.stringify({ app: 'com.tencent.multimsg', meta: { detail: { resid: resource, news: [{ text: hidden }] } }, extra: JSON.stringify({ tsum: 99 }) }) } });
@@ -30,7 +30,7 @@ function event(overrides: Record<string, unknown> = {}) {
   return { post_type: 'message', message_type: 'group', group_id: LISTENER_GROUP, self_id: self, user_id: '12345', message_id: '1', time: Math.floor(Date.now() / 1000), sender: { nickname: 'Alice' }, message: [{ type: 'at', data: { qq: self } }, native()], ...overrides };
 }
 const call = (id: string, name: string, args: unknown): ToolCall => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } });
-const read = (start = 1, end = start, forward_id = 'fwd_1_1', id = 'forward') => call(id, 'read_forward', { forward_id, start, end });
+const read = (start = 1, end = start, forward_id = 'fwd_1_1', id = 'forward') => call(id, 'read_forward', { forward_id, start, limit: end-start+1 });
 const send = (value = 'verified response') => call('send', 'send_message', { segments: [{ type: 'text', text: value }] });
 const complete = (...tool_calls: ToolCall[]): Completion => ({ content: null, tool_calls });
 const silent = () => complete(call('silent', 'finish', {}));
@@ -83,7 +83,7 @@ test('enabled forward executes then sends, tool content never enters timeline me
 });
 
 test('disabled forwards omit tool schema and forged calls cause no API calls', async () => {
-  const s = setup([complete(read()), silent()], { forward: { enabled: false, maxPerRead: 20 } });
+  const s = setup([complete(read()), silent()], { forward: { enabled: false } });
   try {
     await s.bot.receive(event(), self); await until(() => s.requests.length === 2);
     assert.ok(s.schemas.every(names => !names.includes('read_forward'))); assert.equal(s.apiCalls.length, 0);

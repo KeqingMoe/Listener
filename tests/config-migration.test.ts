@@ -25,7 +25,7 @@ test('one-time migration preserves chat settings/secrets, disables management an
  assert.equal(result.listener.transport,'chat');assert.equal(result.listener.serverCompaction,'off');assert.equal(result.listener.compactThreshold,undefined);assert.equal(result.listener.sessionMaxContextBytes,524288);
  assert.equal(result.onebot.token,'original-onebot-secret');assert.equal(result.listener.apiKey,'original-api-secret');
  const secrets=parseEnv(readFileSync(join(root,'.env'),'utf8'));assert.deepEqual(Object.keys(secrets).sort(),['ONEBOT_ACCESS_TOKEN','OPENAI_API_KEY']);
- const config=readFileSync(join(root,'config.toml'),'utf8');assert.ok(!config.includes('max_parts'));assert.ok(!config.includes('original-api-secret'));assert.ok(!config.includes('original-onebot-secret'));
+ const config=readFileSync(join(root,'config.toml'),'utf8');assert.ok(!config.includes('max_parts'));assert.ok(!config.includes('max_per_read'));assert.deepEqual(result.listener.forward,{enabled:false});assert.ok(!config.includes('original-api-secret'));assert.ok(!config.includes('original-onebot-secret'));
  const doc=parseToml(config);assert.equal(Object.hasOwn(doc.bot as object,'group_id'),false);
  assert.deepEqual(Object.keys(doc.groups as object),[LISTENER_GROUP]);
  assert.equal(((doc.groups as Record<string,unknown>)[LISTENER_GROUP] as Record<string,unknown>).enabled,true);

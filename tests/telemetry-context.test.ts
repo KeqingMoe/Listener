@@ -19,6 +19,11 @@ test('request telemetry trace remains scoped across concurrent async operations'
   assert.equal(store.summarize({since:0,until:1000}).cacheHitRate,0.25);
  }finally{store.close();rmSync(dir,{recursive:true,force:true});}
 });
+test('world tool names remain observable without arbitrary names',()=>{
+ const tools=['get_wake_state','get_time','read_events','read_messages','ack_events'];
+ assert.deepEqual(sanitizeLogFields({tools:[...tools,'SECRET']}),{tools});
+ for(const tool of tools)assert.deepEqual(sanitizeLogFields({tool}),{tool});
+});
 test('normalized usage fields are loggable without prompt contents',()=>{
  assert.deepEqual(sanitizeLogFields({input_tokens:100,output_tokens:10,cached_input_tokens:50,reasoning_tokens:2,cache_hit_rate:0.5,content:'PRIVATE'}),{input_tokens:100,output_tokens:10,cached_input_tokens:50,reasoning_tokens:2,cache_hit_rate:0.5});
 });

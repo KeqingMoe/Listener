@@ -4,6 +4,28 @@ import { WorldEventStore } from '../src/world-events.js';
 import { WorldTools, buildWorldTools } from '../src/world-tools.js';
 import type { JsonObject, TimelineEntry } from '../src/contracts.js';
 
+test('runtime metadata is queried only on wake state and strips private fields',async()=>{
+ const store=new WorldEventStore({path:':memory:',groupId:'22'});let reads=0;
+ const tools=new WorldTools({store,groupId:'22',selfId:'999',state:()=>{reads++;return {body:'PRIVATE',other:'PRIVATE',attention_state:{active_plans:[{plan_id:'att_123',purpose:'wait member',body:'PRIVATE',any_of:[{type:'member_message',user_ids:['111'],message:'PRIVATE'}]}],private:'PRIVATE'},reaction_state:{recent:[{message_id:'1',emoji_id:'4',action:'add',status:'ok',at:123,body:'PRIVATE',group_id:'FOREIGN'}],last_turn:{confirmed:1,raw:'PRIVATE'}}};}});
+ try{
+  await tools.execute('get_time',{});await tools.execute('read_events',{limit:1});await tools.execute('read_messages',{limit:1});await tools.execute('ack_events',{ack_cursor:'bad'});assert.equal(reads,0);
+  const value=await tools.execute('get_wake_state',{});assert.equal(reads,1);assert.equal(value.untrusted,true);assert.doesNotMatch(JSON.stringify(value),/PRIVATE|FOREIGN/);
+  assert.deepEqual((value.attention_state as any).active_plans[0].any_of,[{type:'member_message',user_ids:['111']}]);
+  assert.deepEqual((value.reaction_state as any).recent,[{message_id:'1',emoji_id:'4',action:'add',status:'ok',at:123}]);
+  await tools.execute('get_wake_state',{}, {groupId:'33',selfId:'999',actorId:'111',messageId:'1'});assert.equal(reads,1);
+ }finally{store.close();}
+});
+
+test('oversized runtime metadata returns a bounded prefix with honest omissions',async()=>{
+ const store=new WorldEventStore({path:':memory:',groupId:'22'});
+ const plans=Array.from({length:1000},(_,i)=>({plan_id:`att_${i}`,purpose:'界'.repeat(160),any_of:[{type:'member_message',user_ids:['111']}]}));
+ const tools=new WorldTools({store,groupId:'22',selfId:'999',state:()=>({attention_state:{active_plans:plans},reaction_state:{recent:Array.from({length:1000},(_,i)=>({message_id:String(i),emoji_id:'4',status:'ok',action:'add',error:'界'.repeat(160)}))}})});
+ try{const value=await tools.execute('get_wake_state',{});assert.equal(value.status,'ok');assert.ok(Buffer.byteLength(JSON.stringify(value))<24000);
+  for(const [name,key] of [['attention_state','active_plans'],['reaction_state','recent']]){const state=value[name!] as any;assert.equal(state.details_truncated,true);assert.equal(state.omitted_items+state[key!].length,1000);assert.ok(state[key!].length>0);}
+  assert.equal(plans.length,1000);
+ }finally{store.close();}
+});
+
 const groupId='22', selfId='999';
 const context={groupId,selfId,actorId:'111',messageId:'1'};
 function setup(){

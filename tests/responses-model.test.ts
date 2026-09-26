@@ -4,6 +4,14 @@ const append=(messages:ChatMessage[],r:import('../src/contracts.js').Completion,
 const tool:ToolDefinition={type:'function',function:{name:'finish',description:'done',parameters:{type:'object'}}};
 async function fixture(handler:(body:any,res:import('node:http').ServerResponse)=>void){const server=createServer((req,res)=>{let b='';req.on('data',c=>b+=c);req.on('end',()=>handler(JSON.parse(b),res));});server.listen(0,'127.0.0.1');await once(server,'listening');const a=server.address();assert.ok(a&&typeof a!=='string');return {server,url:`http://127.0.0.1:${a.port}/v1`};}
 const response=(id:string)=>({id,status:'completed',output:[{type:'function_call',call_id:'c1',name:'finish',arguments:'{}'}],usage:{input_tokens:10,output_tokens:3,total_tokens:13,input_tokens_details:{cached_tokens:5},output_tokens_details:{reasoning_tokens:1}}});
+test('restored continuation cannot cross endpoint or credential identity',async()=>{
+ const bodies:any[]=[];const handler=(body:any,res:import('node:http').ServerResponse)=>{bodies.push(body);res.end(JSON.stringify(response('chain')));};
+ const first=await fixture(handler),second=await fixture(handler);
+ try{const original=make(first.url),messages:ChatMessage[]=[{role:'system',content:'stable'}],r=await original.complete(messages,[tool]),checkpoint=original.getContinuationCheckpoint()!;
+  for(const model of [make(second.url),make(first.url,{apiKey:'changed-private-key'})]){model.restoreContinuationCheckpoint(checkpoint);await model.complete(append(messages,r),[tool]);assert.equal(bodies.at(-1).previous_response_id,undefined);}
+  assert.doesNotMatch(JSON.stringify(checkpoint),/secret-key|changed-private-key|127\.0\.0\.1/);
+ }finally{first.server.close();second.server.close();}
+});
 test('system-only empty input; checkpoint retains opaque output and tools change breaks reuse',async()=>{
  const bodies:any[]=[];const f=await fixture((b,res)=>{bodies.push(b);res.end(JSON.stringify({...response('r'+bodies.length),output:[{type:'reasoning',encrypted_content:'opaque'},{type:'compaction',encrypted_content:'opaque-compact'},...response('r').output]}));});
  try{const m=make(f.url,{compactionThreshold:2000});const messages:ChatMessage[]=[{role:'system',content:'stable'}];const r=await m.complete(messages,[tool]);assert.deepEqual(bodies[0].input,[]);assert.equal(bodies[0].context_management,undefined);assert.equal(bodies[0].max_output_tokens,100);assert.match(bodies[0].prompt_cache_key,/^[a-f0-9]{64}$/);const cp=m.getCheckpoint()!;assert.equal(cp.outputItems.length,3);cp.baselineMessages[0]!.content='mutated';assert.equal(m.getCheckpoint()!.baselineMessages[0]!.content,'stable');await m.complete(append(messages,r),[{...tool,function:{...tool.function,description:'changed'}}]);assert.equal(bodies[1].previous_response_id,undefined);assert.equal(bodies[1].input[0].type,'function_call');}finally{f.server.close();}

@@ -7,6 +7,8 @@ export interface WakeMetadata { wakeId?: string; startedAt?: number; trigger?: u
 export interface WorldToolsOptions {
   store: WorldEventStore; groupId: string; selfId: string;
   wake?: () => WakeMetadata; currentBudget?: () => JsonObject;
+  /** Group-scoped runtime metadata, queried only by get_wake_state. */
+  state?: () => JsonObject;
   /** Unix seconds, not milliseconds. */
   clock?: () => number; timezone?: string;
 }
@@ -58,6 +60,48 @@ function event(value: ProjectedWorldEvent): JsonObject {
   return {event_id:value.eventId,sequence:value.sequence,type:value.type,group_id:value.groupId,observed_at:value.observedAt,...(value.occurredAt !== undefined ? {occurred_at:value.occurredAt} : {}),...(value.actorId !== undefined ? {actor_id:value.actorId} : {}),...(value.subject ? {subject:{kind:value.subject.kind,id:value.subject.id}} : {}),provenance:{source:value.provenance.source,verified:value.provenance.verified},payload,...(value.payload_omitted ? {payload_omitted:true,omission_reason:'output_limit'} : {})};
 }
 
+// Explicit metadata projection: no message bodies, arbitrary callback keys or API payloads.
+function runtimeState(source:unknown):JsonObject {
+  if(!object(source))return {};
+  const scalar=(value:unknown):unknown=>typeof value==='string'?value.slice(0,160):typeof value==='boolean'||(typeof value==='number'&&Number.isFinite(value))?value:undefined;
+  const project=(value:unknown,fields:string[]):JsonObject=>object(value)?Object.fromEntries(fields.flatMap(key=>{const v=scalar(value[key]);return v===undefined?[]:[[key,v]];})):{};
+  const list=(value:unknown,limit:number,fn:(item:unknown)=>unknown)=>Array.isArray(value)?value.slice(0,limit).map(fn):[];
+  const result:JsonObject={};
+  for(const name of ['attention_state','reaction_state'] as const){
+    const raw=source[name];if(!object(raw))continue;
+    const fields=name==='attention_state'?['host_time_ms','details_truncated','omitted_triggers','unread_omitted']:[];
+    const out=project(raw,fields);
+    if(name==='attention_state'){
+      out.active_plans=list(raw.active_plans,64,item=>{
+        const plan=project(item,['plan_id','purpose','expires_at','expires_in_seconds','remaining_seconds','conditions_omitted']);
+        if(object(item)&&Array.isArray(item.any_of))plan.any_of=list(item.any_of,8,c=>{
+          const condition=project(c,['type','due_at','remaining_seconds','window_seconds','min_messages','min_senders']);
+          if(object(c)&&Array.isArray(c.user_ids))condition.user_ids=c.user_ids.filter(id).slice(0,16);
+          if(object(c)&&Array.isArray(c.delay_seconds))condition.delay_seconds=c.delay_seconds.filter(n=>typeof n==='number'&&Number.isFinite(n)).slice(0,2);
+          return condition;
+        });return plan;
+      });
+      out.triggered=list(raw.triggered,64,item=>project(item,['plan_id','reason','purpose']));
+      if(object(raw.last_commit))out.last_commit={...project(raw.last_commit,['status','error']),...Object.fromEntries(['applied','skipped','rejected_operations'].map(k=>[k,list((raw.last_commit as JsonObject)[k],64,item=>typeof item==='string'?item.slice(0,160):project(item,['plan_id','reason','error']))]))};
+    }else{
+      out.recent=list(raw.recent,128,item=>project(item,['message_id','emoji_id','action','status','at','error']));
+      if(object(raw.last_turn))out.last_turn={...project(raw.last_turn,['at','outcome','confirmed','unknown','rejected']),errors:list(raw.last_turn.errors,32,item=>typeof item==='string'?item.slice(0,160):'invalid')};
+    }
+    let omitted=0;
+    for(const key of name==='attention_state'?['active_plans','triggered']:['recent']){
+      const original=raw[key],items=out[key];if(Array.isArray(original)&&Array.isArray(items))omitted+=original.length-items.length;
+    }
+    // Preserve a useful prefix, explicitly accounting for every dropped top-level item.
+    while(Buffer.byteLength(JSON.stringify(out))>10000){
+      const items=(name==='attention_state'?(out.active_plans as unknown[]).length?out.active_plans:out.triggered:out.recent) as unknown[];
+      if(!items.length){result[name]={details_truncated:true,omitted_items:omitted,state_omitted:true};break;}
+      items.pop();omitted++;
+    }
+    if(!result[name])result[name]={...out,...(omitted?{details_truncated:true,omitted_items:omitted}:{})};
+  }
+  return result;
+}
+
 export class WorldTools {
   private readonly groupId: string;
   private readonly clock: () => number;
@@ -86,7 +130,7 @@ export class WorldTools {
     else if (object(source.trigger)) wake.trigger = Object.fromEntries(['type','reason','event_id','message_id','actor_id'].filter(k=>safeString(source.trigger && (source.trigger as JsonObject)[k])).map(k=>[k,(source.trigger as JsonObject)[k]]));
     const budget = this.options.currentBudget?.();
     const safeBudget = object(budget) ? Object.fromEntries(['max_tool_calls','used_tool_calls','remaining_tool_calls','remaining_ms'].filter(k=>typeof budget[k] === 'number' && Number.isFinite(budget[k]) && (budget[k] as number)>=0).map(k=>[k,budget[k]])) : undefined;
-    return {status:'ok',...wake,group_id:this.groupId,self_id:this.options.selfId,latest_available:state.latestSequence,observed_through:state.observationWatermark,unread_count:state.unreadEvents,unread_by_type:state.unreadByType,queried_at:now,current_time:this.clockResult(now),...(safeBudget ? {wake_budget:safeBudget} : {})};
+    return {status:'ok',...wake,...runtimeState(this.options.state?.()),untrusted:true,group_id:this.groupId,self_id:this.options.selfId,latest_available:state.latestSequence,observed_through:state.observationWatermark,unread_count:state.unreadEvents,unread_by_type:state.unreadByType,queried_at:now,current_time:this.clockResult(now),...(safeBudget ? {wake_budget:safeBudget} : {})};
   }
   private read(kind: Kind, value: unknown, now: number): JsonObject {
     const a = args(value,['limit','cursor','direction','actor_id','since','until',...(kind==='events'?['types']:[])]);

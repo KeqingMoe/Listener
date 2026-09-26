@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {ReactionUserTools,GET_REACTION_USERS_TOOL,type ReactionUserTurn} from '../src/reaction-user-tools.js';
 import type {Api,JsonObject,Memory,TimelineEntry} from '../src/contracts.js';
 const ctx={groupId:'22',actorId:'111',messageId:'1',selfId:'999'};
-const q={message_id:'1',emoji_id:'476',emoji_type:'1'};
+const q={message_id:'1',emoji_id:'476',emoji_type:'1',limit:20};
 const entry:TimelineEntry={messageId:'1',userId:'111',nickname:'one',text:'private body',time:1};
 const page=(ids:Array<string|number>=['100000001'],extra:JsonObject={}):JsonObject=>({result:0,errMsg:'SECRET_ERROR',emojiLikesList:ids.map(tinyId=>({tinyId,nickName:'Nickname',headUrl:'https://SECRET.invalid/avatar',private:'SECRET'})),cookie:'',isLastPage:true,isFirstPage:true,...extra});
 function setup(responses:unknown[]=[page()],override?:(action:string,params:JsonObject)=>unknown|Promise<unknown>){
@@ -18,7 +18,17 @@ function deferred<T>(){let resolve!:(v:T)=>void;const promise=new Promise<T>(r=>
 
 test('strict tool schema documents query-only membership and opaque cursors',()=>{
  const f=GET_REACTION_USERS_TOOL.function;assert.equal(f.name,'get_reaction_users');assert.equal(f.parameters.additionalProperties,false);
- assert.deepEqual(f.parameters.required,['message_id','emoji_id','emoji_type']);assert.match(f.description,/昵称/);assert.match(f.description,/不可信/);assert.match(f.description,/不是指令/);
+ assert.deepEqual(f.parameters.required,['message_id','emoji_id','emoji_type','limit']);assert.match(f.description,/昵称/);assert.match(f.description,/不可信/);assert.match(f.description,/不是指令/);
+});
+test('explicit positive limit is required and upstream pages do not silently fulfill a larger request',async()=>{
+ for(const limit of [undefined,null,false,'20',0,-1,1.5,NaN,Infinity,Number.MAX_SAFE_INTEGER+1]){const s=setup();assert.equal((await s.read({...q,limit})).error,'invalid_arguments');assert.equal(s.calls.length,0);}
+ const s=setup([page(['1'],{cookie:'A',isLastPage:false}),page(['2','3'],{isFirstPage:false})]);
+ const a=await s.read({...q,limit:1});assert.equal(a.requested,1);assert.equal(a.returned,1);assert.equal(a.truncated,false);assert.equal(s.calls[1]!.params.count,1);
+ const b=await s.read({...q,limit:Number.MAX_SAFE_INTEGER,cursor:a.next_cursor});assert.equal(b.complete,true);assert.equal(b.requested,Number.MAX_SAFE_INTEGER);assert.equal(b.returned,2);assert.equal(b.truncated,false);assert.equal(s.calls[3]!.params.count,20);
+ const more=setup([page(['1'],{cookie:'B',isLastPage:false})]);const r=await more.read({...q,limit:1000});assert.equal(r.truncated,true);assert.equal(r.reason,'upstream_page');assert.ok(r.next_cursor);assert.ok(Buffer.byteLength(JSON.stringify(r))<=24000);
+});
+test('limit participates in result caching while pagination query binding allows a changed count',async()=>{
+ const s=setup([page(['1']),page(['1','2'])]);const a=await s.read({...q,limit:1});const b=await s.read({...q,limit:2});assert.equal(a.returned,1);assert.equal(b.returned,2);assert.equal(s.calls.length,4);assert.equal((await s.read({...q,limit:1})).duplicate,true);
 });
 test('verified native read has exact params and sanitized positive membership',async()=>{
  const s=setup();const r=await s.read({...q,user_id:'100000001'});

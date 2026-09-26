@@ -11,12 +11,12 @@ const text = (s: string) => ({ type: 'text', data: { text: s } });
 const node = (message: unknown[] = [text('hello')]) => ({ sender: { user_id: '100000001', nickname: 'claimed owner' }, time: 42, message });
 const local = (): TimelineEntry => ({ messageId: '1', userId: '123', nickname: 'local', time: 1, text: '[非文本消息]', ...{ forwards: forwardReferences('1', [native()]) } });
 const remote = (segment: unknown = native(), extra = {}) => ({ message_type: 'group', group_id: LISTENER_GROUP, message_id: '1', sender: { user_id: '123' }, message: [segment], ...extra });
-function setup({ origin = remote(), response = { messages: [node()] }, entries = [local()], options = { enabled: true, maxPerRead: 20 }, onCall }: { origin?: unknown; response?: unknown; entries?: TimelineEntry[]; options?: ForwardConfig; onCall?: (action: string, params: unknown) => unknown } = {}) {
+function setup({ origin = remote(), response = { messages: [node()] }, entries = [local()], options = { enabled: true }, onCall }: { origin?: unknown; response?: unknown; entries?: TimelineEntry[]; options?: ForwardConfig; onCall?: (action: string, params: unknown) => unknown } = {}) {
   const calls: Array<{ action: string; params: unknown }> = [];
   const api: Api = { async call(action, params) { calls.push({ action, params }); return onCall ? onCall(action, params) : action === 'get_msg' ? origin : response; } };
   const memory: Memory = { recent: () => entries, find() { throw new Error('recent only'); }, append: () => true, context: () => '', compact: async () => {}, clear: () => { entries.length = 0; }, close() {} };
   const tools = new ForwardTools(api, memory, options), state = tools.createTurn();
-  return { tools, state, calls, memory, read: (start = 1, end = start, id = 'fwd_1_0', signal?: AbortSignal) => tools.read({ forward_id: id, start, end }, ctx, state, signal) };
+  return { tools, state, calls, memory, read: (start = 1, end = start, id = 'fwd_1_0', signal?: AbortSignal) => tools.read({ forward_id: id, start, limit: end - start + 1 }, ctx, state, signal) };
 }
 const rows = (r: Record<string, unknown>) => r.messages as Array<Record<string, any>>;
 
@@ -60,17 +60,17 @@ test('serialized CQ compatibility strings never expose transport URLs or file id
 test('strict exact argument schema, invalid ranges never fetch', async () => {
   assert.equal(READ_FORWARD_TOOL.function.name, 'read_forward');
   assert.equal(READ_FORWARD_TOOL.function.parameters.additionalProperties, false);
-  assert.deepEqual(READ_FORWARD_TOOL.function.parameters.required, ['forward_id', 'start', 'end']);
+  assert.deepEqual(READ_FORWARD_TOOL.function.parameters.required, ['forward_id', 'start', 'limit']);
   const s = setup();
-  for (const args of [null, [], {}, { forward_id: 'fwd_1_0', start: 1, end: 1, extra: true }, ...['secret', 'fwd_1_128', 'fwd_1_00', 'fwd_1_0\n', 'fwdn_000'].map(forward_id => ({ forward_id, start: 1, end: 1 })), ...[[0, 1], [2, 1], [1, 21], [1.5, 2], [1, Infinity], ['1', 2]].map(([start, end]) => ({ forward_id: 'fwd_1_0', start, end }))]) assert.equal((await s.tools.read(args, ctx, s.state)).status, 'error');
+  for (const args of [null, [], {}, { forward_id:'fwd_1_0',start:1,end:1 }, {forward_id:'fwd_1_0',start:1}, { forward_id: 'fwd_1_0', start: 1, limit: 1, extra: true }, ...['secret', 'fwd_1_128', 'fwd_1_00', 'fwd_1_0\n', 'fwdn_000'].map(forward_id => ({ forward_id, start: 1, limit: 1 })), ...[[0, 1], [2, 0], [1, -1], [1.5, 2], [1, Infinity], ['1', 2], [1,1.5], [1,NaN], [1,Number.MAX_SAFE_INTEGER+1]].map(([start, limit]) => ({ forward_id: 'fwd_1_0', start, limit }))]) assert.equal((await s.tools.read(args, ctx, s.state)).status, 'error');
   assert.equal(s.calls.length, 0);
 });
 
 test('options immutable, disabled and forbidden group do nothing', async () => {
-  for (const maxPerRead of [0, 21, 1.2, NaN]) assert.throws(() => setup({ options: { enabled: true, maxPerRead } }));
-  const options = { enabled: false, maxPerRead: 20 }, s = setup({ options }); options.enabled = true;
+  for (const maxPerRead of [0, 21, 1.2, NaN]) assert.throws(() => setup({ options: { enabled: true, maxPerRead } as any }));
+  const options = { enabled: false }, s = setup({ options }); options.enabled = true;
   assert.equal((await s.read()).error, 'tool_disabled'); assert.equal(s.calls.length, 0); assert.equal(s.state.roots.size, 0);
-  const t = setup(); assert.equal((await t.tools.read({ forward_id: 'fwd_1_0', start: 1, end: 1 }, { ...ctx, groupId: '9' }, t.state)).error, 'forbidden_group'); assert.equal(t.calls.length, 0);
+  const t = setup(); assert.equal((await t.tools.read({ forward_id: 'fwd_1_0', start: 1, limit: 1 }, { ...ctx, groupId: '9' }, t.state)).error, 'forbidden_group'); assert.equal(t.calls.length, 0);
   const defaults = setup({ options: { enabled: true } as ForwardConfig }); assert.equal((await defaults.read()).status, 'ok');
 });
 
@@ -113,7 +113,17 @@ test('99 short nodes paginate beyond the former six-call ceiling until resource 
   assert.deepEqual(indices, Array.from({ length: 99 }, (_, i) => i + 1)); assert.equal(s.state.returned, 99); assert.equal(s.calls.length, 2);
   assert.equal((await s.read(1, 20)).status, 'ok'); assert.equal((await s.read()).status, 'ok');
   assert.equal(s.state.returned, 120); assert.ok(s.state.outputChars <= 30000);
-  assert.equal((await s.read()).error, 'budget_exhausted');
+  assert.equal((await s.read()).status, 'ok');
+});
+
+test('large explicit limits have no small count cap and clamp arithmetic safely',async()=>{
+ const s=setup({response:{messages:Array.from({length:70},()=>node([text('x')]))}});
+ const first=await s.tools.read({forward_id:'fwd_1_0',start:1,limit:50},ctx,s.state);
+ assert.equal(first.status,'ok');assert.equal(first.requested,50);assert.equal(first.returned,50);assert.equal(first.requested_end,50);assert.equal(first.next_start,51);assert.equal(first.reason,'limit');assert.ok(JSON.stringify(first).length<=12000);
+ const rest=await s.tools.read({forward_id:'fwd_1_0',start:51,limit:Number.MAX_SAFE_INTEGER},ctx,s.state);
+ assert.equal(rest.requested_end,Number.MAX_SAFE_INTEGER);assert.equal(rest.returned,20);assert.equal(rest.next_start,null);assert.equal(s.calls.length,2);
+ const hugeStart=await s.tools.read({forward_id:'fwd_1_0',start:Number.MAX_SAFE_INTEGER,limit:Number.MAX_SAFE_INTEGER},ctx,s.state);
+ assert.equal(hugeStart.error,'range_out_of_bounds');assert.equal(hugeStart.requested_end,Number.MAX_SAFE_INTEGER);
 });
 
 test('only selected and actually returned nodes register opaque nested refs; repeats reuse refs/cache', async () => {
@@ -260,7 +270,7 @@ test('visible nested handles survive text clipping but omitted rows cannot mint 
  const s=setup({response:{messages:[node([native('shown-resource'),text('x'.repeat(20000))]),node([native('unreturned-resource')])]}});
  const r=await s.read(1,2),row=rows(r)[0]!;assert.equal(rows(r).length,1);assert.equal(r.next_start,2);assert.equal(row.content_truncated,true);
  assert.equal(row.segments[0].type,'forward');assert.equal(row.segments[0].forward_id,row.forwards[0].id);
- assert.equal(s.state.children.size,1);assert.equal(s.state.childKeys.size,1);assert.ok(s.state.children.has(row.forwards[0].id));assert.ok(!JSON.stringify(r).includes('resource'));
+ assert.equal(s.state.children.size,1);assert.equal(s.state.childKeys.size,1);assert.ok(s.state.children.has(row.forwards[0].id));assert.ok(!JSON.stringify(r).includes('shown-resource'));assert.ok(!JSON.stringify(r).includes('unreturned-resource'));
 });
 
 test('typed forward count hints become verified without flattening or automatic expansion',async()=>{

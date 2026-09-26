@@ -22,7 +22,7 @@ test('real entrypoint queries reaction users on demand, keeps pagination opaque,
  const peers=new Set<WebSocket>(),sockets=new Set<Socket>();let peer:WebSocket|undefined,sent=0,pages=0,proofAfter=0;
  const stored=new Map<string,ReturnType<typeof message>>(),calls:Array<{action:string;params:Record<string,unknown>}>=[],requests:any[]=[];
  const op=(name:string,args:unknown)=>({id:`op_${requests.length}`,type:'function',function:{name,arguments:JSON.stringify(args)}});
- const query=(cursor?:string)=>op('get_reaction_users',{message_id:TARGET,emoji_id:'76',emoji_type:'1',user_id:OWNER_ID,...(cursor?{cursor}:{})});
+ const query=(cursor?:string)=>op('get_reaction_users',{message_id:TARGET,emoji_id:'76',emoji_type:'1',user_id:OWNER_ID,limit:20,...(cursor?{cursor}:{})});
  const send=(body:string)=>op('send_message',{segments:[{type:'text',text:body}]});
   const finish=()=>op('finish',{});
  const http=createServer((req,res)=>{void(async()=>{
@@ -30,13 +30,15 @@ test('real entrypoint queries reaction users on demand, keeps pagination opaque,
   assert.ok(body.tools.some((t:any)=>t.function.name==='get_reaction_users'));
   assert.ok(!source.includes('avatar-secret.invalid'));assert.ok(!source.includes('native-cookie-never-to-model'));assert.ok(!source.includes('native-second-cookie'));
   let next:ReturnType<typeof op>;
-  if(requests.length===1){assert.equal(pages,0);next=send('initial bot reply');}
-  else if(requests.length===2){assert.equal(pages,0,'user lists are not fetched by the automatic aggregate prefetch');proofAfter=calls.length;next=query();}
+  if(requests.length===1){assert.equal(pages,0);assert.ok(!source.includes('fixture initial request'));assert.equal(Object.hasOwn(JSON.parse(body.messages.findLast((m:any)=>m.role==='user').content),'reaction_state'),false);next=op('read_events',{limit:100});}
+   else if(requests.length===2){assert.ok(source.includes('fixture initial request'));next=send('initial bot reply');}
+   else if(requests.length===3){assert.equal(pages,0);const wake=body.messages.findLast((m:any)=>m.role==='user');assert.ok(!wake.content.includes('我给你点了赞'));next=op('read_messages',{limit:100});}
+  else if(requests.length===4){assert.ok(source.includes('我给你点了赞'));assert.equal(pages,0,'event and message reads do not fetch user lists');proofAfter=calls.length;next=query();}
   else{
-   const result=JSON.parse(body.messages.filter((m:any)=>m.role==='tool').at(-1).content);assert.equal(result.status,requests.length===5?'ok':'partial');assert.equal(result.target_user_id,OWNER_ID);
-   if(requests.length===3){assert.equal(result.target_found,null);assert.equal(result.complete,false);assert.equal(result.has_more,true);assert.equal(typeof result.next_cursor,'string');assert.notEqual(result.next_cursor,'native-cookie-never-to-model');proofAfter=calls.length;next=query(result.next_cursor);}
-   else if(requests.length===4){assert.equal(result.target_found,true);assert.equal(result.complete,false);assert.equal(result.has_more,true);assert.ok(result.users.some((u:any)=>u.user_id===OWNER_ID&&u.nickname==='fixture owner'));proofAfter=calls.length;next=query(result.next_cursor);}
-   else{assert.equal(requests.length,5);assert.equal(result.target_found,true,'finding the target on an earlier page survives a final empty EOF page');assert.equal(result.complete,true);assert.equal(result.has_more,false);next=send('verified reaction membership');}
+   const result=JSON.parse(body.messages.filter((m:any)=>m.role==='tool').at(-1).content);assert.equal(result.status,requests.length===7?'ok':'partial');assert.equal(result.target_user_id,OWNER_ID);
+   if(requests.length===5){assert.equal(result.target_found,null);assert.equal(result.complete,false);assert.equal(result.has_more,true);assert.equal(typeof result.next_cursor,'string');assert.notEqual(result.next_cursor,'native-cookie-never-to-model');proofAfter=calls.length;next=query(result.next_cursor);}
+   else if(requests.length===6){assert.equal(result.target_found,true);assert.equal(result.complete,false);assert.equal(result.has_more,true);assert.ok(result.users.some((u:any)=>u.user_id===OWNER_ID&&u.nickname==='fixture owner'));proofAfter=calls.length;next=query(result.next_cursor);}
+   else{assert.equal(requests.length,7);assert.equal(result.target_found,true,'finding the target on an earlier page survives a final empty EOF page');assert.equal(result.complete,true);assert.equal(result.has_more,false);next=send('verified reaction membership');}
   }
   res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:next.function.name==='send_message'?[next,{...finish(),id:`finish_${requests.length}`}]:[next]}}]}));notify();
  })().catch(error=>{fail(error);if(!res.headersSent)res.writeHead(500);res.end();});});
@@ -67,7 +69,7 @@ test('real entrypoint queries reaction users on demand, keeps pagination opaque,
   writeFileSync(join(dir,'config.toml'),`[onebot]\nurl="ws://127.0.0.1:${wsPort}"\ntoken_env="FIXTURE_TOKEN"\n[ai]\nenabled=true\nbase_url="http://127.0.0.1:${httpPort}/v1"\nmodel="fixture-reaction-users"\napi_key_env="FIXTURE_KEY"\ntimeout_ms=10000\n[reply]\ndelay_ms=[100,100]\ncooldown_ms=1000\nrandom_probability=0\n[tools]\nreactions=true\nmembers=false\n[logging]\nlevel="debug"\nconsole=true\nfile=false\n[groups."${GROUP}"]\n`);
   child=spawn(process.execPath,['--import',import.meta.resolve('tsx'),fileURLToPath(new URL('../src/index.ts',import.meta.url))],{cwd:dir,env:{PATH:process.env.PATH??'',HOME:dir,NODE_NO_WARNINGS:'1'},stdio:['ignore','pipe','pipe']});exit=new Promise((resolve,reject)=>{child!.once('error',error=>{fail(error);reject(error);});child!.once('close',(code,signal)=>{resolve({code,signal});notify();});});void exit.catch(()=>{});for(const stream of [child.stdout!,child.stderr!])stream.on('data',chunk=>{output=(output+chunk.toString()).slice(-128*1024);notify();});
   await wait(()=>output.includes('onebot.ready'),'startup');emit('101');await wait(()=>ended()===1,'initial reply');assert.equal(sent,1);assert.equal(pages,0);
-  emit('102');await wait(()=>ended()===2,'paginated actor query answered');assert.equal(pages,3);assert.equal(sent,2);assert.equal(requests.length,5);assert.ok(!output.includes('avatar-secret.invalid'));assert.ok(!output.includes('native-cookie-never-to-model'));
+  emit('102');await wait(()=>ended()===2,'paginated actor query answered');assert.equal(pages,3);assert.equal(sent,2);assert.equal(requests.length,7);assert.ok(!output.includes('avatar-secret.invalid'));assert.ok(!output.includes('native-cookie-never-to-model'));
   assert.equal(child.kill('SIGTERM'),true);assert.deepEqual(await bounded(exit),{code:0,signal:null});assert.ok(output.includes('app.stopped'));
   const db=new DatabaseSync(join(dir,'data/listener.sqlite'),{readOnly:true});try{const rows=db.prepare('SELECT entry FROM listener_messages').all().map(r=>JSON.parse(r.entry as string));assert.equal(rows.length,4);assert.equal(rows.filter(r=>r.bot).length,2);assert.ok(!JSON.stringify(rows).includes('avatar-secret.invalid'));assert.ok(!JSON.stringify(rows).includes('target_found'));}finally{db.close();}
  }finally{

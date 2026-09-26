@@ -19,7 +19,7 @@ export interface PreparedMessage {
 const schema = (properties: JsonObject, required: string[] = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const tool = (name: string, description: string, parameters: JsonObject): ToolDefinition => ({ type: 'function', function: { name, description, parameters } });
 export const GROUP_TOOLS: ToolDefinition[] = [
-  tool('get_group_members', '读取当前群成员的有限分页，可按QQ、昵称或群名片搜索。', schema({ search: { type: 'string', maxLength: 100 }, offset: { type: 'integer', minimum: 0, maximum: 100000 }, limit: { type: 'integer', minimum: 1, maximum: 50 } })),
+  tool('get_group_members', '读取当前群成员的明确范围，可按QQ、昵称或群名片搜索。limit必须填写；输出受通用资源边界限制，过大时返回truncated和next_offset。', schema({ search: { type: 'string', maxLength: 100 }, offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1 } }, ['limit'])),
   tool('get_member_info', '读取当前群指定成员的基本资料。', schema({ user_id: { type: 'string' } }, ['user_id'])),
   tool('read_message', '读取当前群本地消息或本地近期消息引用的消息。', schema({ message_id: { type: 'string' } }, ['message_id'])),
 ];
@@ -88,12 +88,21 @@ export class GroupTools {
         fields(args, ['search', 'offset', 'limit']);
         if (args.search !== undefined && (typeof args.search !== 'string' || args.search.length > 100)) fail();
         const search = (args.search as string | undefined)?.trim().toLowerCase() ?? '';
-        const offset = integer(args.offset, 0, 0, 100000), limit = integer(args.limit, 20, 1, 50);
+        if (typeof args.limit !== 'number' || !Number.isSafeInteger(args.limit) || args.limit < 1) fail();
+        const offset = integer(args.offset, 0, 0, Number.MAX_SAFE_INTEGER), limit = args.limit;
         const raw = await this.call('get_group_member_list', { group_id: this.groupId });
         if (!Array.isArray(raw) || raw.length > 100000) fail('verification_failed');
         // Verify the entire source, even records outside the requested page.
         const matching = raw.map(v => member(v, this.groupId)).filter(v => !search || [v.user_id, v.nickname, v.card].some(s => String(s).toLowerCase().includes(search)));
-        return { status: 'ok', members: matching.slice(offset, offset + limit), total: matching.length, offset, limit, has_more: offset + limit < matching.length };
+        const members: JsonObject[] = []; let bytes = 512;
+        const wanted = Math.min(limit, Math.max(0, matching.length-offset));
+        for (let i=0; i<wanted; i++) {
+          const value = matching[offset+i]!; const size = Buffer.byteLength(JSON.stringify(value),'utf8')+1;
+          if (bytes+size>24000) break;
+          bytes+=size; members.push(value);
+        }
+        const next = offset+members.length, hasMore=next<matching.length;
+        return { status: 'ok', members, total: matching.length, offset, limit, requested:limit, returned:members.length, has_more:hasMore, truncated:members.length<wanted, ...(members.length<wanted?{reason:'output_limit'}:{}), ...(hasMore?{next_offset:next}:{}) };
       }
       if (name === 'get_member_info') {
         fields(args, ['user_id']); const userId = identifier(args.user_id);

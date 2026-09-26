@@ -9,6 +9,7 @@ import { SQLiteMemory } from './memory.js';
 import { WorldEventStore } from './world-events.js';
 import { ResponsesModel } from './responses-model.js';
 import type { ModelRequestRecord } from './model-usage.js';
+import { ModelSession } from './model-session.js';
 import { resolveGroupId, OWNER_ID } from './contracts.js';
 import { GroupRouter } from './group-router.js';
 import { TurnScheduler } from './turn-scheduler.js';
@@ -51,13 +52,17 @@ async function main(): Promise<void> {
   const entries:Array<readonly [string,Listener]>=[];
   const memories:SQLiteMemory[]=[];
   const worlds:WorldEventStore[]=[];
+  const sessions:ModelSession[]=[];
   let router:GroupRouter;
   try {
     for(const group of groups){
       const groupId=resolveGroupId(group.groupId);
-      const model=group.enabled?(group.transport==='responses'?new ResponsesModel({...modelOptions,sessionId:`group:${groupId}`}):new OpenAIModel(modelOptions)):undefined;
+      let lastRequestId:string|undefined;
+      const scopedModelOptions={...modelOptions,onRequest:(record:ModelRequestRecord)=>{lastRequestId=record.requestId;modelOptions.onRequest(record);}};
+      const model=group.enabled?(group.transport==='responses'?new ResponsesModel({...scopedModelOptions,sessionId:`group:${groupId}`}):new OpenAIModel(scopedModelOptions)):undefined;
       let memory:SQLiteMemory|undefined;
-       let world:WorldEventStore|undefined;
+      let world:WorldEventStore|undefined;
+      let session:ModelSession|undefined;
       try {
         if(group.enabled){
           process.umask(0o077);
@@ -66,10 +71,16 @@ async function main(): Promise<void> {
           memories.push(memory);
           world=new WorldEventStore({path:`${group.memoryPath}.events.sqlite`,groupId,retentionDays:group.retentionDays});
           worlds.push(world);
+          session=new ModelSession({path:`${group.memoryPath}.session.sqlite`,groupId,maxTranscriptBytes:group.sessionMaxContextBytes});
+          sessions.push(session);
+          if(model instanceof ResponsesModel){
+            const checkpoint=session.getTransportCheckpoint();
+            if(checkpoint){try { model.restoreContinuationCheckpoint(checkpoint); } catch { session.reset('invalid_transport_checkpoint'); }}
+          }
           for(const entry of memory.recent())world.appendMessage(entry,{source:'migration',observedAt:entry.time});
           chmodSync(group.memoryPath,0o600);
         }
-        entries.push([groupId,new Listener(client,model,memory,group,Math.random,undefined,scheduler,{world})]);
+        entries.push([groupId,new Listener(client,model,memory,group,Math.random,undefined,scheduler,{world,session,modelRequestId:()=>lastRequestId})]);
         log('info','app.group_ready',{group_id:groupId,ai_enabled:group.enabled,images_enabled:group.images?.enabled ?? false,forward_enabled:group.forward?.enabled ?? false,attention_enabled:group.attention?.enabled ?? false,reactions_enabled:group.tools?.reactions ?? false});
       } catch(error){
         log('error','app.group_init_failed',{group_id:groupId,reason:error instanceof Error&&error.message==='Memory group mismatch'?'memory_group_mismatch':'group_initialization_failed'});
@@ -82,6 +93,7 @@ async function main(): Promise<void> {
     await Promise.allSettled(entries.map(([,listener])=>listener.stop()));
     for(const memory of memories)memory.close();
     for(const world of worlds)world.close();
+    for(const session of sessions)session.close();
     throw error;
   }
   let selfId: string | undefined;

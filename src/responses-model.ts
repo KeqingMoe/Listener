@@ -125,7 +125,7 @@ export class ResponsesModel implements Model {
     let usage:ModelUsage=parseResponsesUsage(undefined),status:ModelRequestRecord['status']='error',failure:ModelErrorCode='network_error',httpStatus:number|undefined;
     const instructions=snapshot.filter(m=>m.role==='system').map(m=>typeof m.content==='string'?m.content:JSON.stringify(m.content)).join('\n\n');
     const functions=toolSnapshot.map(t=>({type:'function',name:t.function.name,description:t.function.description,parameters:t.function.parameters}));
-    const headerHash=hash(JSON.stringify({instructions,functions,model:this.options.model,maxTokens:this.options.maxTokens}));
+    const headerHash=hash(JSON.stringify({endpoint:this.endpoint,account:hash(this.options.apiKey),instructions,functions,model:this.options.model,maxTokens:this.options.maxTokens}));
     const prefix=(base:ChatMessage[]|undefined)=>base!==undefined&&base.length<=snapshot.length&&base.every((m,i)=>JSON.stringify(m)===JSON.stringify(snapshot[i]));
     const restored=this.restored;
     const restoredPrefix=restored&&restored.baselineLength<=snapshot.length?hash(JSON.stringify(snapshot.slice(0,restored.baselineLength))):undefined;

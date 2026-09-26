@@ -69,7 +69,7 @@ test('same message IDs are independent and routing ignores private, unknown and 
 });
 
 test('each group keeps its own persona, schemas and pending batch',async()=>{
- const a=gate<Completion>(),b=gate<Completion>();const s=setup({settings:{[A]:{persona:'STYLE_A',forward:{enabled:true,maxPerRead:2},tools:{members:false,mention:false,moderation:{mute:'off',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:10,maxMuteSeconds:10}}},[B]:{persona:'STYLE_B',forward:{enabled:false,maxPerRead:20}}},complete:r=>r.index===0?abortable(r.group===A?a.promise:b.promise,r.signal):silent()});
+ const a=gate<Completion>(),b=gate<Completion>();const s=setup({settings:{[A]:{persona:'STYLE_A',forward:{enabled:true},tools:{members:false,mention:false,moderation:{mute:'off',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:10,maxMuteSeconds:10}}},[B]:{persona:'STYLE_B',forward:{enabled:false}}},complete:r=>r.index===0?abortable(r.group===A?a.promise:b.promise,r.signal):silent()});
  try{
   await s.router.receive(event(A,'1'),SELF);await s.router.receive(event(B,'1'),SELF);await until(()=>s.requests.length===2);
   await s.router.receive(event(A,'2'),SELF);await s.router.receive(event(A,'3'),SELF);await s.router.receive(event(B,'2'),SELF);

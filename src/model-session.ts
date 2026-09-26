@@ -7,6 +7,18 @@ import { resolveGroupId, type ChatContentPart, type ChatMessage, type Completion
 export interface ModelSessionOptions { path:string; groupId?:string; maxTranscriptBytes?:number }
 export interface ModelSessionState { sessionId:string; generation:number; wakeId?:string; resetReason?:string; needsRecovery:boolean }
 export interface AssistantCheckpoint { assistantSeq:number; callIds:string[] }
+export interface ToolWindow { since:number; until:number; wakeId?:string; sessionId?:string }
+export interface ToolCounts { invocations:number; started:number; completed:number; successes:number; errors:number; unknown:number; skipped:number; pending:number; totalDurationMs:number; meanDurationMs:number|null; modelRequests:number; externalRequests:null }
+export interface ToolSummary extends ToolCounts { byTool:Array<ToolCounts&{name:string}>; toolExposureCounts:Array<{name:string;wakes:number}> }
+export interface DiagnosticPage<T> { requested:number; returned:number; truncated:boolean; nextCursor?:number; items:T[] }
+export interface ToolTrace { assistantSeq:number; callId:string; name:string; state:string; status:string; errorCode?:string; proposedAt:number; startedAt?:number; finishedAt?:number; durationMs?:number; requestId?:string }
+export interface ToolAvailability { wakeId:string; sessionId:string; proposedAt:number; fingerprint:string; exposedToolNames:string[] }
+const DIAGNOSTIC_MAX=24*1024;
+const KNOWN_SUCCESS=['ok','executed','pending','confirmation_required','staged','duplicate','success'];
+function fields(value:unknown,allowed:string[]):asserts value is JsonObject {if(!object(value)||Reflect.ownKeys(value).some(k=>typeof k!=='string'||!allowed.includes(k)))throw new Error('invalid_analytics_filter');}
+function windowFilter(value:ToolWindow):void {if(!Number.isSafeInteger(value.since)||value.since<0||!Number.isSafeInteger(value.until)||value.until<value.since)throw new Error('invalid_analytics_window');for(const key of ['wakeId','sessionId'] as const)if(value[key]!==undefined&&(typeof value[key]!=='string'||!value[key]||value[key]!.length>256))throw new Error('invalid_analytics_filter');}
+function pageFilter(limit:number,cursor?:number):void {if(!Number.isSafeInteger(limit)||limit<1||(cursor!==undefined&&(!Number.isSafeInteger(cursor)||cursor<0)))throw new Error('invalid_analytics_page');}
+const safeName=(value:string):string=>/^[A-Za-z0-9_-]{1,128}$/.test(value)?value:'invalid';
 type LedgerRow={ordinal:number;assistant_seq:number;call_id:string;name:string;state:string;arguments:string;result:string|null};
 const DEFAULT_MAX=512*1024, CHECKPOINT_MAX=256*1024, IMAGE_MAX=8*1024*1024, RESULT_RESERVE=1024;
 const object=(v:unknown):v is JsonObject=>!!v&&typeof v==='object'&&!Array.isArray(v);
@@ -133,7 +145,7 @@ export class ModelSession {
    if(!this.size())this.append({role:'system',content:system});
    const reset=this.stateValue.needsRecovery?this.stateValue.resetReason:undefined;
    if(Object.keys(wakeMeta).length||reset)this.append({role:'user',content:JSON.stringify({wake:wakeMeta,...(reset?{session_reset:{reason:reset,read_tools_again:true}}:{})})});
-   this.stateValue.needsRecovery=false;this.audit('wake_begin',{fingerprint});
+   this.stateValue.needsRecovery=false;this.audit('wake_begin',{fingerprint,exposed_tool_names:[...new Set(tools.map(tool=>safeName(tool.function.name)))]});
   });
   if(this.stateValue.sessionId!==oldSession)this.images.clear();
   return this.messages();
@@ -162,7 +174,7 @@ export class ModelSession {
   const ids=new Set<string>();for(const call of completion.tool_calls){
    if(!call||call.type!=='function'||typeof call.id!=='string'||!call.id||Buffer.byteLength(JSON.stringify(call.id))>256||ids.has(call.id)||!call.function||typeof call.function.name!=='string'||!call.function.name||call.function.name.length>128||typeof call.function.arguments!=='string')throw new Error('invalid_completion');ids.add(call.id);
   }
-  const message:ChatMessage={role:'assistant',content:completion.content,tool_calls:structuredClone(completion.tool_calls)};
+  const message:ChatMessage={role:'assistant',content:completion.content,...(completion.tool_calls.length?{tool_calls:structuredClone(completion.tool_calls)}:{})};
   if(requestId){const old=this.db.prepare('SELECT seq,message FROM model_session_messages WHERE session_id=? AND request_id=?').get(this.stateValue.sessionId,requestId);if(old){if(String(old.message)!==encode(message,this.maxBytes))throw new Error('request_id_conflict');return{assistantSeq:Number(old.seq),callIds:[...ids]};}}
   if(this.terminal())throw new Error('wake_finished');
   if(this.pending().length)throw new Error('tool_results_pending');
@@ -213,6 +225,72 @@ export class ModelSession {
  setTransportCheckpoint(value:JsonObject|undefined):void {
   this.check();if(value!==undefined&&!object(value))throw new Error('invalid_transport_checkpoint');const text=value===undefined?null:encode(value,CHECKPOINT_MAX);
   this.transaction(()=>{this.db.prepare('UPDATE model_session_meta SET checkpoint=? WHERE singleton=1').run(text);this.audit('transport_checkpoint',{present:value!==undefined});});
+ }
+ /** Completion is terminal ledger state, not necessarily a successful external write.
+  * Explicit proposal/staging statuses count successful tool handling, not QQ execution.
+  * Unrecognised terminal statuses are unknown. Durations weight individual known
+  * started→finished intervals; external RPCs cannot be inferred from tool starts. */
+ summarizeTools(options:ToolWindow):ToolSummary {
+  this.check();fields(options,['since','until','wakeId','sessionId']);windowFilter(options);
+  const params:Array<string|number>=[options.since,options.until];
+  let where='l.proposed_at BETWEEN ? AND ?';
+  if(options.wakeId!==undefined){where+=' AND l.wake_id=?';params.push(options.wakeId);}
+  if(options.sessionId!==undefined){where+=' AND l.session_id=?';params.push(options.sessionId);}
+  const sql=`WITH source AS (SELECT l.*,m.request_id,
+    CASE WHEN length(l.name) BETWEEN 1 AND 128 AND l.name NOT GLOB '*[^a-zA-Z0-9_-]*' THEN l.name ELSE 'invalid' END AS tool_name,
+    CASE WHEN l.state IN ('pending','started') THEN 'pending' WHEN l.state='skipped' THEN 'skipped' WHEN l.state='unknown' THEN 'unknown'
+      WHEN json_extract(l.result,'$.status') IN (${KNOWN_SUCCESS.map(s=>`'${s}'`).join(',')}) THEN 'success'
+      WHEN json_extract(l.result,'$.status')='error' THEN 'error' WHEN json_extract(l.result,'$.status')='skipped' THEN 'skipped' ELSE 'unknown' END AS outcome,
+    CASE WHEN l.started_at IS NOT NULL AND l.finished_at>=l.started_at THEN l.finished_at-l.started_at ELSE NULL END AS duration
+    FROM model_tool_ledger l LEFT JOIN model_session_messages m ON m.seq=l.assistant_seq WHERE ${where})`;
+  const aggregate=`COUNT(*) AS invocations,COALESCE(SUM(started_at IS NOT NULL),0) AS started,
+    COALESCE(SUM(state NOT IN ('pending','started')),0) AS completed,
+    COALESCE(SUM(outcome='success'),0) AS successes,COALESCE(SUM(outcome='error'),0) AS errors,
+    COALESCE(SUM(outcome='unknown'),0) AS unknown,COALESCE(SUM(outcome='skipped'),0) AS skipped,
+    COALESCE(SUM(outcome='pending'),0) AS pending,COALESCE(SUM(duration),0) AS totalDurationMs,AVG(duration) AS meanDurationMs,
+    COUNT(DISTINCT CASE WHEN request_id IS NOT NULL THEN session_id||':'||request_id END) AS modelRequests`;
+  const counts=(row:Record<string,unknown>):ToolCounts=>({invocations:Number(row.invocations),started:Number(row.started),completed:Number(row.completed),successes:Number(row.successes),errors:Number(row.errors),unknown:Number(row.unknown),skipped:Number(row.skipped),pending:Number(row.pending),totalDurationMs:Number(row.totalDurationMs),meanDurationMs:row.meanDurationMs===null?null:Number(row.meanDurationMs),modelRequests:Number(row.modelRequests),externalRequests:null});
+  const total=counts(this.db.prepare(sql+` SELECT ${aggregate} FROM source`).get(...params)!);
+  const byTool:Array<ToolCounts&{name:string}>=[];
+  for(const row of this.db.prepare(sql+` SELECT tool_name,${aggregate} FROM source GROUP BY tool_name ORDER BY tool_name`).iterate(...params))byTool.push({name:String(row.tool_name),...counts(row)});
+  const exposureParams:Array<string|number>=[options.since,options.until];let exposureWhere="j.kind='wake_begin' AND j.created_at BETWEEN ? AND ?";
+  if(options.wakeId!==undefined){exposureWhere+=' AND j.wake_id=?';exposureParams.push(options.wakeId);}
+  if(options.sessionId!==undefined){exposureWhere+=' AND j.session_id=?';exposureParams.push(options.sessionId);}
+  const toolExposureCounts:Array<{name:string;wakes:number}>=[];
+  for(const row of this.db.prepare(`SELECT names.value AS name,COUNT(DISTINCT j.wake_id) AS wakes FROM model_session_journal j,json_each(j.payload,'$.exposed_tool_names') names WHERE ${exposureWhere} GROUP BY names.value ORDER BY names.value`).iterate(...exposureParams))toolExposureCounts.push({name:String(row.name),wakes:Number(row.wakes)});
+  return {...total,byTool,toolExposureCounts};
+ }
+ private diagnosticPage<T>(rows:Iterable<Record<string,unknown>>,limit:number,project:(row:Record<string,unknown>)=>T):DiagnosticPage<T> {
+  const page:DiagnosticPage<T>={requested:limit,returned:0,truncated:false,items:[]};let cursor:number|undefined;
+  for(const row of rows){
+   const item=project(row),next=Number(row.cursor);
+   if(page.items.length>=limit||Buffer.byteLength(JSON.stringify({...page,returned:page.items.length+1,truncated:true,nextCursor:next,items:[...page.items,item]}))>DIAGNOSTIC_MAX){
+    if(cursor===undefined)throw new Error('analytics_row_resource_limit');page.truncated=true;page.nextCursor=cursor;break;
+   }
+   page.items.push(item);cursor=next;
+  }
+  page.returned=page.items.length;return page;
+ }
+ getToolTrace(options:{wakeId:string;limit:number;cursor?:number}):DiagnosticPage<ToolTrace> {
+  this.check();fields(options,['wakeId','limit','cursor']);pageFilter(options.limit,options.cursor);
+  if(typeof options.wakeId!=='string'||!options.wakeId||options.wakeId.length>256)throw new Error('invalid_analytics_filter');
+  const rows=this.db.prepare(`SELECT l.ordinal AS cursor,l.assistant_seq,l.call_id,l.name,l.state,l.proposed_at,l.started_at,l.finished_at,
+    json_extract(l.result,'$.status') AS status,json_extract(l.result,'$.error') AS error,m.request_id
+    FROM model_tool_ledger l LEFT JOIN model_session_messages m ON m.seq=l.assistant_seq WHERE l.wake_id=? AND l.ordinal>? ORDER BY l.ordinal LIMIT ?`).iterate(options.wakeId,options.cursor??0,Math.min(options.limit+1,Number.MAX_SAFE_INTEGER));
+  return this.diagnosticPage(rows,options.limit,row=>{
+   const rawStatus=typeof row.status==='string'?row.status:'';
+   const status=['error','unknown','skipped',...KNOWN_SUCCESS].includes(rawStatus)?rawStatus:row.state==='pending'||row.state==='started'?'pending':'unknown';
+   return {assistantSeq:Number(row.assistant_seq),callId:String(row.call_id),name:safeName(String(row.name)),state:String(row.state),status,
+    ...(typeof row.error==='string'&&/^[a-z][a-z0-9_]{0,79}$/.test(row.error)?{errorCode:row.error}:{}),
+    proposedAt:Number(row.proposed_at),...(row.started_at!==null?{startedAt:Number(row.started_at)}:{}),...(row.finished_at!==null?{finishedAt:Number(row.finished_at)}:{}),
+    ...(row.started_at!==null&&row.finished_at!==null&&Number(row.finished_at)>=Number(row.started_at)?{durationMs:Number(row.finished_at)-Number(row.started_at)}:{}),
+    ...(typeof row.request_id==='string'?{requestId:row.request_id}:{})};
+  });
+ }
+ getToolAvailability(options:{since:number;until:number;limit:number;cursor?:number}):DiagnosticPage<ToolAvailability> {
+  this.check();fields(options,['since','until','limit','cursor']);windowFilter(options);pageFilter(options.limit,options.cursor);
+  const rows=this.db.prepare("SELECT seq AS cursor,wake_id,session_id,created_at,json_extract(payload,'$.fingerprint') AS fingerprint,json_extract(payload,'$.exposed_tool_names') AS names FROM model_session_journal WHERE kind='wake_begin' AND created_at BETWEEN ? AND ? AND seq>? ORDER BY seq LIMIT ?").iterate(options.since,options.until,options.cursor??0,Math.min(options.limit+1,Number.MAX_SAFE_INTEGER));
+  return this.diagnosticPage(rows,options.limit,row=>({wakeId:String(row.wake_id),sessionId:String(row.session_id),proposedAt:Number(row.created_at),fingerprint:String(row.fingerprint),exposedToolNames:typeof row.names==='string'?JSON.parse(row.names) as string[]:[]}));
  }
  close():void {if(this.closed)return;this.db.close();this.closed=true;this.images.clear();}
 }

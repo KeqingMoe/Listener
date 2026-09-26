@@ -23,8 +23,8 @@ const firstSegments=[face('271'),{type:'text',text:LITERAL},{type:'at',user_id:S
 const ownSegments=[face('0'),{type:'text',text:LITERAL}];
 function event(messageId:string,first=false){return {post_type:'message',message_type:'group',group_id:GROUP,self_id:SELF,user_id:OWNER_ID,message_id:messageId,time:Math.floor(Date.now()/1000),sender:{user_id:OWNER_ID,nickname:'fixture owner'},message:first?[{type:'face',data:{id:'271'}},{type:'text',data:{text:LITERAL}},{type:'at',data:{qq:SELF}}]:[{type:'at',data:{qq:SELF}},{type:'text',data:{text:'再看一下第一条消息，原样引用文字标记'}}]};}
 async function bounded<T>(promise:Promise<T>,ms=5000):Promise<T>{let timer:NodeJS.Timeout|undefined;try{return await Promise.race([promise,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error('fixture timeout')),ms);})]);}finally{clearTimeout(timer);}}
-function payload(body:any):any{const m=body.messages.find((m:any)=>m.role==='user');assert.ok(m);assert.equal(typeof m.content,'string');return JSON.parse(m.content);}
-function timeline(body:any):any[]{const context=JSON.parse(payload(body).untrusted_group_context);return Array.isArray(context)?context:context.messages;}
+function payload(body:any):any{const m=body.messages.filter((m:any)=>m.role==='user'&&typeof m.content==='string'&&JSON.parse(m.content).wake).at(-1);assert.ok(m);return JSON.parse(m.content).wake;}
+function currentTools(body:any):any[]{const start=body.messages.findLastIndex((m:any)=>m.role==='user'&&typeof m.content==='string'&&JSON.parse(m.content).wake);return body.messages.slice(start+1).filter((m:any)=>m.role==='tool');}
 function typed(entry:any,expected:unknown[]){assert.ok(entry);assert.equal(entry.representation,'segments');assert.equal(Object.hasOwn(entry,'text'),false);assert.deepEqual(entry.segments,expected);}
 
 test('real entrypoint preserves native segments, literal marker text and structured SQL self-history',{timeout:20000},async()=>{
@@ -38,18 +38,20 @@ test('real entrypoint preserves native segments, literal marker text and structu
   let source='';for await(const chunk of req)source+=chunk.toString();const body=JSON.parse(source);requests.push(body);
   assert.equal(req.headers.authorization,'Bearer fixture-key');assert.equal(req.url,'/v1/chat/completions');assert.equal(body.model,'fixture-structured');
   const names=body.tools.map((t:any)=>t.function.name);assert.ok(names.includes('read_message'));assert.ok(!names.includes('get_group_members'));assert.ok(!names.includes('get_member_info'));assert.ok(!names.includes('react_message'));
-  const history=timeline(body),legacy=history.find(m=>m.messageId==='98');assert.ok(legacy);assert.equal(legacy.representation,'legacy_text');assert.equal(legacy.text,LITERAL);assert.equal(legacy.segments,undefined,'legacy markers must never be guessed into native segments');
+  assert.ok(names.includes('read_messages'));assert.ok(names.includes('read_events'));assert.equal(payload(body).group_id,GROUP);assert.ok(!JSON.stringify(payload(body)).includes(LITERAL));
+  const observed=currentTools(body);
   let next:ReturnType<typeof op>;
-  if(requests.length===1){
-   assert.equal(sent,0);const input=payload(body);typed(input.current_batch.messages.find((m:any)=>m.messageId==='101'),firstSegments);typed(input.current_request,firstSegments);typed(history.find(m=>m.messageId==='101'),firstSegments);
-   next=send([{type:'face',id:'0',name:IGNORED_NAME},{type:'text',text:LITERAL}]);
+  if(observed.length===0){
+   if(sent===0)assert.ok(!JSON.stringify(body.messages).includes(LITERAL),'initial input must not inject message bodies');
+   else {assert.equal(sent,1);assert.ok(!JSON.stringify(body.messages).includes('再看一下第一条消息，原样引用文字标记'),'new wake must not inject the new message body');assert.deepEqual(body.messages.slice(0,requests[1].messages.length),requests[1].messages,'second wake preserves the previous request prefix');}
+   next=op('read_messages',{limit:100});
   }else{
-   assert.equal(sent,1);typed(history.find(m=>m.messageId==='101'),firstSegments);typed(history.find(m=>m.messageId==='9001'),ownSegments);
-   assert.ok(!JSON.stringify(history).includes(IGNORED_NAME),'untrusted output label must not replace catalog meaning in self-history');
-   if(requests.length===2){assert.equal(payload(body).current_request.messageId,'102');next=op('read_message',{message_id:'101'});}
+   const page=JSON.parse(observed[0].content);assert.equal(page.status,'ok');const history=page.messages,legacy=history.find((m:any)=>m.messageId==='98');assert.ok(legacy);assert.equal(legacy.representation,'legacy_text');assert.equal(legacy.text,LITERAL);assert.equal(legacy.segments,undefined,'legacy markers must never be guessed into native segments');typed(history.find((m:any)=>m.messageId==='101'),firstSegments);
+   if(sent===0){assert.equal(observed.length,1);next=send([{type:'face',id:'0',name:IGNORED_NAME},{type:'text',text:LITERAL}]);}
    else{
-    assert.equal(requests.length,3);const result=JSON.parse(body.messages.filter((m:any)=>m.role==='tool').at(-1).content);assert.equal(result.status,'ok');assert.equal(result.message.messageId,'101');typed(result.message,firstSegments);
-    next=send([{type:'text',text:REPLY_LITERAL}]);
+    assert.equal(sent,1);typed(history.find((m:any)=>m.messageId==='9001'),ownSegments);assert.ok(history.some((m:any)=>m.messageId==='102'));assert.ok(!JSON.stringify(history).includes(IGNORED_NAME),'untrusted output label must not replace catalog meaning in self-history');
+    if(observed.length===1)next=op('read_message',{message_id:'101'});
+    else{assert.equal(observed.length,2);const result=JSON.parse(observed.at(-1).content);assert.equal(result.status,'ok');assert.equal(result.message.messageId,'101');typed(result.message,firstSegments);next=send([{type:'text',text:REPLY_LITERAL}]);}
    }
   }
   res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[next,...(next.function.name==='send_message'?[{...op('finish',{}),id:`finish_${requests.length}`}]:[])]}}]}));notify();
@@ -84,7 +86,7 @@ test('real entrypoint preserves native segments, literal marker text and structu
   writeFileSync(join(dir,'config.toml'),`[onebot]\nurl="ws://127.0.0.1:${wsPort}"\ntoken_env="FIXTURE_TOKEN"\n[ai]\nenabled=true\nbase_url="http://127.0.0.1:${httpPort}/v1"\nmodel="fixture-structured"\napi_key_env="FIXTURE_KEY"\ntimeout_ms=10000\n[reply]\ndelay_ms=[100,100]\ncooldown_ms=1000\nrandom_probability=0\n[tools]\nreactions=false\nmembers=false\nmention=false\n[logging]\nlevel="debug"\nconsole=true\nfile=false\n[groups."${GROUP}"]\n`);
   child=spawn(process.execPath,['--import',import.meta.resolve('tsx'),fileURLToPath(new URL('../src/index.ts',import.meta.url))],{cwd:dir,env:{PATH:process.env.PATH??'',HOME:dir,NODE_NO_WARNINGS:'1'},stdio:['ignore','pipe','pipe']});exit=new Promise((resolve,reject)=>{child!.once('error',error=>{fail(error);reject(error);});child!.once('close',(code,signal)=>{resolve({code,signal});notify();});});void exit.catch(()=>{});for(const stream of [child.stdout!,child.stderr!])stream.on('data',chunk=>{output=(output+chunk.toString()).slice(-128*1024);notify();});
   await wait(()=>output.includes('onebot.ready'),'startup');peer!.send(JSON.stringify(event('101',true)));await wait(()=>ended()===1,'first native/literal reply');assert.equal(sent,1);
-  peer!.send(JSON.stringify(event('102')));await wait(()=>ended()===2,'local structured read and literal reply');assert.equal(sent,2);assert.equal(requests.length,3);
+  peer!.send(JSON.stringify(event('102')));await wait(()=>ended()===2,'local structured read and literal reply');assert.equal(sent,2);assert.equal(requests.length,5);
   assert.deepEqual(calls.map(c=>c.action),['get_login_info','send_group_msg','send_group_msg'],'local reads and literal mention text must not trigger member lookups or other RPCs');
   assert.ok(!output.includes(LITERAL));assert.ok(!output.includes(IGNORED_NAME));assert.equal(child.kill('SIGTERM'),true);assert.deepEqual(await bounded(exit),{code:0,signal:null});assert.ok(output.includes('app.stopped'));
   const db=new DatabaseSync(dbPath,{readOnly:true});try{

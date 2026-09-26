@@ -106,7 +106,7 @@ function groupSettings(id: string, raw: unknown, defaults: ListenerConfig, base:
   const tools = table(group.tools,`${path}.tools`,['members','mention','reactions','moderation']);
   const moderation = table(tools.moderation,`${path}.tools.moderation`,['mute','unmute','recall','member_card','confirmation_ttl_seconds','max_mute_seconds']);
   const images = table(group.images,`${path}.images`,['enabled','max_per_turn','max_download_mb']);
-  const forward = table(group.forward,`${path}.forward`,['enabled','max_per_read']);
+  const forward = table(group.forward,`${path}.forward`,['enabled']);
   const attention = table(group.attention,`${path}.attention`,['enabled','max_plans']);
   const memory = table(group.memory,`${path}.memory`,['path','retention_days','context_chars']);
   const extra = table(group.persona,`${path}.persona`,['append_file']);
@@ -139,7 +139,7 @@ function groupSettings(id: string, raw: unknown, defaults: ListenerConfig, base:
       maxMuteSeconds:num(moderation,'max_mute_seconds',`${path}.tools.moderation`,dModeration.maxMuteSeconds,1,600),
     }},
     images:{enabled:bool(images,'enabled',`${path}.images`,dImages.enabled),maxPerTurn:num(images,'max_per_turn',`${path}.images`,dImages.maxPerTurn,1,3),maxDownloadMb:num(images,'max_download_mb',`${path}.images`,dImages.maxDownloadMb,1,10)},
-    forward:{enabled:bool(forward,'enabled',`${path}.forward`,dForward.enabled),maxPerRead:num(forward,'max_per_read',`${path}.forward`,dForward.maxPerRead,1,20)},
+    forward:{enabled:bool(forward,'enabled',`${path}.forward`,dForward.enabled)},
     attention:{enabled:bool(attention,'enabled',`${path}.attention`,defaults.attention!.enabled),maxPlans:num(attention,'max_plans',`${path}.attention`,defaults.attention!.maxPlans,1,32)},
     persona:append===undefined?defaults.persona:`${defaults.persona}\n\n--- 本群风格补充（不得覆盖程序权限规则） ---\n${append}`,
   }};
@@ -186,7 +186,7 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
   const memory = table(root.memory, 'memory', ['path', 'retention_days', 'context_chars']);
   const tools = table(root.tools, 'tools', ['members', 'mention', 'reactions', 'moderation']);
   const images = table(root.images, 'images', ['enabled', 'max_per_turn', 'max_download_mb']);
-  const forward = table(root.forward, 'forward', ['enabled', 'max_per_read']);
+  const forward = table(root.forward, 'forward', ['enabled']);
   const attention = table(root.attention, 'attention', ['enabled', 'max_plans']);
   const logs = table(root.logging, 'logging', ['level', 'console', 'file', 'directory', 'retention_days', 'max_file_mb', 'max_total_mb']);
   const moderation = table(tools.moderation, 'tools.moderation', ['mute', 'unmute', 'recall', 'member_card', 'confirmation_ttl_seconds', 'max_mute_seconds']);
@@ -253,7 +253,7 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
       maxMuteSeconds: num(moderation, 'max_mute_seconds', 'tools.moderation', 600, 1, 600),
     } },
     images: {enabled:bool(images,'enabled','images',false),maxPerTurn:num(images,'max_per_turn','images',3,1,3),maxDownloadMb:num(images,'max_download_mb','images',10,1,10)},
-    forward: {enabled:bool(forward,'enabled','forward',false),maxPerRead:num(forward,'max_per_read','forward',20,1,20)},
+    forward: {enabled:bool(forward,'enabled','forward',false)},
     attention: {enabled:bool(attention,'enabled','attention',false),maxPlans:num(attention,'max_plans','attention',16,1,32)},
     persona: persona(personaPath),
   };

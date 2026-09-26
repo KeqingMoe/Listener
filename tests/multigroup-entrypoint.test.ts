@@ -34,7 +34,11 @@ test('actual entrypoint shares local transports, isolates two group databases, a
   const body=JSON.parse(bodyText);assert.equal(body.model,'fixture-model');
   const group=/本轮只服务群 (\d+)/.exec(body.messages[0].content)?.[1];assert.ok(group===A||group===B);
   requests.push({group,body});
-  if(holdModel){held=res;res.once('close',()=>{heldCancelled=!res.writableEnded;notify();});notify();return;}
+   const wakeIndex=body.messages.findLastIndex((m:any)=>m.role==='user'&&typeof m.content==='string'&&JSON.parse(m.content).wake);assert.ok(wakeIndex>0);const wake=JSON.parse(body.messages[wakeIndex].content).wake;assert.equal(wake.group_id,group);assert.ok(!JSON.stringify(wake).includes('fixture-body'));
+   assert.ok(body.tools.some((t:any)=>t.function.name==='read_messages'));assert.ok(body.tools.some((t:any)=>t.function.name==='read_events'));
+  if(!body.messages.some((m:any)=>m.role==='tool')){const next={id:`read_${requests.length}`,type:'function',function:{name:'read_messages',arguments:JSON.stringify({limit:100})}};res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[next]}}]}));notify();return;}
+   assert.ok(JSON.stringify(body.messages).includes(group===A?'only-A-fixture-body':'only-B-fixture-body'));
+   if(holdModel){held=res;res.once('close',()=>{heldCancelled=!res.writableEnded;notify();});notify();return;}
   const args={segments:group===A?[{type:'face',id:'20'}]:[{type:'text',text:'reply-only-B'}]};
   res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[{id:`fixture_${requests.length}`,type:'function',function:{name:'send_message',arguments:JSON.stringify(args)}},{id:`finish_${requests.length}`,type:'function',function:{name:'finish',arguments:'{}'}}]}}]}));notify();
  })().catch(error=>{fail(error);if(!res.headersSent)res.writeHead(500);res.end();});});
@@ -76,25 +80,25 @@ test('actual entrypoint shares local transports, isolates two group databases, a
   peer.send(JSON.stringify(event('77','91','unlisted-fixture-body')));
   peer.send(JSON.stringify({...event(A,'92','private-fixture-body'),message_type:'private'}));
   peer.send(JSON.stringify(event(A,'1','only-A-fixture-body')));peer.send(JSON.stringify(event(B,'1','only-B-fixture-body')));
-  await wait(()=>sends().length===2&&requests.length===2&&output.split('turn.end').length>=3,'both groups replied');
+  await wait(()=>sends().length===2&&requests.length===4&&output.split('turn.end').length>=3,'both groups replied');
   assert.equal(connectionCount,1);assert.equal(calls.filter(c=>c.action==='get_login_info').length,1);
   assert.deepEqual(new Set(sends().map(call=>call.params.group_id)),new Set([A,B]));
   assert.deepEqual(sends().find(c=>c.params.group_id===A)!.params.message,[{type:'face',data:{id:'20'}}]);
   assert.deepEqual(sends().find(c=>c.params.group_id===B)!.params.message,[{type:'text',data:{text:'reply-only-B'}}]);
-  for(const request of requests){const all=JSON.stringify(request.body.messages);assert.ok(all.includes(request.group===A?'only-A-fixture-body':'only-B-fixture-body'));
+  for(const request of requests){const all=JSON.stringify(request.body.messages);const hasTool=request.body.messages.some((m:any)=>m.role==='tool');if(hasTool)assert.ok(all.includes(request.group===A?'only-A-fixture-body':'only-B-fixture-body'));else assert.ok(!all.includes('only-A-fixture-body')&&!all.includes('only-B-fixture-body'));
    assert.ok(!all.includes(request.group===A?'only-B-fixture-body':'only-A-fixture-body'));assert.ok(!all.includes('unlisted-fixture-body'));assert.ok(!all.includes('private-fixture-body'));}
   peer.send(JSON.stringify(event(B,'2','/ping',false)));
   await wait(()=>sends().length===3,'group B ping');assert.equal(sends()[2]!.params.group_id,B);
-  assert.deepEqual(sends()[2]!.params.message,[{type:'text',data:{text:'pong'}}]);assert.equal(requests.length,2);
+  assert.deepEqual(sends()[2]!.params.message,[{type:'text',data:{text:'pong'}}]);assert.equal(requests.length,4);
   // A holds the sole global permit while B reaches its admission queue.
   holdModel=true;peer.send(JSON.stringify(event(A,'3','hold-A-model')));
-  await wait(()=>!!held&&requests.length===3,'active model request');assert.equal(requests[2]!.group,A);
+  await wait(()=>!!held&&requests.length===5,'active model request');assert.equal(requests[4]!.group,A);
   const previouslyQueued=queuedB();peer.send(JSON.stringify(event(B,'3','queued-B-turn')));
-  await wait(()=>queuedB()>previouslyQueued,'group B admission queue');assert.equal(requests.length,3);
+  await wait(()=>queuedB()>previouslyQueued,'group B admission queue');assert.equal(requests.length,5);
   assert.equal(child.kill('SIGTERM'),true);const exit=await bounded(childExited,5000);
   assert.deepEqual(exit,{code:0,signal:null});assert.ok(output.includes('app.stopped'));
   await wait(()=>heldCancelled&&peers.size===0&&sockets.size===0,'all child network resources closed');
-  assert.equal(connectionCount,1);assert.equal(requests.length,3);assert.equal(sends().length,3);
+  assert.equal(connectionCount,1);assert.equal(requests.length,5);assert.equal(sends().length,3);
   const paths=[[A,join(dir,'data/listener.sqlite')],[B,join(dir,'data/groups/22/listener.sqlite')]] as const;
   for(const [group,path]of paths){
    const db=new DatabaseSync(path,{readOnly:true});try{

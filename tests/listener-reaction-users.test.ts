@@ -10,7 +10,7 @@ const policy:NonNullable<ListenerConfig['tools']>={members:true,mention:true,rea
 const base:ListenerConfig={groupId:GROUP,enabled:true,baseUrl:'https://example.invalid/v1',apiKey:'fixture',model:'fixture',timeoutMs:3000,maxTokens:128,debounceMs:3,delayMaxMs:3,cooldownMs:0,memoryPath:':memory:',maxContextChars:8000,retentionDays:7,randomReplyProbability:0,attention:{enabled:true,maxPlans:16},tools:policy};
 const call=(name:string,args:unknown={})=>({id:`call_${name}`,type:'function' as const,function:{name,arguments:JSON.stringify(args)}});
 const complete=(...calls:ReturnType<typeof call>[]):Completion=>({content:null,tool_calls:calls.map((c,i)=>({...c,id:`${c.id}_${i}`}))});
-const query=(extra:JsonObject={})=>call('get_reaction_users',{message_id:'8',emoji_id:'76',emoji_type:'1',...extra});
+const query=(extra:JsonObject={})=>call('get_reaction_users',{message_id:'8',emoji_id:'76',emoji_type:'1',limit:20,...extra});
 const silent=()=>call('finish');
 const send=(body='fixture answer')=>call('send_message',{segments:[{type:'text',text:body}]});
 const plan=()=>call('manage_attention',{operation:'create',any_of:[{type:'next_message'}],expires_in_seconds:60});
@@ -125,8 +125,8 @@ test('twelve actor pages and a thirteenth answer round use the shared budget wit
 });
 
 for(const feature of ['images','forward'] as const)test(`actor lookup remains a readonly operation alongside a ${feature} read request`,async()=>{
- const reading=feature==='images'?call('view_images',{image_ids:['img_1_1']}):call('read_forward',{forward_id:'fwd_1_1',start:1,end:1});
- const s=setup({settings:feature==='images'?{images:{enabled:true,maxPerTurn:1,maxDownloadMb:1}}:{forward:{enabled:true,maxPerRead:5}},respond:r=>r.index===0?complete(query(),reading):complete(silent())});try{await s.receive(event('1'));await settled(s,2);assert.equal(fetches(s).length,1);assert.equal(results(s.requests[1]!)[0].status,'ok');assert.equal(results(s.requests[1]!)[1].status,'error','missing attachment is handled independently of the users query');}finally{await s.close();}
+ const reading=feature==='images'?call('view_images',{image_ids:['img_1_1']}):call('read_forward',{forward_id:'fwd_1_1',start:1,limit:1});
+ const s=setup({settings:feature==='images'?{images:{enabled:true,maxPerTurn:1,maxDownloadMb:1}}:{forward:{enabled:true}},respond:r=>r.index===0?complete(query(),reading):complete(silent())});try{await s.receive(event('1'));await settled(s,2);assert.equal(fetches(s).length,1);assert.equal(results(s.requests[1]!)[0].status,'ok');assert.equal(results(s.requests[1]!)[1].status,'error','missing attachment is handled independently of the users query');}finally{await s.close();}
 });
 
 test('foreign group proof never reaches the actor-list API',async()=>{

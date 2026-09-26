@@ -151,8 +151,8 @@ test('remote foreign group and unsafe long message IDs never reach the mutation 
 
 for(const feature of ['images','forward'] as const)test(`${feature} first gate blocks reaction until the next model response after content retrieval`,async()=>{
  const attachment=feature==='images'?{type:'image',data:{url:'https://example.invalid/image',file:'fixture.png'}}:{type:'forward',data:{id:'fixture-forward-resource'}};
- const reading=feature==='images'?call('view_images',{image_ids:['img_1_1']}):call('read_forward',{forward_id:'fwd_1_1',start:1,end:1});
- const s=setup({settings:feature==='images'?{images:{enabled:true,maxPerTurn:1,maxDownloadMb:1}}:{forward:{enabled:true,maxPerRead:5}},respond:r=>{if(r.index===0)return complete(react(),reading);assert.equal(mutations(s).length,0);return complete(react(),silent());}});try{
+ const reading=feature==='images'?call('view_images',{image_ids:['img_1_1']}):call('read_forward',{forward_id:'fwd_1_1',start:1,limit:1});
+ const s=setup({settings:feature==='images'?{images:{enabled:true,maxPerTurn:1,maxDownloadMb:1}}:{forward:{enabled:true}},respond:r=>{if(r.index===0)return complete(react(),reading);assert.equal(mutations(s).length,0);return complete(react(),silent());}});try{
   const e=event('1');e.message=[e.message[0]!,attachment as any];await s.receive(e);await settled(s,2);assert.equal(mutations(s).length,1);
   const returned=results(s.requests[1]!);assert.equal(returned[0].status,'error');assert.equal(returned[1].status,'ok');if(feature==='images')assert.ok(s.requests[1]!.messages.some(m=>Array.isArray(m.content)&&m.content.some(p=>p.type==='image_url')));
  }finally{await s.close();}

@@ -24,12 +24,20 @@ test('real entrypoint receives wire reaction notices and refreshes the bot messa
  const notify=()=>changed.emit('change'),fail=(error:unknown)=>{failure=error;notify();};
  const peers=new Set<WebSocket>(),sockets=new Set<Socket>();let peer:WebSocket|undefined,botCount=1;
  const stored=new Map<string,ReturnType<typeof message>>(),calls:Array<{action:string;params:Record<string,unknown>}>=[],payloads:any[]=[];
+ let wakeNumber=0,wakeStep=0;const aggregates:any[]=[];
  const http=createServer((req,res)=>{void(async()=>{
   let source='';for await(const chunk of req)source+=chunk.toString();
   const body=JSON.parse(source);assert.equal(req.headers.authorization,'Bearer fixture-key');
-  assert.equal(body.model,'fixture-notice-model');const payload=JSON.parse(body.messages.find((m:any)=>m.role==='user').content);payloads.push(payload);
-  const op=payloads.length===1?{name:'send_message',arguments:JSON.stringify({segments:[{type:'text',text:'bot message to receive reaction'}]})}:{name:'finish',arguments:'{}'};
-  res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[{id:`op_${payloads.length}`,type:'function',function:op},...(op.name==='send_message'?[{id:`finish_${payloads.length}`,type:'function',function:{name:'finish',arguments:'{}'}}]:[])]}}]}));notify();
+  assert.equal(body.model,'fixture-notice-model');
+  const wakeIndex=body.messages.findLastIndex((m:any)=>m.role==='user'&&typeof m.content==='string'&&JSON.parse(m.content).wake);
+  const wake=JSON.parse(body.messages[wakeIndex].content).wake,current=body.messages.slice(wakeIndex+1);
+  assert.equal(wake.group_id,GROUP);assert.equal(Object.hasOwn(wake,'reaction_state'),false);
+  if(!payloads.length||payloads.at(-1).wake_id!==wake.wake_id){wakeNumber++;wakeStep=0;payloads.push(wake);assert.doesNotMatch(JSON.stringify(body.messages[wakeIndex]),/fixture normal turn|reactions|current_batch/);}
+  if(wakeStep===1){const result=JSON.parse(current.filter((m:any)=>m.role==='tool').at(-1).content);assert.equal(result.status,'ok');assert.ok(JSON.stringify(result).includes(`fixture normal turn ${100+wakeNumber}`));if(wakeNumber===4){const hint=result.events.find((entry:any)=>entry.type==='reaction.changed');assert.ok(hint);assert.equal(Object.hasOwn(hint,'actor_id'),false);assert.equal(Object.hasOwn(hint.payload,'action'),false);assert.equal(Object.hasOwn(hint.payload,'count'),false);}}
+   if(wakeStep===3&&wakeNumber>1){const last=current.filter((m:any)=>m.role==='tool').at(-1);const aggregate=JSON.parse(last.content);assert.equal(aggregate.status,'ok');assert.equal(aggregate.message.messageId,BOT_MESSAGE);assert.equal(aggregate.message.reactions.items[0].count,wakeNumber===4?9:1);aggregates.push(aggregate.message);}
+   const step=wakeStep++;
+   const op=step===0?{name:'read_events',arguments:'{"limit":100}'}:step===1?{name:'read_messages',arguments:'{"limit":100}'}:step===2?(wakeNumber===1?{name:'send_message',arguments:JSON.stringify({segments:[{type:'text',text:'bot message to receive reaction'}]})}:{name:'read_message',arguments:JSON.stringify({message_id:BOT_MESSAGE})}):{name:'finish',arguments:'{}'};
+  res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[{id:`op_${wakeNumber}_${wakeStep}`,type:'function',function:op},...(op.name==='send_message'?[{id:`finish_${payloads.length}`,type:'function',function:{name:'finish',arguments:'{}'}}]:[])]}}]}));notify();
  })().catch(error=>{fail(error);if(!res.headersSent)res.writeHead(500);res.end();});});
  http.on('connection',socket=>{sockets.add(socket);socket.once('close',()=>{sockets.delete(socket);notify();});});http.on('error',fail);
  const ws=new WebSocketServer({host:'127.0.0.1',port:0});ws.on('error',fail);
@@ -55,7 +63,7 @@ test('real entrypoint receives wire reaction notices and refreshes the bot messa
  const ended=()=>[...output.matchAll(/\bturn\.end\b/g)].length;
  const emitMessage=(id:string)=>{const event=message(id,`fixture normal turn ${id}`);stored.set(id,event);peer!.send(JSON.stringify(event));};
  const botReads=()=>calls.filter(c=>c.action==='get_msg'&&c.params.message_id===BOT_MESSAGE).length;
- const historyBot=(payload:any)=>JSON.parse(payload.untrusted_group_context).messages.find((entry:any)=>entry.messageId===BOT_MESSAGE);
+ // Aggregate snapshots are only observed through explicit read_message calls.
  // WebSocket ordering makes pong a deterministic barrier after preceding notice frames.
  const barrier=async()=>{const pong=once(peer!,'pong');peer!.ping();await bounded(pong);};
  try{
@@ -69,19 +77,19 @@ test('real entrypoint receives wire reaction notices and refreshes the bot messa
   for(const stream of [child.stdout!,child.stderr!])stream.on('data',chunk=>{output=(output+chunk.toString()).slice(-128*1024);notify();});
   await wait(()=>output.includes('onebot.ready'),'startup');
   emitMessage('101');await wait(()=>ended()===1,'first turn sends bot message');assert.equal(stored.get(BOT_MESSAGE)?.user_id,SELF);
-  emitMessage('102');await wait(()=>ended()===2,'prime bot reaction snapshot');assert.equal(historyBot(payloads[1]).reactions.items[0].count,1);assert.equal(historyBot(payloads[1]).bot,true);
+  emitMessage('102');await wait(()=>ended()===2,'explicit observation reads reaction target');assert.equal(botReads(),1);assert.equal(payloads[1].group_id,GROUP);assert.equal(JSON.stringify(payloads[1]).includes('fixture normal turn'),false);
   const initialBotReads=botReads(),initialCalls=calls.length;
   botCount=3;
   const notice={post_type:'notice',notice_type:'group_msg_emoji_like',group_id:GROUP,message_id:BOT_MESSAGE,likes:[{emoji_id:'76',count:9000}],is_add:true,user_id:'111'};
   for(const event of [{...notice,group_id:'888'},{...notice,group_id:OTHER},{...notice,notice_type:'friend_msg_emoji_like'},{...notice,post_type:'message',message_type:'private'}])peer!.send(JSON.stringify(event));
   await barrier();assert.equal(payloads.length,2);assert.equal(calls.length,initialCalls,'irrelevant notice packets do not fetch or send');
-  emitMessage('103');await wait(()=>ended()===3,'foreign notifications did not dirty target');assert.equal(historyBot(payloads[2]).reactions.items[0].count,1);assert.equal(botReads(),initialBotReads,'fresh own-group snapshot must not refresh from other-group/private notice');
+  emitMessage('103');await wait(()=>ended()===3,'foreign notifications did not dirty target');assert.equal(botReads(),initialBotReads,'foreign notices cannot invalidate the fresh own-group aggregate cache');
   botCount=9;const beforeNotice=calls.length;
   peer!.send(JSON.stringify(notice));await barrier();
   assert.equal(payloads.length,3,'the real notice transport must not independently invoke the model');assert.equal(calls.length,beforeNotice,'notice is a cache hint, not an immediate API query/send');
   emitMessage('104');await wait(()=>ended()===4,'reaction notice refreshed bot target');
-  const observed=historyBot(payloads[3]);assert.equal(observed.messageId,BOT_MESSAGE);assert.equal(observed.userId,SELF);assert.equal(observed.reactions.items[0].count,9,'refresh uses get_msg snapshot, never blindly sums notice.count');assert.equal(botReads(),initialBotReads+1,'own-group notice bypasses the fresh snapshot TTL');
-  assert.equal(payloads[3].current_batch.messages[0].messageId,'104');assert.deepEqual(payloads[3].current_batch.messages[0].reactions.items,[],'the observed reactions belong to the bot message, not the asking user message');
+  assert.equal(botReads(),initialBotReads+1,'own-group notice invalidates aggregate cache only when explicitly read');assert.deepEqual(aggregates.map(value=>value.reactions.items[0].count),[1,1,9]);
+  assert.equal(payloads[3].group_id,GROUP);assert.equal(wakeNumber,4);
   assert.equal(calls.filter(c=>c.action==='send_group_msg').length,1);assert.equal(calls.filter(c=>c.action==='set_msg_emoji_like').length,0);
   assert.equal(child.kill('SIGTERM'),true);assert.deepEqual(await bounded(exit),{code:0,signal:null});assert.ok(output.includes('app.stopped'));
   const db=new DatabaseSync(join(dir,'data/listener.sqlite'),{readOnly:true});try{const rows=db.prepare('SELECT entry FROM listener_messages').all().map(row=>JSON.parse(row.entry as string));assert.equal(rows.length,5,'notices never create chat-memory rows');assert.equal(rows.filter(row=>row.bot).length,1);}finally{db.close();}

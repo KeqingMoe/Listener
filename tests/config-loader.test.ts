@@ -35,7 +35,7 @@ test('minimal config has empty group scope, disabled AI, complete defaults and r
   assert.equal(Object.hasOwn(c.listener,'maxParts'),false);
   assert.deepEqual(c.listener.tools?.moderation, {mute:'off',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600});
   assert.deepEqual(c.listener.images,{enabled:false,maxPerTurn:3,maxDownloadMb:10});
-  assert.deepEqual(c.listener.forward,{enabled:false,maxPerRead:20});
+  assert.deepEqual(c.listener.forward,{enabled:false});
   assert.equal(c.personaPath, join(f.dir, 'prompts/listener.md'));
   assert.equal(c.listener.memoryPath, join(f.dir, 'data/listener.sqlite'));
   assert.equal(c.configPath, join(f.dir, 'config.toml'));
@@ -50,8 +50,15 @@ test('removed max_parts is an unknown field globally, per group and in disabled 
  }
 });
 
-test('forward feature is optional and validates explicit switches and range caps',t=>{
- const f=fixture(t,'[forward]\nenabled=true\nmax_per_read=5');assert.deepEqual(f.load().listener.forward,{enabled:true,maxPerRead:5});
+test('removed forward count cap is rejected globally and in disabled groups',t=>{
+ const f=fixture(t);
+ for(const scope of ['[forward]','[groups."22".forward]','[groups."22"]\nenabled=false\n[groups."22".forward]'])for(const value of ['1','20','0','false','"20"']){
+  f.config(`${scope}\nmax_per_read=${value}`);assert.throws(()=>f.load(),e=>e instanceof ConfigError&&e.message.includes('未知字段'));
+ }
+});
+test('forward feature is optional and validates explicit switches without count caps',t=>{
+ const f=fixture(t,'[forward]\nenabled=true');assert.deepEqual(f.load().listener.forward,{enabled:true});
+  f.config('[forward]\nenabled=true\nmax_per_read=5');assert.throws(()=>f.load(),ConfigError);
  for(const value of ['1','"true"','[]']){f.config(`[forward]\nenabled=${value}`);assert.throws(()=>f.load(),ConfigError);}
  f.config('[forward]\nenabled=true\nresource_id="secret"');assert.throws(()=>f.load(),ConfigError);
 });
@@ -107,7 +114,7 @@ test('all numeric bounds are strict, finite and integers except probability', t 
     ['reply.random', 'cooldown_ms', 1000, 3600000], ['reply.random', 'max_per_minute', 1, 10],
     ['memory', 'retention_days', 1, 30], ['memory', 'context_chars', 8000, 100000],
     ['tools.moderation', 'confirmation_ttl_seconds', 1, 60], ['tools.moderation', 'max_mute_seconds', 1, 600],
-    ['images','max_per_turn',1,3], ['images','max_download_mb',1,10], ['forward','max_per_read',1,20],
+    ['images','max_per_turn',1,3], ['images','max_download_mb',1,10],
     ['logging','retention_days',1,30],['logging','max_file_mb',1,100],['logging','max_total_mb',1,1000],
   ];
   for (const [section, key, min, max] of ranges) {

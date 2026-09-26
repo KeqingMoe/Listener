@@ -163,7 +163,7 @@ for (const phase of ['compact', 'model', 'tool'] as const) test(`arrivals during
   const s = setup({ complete: async () => {
     rounds++;
     if (rounds === 1 && phase === 'model') await held.promise;
-    if (rounds === 1 && phase === 'tool') return tool('get_group_members');
+    if (rounds === 1 && phase === 'tool') return tool('get_group_members', {limit:20});
     if (rounds === 1 || rounds === 2 && phase === 'tool') return tool('read_message', { message_id: '2' });
     return silent();
   }, api: async action => {

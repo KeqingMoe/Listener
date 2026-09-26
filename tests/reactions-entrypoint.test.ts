@@ -26,15 +26,18 @@ test('real entrypoint performs isolated reactions, exposes only local ledger sta
  const sockets=new Set<Socket>(),peers=new Set<WebSocket>();let connectionCount=0,peer:WebSocket|undefined,heldMutation=false;
  const events=new Map<string,ReturnType<typeof event>>(),verified=new Map<string,number>(),sentIds=new Map<string,string[]>();
  const verificationFloors=new Map<string,number[]>(),consumedVerification=new Map<string,number>();
- const calls:Array<{action:string;params:Record<string,unknown>}>=[],requests:Array<{group:string;round:number;body:any;payload:any}>=[],rounds=new Map<string,number>();
+ const calls:Array<{action:string;params:Record<string,unknown>}>=[],requests:Array<{group:string;round:number;body:any;payload:any}>=[],rounds=new Map<string,number>(),steps=new Map<string,number>(),wakeIds=new Map<string,string>();
  const http=createServer((req,res)=>{void(async()=>{
   assert.equal(req.method,'POST');assert.equal(req.url,'/v1/chat/completions');assert.equal(req.headers.authorization,'Bearer fixture-model-key');
   let source='';for await(const chunk of req){source+=chunk.toString();assert.ok(source.length<1024*1024);}const body=JSON.parse(source);assert.equal(body.model,'fixture-reactions-model');
   const group=/本轮只服务群 (\d+)/.exec(body.messages[0].content)?.[1];assert.ok(group===A||group===B);
-  assert.ok(body.tools.some((t:any)=>t.function.name==='react_message'));const payload=JSON.parse(body.messages.find((m:any)=>m.role==='user').content);
-  const round=(rounds.get(group)??0)+1;rounds.set(group,round);requests.push({group,round,body,payload});
+  assert.ok(body.tools.some((t:any)=>t.function.name==='react_message'));const payload=JSON.parse(body.messages.findLast((m:any)=>m.role==='user').content);
+  const wakeId=JSON.stringify(payload);if(wakeIds.get(group)!==wakeId){wakeIds.set(group,wakeId);rounds.set(group,(rounds.get(group)??0)+1);steps.set(group,0);}
+  const round=rounds.get(group)!;const step=steps.get(group)!;steps.set(group,step+1);if(step===3)requests.push({group,round,body,payload});
+  if(step===0){assert.equal(payload.wake.group_id,group);assert.equal(Object.hasOwn(payload,'reaction_state'),false);assert.ok(!JSON.stringify(payload).includes('only-'));}
   let operations;
-  if(group===A&&round===1)operations=[send('only-A-reaction-reply'),react('101'),tool('finish')];
+  if(step<3)operations=[tool(step===0?'read_events':step===1?'read_messages':'read_message',step===0||step===1?{limit:100}:{message_id:group===A?String(100+round):String(200+round)})];
+  else if(group===A&&round===1)operations=[send('only-A-reaction-reply'),react('101'),tool('finish')];
   else if(group===B&&round===1)operations=[react('201','128077'),tool('finish')];
   else if(group===A&&round===2)operations=[react('201'),react('101','76','remove'),tool('finish')];
   else if(group===B&&round===2)operations=[send('only-B-reaction-reply'),react('202'),tool('finish')];
@@ -89,20 +92,20 @@ test('real entrypoint performs isolated reactions, exposes only local ledger sta
   await wait(()=>ended()>=2&&mutations().length===2,'first reaction turns');
   assert.equal(connectionCount,1);assert.equal(calls.filter(c=>c.action==='get_login_info').length,1);assert.equal(sends().length,1);assert.equal(sends()[0]!.params.group_id,A);
   assert.deepEqual(new Set(mutations().map(c=>`${c.params.message_id}:${c.params.emoji_id}:${c.params.set}`)),new Set(['101:76:true','201:128077:true']));
-  for(const first of requests){const annotation=first.payload.current_batch.messages[0].reactions;assert.equal(annotation.status,'observed');assert.equal(annotation.items[0].count,first.group===A?3:4);assert.ok(!Object.hasOwn(annotation,'contains_bot'));}
+  for(const first of requests){const annotation=JSON.parse(first.body.messages.filter((m:any)=>m.role==='tool').at(-1).content).message.reactions;assert.equal(annotation.status,'observed');assert.equal(annotation.items[0].count,first.group===A?3:4);assert.ok(!Object.hasOwn(annotation,'contains_bot'));}
   const foreignLookupsBefore=verified.get('201');emit(A,'102','only-A-followup');await wait(()=>ended()>=3&&mutations().length===3,'A second reaction turn');
   assert.equal(verified.get('201'),foreignLookupsBefore,'A foreign ID is blocked before any peer lookup, including automatic reads');
   emit(B,'202','only-B-followup');await wait(()=>ended()>=4&&mutations().length===4,'B second reaction turn');
   for(const group of [A,B]){
-   const request=requests.find(r=>r.group===group&&r.round===2)!;assert.ok(request);assert.equal(request.payload.reaction_state.recent.length,1);
-   assert.equal(request.payload.reaction_state.recent[0].message_id,group===A?'101':'201');assert.equal(request.payload.reaction_state.last_turn.confirmed,1);
+   const request=requests.find(r=>r.group===group&&r.round===2)!;assert.ok(request);assert.equal(Object.hasOwn(request.payload,'reaction_state'),false);
+   const reactionResults=request.body.messages.filter((m:any)=>m.role==='tool'&&m.tool_call_id.startsWith('fixture_react_message')).map((m:any)=>JSON.parse(m.content));assert.equal(reactionResults.length,1);assert.equal(reactionResults[0].message_id,group===A?'101':'201');assert.equal(reactionResults[0].status,'ok');
    const messages=JSON.stringify(request.body.messages);assert.ok(messages.includes(group===A?'only-A-reaction-body':'only-B-reaction-body'));assert.ok(!messages.includes(group===A?'only-B-reaction-body':'only-A-reaction-body'));
   }
   assert.equal(mutations().filter(c=>c.params.message_id==='201').length,1,'A cannot react to B existing ID');
   assert.deepEqual(mutations().filter(c=>c.params.message_id==='101').map(c=>c.params.set),[true,false]);
   emit(A,'103','only-A-error-report');await wait(()=>ended()>=5,'error reported next turn');
-  const a3=requests.find(r=>r.group===A&&r.round===3)!;assert.deepEqual(a3.payload.reaction_state.last_turn.errors,['message_not_in_context']);assert.equal(a3.payload.reaction_state.last_turn.confirmed,1);assert.equal(a3.payload.reaction_state.last_turn.rejected,1);
-  assert.deepEqual(a3.payload.reaction_state.recent.map((r:any)=>[r.message_id,r.action,r.status]),[['101','remove','ok']]);
+  const a3=requests.find(r=>r.group===A&&r.round===3)!;const aResults=a3.body.messages.filter((m:any)=>m.role==='tool'&&m.tool_call_id.startsWith('fixture_react_message')).map((m:any)=>JSON.parse(m.content));assert.equal(aResults.filter((r:any)=>r.status==='ok').length,2);assert.deepEqual(aResults.filter((r:any)=>r.status==='error').map((r:any)=>r.error),['message_not_in_context']);
+  assert.deepEqual(aResults.filter((r:any)=>r.status==='ok').map((r:any)=>[r.message_id,r.action,r.status]),[['101','add','ok'],['101','remove','ok']]);
   emit(B,'203','only-B-held-reaction');await wait(()=>heldMutation,'in-flight native reaction');assert.equal(child.kill('SIGTERM'),true);
   assert.deepEqual(await bounded(childExited,5000),{code:0,signal:null});assert.ok(output.includes('app.stopped'));
   await wait(()=>peers.size===0&&sockets.size===0,'all child network resources closed');assert.equal(connectionCount,1);assert.equal(requests.length,6);assert.equal(mutations().length,5);assert.equal(sends().length,2);

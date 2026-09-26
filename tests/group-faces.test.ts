@@ -106,8 +106,8 @@ test('forward read node faces use the same typed segments and never expose raw f
       ] },
     ] } }] };
   } };
-  const tools = new ForwardTools(api, memory(entries), { enabled: true, maxPerRead: 20 });
-  const result = await tools.read({ forward_id: 'fwd_1_0', start: 1, end: 1 }, context, tools.createTurn());
+  const tools = new ForwardTools(api, memory(entries), { enabled: true });
+  const result = await tools.read({ forward_id: 'fwd_1_0', start: 1, limit: 1 }, context, tools.createTurn());
   assert.equal(result.status, 'ok');
   const row=(result.messages as any[])[0]!;assert.equal(row.text,undefined);
   assert.deepEqual(row.segments,[{type:'face',id:'20',name:'偷笑'},{type:'face',id:'375',name:'超级鼓掌'},{type:'unsupported',kind:'face'}]);

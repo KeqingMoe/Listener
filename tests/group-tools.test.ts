@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GroupTools, GROUP_TOOLS, SEND_MESSAGE_TOOL, type GroupToolsOptions } from '../src/group-tools.js';
-import { LISTENER_GROUP, type Api, type Memory, type TimelineEntry, type TurnContext } from '../src/contracts.js';
+import { LISTENER_GROUP, type Api, type JsonObject, type Memory, type TimelineEntry, type TurnContext } from '../src/contracts.js';
 
 const context: TurnContext = { groupId: LISTENER_GROUP, actorId: '123', selfId: '999', messageId: '1' };
 const record = (user_id = '123', extra = {}) => ({ group_id: LISTENER_GROUP, user_id, nickname: 'Alice', card: 'team', role: 'member', ...extra });
@@ -24,7 +24,7 @@ test('options reject malformed runtime values and increased hard limits', () => 
 
 test('members disabled denies invented member tools without disabling message reads', async () => {
   const { tools, calls } = setup(remote(), [entry], { members: false });
-  for (const [name, args] of [['get_group_members', {}], ['get_member_info', { user_id: '123' }]] as const) {
+  for (const [name, args] of [['get_group_members', { limit: 20 }], ['get_member_info', { user_id: '123' }]] as const) {
     assert.deepEqual(await tools.execute(name, args, context), { status: 'error', error: 'tool_disabled' });
   }
   assert.equal(calls.length, 0);
@@ -115,7 +115,7 @@ test('unknown roles are not presented as verified member roles', async () => {
     assert.equal((result.member as any).role, 'unknown');
     assert.equal((calls[0]?.params as any).no_cache, true);
     const list = setup([record('123', { role })]);
-    assert.equal(((await list.tools.execute('get_group_members', {}, context)).members as any[])[0].role, 'unknown');
+    assert.equal(((await list.tools.execute('get_group_members', { limit: 20 }, context)).members as any[])[0].role, 'unknown');
   }
 });
 
@@ -126,7 +126,7 @@ test('newline ids are rejected in reads, replies and remote member records', asy
   await assert.rejects(tools.prepareMessage({ segments: [{type:'text',text:'x'}], reply_to:'2\n' }, context));
   assert.equal(calls.length, 0);
   const list = setup([record('123\n')]);
-  assert.equal((await list.tools.execute('get_group_members', {}, context)).status, 'error');
+  assert.equal((await list.tools.execute('get_group_members', { limit: 20 }, context)).status, 'error');
 });
 
 test('fixed group scope independently enforced before calls', async () => {
@@ -140,7 +140,7 @@ test('fixed group scope independently enforced before calls', async () => {
 test('member list pagination, filtering and redaction use native fixed-group API', async () => {
   const records = Array.from({ length: 55 }, (_, i) => record(String(100 + i), { nickname: `Person ${i}`, card: i % 2 ? 'red' : 'blue', age: 22, secret: 'hidden' }));
   const { tools, calls } = setup(records);
-  const first = await tools.execute('get_group_members', {}, context);
+  const first = await tools.execute('get_group_members', { limit: 20 }, context);
   assert.equal((first.members as unknown[]).length, 20);
   assert.equal(first.total, 55);
   assert.equal(first.has_more, true);
@@ -148,13 +148,13 @@ test('member list pagination, filtering and redaction use native fixed-group API
   assert.equal(page.total, 28);
   assert.deepEqual((page.members as any[]).map(m => m.user_id), ['104', '106', '108']);
   assert.deepEqual(Object.keys((page.members as any[])[0]), ['user_id', 'nickname', 'card', 'role']);
-  assert.equal((await tools.execute('get_group_members', { search: '154' }, context)).total, 1);
+  assert.equal((await tools.execute('get_group_members', { search: '154', limit: 20 }, context)).total, 1);
   assert.deepEqual(calls[0], { action: 'get_group_member_list', params: { group_id: LISTENER_GROUP } });
 });
 
 test('invalid pagination and extras do not invoke API', async () => {
   const { tools, calls } = setup([]);
-  for (const args of [{ search: 'x'.repeat(101) }, { limit: 51 }, { limit: 0 }, { offset: 100001 }, { offset: -1 }, { offset: 0.1 }, { group_id: LISTENER_GROUP }]) assert.equal((await tools.execute('get_group_members', args, context)).status, 'error');
+  for (const args of [{ search: 'x'.repeat(101) }, { limit: 0 }, { limit: 1.5 }, { limit: '20' }, { offset: Number.MAX_SAFE_INTEGER+1 }, { offset: -1 }, { offset: 0.1 }, { group_id: LISTENER_GROUP }]) assert.equal((await tools.execute('get_group_members', args, context)).status, 'error');
   for (const args of [{ user_id: '123 ', group_id: LISTENER_GROUP }, { user_id: 123 }, { user_id: 'all' }]) assert.equal((await tools.execute('get_member_info', args, context)).status, 'error');
   assert.equal(calls.length, 0);
 });
@@ -209,9 +209,18 @@ test('mention limit applies within one message and remote output fields stay bou
   assert.equal((result.message as any).nickname.length, 80);
 });
 
+test('explicit collection count has no small hard cap and byte-bounded pages advance actual offset', async () => {
+  const s=setup(Array.from({length:1000},(_,i)=>record(String(i+1),{nickname:'字'.repeat(80),card:'字'.repeat(80)})));
+  const result=await s.tools.execute('get_group_members',{limit:Number.MAX_SAFE_INTEGER},context);
+  assert.equal(result.status,'ok');assert.equal(result.requested,Number.MAX_SAFE_INTEGER);assert.equal(result.truncated,true);assert.equal(result.reason,'output_limit');assert.ok((result.returned as number)>0);assert.equal(result.next_offset,result.returned);assert.ok(Buffer.byteLength(JSON.stringify(result))<=24000);
+  const next=await s.tools.execute('get_group_members',{offset:result.next_offset,limit:1},context);assert.equal((next.members as JsonObject[])[0]!.user_id,String((result.returned as number)+1));
+  const small=setup(Array.from({length:60},(_,i)=>record(String(i+1))));const all=await small.tools.execute('get_group_members',{limit:60},context);assert.equal(all.returned,60);assert.equal(all.truncated,false);
+  for(const limit of [undefined,null,0,-1,1.1,'5',true,NaN,Infinity,Number.MAX_SAFE_INTEGER+1])assert.equal((await small.tools.execute('get_group_members',{limit},context)).error,'invalid_arguments');
+});
+
 test('safe errors never disclose API exception details', async () => {
   const { tools } = setup(new Error('token=private endpoint=secret'));
-  for (const [name, args] of [['get_group_members', {}], ['get_member_info', { user_id: '123' }], ['read_message', { message_id: '2' }]] as const) {
+  for (const [name, args] of [['get_group_members', { limit: 20 }], ['get_member_info', { user_id: '123' }], ['read_message', { message_id: '2' }]] as const) {
     assert.deepEqual(await tools.execute(name, args, context), { status: 'error', error: 'api_unavailable' });
   }
   await assert.rejects(tools.prepareMessage({ segments: [{ type: 'at', user_id: '123' }] }, context), /^Error: api_unavailable$/);

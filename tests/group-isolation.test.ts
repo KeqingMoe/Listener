@@ -25,8 +25,8 @@ function api(handler:(action:string,params:Record<string,unknown>)=>unknown){
 const member=(groupId:string)=>({group_id:groupId,user_id:user,nickname:'member',role:'member'});
 const msg=(groupId:string,id='1',message:unknown[]=[{type:'text',data:{text:groupId}}])=>({message_type:'group',group_id:groupId,message_id:id,sender:{user_id:user},message});
 const imageOptions={enabled:true,maxPerTurn:3,maxDownloadMb:1};
-const forwardOptions={enabled:true,maxPerRead:20};
-const forwardArgs={forward_id:'fwd_1_0',start:1,end:1};
+const forwardOptions={enabled:true};
+const forwardArgs={forward_id:'fwd_1_0',start:1,limit:1};
 
 test('group tools bind configuration immutably and isolate colliding local/member/message IDs',async()=>{
  for(const [group,other] of [[A,B],[B,A]]){
@@ -35,7 +35,7 @@ test('group tools bind configuration immutably and isolate colliding local/membe
   const local=await tools.execute('read_message',{message_id:'1'},ctx(group!));assert.equal((local.message as any).text,group);
   const remote=await tools.execute('read_message',{message_id:'2'},ctx(group!));assert.deepEqual((remote.message as any).segments,[{type:'text',text:group}]);assert.equal((remote.message as any).text,undefined);
   assert.equal((await tools.execute('get_member_info',{user_id:user},ctx(group!))).status,'ok');
-  assert.equal((await tools.execute('get_group_members',{},ctx(group!))).status,'ok');
+  assert.equal((await tools.execute('get_group_members',{limit:20},ctx(group!))).status,'ok');
   await tools.prepareMessage({segments:[{type:'at',user_id:user}]},ctx(group!));
   for(const call of a.calls.filter(c=>c.action.startsWith('get_group_member')))assert.equal(call.params.group_id,group);
   const before=a.calls.length;
@@ -50,7 +50,7 @@ test('group tools reject foreign response provenance even with identical request
   const other=group===A?B:A;
   const a=api(action=>action==='get_group_member_list'?[member(other)]:action==='get_group_member_info'?member(other):msg(other,'2'));
   const tools=new GroupTools(a.client,memory(),{groupId:group});
-  for(const [name,args] of [['get_group_members',{}],['get_member_info',{user_id:user}],['read_message',{message_id:'2'}]] as const)assert.equal((await tools.execute(name,args,ctx(group))).status,'error');
+  for(const [name,args] of [['get_group_members',{limit:20}],['get_member_info',{user_id:user}],['read_message',{message_id:'2'}]] as const)assert.equal((await tools.execute(name,args,ctx(group))).status,'error');
   await assert.rejects(tools.prepareMessage({segments:[{type:'at',user_id:user}]},ctx(group)),/verification_failed/);
   await assert.rejects(tools.prepareMessage({segments:[{type:'text',text:'no'}],reply_to:'2'},ctx(group)),/verification_failed/);
  }
