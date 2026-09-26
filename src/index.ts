@@ -6,6 +6,7 @@ import { id } from './bot.js';
 import { Listener } from './listener.js';
 import { OpenAIModel } from './model.js';
 import { SQLiteMemory } from './memory.js';
+import { WorldEventStore } from './world-events.js';
 import { resolveGroupId, OWNER_ID } from './contracts.js';
 import { GroupRouter } from './group-router.js';
 import { TurnScheduler } from './turn-scheduler.js';
@@ -45,20 +46,25 @@ async function main(): Promise<void> {
   }}):undefined;
   const entries:Array<readonly [string,Listener]>=[];
   const memories:SQLiteMemory[]=[];
+  const worlds:WorldEventStore[]=[];
   let router:GroupRouter;
   try {
     for(const group of groups){
       const groupId=resolveGroupId(group.groupId);
       let memory:SQLiteMemory|undefined;
+       let world:WorldEventStore|undefined;
       try {
         if(group.enabled){
           process.umask(0o077);
           mkdirSync(dirname(group.memoryPath),{recursive:true,mode:0o700});
           memory=new SQLiteMemory({path:group.memoryPath,maxContextChars:group.maxContextChars,retentionDays:group.retentionDays,groupId});
           memories.push(memory);
+          world=new WorldEventStore({path:`${group.memoryPath}.events.sqlite`,groupId,retentionDays:group.retentionDays});
+          worlds.push(world);
+          for(const entry of memory.recent())world.appendMessage(entry,{source:'migration',observedAt:entry.time});
           chmodSync(group.memoryPath,0o600);
         }
-        entries.push([groupId,new Listener(client,model,memory,group,Math.random,undefined,scheduler)]);
+        entries.push([groupId,new Listener(client,model,memory,group,Math.random,undefined,scheduler,{world})]);
         log('info','app.group_ready',{group_id:groupId,ai_enabled:group.enabled,images_enabled:group.images?.enabled ?? false,forward_enabled:group.forward?.enabled ?? false,attention_enabled:group.attention?.enabled ?? false,reactions_enabled:group.tools?.reactions ?? false});
       } catch(error){
         log('error','app.group_init_failed',{group_id:groupId,reason:error instanceof Error&&error.message==='Memory group mismatch'?'memory_group_mismatch':'group_initialization_failed'});
@@ -70,6 +76,7 @@ async function main(): Promise<void> {
     scheduler.close();
     await Promise.allSettled(entries.map(([,listener])=>listener.stop()));
     for(const memory of memories)memory.close();
+    for(const world of worlds)world.close();
     throw error;
   }
   let selfId: string | undefined;

@@ -32,8 +32,8 @@ export class GroupRouter {
     if(!this.connected||this.stopped||!event||typeof event!=='object')return;
     const raw=event as Record<string,unknown>;
     const chat=raw.post_type==='message'&&raw.message_type==='group';
-    const reactions=raw.post_type==='notice'&&raw.notice_type==='group_msg_emoji_like';
-    if(!chat&&!reactions)return;
+    const notice=raw.post_type==='notice'&&(['group_msg_emoji_like','group_recall'].includes(String(raw.notice_type))||(raw.notice_type==='notify'&&raw.sub_type==='poke'));
+    if(!chat&&!notice)return;
     const groupId=id(raw.group_id);
     if(!groupId)return;
     const handler=this.handlers.get(groupId);
