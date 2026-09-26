@@ -20,6 +20,8 @@ export interface ListenerConfig {
   enabled: boolean; baseUrl: string; apiKey: string; model: string;
   timeoutMs: number; maxTokens: number; debounceMs: number; cooldownMs: number;
   maxToolCallsPerWake?: number; wakeTimeoutMs?: number;
+  transport?: 'chat' | 'responses'; sessionMaxContextBytes?: number;
+  serverCompaction?: 'off' | 'auto'; compactThreshold?: number;
   memoryPath: string; maxContextChars: number; retentionDays: number;
   randomReplyProbability?: number; randomCooldownMs?: number; randomMaxPerMinute?: number; delayMaxMs?: number;
   persona?: string; botName?: string; ownerName?: string;

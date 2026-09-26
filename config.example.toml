@@ -23,6 +23,11 @@ max_output_tokens = 1200
 max_concurrent_turns = 2 # 全局并行处理群批次数，1..8；模型/密钥仍由全部群共享
 max_tool_calls_per_wake = 96 # 一次唤醒所有工具共享的调用预算，1..4096
 wake_timeout_ms = 90000 # 一次唤醒总超时，1000..600000
+transport = 'chat' # chat 或 responses
+session_max_context_bytes = 524288 # 会话上下文容量，65536..8388608 字节
+server_compaction = 'off' # auto 需要 responses、阈值以及实际验证过的服务端压缩支持
+# compact_threshold = 65536 # 1024..1000000；仅 server_compaction='auto' 时配置
+# 接口接受参数不代表真正支持自动压缩，未验证支持时保持 off。
 
 [persona]
 file = 'prompts/listener.md'
@@ -103,7 +108,10 @@ enabled = true
 # enabled = true
 # [groups.'123456789'.ai]
 # max_tool_calls_per_wake = 128 # 仅覆盖本群；其余字段继承全局
-# wake_timeout_ms = 120000 # 分群 ai 只支持这两个预算字段，不支持模型／密钥覆盖
+# wake_timeout_ms = 120000
+# transport = 'responses' # 分群可覆盖会话传输／容量／压缩配置，模型和密钥仍共享
+# session_max_context_bytes = 1048576
+# server_compaction = 'off' # 显式 off 会清除继承的压缩阈值
 # [groups.'123456789'.reply]
 # random_probability = 0
 # [groups.'123456789'.tools]

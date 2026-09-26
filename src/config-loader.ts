@@ -45,6 +45,21 @@ function wakeNumber(t: Table, key: string, path: string, fallback: number, min: 
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) return fail(`${path}.${key}`, '必须是允许范围内的正整数');
   return value;
 }
+function sessionSettings(t: Table, path: string, defaults?: ListenerConfig): Pick<ListenerConfig, 'transport' | 'sessionMaxContextBytes' | 'serverCompaction' | 'compactThreshold'> {
+  const transport = Object.hasOwn(t,'transport') ? t.transport : defaults?.transport ?? 'chat';
+  if (transport !== 'chat' && transport !== 'responses') return fail(`${path}.transport`,'必须是 chat 或 responses 字符串');
+  const serverCompaction = Object.hasOwn(t,'server_compaction') ? t.server_compaction : defaults?.serverCompaction ?? 'off';
+  if (serverCompaction !== 'off' && serverCompaction !== 'auto') return fail(`${path}.server_compaction`,'必须是 off 或 auto 字符串');
+  // An explicit off override discards the inherited threshold. An explicit
+  // threshold with off is still an error, rather than an ignored setting.
+  const compactThreshold = Object.hasOwn(t,'compact_threshold')
+    ? wakeNumber(t,'compact_threshold',path,1024,1024,1000000)
+    : serverCompaction === 'off' ? undefined : defaults?.compactThreshold;
+  if (serverCompaction === 'off' && compactThreshold !== undefined) return fail(`${path}.compact_threshold`,'仅可与 server_compaction=auto 一起配置');
+  if (serverCompaction === 'auto' && transport !== 'responses') return fail(`${path}.server_compaction`,'auto 需要 responses 传输');
+  if (serverCompaction === 'auto' && compactThreshold === undefined) return fail(`${path}.compact_threshold`,'auto 模式必须配置阈值');
+  return {transport,serverCompaction,compactThreshold,sessionMaxContextBytes:wakeNumber(t,'session_max_context_bytes',path,defaults?.sessionMaxContextBytes ?? 524288,65536,8388608)};
+}
 function url(value: string, path: string, ai = false): string {
   let parsed: URL;
   try { parsed = new URL(value); } catch { return fail(path, '网址无效'); }
@@ -84,7 +99,7 @@ function groupId(value: unknown, field: string): string {
 function groupSettings(id: string, raw: unknown, defaults: ListenerConfig, base: string): { enabled: boolean; config: ListenerConfig } {
   const path = `groups.${id}`;
   const group = table(raw,path,['enabled','ai','reply','tools','images','forward','attention','memory','persona']);
-   const groupAi = table(group.ai,`${path}.ai`,['max_tool_calls_per_wake','wake_timeout_ms']);
+   const groupAi = table(group.ai,`${path}.ai`,['max_tool_calls_per_wake','wake_timeout_ms','transport','session_max_context_bytes','server_compaction','compact_threshold']);
   const enabled = bool(group,'enabled',path,true);
   const reply = table(group.reply,`${path}.reply`,['mention','quote_bot','random_probability','delay_ms','cooldown_ms','random']);
   const random = table(reply.random,`${path}.reply.random`,['cooldown_ms','max_per_minute']);
@@ -106,7 +121,7 @@ function groupSettings(id: string, raw: unknown, defaults: ListenerConfig, base:
   const memoryPath=Object.hasOwn(memory,'path')?filePath(text(memory,'path',`${path}.memory`,''),base,`${path}.memory.path`):defaultMemory;
   const append=Object.hasOwn(extra,'append_file')?persona(filePath(text(extra,'append_file',`${path}.persona`,''),base,`${path}.persona.append_file`),`${path}.persona.append_file`):undefined;
   return {enabled,config:{
-    ...defaults,groupId:id,debounceMs,delayMaxMs,
+    ...defaults,...sessionSettings(groupAi,`${path}.ai`,defaults),groupId:id,debounceMs,delayMaxMs,
      maxToolCallsPerWake:wakeNumber(groupAi,'max_tool_calls_per_wake',`${path}.ai`,defaults.maxToolCallsPerWake!,1,4096),
      wakeTimeoutMs:wakeNumber(groupAi,'wake_timeout_ms',`${path}.ai`,defaults.wakeTimeoutMs!,1000,600000),
     cooldownMs:num(reply,'cooldown_ms',`${path}.reply`,defaults.cooldownMs,1000,60000),
@@ -164,7 +179,7 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
   const root = table(parsed, 'config', ['bot', 'onebot', 'ai', 'persona', 'reply', 'memory', 'tools', 'images', 'logging', 'forward', 'attention', 'groups']);
   const bot = table(root.bot, 'bot', ['name', 'owner_id', 'owner_name']);
   const one = table(root.onebot, 'onebot', ['url', 'token_env', 'api_timeout_ms', 'reconnect_base_ms', 'reconnect_max_ms', 'heartbeat_ms']);
-  const ai = table(root.ai, 'ai', ['enabled', 'base_url', 'model', 'api_key_env', 'timeout_ms', 'max_output_tokens', 'max_concurrent_turns', 'max_tool_calls_per_wake', 'wake_timeout_ms']);
+  const ai = table(root.ai, 'ai', ['enabled', 'base_url', 'model', 'api_key_env', 'timeout_ms', 'max_output_tokens', 'max_concurrent_turns', 'max_tool_calls_per_wake', 'wake_timeout_ms', 'transport', 'session_max_context_bytes', 'server_compaction', 'compact_threshold']);
   const p = table(root.persona, 'persona', ['file']);
   const reply = table(root.reply, 'reply', ['mention', 'quote_bot', 'random_probability', 'delay_ms', 'cooldown_ms', 'random']);
   const random = table(reply.random, 'reply.random', ['cooldown_ms', 'max_per_minute']);
@@ -222,6 +237,7 @@ export function loadAppConfig(options: { configPath?: string; envPath?: string; 
     timeoutMs: num(ai, 'timeout_ms', 'ai', 45000, 1000, 120000), maxTokens: num(ai, 'max_output_tokens', 'ai', 1200, 128, 4096),
      maxToolCallsPerWake: wakeNumber(ai,'max_tool_calls_per_wake','ai',96,1,4096),
      wakeTimeoutMs: wakeNumber(ai,'wake_timeout_ms','ai',90000,1000,600000),
+     ...sessionSettings(ai,'ai'),
     debounceMs, delayMaxMs, cooldownMs: num(reply, 'cooldown_ms', 'reply', 5000, 1000, 60000),
     randomReplyProbability: num(reply, 'random_probability', 'reply', 0.03, 0, 1, false),
     randomCooldownMs: num(random, 'cooldown_ms', 'reply.random', 60000, 1000, 3600000),

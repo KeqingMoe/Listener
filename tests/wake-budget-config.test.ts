@@ -36,7 +36,7 @@ test('wake budgets reject wrong types, fractions, infinities, zero and out-of-ra
   }
  }
 });
-test('group ai exposes only the two wake budget fields and no transport or unlimited aliases',t=>{
+test('group ai rejects model connection overrides and unlimited wake budget aliases',t=>{
  const load=fixture(t);
  for(const field of ['model','api_key_env','base_url','timeout_ms','enabled','max_concurrent_turns','max_output_tokens','max_tool_calls','maxToolCallsPerWake','unlimited']){
   assert.throws(()=>load(`[groups."123".ai]\n${field}="secret-must-not-leak"`),e=>e instanceof ConfigError&&!e.message.includes('secret-must-not-leak'));

@@ -36,7 +36,7 @@ export function migrateConfig(root = process.cwd(), env: NodeJS.ProcessEnv = pro
     bot:{name:'Listener',owner_id:OWNER_ID,owner_name:'時雨てる'},
     groups:{[LISTENER_GROUP]:{enabled:true}},
     onebot:{url:value('ONEBOT_WS_URL','ws://127.0.0.1:3001'),token_env:'ONEBOT_ACCESS_TOKEN',api_timeout_ms:number('API_TIMEOUT_MS',10000),reconnect_base_ms:number('RECONNECT_BASE_MS',1000),reconnect_max_ms:number('RECONNECT_MAX_MS',30000),heartbeat_ms:number('HEARTBEAT_MS',30000)},
-    ai:{enabled:bool('AI_ENABLED',false),base_url:value('OPENAI_BASE_URL','https://api.openai.com/v1'),model:value('OPENAI_MODEL',''),api_key_env:'OPENAI_API_KEY',timeout_ms:number('AI_TIMEOUT_MS',45000),max_output_tokens:number('AI_MAX_TOKENS',1200),max_tool_calls_per_wake:96,wake_timeout_ms:90000},
+    ai:{enabled:bool('AI_ENABLED',false),base_url:value('OPENAI_BASE_URL','https://api.openai.com/v1'),model:value('OPENAI_MODEL',''),api_key_env:'OPENAI_API_KEY',timeout_ms:number('AI_TIMEOUT_MS',45000),max_output_tokens:number('AI_MAX_TOKENS',1200),max_tool_calls_per_wake:96,wake_timeout_ms:90000,transport:'chat',session_max_context_bytes:524288,server_compaction:'off'},
     persona:{file:'prompts/listener.md'},
     reply:{mention:true,quote_bot:true,random_probability:number('AI_RANDOM_REPLY_PROBABILITY',0.03),delay_ms:[minDelay,number('AI_DELAY_MAX_MS',Math.max(3000,minDelay))],cooldown_ms:number('AI_COOLDOWN_MS',5000),random:{cooldown_ms:number('AI_RANDOM_COOLDOWN_MS',60000),max_per_minute:number('AI_RANDOM_MAX_PER_MINUTE',2)}},
     memory:{path:value('AI_MEMORY_PATH','data/listener.sqlite'),retention_days:number('AI_RETENTION_DAYS',7),context_chars:number('AI_CONTEXT_CHARS',24000)},

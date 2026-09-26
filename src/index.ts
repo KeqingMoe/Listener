@@ -7,6 +7,8 @@ import { Listener } from './listener.js';
 import { OpenAIModel } from './model.js';
 import { SQLiteMemory } from './memory.js';
 import { WorldEventStore } from './world-events.js';
+import { ResponsesModel } from './responses-model.js';
+import type { ModelRequestRecord } from './model-usage.js';
 import { resolveGroupId, OWNER_ID } from './contracts.js';
 import { GroupRouter } from './group-router.js';
 import { TurnScheduler } from './turn-scheduler.js';
@@ -36,14 +38,16 @@ async function main(): Promise<void> {
     mkdirSync(dirname(ai.memoryPath),{recursive:true,mode:0o700});
     telemetry=new TelemetryStore(`${ai.memoryPath}.telemetry.sqlite`);
   }
-  const model=ai.enabled?new OpenAIModel({baseUrl:ai.baseUrl,apiKey:ai.apiKey,model:ai.model,timeoutMs:ai.timeoutMs,maxTokens:ai.maxTokens,onRequest:record=>{
+  const modelOptions={baseUrl:ai.baseUrl,apiKey:ai.apiKey,model:ai.model,timeoutMs:ai.timeoutMs,maxTokens:ai.maxTokens,onRequest:(record:ModelRequestRecord)=>{
     const trace=getLogContext();
     try { telemetry?.record({...record,
       ...(typeof trace.group_id==='string'?{groupId:trace.group_id}:{}),
       ...(typeof trace.turn_id==='string'?{turnId:trace.turn_id}:{}),
       ...(typeof trace.phase==='string'?{phase:trace.phase}:{}),
     }); } catch { log('warn','model.telemetry_failed',{reason:'storage_failed'}); }
-  }}):undefined;
+  }};
+  // HTTP 200 alone does not establish provider-side compaction support.
+  if(groups.some(group=>group.enabled&&group.serverCompaction==='auto'))throw new Error('Server compaction is not verified for this endpoint');
   const entries:Array<readonly [string,Listener]>=[];
   const memories:SQLiteMemory[]=[];
   const worlds:WorldEventStore[]=[];
@@ -51,6 +55,7 @@ async function main(): Promise<void> {
   try {
     for(const group of groups){
       const groupId=resolveGroupId(group.groupId);
+      const model=group.enabled?(group.transport==='responses'?new ResponsesModel({...modelOptions,sessionId:`group:${groupId}`}):new OpenAIModel(modelOptions)):undefined;
       let memory:SQLiteMemory|undefined;
        let world:WorldEventStore|undefined;
       try {
