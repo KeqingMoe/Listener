@@ -3,14 +3,22 @@ import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { resolveGroupId, type JsonObject, type MessageSegment, type TimelineEntry } from './contracts.js';
 
-export type WorldEventType = 'message.created' | 'message.recalled' | 'reaction.changed' | 'poke.created';
+export const WORLD_EVENT_TYPES = ['message.created', 'message.recalled', 'reaction.changed', 'poke.created', 'member.joined', 'member.left', 'group.ban_changed', 'file.uploaded', 'group.name_changed'] as const;
+export type WorldEventType = typeof WORLD_EVENT_TYPES[number];
 export type EventSource = 'onebot' | 'tool' | 'migration';
 export interface EventProvenance { source: EventSource; verified: boolean }
 export interface MessageCreatedPayload { kind: 'message'; message: TimelineEntry }
 export interface MessageRecalledPayload { kind: 'message_recalled'; message_id: string; recalled_by?: string }
 export interface ReactionChangedPayload { kind: 'reaction'; message_id: string; emoji_id?: string; emoji_type?: string; action?: 'add' | 'remove'; user_id?: string }
 export interface PokeCreatedPayload { kind: 'poke'; user_id: string }
-export type WorldEventPayload = MessageCreatedPayload | MessageRecalledPayload | ReactionChangedPayload | PokeCreatedPayload;
+export interface MemberJoinedPayload { kind: 'member_joined'; user_id: string; sub_type: 'approve' | 'invite'; operator_id?: string }
+export interface MemberLeftPayload { kind: 'member_left'; user_id: string; sub_type: 'leave' | 'kick' | 'kick_me' | 'disband'; operator_id?: string }
+/** Preserve the upstream classification even if duration and subtype appear inconsistent. user_id=0 is the upstream whole-group sentinel. */
+export interface GroupBanPayload { kind: 'group_ban'; user_id: string; sub_type: 'ban' | 'lift_ban'; duration: number; operator_id?: string }
+/** Metadata only: neither this payload nor its group subject grants a file-reading capability. */
+export interface FileUploadedPayload { kind: 'file_uploaded'; user_id: string; name: string; size: number }
+export interface GroupNamePayload { kind: 'group_name'; name: string; user_id?: string }
+export type WorldEventPayload = MessageCreatedPayload | MessageRecalledPayload | ReactionChangedPayload | PokeCreatedPayload | MemberJoinedPayload | MemberLeftPayload | GroupBanPayload | FileUploadedPayload | GroupNamePayload;
 export interface WorldEvent {
   eventId: string; sequence: number; type: WorldEventType; groupId: string;
   occurredAt?: number; observedAt: number; actorId?: string;
@@ -49,7 +57,11 @@ const safeJson = (value: unknown, max = MAX_EVENT_BYTES): string => {
   if (Buffer.byteLength(result, 'utf8') > max) throw new Error('Event payload too large');
   return result;
 };
-const allowedTypes = new Set<WorldEventType>(['message.created', 'message.recalled', 'reaction.changed', 'poke.created']);
+const allowedTypes = new Set<WorldEventType>(WORLD_EVENT_TYPES);
+const accountId = (value: unknown): value is string => typeof value === 'string' && /^[1-9][0-9]{0,31}$/.test(value);
+const natural = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+const only = (value: JsonObject, keys: string[]) => Object.keys(value).every(key => keys.includes(key));
+const metadataName = (value: unknown): value is string => text(value, 256) && !/(?:https?:\/\/|file:\/\/|data:)/i.test(value);
 
 function validSegment(value: unknown): value is MessageSegment {
   if (!object(value) || typeof value.type !== 'string') return false;
@@ -73,7 +85,22 @@ function validatePayload(type: WorldEventType, payload: unknown): payload is Wor
   if (type === 'message.created') return payload.kind === 'message' && validateMessage(payload.message);
   if (type === 'message.recalled') return payload.kind === 'message_recalled' && text(payload.message_id) && (payload.recalled_by === undefined || text(payload.recalled_by));
   if (type === 'reaction.changed') return payload.kind === 'reaction' && text(payload.message_id) && (payload.emoji_id === undefined || text(payload.emoji_id, 64)) && (payload.emoji_type === undefined || text(payload.emoji_type, 16)) && (payload.action === undefined || payload.action === 'add' || payload.action === 'remove') && (payload.user_id === undefined || text(payload.user_id, 64));
-  return payload.kind === 'poke' && text(payload.user_id, 64);
+  if (type === 'poke.created') return payload.kind === 'poke' && text(payload.user_id, 64);
+  if (type === 'member.joined' || type === 'member.left') return only(payload, ['kind','user_id','sub_type','operator_id']) && accountId(payload.user_id) && (payload.operator_id === undefined || accountId(payload.operator_id)) && (type === 'member.joined' ? payload.kind === 'member_joined' && typeof payload.sub_type === 'string' && ['approve','invite'].includes(payload.sub_type) : payload.kind === 'member_left' && typeof payload.sub_type === 'string' && ['leave','kick','kick_me','disband'].includes(payload.sub_type));
+  if (type === 'group.ban_changed') return only(payload, ['kind','user_id','sub_type','duration','operator_id']) && payload.kind === 'group_ban' && (payload.user_id === '0' || accountId(payload.user_id)) && typeof payload.sub_type === 'string' && ['ban','lift_ban'].includes(payload.sub_type) && natural(payload.duration) && (payload.operator_id === undefined || accountId(payload.operator_id));
+  if (type === 'file.uploaded') return only(payload, ['kind','user_id','name','size']) && payload.kind === 'file_uploaded' && accountId(payload.user_id) && metadataName(payload.name) && natural(payload.size);
+  if (type === 'group.name_changed') return only(payload, ['kind','name','user_id']) && payload.kind === 'group_name' && metadataName(payload.name) && (payload.user_id === undefined || accountId(payload.user_id));
+  return false;
+}
+function subjectFor(input: WorldEventInput, groupId: string): {kind: string; id: string} {
+  const payload = input.payload;
+  switch (payload.kind) {
+    case 'message': return {kind:'message',id:payload.message.messageId};
+    case 'message_recalled': case 'reaction': return {kind:'message',id:payload.message_id};
+    case 'poke': case 'member_joined': case 'member_left': return {kind:'member',id:payload.user_id};
+    case 'group_ban': return payload.user_id === '0' ? {kind:'group',id:groupId} : {kind:'member',id:payload.user_id};
+    case 'file_uploaded': case 'group_name': return {kind:'group',id:groupId};
+  }
 }
 function eventFrom(row: StoredRow): WorldEvent {
   const event: WorldEvent = { eventId: row.event_id, sequence: row.sequence, type: row.type, groupId: row.group_id, observedAt: row.observed_at, payload: JSON.parse(row.payload) as WorldEventPayload, provenance: { source: row.source, verified: row.verified === 1 } };
@@ -142,8 +169,13 @@ export class WorldEventStore {
     if (!text(input.provenance.source, 16) || typeof input.provenance.verified !== 'boolean' || !finiteTime(input.observedAt) || (input.occurredAt !== undefined && !finiteTime(input.occurredAt)) || (input.actorId !== undefined && !text(input.actorId)) || (input.subject !== undefined && (!object(input.subject) || !text(input.subject.kind, 64) || !text(input.subject.id)))) throw new Error('Invalid world event');
     const eventId = input.eventId ?? `we_${randomUUID().replaceAll('-', '')}`; if (!text(eventId)) throw new Error('Invalid event id');
     const dedup = input.dedupKey ?? (input.type === 'message.created' ? `message:${(input.payload as MessageCreatedPayload).message.messageId}` : undefined); if (dedup !== undefined && !text(dedup)) throw new Error('Invalid dedup key');
-    const subject = input.type === 'message.created' ? { kind: 'message', id: (input.payload as MessageCreatedPayload).message.messageId } : input.type === 'poke.created' ? { kind: 'member', id: (input.payload as PokeCreatedPayload).user_id } : { kind: 'message', id: (input.payload as MessageRecalledPayload | ReactionChangedPayload).message_id };
+    const subject = subjectFor(input, this.groupId);
     if (input.subject && (input.subject.kind !== subject.kind || input.subject.id !== subject.id)) throw new Error('Invalid event subject');
+    if (['member.joined','member.left','group.ban_changed','file.uploaded','group.name_changed'].includes(input.type)) {
+      const p = input.payload;
+      const expectedActor = p.kind === 'file_uploaded' ? p.user_id : p.kind === 'member_joined' || p.kind === 'member_left' || p.kind === 'group_ban' ? p.operator_id : undefined;
+      if (input.actorId !== undefined && input.actorId !== expectedActor) throw new Error('Invalid event actor');
+    }
     const actorId = input.actorId ?? (input.type === 'message.created' ? (input.payload as MessageCreatedPayload).message.userId : undefined);
     const payload = safeJson(input.payload); this.db.exec('BEGIN IMMEDIATE');
     try {

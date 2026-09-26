@@ -32,6 +32,13 @@ function messageId(value: unknown): string | undefined {
   if (typeof value === 'number') { if (!Number.isSafeInteger(value) || Object.is(value, -0)) return; value = String(value); }
   return typeof value === 'string' && /^(0|-?[1-9][0-9]{0,31})$/.test(value) ? value : undefined;
 }
+function metadataName(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value) return;
+  // Display labels are untrusted metadata, never transport URLs or capabilities.
+  const name = value.replace(/(?:https?:\/\/|file:\/\/|data:)\S*/gi, '[redacted]').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 256).replace(/[\uD800-\uDBFF]$/, '');
+  return name || undefined;
+}
+const natural = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 function timestamp(value: unknown): value is number { return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 9_999_999_999; }
 function eventIdentity(event: Record<string, unknown>, groupId: string, type: string): { dedupKey?: string } {
   // Without a provider event identity, identical pokes/reactions in one second can be
@@ -101,6 +108,39 @@ export function normalizeOneBotEvent(event: unknown, selfId: string, source: Eve
     const actor = id(event.user_id), target = id(event.target_id); if (!actor || !target) return;
     return { ...base, type: 'poke.created', actorId: actor, subject: { kind: 'member', id: target },
       payload: { kind: 'poke', user_id: target }, ...eventIdentity(event, groupId, 'poke.created') };
+  }
+  // Fields mirror NapCat's OB11Group{Increase,Decrease,Ban,UploadNotice,Name}Event
+  // classes. No synthetic notice identity or inferred operator/action is introduced.
+  if (event.notice_type === 'group_increase' || event.notice_type === 'group_decrease' || event.notice_type === 'group_ban') {
+    const operator = id(event.operator_id);
+    if (event.operator_id !== undefined && event.operator_id !== 0 && event.operator_id !== '0' && !operator) return;
+    const operatorFields = operator ? {operator_id:operator} : {};
+    const actorFields = operator ? {actorId:operator} : {};
+    if (event.notice_type === 'group_ban') {
+      const target = event.user_id === 0 || event.user_id === '0' ? '0' : id(event.user_id);
+      if (!target || (event.sub_type !== 'ban' && event.sub_type !== 'lift_ban') || !natural(event.duration)) return;
+      return {...base,type:'group.ban_changed',...actorFields,subject:{kind:target === '0' ? 'group' : 'member',id:target === '0' ? groupId : target},payload:{kind:'group_ban',user_id:target,sub_type:event.sub_type,duration:event.duration,...operatorFields},...eventIdentity(event,groupId,'group.ban_changed')};
+    }
+    const target = id(event.user_id); if (!target) return;
+    if (event.notice_type === 'group_increase') {
+      if (event.sub_type !== 'approve' && event.sub_type !== 'invite') return;
+      return {...base,type:'member.joined',...actorFields,subject:{kind:'member',id:target},payload:{kind:'member_joined',user_id:target,sub_type:event.sub_type,...operatorFields},...eventIdentity(event,groupId,'member.joined')};
+    }
+    if (event.sub_type !== 'leave' && event.sub_type !== 'kick' && event.sub_type !== 'kick_me' && event.sub_type !== 'disband') return;
+    return {...base,type:'member.left',...actorFields,subject:{kind:'member',id:target},payload:{kind:'member_left',user_id:target,sub_type:event.sub_type,...operatorFields},...eventIdentity(event,groupId,'member.left')};
+  }
+  if (event.notice_type === 'group_upload') {
+    const uploader = id(event.user_id), file = event.file;
+    if (!uploader || !object(file) || !natural(file.size)) return;
+    const name = metadataName(file.name); if (!name) return;
+    // Intentionally discard file.id, busid, URL, paths and arbitrary transport fields.
+    return {...base,type:'file.uploaded',actorId:uploader,subject:{kind:'group',id:groupId},payload:{kind:'file_uploaded',user_id:uploader,name,size:file.size},...eventIdentity(event,groupId,'file.uploaded')};
+  }
+  if (event.notice_type === 'notify' && event.sub_type === 'group_name') {
+    const name = metadataName(event.name_new), user = id(event.user_id);
+    if (!name || (event.user_id !== undefined && event.user_id !== 0 && event.user_id !== '0' && !user)) return;
+    // user_id is retained as a reported field, not guessed to be an administrator/operator.
+    return {...base,type:'group.name_changed',subject:{kind:'group',id:groupId},payload:{kind:'group_name',name,...(user ? {user_id:user} : {})},...eventIdentity(event,groupId,'group.name_changed')};
   }
   return undefined;
 }

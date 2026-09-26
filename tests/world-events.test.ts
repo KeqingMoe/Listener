@@ -52,6 +52,39 @@ test('observation acknowledgements are monotonic and group scoped', () => {
   const [store, root] = open(); try { store.appendMessage(entry('1')); store.appendMessage(entry('2')); assert.equal(store.getState('ai').unreadEvents, 2); assert.equal(store.ack('ai', 1), 1); assert.equal(store.ack('ai', 0), 1); assert.equal(store.getState('ai').unreadEvents, 1); assert.throws(() => store.ack('ai', 99), /ahead/); } finally { close(store, root); }
 });
 
+const metadataEvents:WorldEventInput[] = [
+ {type:'member.joined',payload:{kind:'member_joined',user_id:'100',operator_id:'200',sub_type:'approve'},actorId:'200',observedAt:1700000000,provenance:{source:'onebot',verified:false}},
+ {type:'member.left',payload:{kind:'member_left',user_id:'100',operator_id:'200',sub_type:'kick'},actorId:'200',observedAt:1700000001,provenance:{source:'onebot',verified:false}},
+ {type:'group.ban_changed',payload:{kind:'group_ban',user_id:'0',operator_id:'200',sub_type:'ban',duration:0},actorId:'200',observedAt:1700000002,provenance:{source:'onebot',verified:false}},
+ {type:'file.uploaded',payload:{kind:'file_uploaded',user_id:'100',name:'report.txt',size:50},actorId:'100',observedAt:1700000003,provenance:{source:'onebot',verified:false}},
+ {type:'group.name_changed',payload:{kind:'group_name',name:'new group',user_id:'100'},observedAt:1700000004,provenance:{source:'onebot',verified:false}},
+];
+test('group metadata events persist, reopen, filter and account for unread without affecting messages',()=>{
+ const [store,root]=open();
+ try{
+  metadataEvents.forEach(e=>store.append(e));assert.deepEqual(store.readEvents({limit:20}).events.map(e=>e.type),metadataEvents.map(e=>e.type));assert.equal(store.readMessages({limit:20}).returned,0);
+  for(const e of metadataEvents){assert.equal(store.getState('metadata').unreadByType[e.type],1);assert.equal(store.readEvents({limit:10,types:[e.type]}).returned,1);}
+  assert.equal(store.readEvents({limit:10,actorId:'200'}).returned,3);assert.equal(store.getState('metadata').unreadEvents,5);store.ack('metadata',3);assert.equal(store.getState('metadata').unreadEvents,2);
+  const page=store.readEvents({limit:2});store.append({...metadataEvents[0]!,observedAt:1700000005});assert.deepEqual(store.readEvents({limit:10,after:page.lastSequence,highWater:page.highWater}).events.map(e=>e.sequence),[3,4,5]);
+  store.close();const reopened=new WorldEventStore({path:join(root,'events.sqlite'),groupId:'123',retentionDays:3650});try{assert.equal(reopened.readEvents({limit:10}).returned,6);assert.deepEqual(reopened.readEvents({limit:1,types:['group.ban_changed']}).events[0]!.subject,{kind:'group',id:'123'});}finally{reopened.close();}
+ }finally{close(store,root);}
+});
+test('metadata payload validators reject raw credentials, malformed values, spoofed subject and actor',()=>{
+ const [store,root]=open();
+ try{
+  for(const event of metadataEvents){for(const key of ['url','file_id','id','busid','raw','message'])assert.throws(()=>store.append({...event,payload:{...event.payload,[key]:'PRIVATE'} as any}),/Invalid world event/);assert.throws(()=>store.append({...event,subject:{kind:'group',id:'456'}}),/subject/);assert.throws(()=>store.append({...event,actorId:'999'}),/actor/);assert.throws(()=>store.append({...event,groupId:'456'}),/Invalid world event/);}
+  const badPayloads=[{kind:'member_joined',user_id:'0',sub_type:'approve'},{kind:'member_left',user_id:'100',sub_type:['kick']},{kind:'group_ban',user_id:'0',sub_type:'ban',duration:-1},{kind:'file_uploaded',user_id:'100',name:'http://secret.invalid/key',size:1},{kind:'file_uploaded',user_id:'100',name:'x'.repeat(257),size:1},{kind:'file_uploaded',user_id:'100',name:'ok',size:Number.MAX_SAFE_INTEGER+1},{kind:'group_name',name:'x',user_id:'bad'}];
+  for(const payload of badPayloads){const event=metadataEvents.find(e=>e.payload.kind===payload.kind)!;assert.throws(()=>store.append({...event,payload} as WorldEventInput),/Invalid world event/);}
+  assert.equal(store.getState().latestSequence,0);
+ }finally{close(store,root);}
+});
+test('new metadata retention keeps immutable deduplicated facts and monotonic sequences',()=>{
+ const [store,root]=open();try{
+  const old=store.append({...metadataEvents[3]!,dedupKey:'upload-one'});const duplicate=store.append({...metadataEvents[3]!,payload:{kind:'file_uploaded',user_id:'100',name:'changed.txt',size:999},dedupKey:'upload-one'});assert.deepEqual(duplicate,old);
+  const current=store.append({...metadataEvents[4]!,observedAt:Date.now()/1000});assert.equal(store.prune(),1);assert.deepEqual(store.readEvents({limit:10}).events.map(e=>e.eventId),[current.eventId]);assert.ok(store.append({...metadataEvents[0]!,observedAt:Date.now()/1000}).sequence>current.sequence);
+ }finally{close(store,root);}
+});
+
 test('prunes expired events explicitly without changing append semantics', () => {
   const [store, root] = open(); try { const old = Date.now() / 1000 - 31 * 86400; store.appendMessage(entry('old', old), { source: 'migration', observedAt: old, verified: false }); store.appendMessage(entry('new'), { source: 'onebot' }); assert.equal(store.prune(Date.now() / 1000), 1); assert.deepEqual(store.readEvents({ limit: 10 }).events.map(e => e.payload), [(store.readEvents({ limit: 10 }).events[0]!.payload)]); assert.equal(store.findMessage('old'), undefined); } finally { close(store, root); }
 });

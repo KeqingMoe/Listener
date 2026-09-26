@@ -29,10 +29,12 @@ export class GroupRouter {
     for(const handler of this.handlers.values())handler.setConnected(value);
   }
   async receive(event: unknown,selfId: string): Promise<void> {
-    if(!this.connected||this.stopped||!event||typeof event!=='object')return;
+    if(!this.connected||this.stopped||!id(selfId)||!event||typeof event!=='object'||Array.isArray(event)||Object.getPrototypeOf(event)!==Object.prototype)return;
     const raw=event as Record<string,unknown>;
+    for(const key of ['post_type','message_type','notice_type','sub_type','group_id','self_id']){const d=Object.getOwnPropertyDescriptor(raw,key);if(d&&!Object.hasOwn(d,'value'))return;}
+    if(raw.self_id!==undefined&&id(raw.self_id)!==selfId)return;
     const chat=raw.post_type==='message'&&raw.message_type==='group';
-    const notice=raw.post_type==='notice'&&(['group_msg_emoji_like','group_recall'].includes(String(raw.notice_type))||(raw.notice_type==='notify'&&raw.sub_type==='poke'));
+    const notice=raw.post_type==='notice'&&(typeof raw.notice_type==='string'&&['group_msg_emoji_like','group_recall','group_increase','group_decrease','group_ban','group_upload'].includes(raw.notice_type)||(raw.notice_type==='notify'&&typeof raw.sub_type==='string'&&['poke','group_name'].includes(raw.sub_type)));
     if(!chat&&!notice)return;
     const groupId=id(raw.group_id);
     if(!groupId)return;

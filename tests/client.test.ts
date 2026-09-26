@@ -94,7 +94,7 @@ test('invalid login identities reconnect without announcing ready until valid', 
   } finally { await f.close(); }
 });
 
-test('real WebSocket forwards only reaction notices on their dedicated event', { timeout: 3000 }, async () => {
+test('real WebSocket keeps reaction notices separate from chat and unknown events', { timeout: 3000 }, async () => {
   const f = await fixture();
   const notices: unknown[] = [], messages: unknown[] = [];
   f.client.on('notice', packet => notices.push(packet));
@@ -102,7 +102,7 @@ test('real WebSocket forwards only reaction notices on their dedicated event', {
   try {
     const reaction = { post_type: 'notice', notice_type: 'group_msg_emoji_like', group_id: '10', message_id: '20', likes: [{ emoji_id: '76', count: 3 }], is_add: true };
     for (const packet of [
-      { post_type: 'notice', notice_type: 'group_increase' },
+      { post_type: 'notice', notice_type: 'unrecognized_group_notice' },
       { post_type: 'notice', notice_type: 'friend_msg_emoji_like' },
       { post_type: 'meta_event', meta_event_type: 'heartbeat' },
       { ...reaction, echo: 'unknown-response' },
@@ -115,6 +115,17 @@ test('real WebSocket forwards only reaction notices on their dedicated event', {
     assert.deepEqual(notices, [reaction]);
     assert.deepEqual(messages, [chat], 'reaction notices never masquerade as chat messages');
   } finally { await f.close(); }
+});
+
+test('real WebSocket forwards all supported group metadata notices but no invented announcements', { timeout: 3000 }, async () => {
+ const f=await fixture(),notices:unknown[]=[],messages:unknown[]=[];f.client.on('notice',event=>notices.push(event));f.client.on('message',event=>messages.push(event));
+ try{
+  const base={post_type:'notice',group_id:'10',self_id:'1',user_id:'100'};
+  const expected=[{...base,notice_type:'group_increase',sub_type:'approve',operator_id:'200'},{...base,notice_type:'group_decrease',sub_type:'kick',operator_id:'200'},{...base,notice_type:'group_ban',sub_type:'ban',duration:60,operator_id:'200'},{...base,notice_type:'group_upload',file:{id:'private-transport-id',name:'report.txt',size:50,busid:102}},{...base,notice_type:'notify',sub_type:'group_name',name_new:'new group'},{...base,notice_type:'group_recall',message_id:'20',operator_id:'200'},{...base,notice_type:'notify',sub_type:'poke',target_id:'1'}];
+  for(const packet of [...expected,{...base,notice_type:'notify',sub_type:'group_announcement'},{...base,notice_type:'group_notice'},{...base,notice_type:'friend_add'}])f.socket.send(JSON.stringify(packet));
+  const barrier=once(f.client,'message');f.socket.send(JSON.stringify({post_type:'message',message_type:'group',group_id:'10',message_id:'21'}));await barrier;
+  assert.deepEqual(notices,expected);assert.equal(messages.length,1);
+ }finally{await f.close();}
 });
 
 test('missing pong triggers reconnect', { timeout: 3000 }, async () => {
