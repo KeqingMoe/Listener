@@ -29,7 +29,8 @@ test('actual HTTP tool semantic errors reach Listener and consume the common wak
  const results=requests[1].messages.filter((m:any)=>m.role==='tool').map((m:any)=>({id:m.tool_call_id,...JSON.parse(m.content)}));
  assert.deepEqual(results.map((r:any)=>r.id),['invalid-json','unknown','disabled']);assert.ok(results.every((r:any)=>r.status==='error'));
  assert.equal(results[0].error,'invalid_arguments');assert.equal(results[1].error,'invalid_arguments');assert.equal(results[2].error,'tool_disabled');
- const budget=JSON.parse(requests[1].messages[0].content.split('\n').at(-1)).wake_budget;assert.equal(budget.used_tool_calls,3);assert.equal(budget.remaining_tool_calls,1);
+ assert.deepEqual(requests[1].messages.slice(0,requests[0].messages.length),requests[0].messages);
+ const budget=results.at(-1).wake_budget;assert.equal(budget.used_tool_calls,3);assert.equal(budget.remaining_tool_calls,1);
 });
 test('actual HTTP semantic-error calls exhaust budget without an extra model request',async()=>{
  const {requests,native}=await run(2);assert.equal(requests.length,1);assert.deepEqual(native,[]);

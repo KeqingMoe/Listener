@@ -9,10 +9,12 @@ import { SQLiteMemory } from './memory.js';
 import { resolveGroupId, OWNER_ID } from './contracts.js';
 import { GroupRouter } from './group-router.js';
 import { TurnScheduler } from './turn-scheduler.js';
-import { configureLogging, log } from './logger.js';
+import { configureLogging, getLogContext, log } from './logger.js';
+import { TelemetryStore } from './telemetry.js';
 import { FACE_CATALOG, EXAMPLE_FACE_CATALOG } from './face-catalog.js';
 import { getReactionCatalog } from './reaction-catalog.js';
 let logger: ReturnType<typeof configureLogging> | undefined;
+let telemetry: TelemetryStore | undefined;
 
 async function main(): Promise<void> {
   const {onebot: config, listener: ai, logging, groups, maxConcurrentTurns} = loadAppConfig();
@@ -28,7 +30,19 @@ async function main(): Promise<void> {
      config.adminUsers.size!==1||!config.adminUsers.has(OWNER_ID))throw new Error('Group/owner configuration mismatch');
   const client = new OneBotClient(config);
   const scheduler=new TurnScheduler(maxConcurrentTurns);
-  const model=ai.enabled?new OpenAIModel({baseUrl:ai.baseUrl,apiKey:ai.apiKey,model:ai.model,timeoutMs:ai.timeoutMs,maxTokens:ai.maxTokens}):undefined;
+  if(ai.enabled){
+    process.umask(0o077);
+    mkdirSync(dirname(ai.memoryPath),{recursive:true,mode:0o700});
+    telemetry=new TelemetryStore(`${ai.memoryPath}.telemetry.sqlite`);
+  }
+  const model=ai.enabled?new OpenAIModel({baseUrl:ai.baseUrl,apiKey:ai.apiKey,model:ai.model,timeoutMs:ai.timeoutMs,maxTokens:ai.maxTokens,onRequest:record=>{
+    const trace=getLogContext();
+    try { telemetry?.record({...record,
+      ...(typeof trace.group_id==='string'?{groupId:trace.group_id}:{}),
+      ...(typeof trace.turn_id==='string'?{turnId:trace.turn_id}:{}),
+      ...(typeof trace.phase==='string'?{phase:trace.phase}:{}),
+    }); } catch { log('warn','model.telemetry_failed',{reason:'storage_failed'}); }
+  }}):undefined;
   const entries:Array<readonly [string,Listener]>=[];
   const memories:SQLiteMemory[]=[];
   let router:GroupRouter;
@@ -87,6 +101,7 @@ async function main(): Promise<void> {
         else log('info','app.stopped');
       })
       .finally(async()=>{
+        try { telemetry?.close(); } catch { log('warn','model.telemetry_failed',{reason:'close_failed'}); }
         await logger?.close();
         // A blocked stdout pipe may keep a native write alive after bounded
         // logger shutdown. Only this executable owns process termination.
@@ -98,6 +113,7 @@ async function main(): Promise<void> {
   client.start();
 }
 void main().catch(async (error: unknown) => {
+  try { telemetry?.close(); } catch { /* Preserve the startup failure. */ }
   if (logger) { log('error','app.startup_failed',{reason:'startup_failed'});await logger.close(); }
   else console.error(error instanceof ConfigError ? error.message : 'Listener startup failed; details suppressed to protect secrets');
   process.exitCode = 1;

@@ -5,6 +5,18 @@ import { test } from 'node:test';
 import { OpenAIModel } from '../src/model.js';
 import type { ToolDefinition } from '../src/contracts.js';
 
+test('request observer sees charged truncated usage once and cannot mask model errors',async()=>{
+  const fixture=await server((_req,res)=>res.end(JSON.stringify({...reply({role:'assistant',content:'secret-body'},'length'),usage:{prompt_tokens:100,completion_tokens:20,total_tokens:120,prompt_cache_hit_tokens:60}})));
+  const records:import('../src/model-usage.js').ModelRequestRecord[]=[];
+  try {const model=new OpenAIModel({baseUrl:fixture.url,apiKey:secret,model:'test-model',timeoutMs:1000,maxTokens:100,onRequest:r=>{records.push(r);throw Error('observer secret');}});
+    await assert.rejects(model.complete([{role:'user',content:'secret-prompt'}]),(e:unknown)=>(e as any).code==='truncated_response');
+    assert.equal(records.length,1);assert.equal(records[0]!.usage.cachedInputTokens,60);assert.equal(records[0]!.errorCode,'truncated_response');assert.ok(!JSON.stringify(records).includes('secret'));
+  }finally{stop(fixture.server);}
+});
+test('observer throwing does not alter successful completion',async()=>{
+  const fixture=await server((_req,res)=>res.end(JSON.stringify(reply({role:'assistant',content:'ok'}))));let calls=0;
+  try{const model=new OpenAIModel({baseUrl:fixture.url,apiKey:secret,model:'test-model',timeoutMs:1000,maxTokens:100,onRequest:r=>{calls++;assert.equal(r.status,'success');assert.equal(r.usage.inputTokens,null);throw Error();}});assert.equal((await model.complete([])).content,'ok');assert.equal(calls,1);}finally{stop(fixture.server);}
+});
 const secret = 'secret-test-token-never-log';
 const tool: ToolDefinition = { type: 'function', function: { name: 'lookup', description: 'lookup', parameters: { type: 'object' } } };
 const reply = (message: unknown, finish_reason = 'stop') => ({ choices: [{ message, finish_reason }] });

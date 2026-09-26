@@ -487,23 +487,23 @@ export class Listener {
       const displayMemory:Memory={...workingMemory,context:()=>projectMessageContext(workingMemory.context())};
       const payload=observations?annotateReactionBatch(batch.payload(),lookupReaction):batch.payload();
       const currentRequest=single?((payload.current_batch as JsonObject).messages as JsonObject[]).find(entry=>entry.messageId===single.entry.messageId):undefined;
+      const wakeBudget=()=>({max_tool_calls:toolCallsLimit,used_tool_calls:toolCalls,remaining_tool_calls:toolCallsLimit-toolCalls,remaining_ms:Math.max(0,wakeTimeoutMs-(Date.now()-started))});
       const messages: ChatMessage[] = [
         {role:'system',content:buildSystemPrompt({...this.config,groupId:this.groupId})},
-        {role:'user',content:JSON.stringify({untrusted_group_context:observations?annotateReactionContext(displayMemory,lookupReaction):displayMemory.context(),...payload,...(currentRequest?{current_request:currentRequest}:{}),trusted_actor_id:actorIds.size===1?trigger.context.actorId:null,moderation_capabilities:moderationCapabilities,...(attentionContext?{attention_state:attentionContext}:{}),...(reactionContext?{reaction_state:reactionContext}:{})})},
+        {role:'user',content:JSON.stringify({untrusted_group_context:observations?annotateReactionContext(displayMemory,lookupReaction):displayMemory.context(),...payload,...(currentRequest?{current_request:currentRequest}:{}),trusted_actor_id:actorIds.size===1?trigger.context.actorId:null,moderation_capabilities:moderationCapabilities,...(attentionContext?{attention_state:attentionContext}:{}),...(reactionContext?{reaction_state:reactionContext}:{}),wake_budget:wakeBudget()})},
       ];
       const tools = buildToolDefinitions(this.config);
       const managementTools=new Set(buildModerationTools(moderationPolicy).map(tool=>tool.function.name));
       const managementResults=new Map<string,JsonObject>();
       const managementTargets=new Map<string,string>();
       const managementUnknownTargets=new Set<string>();
-      const baseSystem=String(messages[0]!.content);
+      const appendToolResult=(call:{id:string},result:JsonObject)=>messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify({...result,wake_budget:wakeBudget()})});
       const imageState = imageTools?.createTurn();
       const forwardState = forwardTools?.createTurn();
       const reactionState=reactionTools?.createTurn();
       const reactionUserState=reactionUsers?.createTurn();
       for (let round = 0; valid(); round++) {
         if(toolCalls>=toolCallsLimit){outcome='tool_budget_exhausted';break;}
-        messages[0]!.content=baseSystem+'\n'+JSON.stringify({wake_budget:{max_tool_calls:toolCallsLimit,used_tool_calls:toolCalls,remaining_tool_calls:toolCallsLimit-toolCalls,remaining_ms:Math.max(0,wakeTimeoutMs-(Date.now()-started))}});
         modelRounds++;
         const response = await withLogContext({round:round+1,phase:'conversation'},()=>this.model!.complete(messages, tools, controller.signal));
         if (!valid()) break;
@@ -528,24 +528,24 @@ export class Listener {
           try { args = JSON.parse(call.function.arguments); } catch { args = undefined; }
           if(terminal){
             const done={status:'error',error:'turn_finished'};traceResult(done);
-            messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(done)});continue;
+            appendToolResult(call,done);continue;
           }
           if(call.function.name==='finish'&&object(args)&&keys(args,[])){
-            outcome=sentMessages?'replied':'silent';finished=true;terminal=true;traceResult({status:'ok'});messages.push({role:'tool',tool_call_id:call.id,content:'{"status":"ok"}'});break;
+            outcome=sentMessages?'replied':'silent';finished=true;terminal=true;traceResult({status:'ok'});appendToolResult(call,{status:'ok'});break;
           }
           if(managementNeedsReview&&call.function.name==='send_message'){
             const blocked={status:'error',error:'management_result_review_required'};traceResult(blocked);
-            messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(blocked)});continue;
+            appendToolResult(call,blocked);continue;
           }
           if ((viewingImages || readingForward) && ['send_message','finish','manage_attention','react_message',...MODERATION_TOOLS.map(tool=>tool.function.name)].includes(call.function.name)) {
             traceResult({status:'error',error:viewingImages?'image_first':'forward_first'});
-            messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify({status:'error',error:viewingImages?'先接收本轮图片内容，再在下一轮决定回复或操作。':'先接收本轮转发读取结果，再在下一轮决定回复或操作。'})});
+            appendToolResult(call,{status:'error',error:viewingImages?'先接收本轮图片内容，再在下一轮决定回复或操作。':'先接收本轮转发读取结果，再在下一轮决定回复或操作。'});
             continue;
           }
           if(call.function.name==='get_reaction_users'){
             result=reactionUsers&&reactionUserState?await reactionUsers.read(args,trigger.context,reactionUserState,controller.signal):{status:'error',error:'tool_disabled'};
             if(!valid())return;
-            traceResult(result);messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(result)});
+            traceResult(result);appendToolResult(call,result);
             continue;
           }
           if(call.function.name==='react_message'){
@@ -558,14 +558,14 @@ export class Listener {
               if(result.status!=='ok'&&reactionErrors.length<32)reactionErrors.push(typeof result.error==='string'?result.error:'reaction_failed');
             }
             if(generation===this.generation&&this.connected&&!this.stopped)this.recordReaction(result);
-            traceResult(result);messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(result)});
+            traceResult(result);appendToolResult(call,result);
             if(!valid())return;
             continue;
           }
           if(call.function.name==='manage_attention'){
             result=this.attention&&attentionTransaction?this.attention.stage(attentionTransaction,args,Date.now()):{status:'error',error:'tool_disabled'};
             if(result.status==='error'&&attentionRejections.length<32)attentionRejections.push(typeof result.error==='string'?result.error:'invalid_arguments');
-            traceResult(result);messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(result)});continue;
+            traceResult(result);appendToolResult(call,result);continue;
           }
           if (call.function.name === 'read_forward') {
             result = forwardTools && forwardState && this.config.forward?.enabled
@@ -573,7 +573,7 @@ export class Listener {
               : {status:'error',error:'forward_disabled'};
             if (!valid()) return;
             traceResult(result);
-            messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(result)});
+            appendToolResult(call,result);
             continue;
           }
           if (call.function.name === 'view_images') {
@@ -584,13 +584,13 @@ export class Listener {
               result = viewed.result; imageContent.push(...viewed.content);
             }
             traceResult(result);
-            messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(result)});
+            appendToolResult(call,result);
             continue;
           }
           if (call.function.name === 'send_message') {
             let prepared: PreparedMessage;
             try { prepared = await groupTools.prepareMessage(args,trigger.context); }
-            catch { traceResult({status:'error',error:'invalid_arguments'}); messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify({status:'error',error:'invalid_arguments'})}); continue; }
+            catch { traceResult({status:'error',error:'invalid_arguments'}); appendToolResult(call,{status:'error',error:'invalid_arguments'}); continue; }
             if (!valid()) return;
             const key=JSON.stringify(prepared);
             const cached=sendResults.get(key);
@@ -610,7 +610,7 @@ export class Listener {
               if(result.status==='unknown')sendResults.set(key,structuredClone(result));
             }
             if(result.status==='unknown')managementNeedsReview=true;
-            traceResult(result);messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(result)});
+            traceResult(result);appendToolResult(call,result);
             continue;
           } else if (GROUP_TOOLS.some(t=>t.function.name===call.function.name) && groupTools) {
             result = await groupTools.execute(call.function.name,args,trigger.context);
@@ -662,7 +662,7 @@ export class Listener {
             }
           }
           traceResult(result);
-          messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(result)});
+          appendToolResult(call,result);
         }
         if(terminal)return;
         // Chat Completions requires every tool result before the next user image message.

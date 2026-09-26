@@ -87,7 +87,7 @@ test('disabled forwards omit tool schema and forged calls cause no API calls', a
   try {
     await s.bot.receive(event(), self); await until(() => s.requests.length === 2);
     assert.ok(s.schemas.every(names => !names.includes('read_forward'))); assert.equal(s.apiCalls.length, 0);
-    assert.deepEqual(toolResult(s.requests[1]!), { status: 'error', error: 'forward_disabled' });
+    const {wake_budget,...result}=toolResult(s.requests[1]!);assert.deepEqual(result,{status:'error',error:'forward_disabled'});assert.equal(wake_budget.used_tool_calls,1);assert.equal(wake_budget.remaining_tool_calls,95);
   } finally { await s.bot.stop(); }
 });
 

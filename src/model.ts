@@ -1,5 +1,8 @@
 import type { ChatMessage, Completion, Model, ToolCall, ToolDefinition } from './contracts.js';
 import { log } from './logger.js';
+import { randomUUID } from 'node:crypto';
+import { parseChatUsage, type ModelRequestRecord, type ModelUsage } from './model-usage.js';
+export type { ModelRequestRecord, ModelUsage } from './model-usage.js';
 
 export type ModelErrorCode = 'cancelled' | 'timeout' | 'http_error' | 'network_error' | 'response_too_large' | 'invalid_response' | 'truncated_response';
 export class ModelError extends Error {
@@ -9,19 +12,15 @@ export class ModelError extends Error {
   }
 }
 const KNOWN_TOOLS = new Set(['send_message', 'finish', 'get_group_members', 'get_member_info', 'read_message', 'view_images', 'read_forward', 'mute_member', 'unmute_member', 'recall_message', 'set_member_card', 'manage_attention', 'react_message', 'get_reaction_users']);
-function usageFields(value: unknown): Record<string, number> {
-  const fields: Record<string, number> = {};
-  if (object(value) && object(value.usage)) {
-    for (const key of ['prompt_tokens', 'completion_tokens', 'total_tokens']) {
-      const count = value.usage[key];
-      if (typeof count === 'number' && Number.isSafeInteger(count) && count >= 0) fields[key] = count;
-    }
-  }
+function usageLogFields(u: ModelUsage): Record<string,number> {
+  const fields:Record<string,number>={};
+  for(const [field,key] of [['input_tokens','inputTokens'],['output_tokens','outputTokens'],['total_tokens','totalTokens'],['cached_input_tokens','cachedInputTokens'],['reasoning_tokens','reasoningTokens'],['prompt_tokens','inputTokens'],['completion_tokens','outputTokens']] as const){const n=u[key];if(n!=null)fields[field]=n;}
+  if(u.cachedInputTokens!=null&&u.inputTokens!=null&&u.inputTokens>0)fields.cache_hit_rate=u.cachedInputTokens/u.inputTokens;
   return fields;
 }
-
 export interface OpenAIModelOptions {
   baseUrl: string; apiKey: string; model: string; timeoutMs: number; maxTokens: number;
+  onRequest?: (record: ModelRequestRecord) => void;
 }
 const MAX_RESPONSE_BYTES = 256 * 1024;
 const MAX_ARGUMENT_BYTES = 16 * 1024;
@@ -75,6 +74,10 @@ export class OpenAIModel implements Model {
 
   async complete(messages: ChatMessage[], tools: ToolDefinition[] = [], signal?: AbortSignal): Promise<Completion> {
     const started = performance.now();
+    const startedAt = Date.now();
+    const requestId = randomUUID();
+    let requestUsage: ModelUsage = { inputTokens:null, outputTokens:null, totalTokens:null, cachedInputTokens:null, reasoningTokens:null };
+    let requestStatus: ModelRequestRecord['status'] = 'error';
     const toolNames = tools.map(tool => tool.function.name).filter(name => KNOWN_TOOLS.has(name));
     log('info', 'model.start', { tools: toolNames });
     const controller = new AbortController();
@@ -110,20 +113,29 @@ export class OpenAIModel implements Model {
       } finally { reader.releaseLock(); }
       failure = 'invalid_response';
       const value: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)));
+      requestUsage = parseChatUsage(object(value) ? value.usage : undefined);
       if (object(value) && Array.isArray(value.choices) && value.choices.some((choice: unknown) => object(choice) && choice.finish_reason === 'length')) {
         failure = 'truncated_response'; throw Error();
       }
       const result = validate(value);
       if (controller.signal.aborted) throw Error();
-      log('info', 'model.complete', { duration_ms: performance.now() - started, tools: toolNames, outcome: 'success', ...usageFields(value) });
+      requestStatus = 'success';
+      log('info', 'model.complete', { duration_ms: performance.now() - started, tools: toolNames, outcome: 'success', ...usageLogFields(requestUsage) });
       return result;
     } catch {
       const code = abortReason ?? failure;
-      log(code === 'cancelled' ? 'info' : 'warn', 'model.failed', { duration_ms: performance.now() - started, tools: toolNames, reason: code, ...(httpStatus === undefined ? {} : { http_status: httpStatus }) });
+      log(code === 'cancelled' ? 'info' : 'warn', 'model.failed', { duration_ms: performance.now() - started, tools: toolNames, reason: code, ...usageLogFields(requestUsage), ...(httpStatus === undefined ? {} : { http_status: httpStatus }) });
       throw new ModelError(code, httpStatus);
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener('abort', abort);
+      const code = requestStatus === 'error' ? (abortReason ?? failure) : undefined;
+      const record: ModelRequestRecord = {
+        requestId, startedAt, endedAt: Date.now(), durationMs: Math.max(0, performance.now() - started),
+        transport: 'chat', model: this.options.model, status: requestStatus,
+        ...(code ? { errorCode: code } : {}), ...(httpStatus === undefined ? {} : { httpStatus }), usage: requestUsage,
+      };
+      try { this.options.onRequest?.(record); } catch { /* telemetry observers are non-critical */ }
     }
   }
 }

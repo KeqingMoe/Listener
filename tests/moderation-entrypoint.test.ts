@@ -39,7 +39,7 @@ test('real entrypoint authorizes autonomous direct and owner-confirmed moderatio
   let next:ReturnType<typeof op>;
   if(requests.length===1){assert.equal(group,A);assert.equal(input.current_request.messageId,'101');next=op('mute_member',{user_id:TARGET,seconds:120});}
   else if(requests.length===2){
-   assert.equal(group,A);assert.deepEqual(JSON.parse(body.messages.filter((m:any)=>m.role==='tool').at(-1).content),{status:'executed'});
+   assert.equal(group,A);const {wake_budget,...result}=JSON.parse(body.messages.filter((m:any)=>m.role==='tool').at(-1).content);assert.deepEqual(result,{status:'executed'});assert.equal(wake_budget.used_tool_calls,1);
    assert.deepEqual(mutations().map(c=>c.params),[{group_id:A,user_id:TARGET,duration:120}]);assert.equal(sends.length,0);next=op('finish',{});
   }else{assert.equal(requests.length,3);assert.equal(group,B);assert.equal(input.current_request.messageId,'201');next=op('mute_member',{user_id:TARGET,seconds:120});}
   res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[next,...(group===B?[{...op('finish',{}),id:'finish_B'}]:[])]}}]}));notify();
