@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { request as httpsRequest, type RequestOptions } from 'node:https';
 import type { ClientRequest, IncomingMessage } from 'node:http';
@@ -151,7 +152,11 @@ export interface ImageDownloadDependencies {
   timeoutMs?: number;
 }
 
-export function createImageDownloader(dependencies: ImageDownloadDependencies = {}): ImageDownloader {
+function createSafeImageDownloader<T>(
+  dependencies: ImageDownloadDependencies,
+  validateUrl: (value: string) => URL,
+  decode: (bytes: Buffer, signal?: AbortSignal) => Promise<T>,
+): (url: string, maxBytes: number, signal?: AbortSignal) => Promise<T> {
   const lookup: NonNullable<ImageDownloadDependencies['lookup']> = dependencies.lookup ??
     ((hostname, options) => dnsLookup(hostname, options));
   const request = dependencies.request ?? httpsRequest;
@@ -165,7 +170,7 @@ export function createImageDownloader(dependencies: ImageDownloadDependencies = 
     let url: URL;
     try {
       checkAbort(callerSignal);
-      url = validateImageUrl(value);
+      url = validateUrl(value);
       if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_INPUT_BYTES) {
         throw fail('Invalid image byte limit');
       }
@@ -254,7 +259,7 @@ export function createImageDownloader(dependencies: ImageDownloadDependencies = 
       });
       log('info', 'image.download_complete', { ...metrics(), bytes: bytes.length, input_bytes: bytes.length, outcome: 'success' });
       phase = 'decode'; stageStarted = performance.now();
-      return await prepareImage(bytes, signal);
+      return await decode(bytes, signal);
     } catch {
       log(callerSignal?.aborted && !timedOut ? 'info' : 'warn', 'image.download_failed', { ...metrics(),
         reason: timedOut ? 'timeout' : callerSignal?.aborted ? 'cancelled' : phase === 'dns' ? 'dns_rejected' : phase === 'decode' ? 'decode_failed' : 'transfer_failed' });
@@ -267,5 +272,166 @@ export function createImageDownloader(dependencies: ImageDownloadDependencies = 
   };
 }
 
+export function createImageDownloader(dependencies: ImageDownloadDependencies = {}): ImageDownloader {
+  return createSafeImageDownloader(dependencies, validateImageUrl, prepareImage);
+}
+
+export interface OriginalImage {
+  bytes: Buffer;
+  md5: string;
+  format: 'jpeg' | 'png' | 'gif' | 'webp';
+  /** Encoded dimensions of a single frame; no EXIF rotation or resizing is applied. */
+  width: number;
+  height: number;
+  animated: boolean;
+}
+export type OriginalImageDownloader = (url: string, maxBytes: number, signal?: AbortSignal) => Promise<OriginalImage>;
+
+/** Only for already-authorized native collection URLs, never arbitrary model URLs.
+ * HTTP input is upgraded before DNS/network work. Generic view_images policy is unchanged. */
+export function validateCustomFaceImageUrl(value: string): URL {
+  let url: URL;
+  try {
+    if (typeof value !== 'string' || /[\s\\]/.test(value)) throw fail('Invalid image URL');
+    url = new URL(value);
+  } catch { throw fail('Invalid image URL'); }
+  if (!['http:', 'https:'].includes(url.protocol) || url.port !== '' || url.username || url.password ||
+      url.hash || value.includes('#')) throw fail('Image URL is not allowed');
+  if (url.hostname === 'p.qpic.cn') {
+    // Native collection URL shape verified from fetch_custom_face_detail. The
+    // two numeric fields are not assumed to carry the same identity.
+    if (value.includes('?') || !/^\/qq_expression\/[1-9]\d{0,31}\/[1-9]\d{0,31}_0_0_0_[a-fA-F0-9]{32}_0_0\/0$/.test(url.pathname)) {
+      throw fail('Image URL is not allowed');
+    }
+  } else if (!IMAGE_HOSTS.has(url.hostname)) {
+    if (!['gxh.vip.qq.com', 'i.gtimg.cn'].includes(url.hostname) || url.search) throw fail('Image URL is not allowed');
+    const path = /^\/club\/item\/parcel\/item\/([a-fA-F0-9]{2})\/([a-fA-F0-9]{32})\/raw(?:200|300)\.gif$/.exec(url.pathname);
+    if (!path || path[1]!.toLowerCase() !== path[2]!.slice(0, 2).toLowerCase()) throw fail('Image URL is not allowed');
+  }
+  url.protocol = 'https:';
+  return url;
+}
+
+const MAX_ORIGINAL_FRAMES = 512;
+
+/** Bound GIF logical canvases as well as decoded frame extents: libvips can
+ * report only the image rectangles, ignoring a maliciously oversized canvas. */
+function validateGifStructure(bytes: Buffer): { width: number; height: number; frames: number } {
+  if (bytes.length < 13) throw fail('Image decoding failed');
+  const width = bytes.readUInt16LE(6), height = bytes.readUInt16LE(8);
+  if (!width || !height || width * height > MAX_PIXELS) throw fail('Image decoding failed');
+  let offset = 13, frames = 0;
+  const consume = (length: number) => {
+    if (length > bytes.length - offset) throw fail('Image decoding failed');
+    offset += length;
+  };
+  const blocks = () => {
+    while (true) {
+      if (offset >= bytes.length) throw fail('Image decoding failed');
+      const length = bytes[offset++]!;
+      if (!length) return;
+      consume(length);
+    }
+  };
+  if (bytes[10]! & 0x80) consume(3 * (2 ** ((bytes[10]! & 7) + 1)));
+  while (offset < bytes.length) {
+    const tag = bytes[offset++]!;
+    if (tag === 0x3b) {
+      if (!frames || offset !== bytes.length) throw fail('Image decoding failed');
+      return { width, height, frames };
+    }
+    if (tag === 0x21) { consume(1); blocks(); continue; }
+    if (tag !== 0x2c || bytes.length - offset < 9) throw fail('Image decoding failed');
+    const left = bytes.readUInt16LE(offset), top = bytes.readUInt16LE(offset + 2);
+    const frameWidth = bytes.readUInt16LE(offset + 4), frameHeight = bytes.readUInt16LE(offset + 6);
+    const packed = bytes[offset + 8]!;
+    consume(9);
+    if (!frameWidth || !frameHeight || left + frameWidth > width || top + frameHeight > height ||
+        ++frames > MAX_ORIGINAL_FRAMES || width * height * frames > MAX_PIXELS) throw fail('Image decoding failed');
+    if (packed & 0x80) consume(3 * (2 ** ((packed & 7) + 1)));
+    if (offset >= bytes.length || bytes[offset]! < 2 || bytes[offset]! > 8) throw fail('Image decoding failed');
+    consume(1); blocks();
+  }
+  throw fail('Image decoding failed');
+}
+
+/** libvips does not validate APNG's additional frames. Do not treat it as a fully
+ * validated static PNG and pass its unvalidated animation on to another decoder. */
+function rejectApng(bytes: Buffer): void {
+  if (!bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return;
+  let offset = 8;
+  while (offset + 12 <= bytes.length) {
+    const length = bytes.readUInt32BE(offset);
+    if (length > bytes.length - offset - 12) throw fail('Image decoding failed');
+    const kind = bytes.toString('ascii', offset + 4, offset + 8);
+    if (kind === 'acTL' || kind === 'fcTL' || kind === 'fdAT') throw fail('Image decoding failed');
+    offset += length + 12;
+    if (kind === 'IEND') {
+      if (offset !== bytes.length) throw fail('Image decoding failed');
+      return;
+    }
+  }
+  throw fail('Image decoding failed');
+}
+
+/** Validate all frames, but return a private copy of the exact original bytes.
+ * Decoded pixels are temporary validation data, never the returned/sendable image. */
+export async function validateOriginalImage(input: Buffer, callerSignal?: AbortSignal): Promise<OriginalImage> {
+  checkAbort(callerSignal);
+  if (!Buffer.isBuffer(input) || input.length === 0 || input.length > MAX_INPUT_BYTES) throw fail('Invalid image data size');
+  const bytes = Buffer.from(input);
+  if (!hasSupportedImageSignature(bytes)) throw fail('Image decoding failed');
+  rejectApng(bytes);
+  const expectedFormat: OriginalImage['format'] = bytes[0] === 0xff ? 'jpeg' : bytes[0] === 0x89 ? 'png' : bytes[0] === 0x47 ? 'gif' : 'webp';
+  const gif = expectedFormat === 'gif' ? validateGifStructure(bytes) : undefined;
+  const controller = new AbortController(), signal = controller.signal;
+  const cancel = () => controller.abort();
+  callerSignal?.addEventListener('abort', cancel, { once: true });
+  const timer = setTimeout(cancel, 15_000);
+  let decoder: ReturnType<typeof sharp> | undefined;
+  const stop = () => decoder?.destroy();
+  signal.addEventListener('abort', stop, { once: true });
+  try {
+    decoder = sharp(bytes, { animated: true, limitInputPixels: MAX_PIXELS, failOn: 'warning' });
+    decoder.timeout({ seconds: 10 });
+    const work = (async (): Promise<OriginalImage> => {
+      const metadata = await decoder!.metadata();
+      const { width, height } = metadata;
+      const pages = metadata.pages ?? 1;
+      const frameHeight = metadata.pageHeight ?? height;
+      if (metadata.format !== expectedFormat || !Number.isSafeInteger(width) || !width || width < 1 ||
+          !Number.isSafeInteger(height) || !height || height < 1 ||
+          !Number.isSafeInteger(pages) || pages < 1 || pages > MAX_ORIGINAL_FRAMES ||
+          !Number.isSafeInteger(frameHeight) || !frameHeight || frameHeight < 1 ||
+          height !== frameHeight * pages || width * height > MAX_PIXELS ||
+          (pages > 1 && expectedFormat !== 'gif' && expectedFormat !== 'webp') ||
+          (gif && (width > gif.width || frameHeight > gif.height || gif.frames !== pages))) throw fail('Image decoding failed');
+      checkAbort(signal);
+      // sRGB+alpha bounds the raw validation allocation to four bytes per pixel.
+      const { data, info } = await decoder!.toColourspace('srgb').ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      checkAbort(signal);
+      if (info.width !== width || info.height !== height || info.channels !== 4 ||
+          data.length !== width * height * 4) throw fail('Image decoding failed');
+      return { bytes, md5: createHash('md5').update(bytes).digest('hex'), format: expectedFormat,
+        width: gif?.width ?? width, height: gif?.height ?? frameHeight, animated: pages > 1 };
+    })();
+    const result = await abortable(work, signal);
+    checkAbort(signal);
+    return result;
+  } catch {
+    throw fail(signal.aborted ? 'Image operation aborted' : 'Image decoding failed');
+  } finally {
+    clearTimeout(timer);
+    callerSignal?.removeEventListener('abort', cancel);
+    signal.removeEventListener('abort', stop);
+    decoder?.destroy();
+  }
+}
+
+export function createOriginalImageDownloader(dependencies: ImageDownloadDependencies = {}): OriginalImageDownloader {
+  return createSafeImageDownloader(dependencies, validateCustomFaceImageUrl, validateOriginalImage);
+}
+
+export const downloadOriginalImage: OriginalImageDownloader = createOriginalImageDownloader();
 export const downloadImage: ImageDownloader = createImageDownloader();
 export default downloadImage;
