@@ -38,7 +38,7 @@ const cards = computed(() => {
   const s = data.value?.summary;
   return s
     ? [
-        ["模型请求", number(s.requests), "失败 " + number(s.errors) + " 次"],
+        ["模型请求", number(s.requests), `成功 ${number(s.successes)} · 失败 ${number(s.errors)} · 超时 ${number(s.timeouts)} · 已取消 ${number(s.cancelled)} · 结果不明 ${number(s.unknown)}`],
         ["输入 tokens", number(s.inputTokens), "包含缓存输入"],
         ["输出 tokens", number(s.outputTokens), "推理 token 不重复相加"],
         ["缓存命中率", percent(s.cacheHitRate), "按已知输入 token 加权"],

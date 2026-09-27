@@ -49,7 +49,11 @@ const total = computed(() =>
                     <th>工具</th>
                     <th>调用</th>
                     <th>已完成</th>
-                    <th>错误</th>
+                    <th>已处理</th>
+                    <th>失败</th>
+                    <th>已拒绝</th>
+                    <th>已延后</th>
+                    <th>已取消</th>
                     <th>结果不明</th>
                     <th>已跳过</th>
                     <th>待执行</th>
@@ -65,7 +69,11 @@ const total = computed(() =>
                     </td>
                     <td>{{ number(tool.calls) }}</td>
                     <td>{{ number(tool.finished) }}</td>
+                    <td>{{ number(tool.handled) }}</td>
                     <td>{{ number(tool.errors) }}</td>
+                    <td>{{ number(tool.rejected) }}</td>
+                    <td>{{ number(tool.deferred) }}</td>
+                    <td>{{ number(tool.cancelled) }}</td>
                     <td>{{ number(tool.unknown) }}</td>
                     <td>{{ number(tool.skipped) }}</td>
                     <td>{{ number(tool.pending) }}</td>
@@ -79,7 +87,7 @@ const total = computed(() =>
           >
         </section>
         <p class="muted footnote">
-          “已完成”表示执行账本完成，不等于操作成功；错误可能属于已完成结果，不能将所有列相加。结果不明不代表操作未发生。
+          “已完成”表示执行账本完成，不等于操作成功；各结果分类可能属于已完成记录，不能将所有列相加。失败仅统计 failed，不包含拒绝、延后、取消或结果不明。已处理也不保证外部操作成功；已提交不等于 QQ 已送达。结果不明不代表操作未发生。
         </p></template
       ></DataState
     >

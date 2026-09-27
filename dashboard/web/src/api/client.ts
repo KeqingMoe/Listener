@@ -32,6 +32,21 @@ export const time = (value: number | null | undefined) =>
   value == null
     ? "未知"
     : new Date(value).toLocaleString("zh-CN", { hour12: false });
+const diagnosticKeys = {
+  request: ["abortSource", "providerCategory", "providerParameter", "failureStage", "requestMode", "requestTimeoutMs"],
+  wake: ["duration_ms", "model_rounds", "tool_calls", "sent_messages", "sent_submissions", "management_executed", "management_submitted", "management_unknown", "reactions", "reaction_submitted", "reaction_unknown", "reaction_failures", "tool_calls_limit", "wake_timeout_ms"],
+} as const;
+// Defense in depth: never stringify an entire API diagnostic payload.
+export function diagnosticRows(value: unknown, kind: keyof typeof diagnosticKeys): [string, string][] {
+  if (!value || typeof value !== "object") return [];
+  const record = value as Record<string, unknown>;
+  return diagnosticKeys[kind].flatMap<[string, string]>((key) => {
+    const item = record[key];
+    if (typeof item === "number" && Number.isFinite(item)) return [[key, number(item)]];
+    if (kind === "request" && typeof item === "string") return [[key, item]];
+    return [];
+  });
+}
 export const status = (value: string | null) =>
   value === null
     ? "未知"
@@ -47,6 +62,14 @@ export const status = (value: string | null) =>
           replied: "已回复",
           silent: "主动结束",
           cancelled: "已取消",
+          session_reset: "会话重置/轮换",
+          session_rotated: "会话轮换",
+          cursor_with_filters: "分页游标不能同时携带查询条件",
+          owner_reset: "用户重置会话",
+          recovered_after_crash: "崩溃后恢复",
+          configuration_changed: "配置变更",
+          transient_images_lost: "临时图片内容丢失",
+          transcript_resource_boundary: "会话记录资源边界",
           model_failed: "模型失败",
           delivery_unknown: "发送结果不明",
           tool_budget_exhausted: "工具预算耗尽",
@@ -56,12 +79,25 @@ export const status = (value: string | null) =>
           finish: "主动结束",
           response_state_expired: "续接状态过期",
           wake_timeout: "唤醒超时",
+          turn_timeout: "整次唤醒达到时间上限",
+          request_timeout: "单次模型请求达到时间上限",
+          disconnected: "连接断开",
+          reset: "用户重置会话",
+          shutdown: "服务关闭",
+          generation_changed: "任务已失效",
+          external_unknown: "外部取消，来源未记录",
+          send_failed: "发送异常，结果不明",
+          stopped: "连接服务已停止",
           budget_exhausted: "预算耗尽",
           staged: "已暂存",
           executed: "已执行",
           confirmed: "已确认",
           pending_confirmation: "等待确认",
-          failed: "执行失败",
+          failed: "失败",
+          timeout: "超时",
+          handled: "已处理",
+          rejected: "已拒绝",
+          deferred: "已延后",
           operation_submitted: "操作已提交",
           message_submitted: "消息已提交",
           reaction_submitted: "回应已提交",

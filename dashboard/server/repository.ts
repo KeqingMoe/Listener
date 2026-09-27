@@ -1,5 +1,10 @@
 import { DatabaseSync } from "node:sqlite";
 import { lstatSync } from "node:fs";
+import { normalizeModelRequestDiagnostics } from "../../src/model-diagnostics.js";
+import { normalizeWakeDiagnostics } from "../../src/wake-diagnostics.js";
+import { requestOutcome, requestReason, toolOutcome, toolReason } from "../shared/outcomes.js";
+const parse = (value: unknown): unknown => { try { return typeof value === "string" ? JSON.parse(value) : undefined; } catch { return undefined; } };
+const toolProjection = ["status", "error", "reason", "reason_code"].map(key => `CASE WHEN json_valid(result) THEN json_extract(result,'$.${key}') ELSE NULL END AS ${key}`).join(",");
 import type {
   Availability,
   Range,
@@ -52,8 +57,11 @@ export function summarize(rows: Row[]): UsageSummary {
       .filter((n): n is number => n !== null);
   return {
     requests: rows.length,
-    successes: rows.filter((r) => r.status === "success").length,
-    errors: rows.filter((r) => r.status === "error").length,
+    successes: rows.filter((r) => requestOutcome(r.status, r.error_code) === "success").length,
+    errors: rows.filter((r) => requestOutcome(r.status, r.error_code) === "failed").length,
+    timeouts: rows.filter((r) => requestOutcome(r.status, r.error_code) === "timeout").length,
+    cancelled: rows.filter((r) => requestOutcome(r.status, r.error_code) === "cancelled").length,
+    unknown: rows.filter((r) => requestOutcome(r.status, r.error_code) === "unknown").length,
     inputTokens: sum("input_tokens"),
     outputTokens: sum("output_tokens"),
     cachedInputTokens: cached.length ? numerator : null,
@@ -154,6 +162,10 @@ export class Repository {
     if (rows.length > cap) throw new ResourceLimit("Narrow query range");
     return rows;
   }
+  private requestColumns(db: DatabaseSync): string {
+    const columns = new Set(db.prepare("PRAGMA table_info(model_requests)").all().map(r => r.name));
+    return ["error_code", "http_status", "diagnostics"].map(key => columns.has(key) ? key : `NULL AS ${key}`).join(",");
+  }
   requests(range: Range, groupId?: string): Row[] {
     const db = this.open(this.sources.telemetryPath);
     if (!db) return [];
@@ -162,7 +174,7 @@ export class Repository {
     for (let i = 0; i < ids.length; i += 200) {
       const batch = ids.slice(i, i + 200);
       result.push(...db.prepare(
-        `SELECT request_id,group_id,started_at,ended_at,duration_ms,status,transport,input_tokens,output_tokens,cached_input_tokens FROM model_requests WHERE started_at>=? AND started_at<=? AND group_id IN (${batch.map(() => "?").join(",")}) ORDER BY started_at,request_id LIMIT 10001`,
+        `SELECT request_id,group_id,started_at,ended_at,duration_ms,status,transport,input_tokens,output_tokens,cached_input_tokens,${this.requestColumns(db)} FROM model_requests WHERE started_at>=? AND started_at<=? AND group_id IN (${batch.map(() => "?").join(",")}) ORDER BY started_at,request_id LIMIT 10001`,
       ).all(range.since, range.until, ...batch) as Row[]);
       this.bounded(result);
     }
@@ -171,13 +183,20 @@ export class Repository {
   private finish(db: DatabaseSync, wakeId: string) {
     const row = db
       .prepare(
-        "SELECT created_at,CASE WHEN json_valid(payload) THEN json_extract(payload,'$.reason') ELSE NULL END AS reason FROM model_session_journal WHERE wake_id=? AND kind='wake_finish' ORDER BY seq DESC LIMIT 1",
+        "SELECT created_at,payload,CASE WHEN json_valid(payload) THEN json_extract(payload,'$.reason') ELSE NULL END AS reason FROM model_session_journal WHERE wake_id=? AND kind='wake_finish' ORDER BY seq DESC LIMIT 1",
       )
       .get(wakeId);
+    const safe = normalizeWakeDiagnostics(parse(row?.payload));
+    const diagnostics: Record<string, number> = {};
+    for (const [key, value] of Object.entries(safe)) if (typeof value === "number") diagnostics[key] = value;
     return {
+      reasonCode: typeof safe.reason_code === "string" ? safe.reason_code : null,
+      diagnostics,
       finishedAt: num(row?.created_at),
       outcome: allowed(row?.reason, [
         "finish",
+        "finished",
+        "session_reset",
         "silent",
         "replied",
         "prose_suppressed",
@@ -263,7 +282,7 @@ export class Repository {
       result.push(
         ...(telemetry
           .prepare(
-            `SELECT request_id,group_id,started_at,ended_at,duration_ms,status,transport,input_tokens,output_tokens,cached_input_tokens FROM model_requests WHERE group_id=? AND request_id IN (${batch.map(() => "?").join(",")}) ORDER BY started_at,request_id`,
+            `SELECT request_id,group_id,started_at,ended_at,duration_ms,status,transport,input_tokens,output_tokens,cached_input_tokens,${this.requestColumns(telemetry)} FROM model_requests WHERE group_id=? AND request_id IN (${batch.map(() => "?").join(",")}) ORDER BY started_at,request_id`,
           )
           .all(groupId, ...batch) as Row[]),
       );
@@ -337,6 +356,10 @@ export class Repository {
         startedAt: r.started_at,
         endedAt: r.ended_at,
         durationMs: r.duration_ms,
+        outcome: requestOutcome(r.status, r.error_code),
+        errorCode: requestReason(r.error_code),
+        httpStatus: Number.isInteger(r.http_status) && r.http_status >= 100 && r.http_status <= 599 ? r.http_status : null,
+        diagnostics: normalizeModelRequestDiagnostics(parse(r.diagnostics)) ?? null,
         status: (allowed(r.status, ["success", "error"]) ??
           "unknown") as RequestItem["status"],
         transport: (allowed(r.transport, ["chat", "responses"]) ??
@@ -347,13 +370,15 @@ export class Repository {
       }));
     const rows = db
       .prepare(
-        "SELECT ordinal,name,state,proposed_at,started_at,finished_at,CASE WHEN json_valid(result) THEN json_extract(result,'$.status') ELSE NULL END AS status FROM model_tool_ledger WHERE wake_id=? ORDER BY ordinal LIMIT 501",
+        `SELECT ordinal,name,state,proposed_at,started_at,finished_at,${toolProjection} FROM model_tool_ledger WHERE wake_id=? ORDER BY ordinal LIMIT 501`,
       )
       .all(wakeId) as Row[];
     const tools: ToolItem[] = rows
       .slice(0, 500)
       .map((r) => ({
         ordinal: r.ordinal,
+        outcome: toolOutcome(r),
+        reasonCode: toolReason(r),
         name: toolName(r.name),
         state:
           allowed(r.state, [
@@ -381,6 +406,8 @@ export class Repository {
           "confirmation_required",
           "duplicate",
           "success",
+          "cancelled",
+          "submitted",
         ]),
       }));
     return {
@@ -402,7 +429,7 @@ export class Repository {
       const rows = this.bounded(
         db
           .prepare(
-            "SELECT name,state,started_at,finished_at,CASE WHEN json_valid(result) THEN json_extract(result,'$.status') ELSE NULL END AS status FROM model_tool_ledger WHERE proposed_at>=? AND proposed_at<=? LIMIT 10001",
+            `SELECT name,state,started_at,finished_at,${toolProjection} FROM model_tool_ledger WHERE proposed_at>=? AND proposed_at<=? LIMIT 10001`,
           )
           .all(range.since, range.until) as Row[],
       );
@@ -430,33 +457,13 @@ export class Repository {
           finished: n("finished"),
           pending: n("pending"),
           started: n("started"),
-          unknown: rows.filter(
-            (r) =>
-              !["pending", "started", "skipped"].includes(r.state) &&
-              (r.state === "unknown" ||
-                ![
-                  "ok",
-                  "executed",
-                  "pending",
-                  "confirmation_required",
-                  "staged",
-                  "duplicate",
-                  "success",
-                  "error",
-                  "skipped",
-                ].includes(r.status)),
-          ).length,
-          skipped: rows.filter(
-            (r) =>
-              r.state === "skipped" ||
-              (!["pending", "started", "unknown"].includes(r.state) &&
-                r.status === "skipped"),
-          ).length,
-          errors: rows.filter(
-            (r) =>
-              !["pending", "started", "unknown", "skipped"].includes(r.state) &&
-              r.status === "error",
-          ).length,
+          unknown: rows.filter(r => toolOutcome(r) === "unknown").length,
+          skipped: rows.filter(r => toolOutcome(r) === "skipped").length,
+          errors: rows.filter(r => toolOutcome(r) === "failed").length,
+          handled: rows.filter(r => toolOutcome(r) === "handled").length,
+          rejected: rows.filter(r => toolOutcome(r) === "rejected").length,
+          deferred: rows.filter(r => toolOutcome(r) === "deferred").length,
+          cancelled: rows.filter(r => toolOutcome(r) === "cancelled").length,
           durationP50Ms: percentile([...durations], 0.5),
           durationP95Ms: percentile([...durations], 0.95),
         };

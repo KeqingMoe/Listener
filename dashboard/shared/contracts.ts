@@ -1,3 +1,5 @@
+import type { ModelRequestDiagnostics } from "../../src/model-diagnostics.js";
+import type { RequestOutcome, ToolOutcome } from "./outcomes.js";
 export interface Range {
   since: number;
   until: number;
@@ -20,6 +22,9 @@ export interface UsageSummary {
   requests: number;
   successes: number;
   errors: number;
+  timeouts: number;
+  cancelled: number;
+  unknown: number;
   inputTokens: number | null;
   outputTokens: number | null;
   cachedInputTokens: number | null;
@@ -46,6 +51,8 @@ export interface WakeItem {
   finishedAt: number | null;
   durationMs: number | null;
   outcome: string | null;
+  reasonCode: string | null;
+  diagnostics: Record<string, number>;
   trigger: null;
   modelRequests: number;
   toolCalls: number;
@@ -64,6 +71,10 @@ export interface RequestItem {
   endedAt: number;
   durationMs: number;
   status: "success" | "error" | "unknown";
+  outcome: RequestOutcome;
+  errorCode: string | null;
+  httpStatus: number | null;
+  diagnostics: ModelRequestDiagnostics | null;
   transport: "chat" | "responses" | "unknown";
   inputTokens: number | null;
   outputTokens: number | null;
@@ -78,6 +89,8 @@ export interface ToolItem {
   finishedAt: number | null;
   durationMs: number | null;
   status: string | null;
+  outcome: ToolOutcome;
+  reasonCode: string | null;
 }
 export interface WakeDetailResponse {
   wake: WakeItem;
@@ -94,6 +107,10 @@ export interface ToolSummary {
   started: number;
   unknown: number;
   skipped: number;
+  handled: number;
+  rejected: number;
+  deferred: number;
+  cancelled: number;
   errors: number;
   durationP50Ms: number | null;
   durationP95Ms: number | null;

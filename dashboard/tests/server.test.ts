@@ -212,6 +212,10 @@ test("wake correlation uses request IDs, safe detail projection, bound paginatio
     assert.equal(d.wake.outcome, "completed");
     assert.equal(d.wake.trigger, null);
     assert.equal(d.requests[0].requestId, "request-one");
+    assert.equal(d.requests[0].errorCode, null);
+    assert.equal(d.requests[0].httpStatus, null);
+    assert.equal(d.requests[0].diagnostics, null);
+    assert.equal(d.requests[0].outcome, "success");
     assert.equal(d.tools[0].name, "read_events");
     assert.equal(d.wake.durationMs, 40);
     assert.doesNotMatch(
@@ -389,6 +393,134 @@ test("terminal tool outcomes distinguish finished unknown, skipped, errors and f
     f.cleanup();
   }
 });
+test("safe model diagnoses distinguish failures, cancellations and timeouts on migrated and old databases", async () => {
+  const f = fixture();
+  const db = new DatabaseSync(f.telemetryPath);
+  db.exec("ALTER TABLE model_requests ADD COLUMN error_code TEXT; ALTER TABLE model_requests ADD COLUMN http_status INTEGER; ALTER TABLE model_requests ADD COLUMN diagnostics TEXT");
+  db.prepare("UPDATE model_requests SET status='error',error_code='cancelled',http_status=499,diagnostics=? WHERE request_id='request-one'").run(JSON.stringify({ abortSource: "reset", failureStage: "request", requestMode: "continue_restored", requestTimeoutMs: 1000, providerParameter: sentinel, private: sentinel }));
+  db.exec("UPDATE model_requests SET error_code='timeout' WHERE request_id='request-two'; UPDATE model_requests SET status='error',error_code='http_error',http_status=503 WHERE request_id='request-three'");
+  db.close();
+  const app = buildApp(f.options);
+  try {
+    const summary = (await app.inject('/api/overview?since=0&until=300')).json().summary;
+    assert.equal(summary.errors, 1); assert.equal(summary.timeouts, 1); assert.equal(summary.cancelled, 1);
+    assert.equal(summary.successes, 0); assert.equal(summary.unknown, 0);
+    const detail = await app.inject('/api/wakes/wake-one?groupId=11');
+    const request = detail.json().requests[0];
+    assert.equal(request.status, 'error'); assert.equal(request.outcome, 'cancelled');
+    assert.equal(request.errorCode, 'cancelled'); assert.equal(request.httpStatus, 499);
+    assert.deepEqual(request.diagnostics, { abortSource: 'reset', failureStage: 'request', requestMode: 'continue_restored', requestTimeoutMs: 1000 });
+    assert.doesNotMatch(detail.body, new RegExp(sentinel));
+  } finally { await app.close(); f.cleanup(); }
+});
+
+test("tool reasons safely distinguish barriers, rejection, cancellation, failure and unknown", async () => {
+  const f = fixture(), db = new DatabaseSync(f.sessionPath);
+  const cases = [
+    [{status:'error', reason_code:'image_first', error:sentinel}, 'deferred', 'image_first'],
+    [{status:'error', error:'先接收本轮图片内容，再在下一轮决定回复或操作。'}, 'deferred', 'image_first'],
+    [{status:'error', error:'先接收本轮转发读取结果，再在下一轮决定回复或操作。'}, 'deferred', 'forward_first'],
+    [{status:'error', reason_code:'management_result_review_required'}, 'deferred', 'management_result_review_required'],
+    [{status:'error', error:'invalid_arguments'}, 'rejected', 'invalid_arguments'],
+    [{status:'error', error:'tool_disabled'}, 'rejected', 'tool_disabled'],
+    [{status:'error', error:'permission_denied'}, 'rejected', 'permission_denied'],
+    [{status:'error', reason:'cancelled'}, 'cancelled', 'cancelled'],
+    [{status:'error', error:sentinel}, 'failed', null],
+    [{status:'error', error:'先接收本轮图片内容，再在下一轮决定回复或操作。'+sentinel}, 'failed', null],
+    [{status:'unknown', error:sentinel}, 'unknown', null],
+    [{status:'skipped'}, 'skipped', null],
+  ] as const;
+  const insert = db.prepare('INSERT INTO model_tool_ledger VALUES(?,?,?,?,?,?,?,?,?)');
+  cases.forEach(([result], i) => insert.run(i+2,'read_events','wake-one','finished',sentinel,JSON.stringify({...result,private:sentinel}),110,111,112));
+  db.prepare("UPDATE model_session_journal SET payload=? WHERE kind='wake_finish'").run(JSON.stringify({reason:'finished',reason_code:'turn_timeout',duration_ms:50,model_rounds:2,tool_calls:-1,sent_messages:1.5,private:sentinel}));
+  db.close();
+  const app = buildApp(f.options);
+  try {
+    const detail = await app.inject('/api/wakes/wake-one?groupId=11'), body = detail.json();
+    assert.equal(body.wake.outcome,'finished'); assert.equal(body.wake.reasonCode,'turn_timeout');
+    assert.deepEqual(body.wake.diagnostics,{duration_ms:50,model_rounds:2});
+    cases.forEach(([,outcome,reason],i) => { assert.equal(body.tools[i+1].outcome,outcome); assert.equal(body.tools[i+1].reasonCode,reason); assert.equal(body.tools[i+1].state,'finished'); });
+    assert.equal(body.tools[1].status,'error');
+    assert.doesNotMatch(detail.body,new RegExp(sentinel+'|先接收'));
+    const summary = (await app.inject('/api/tools?since=0&until=300')).json().items[0];
+    assert.equal(summary.deferred,4); assert.equal(summary.rejected,3); assert.equal(summary.cancelled,1); assert.equal(summary.errors,2); assert.equal(summary.unknown,1); assert.equal(summary.handled,1);
+  } finally { await app.close(); f.cleanup(); }
+});
+
+test("custom-face fixed diagnostic codes preserve unknown effects and storage failures without exposing text", async () => {
+  const f = fixture(), db = new DatabaseSync(f.sessionPath);
+  const cases = [
+    ['unknown', 'previous_operation_unresolved', 'unknown'],
+    ['unknown', 'message_ack_unverified', 'unknown'],
+    ...['storage_configuration', 'storage_unavailable', 'storage_integrity', 'storage_capacity', 'storage_invalid_image', 'invalid_face_ref', 'resource_not_verified', 'identity_unverified', 'source_changed', 'collection_content_unverified'].map(code => ['error', code, 'failed']),
+    ['unknown', sentinel, 'unknown'],
+    ['error', 'storage_capacity:' + sentinel, 'failed'],
+  ];
+  const insert = db.prepare('INSERT INTO model_tool_ledger VALUES(?,?,?,?,?,?,?,?,?)');
+  cases.forEach(([status, error],i) => insert.run(i+2,'send_custom_face','wake-one','finished',sentinel,JSON.stringify({status,error,private:sentinel}),110,111,112));
+  db.close();
+  const app = buildApp(f.options);
+  try {
+    const response = await app.inject('/api/wakes/wake-one?groupId=11');
+    cases.forEach(([status, code, outcome],i) => {
+      const tool = response.json().tools[i+1];
+      assert.equal(tool.status,status); assert.equal(tool.outcome,outcome);
+      assert.equal(tool.reasonCode,code!.includes(sentinel) ? null : code);
+    });
+    assert.doesNotMatch(response.body,new RegExp(sentinel));
+    const summary = (await app.inject('/api/tools?since=0&until=300')).json().items.find((item: any) => item.name === 'send_custom_face');
+    assert.equal(summary.unknown,3); assert.equal(summary.errors,11); assert.equal(summary.handled,0);
+  } finally { await app.close(); f.cleanup(); }
+});
+
+test("specific cursor diagnostic preserves invalid-arguments rejection without leaking correction hints", async () => {
+  const f = fixture(), db = new DatabaseSync(f.sessionPath);
+  db.prepare('INSERT INTO model_tool_ledger VALUES(?,?,?,?,?,?,?,?,?)').run(2,'read_messages','wake-one','finished',sentinel,JSON.stringify({status:'error',error:'invalid_arguments',reason_code:'cursor_with_filters',hint:sentinel}),110,111,112);
+  db.close(); const app = buildApp(f.options);
+  try {
+    const response = await app.inject('/api/wakes/wake-one?groupId=11');
+    const tool = response.json().tools[1];
+    assert.equal(tool.state,'finished'); assert.equal(tool.status,'error');
+    assert.equal(tool.outcome,'rejected'); assert.equal(tool.reasonCode,'cursor_with_filters');
+    assert.equal(statusLabel(tool.reasonCode),'分页游标不能同时携带查询条件');
+    assert.doesNotMatch(response.body,new RegExp(sentinel+'|hint'));
+    const summary = (await app.inject('/api/tools?since=0&until=300')).json().items.find((item: any) => item.name === 'read_messages');
+    assert.equal(summary.rejected,1); assert.equal(summary.errors,0); assert.equal(summary.handled,0);
+  } finally { await app.close(); f.cleanup(); }
+});
+
+test("rotation tool reasons preserve raw unknown state and fixed diagnostics", async () => {
+  const f = fixture(), db = new DatabaseSync(f.sessionPath);
+  const reasons = ['owner_reset', 'recovered_after_crash', 'configuration_changed', 'transient_images_lost', 'transcript_resource_boundary', 'response_state_expired'];
+  const insert = db.prepare('INSERT INTO model_tool_ledger VALUES(?,?,?,?,?,?,?,?,?)');
+  reasons.forEach((reason,i) => insert.run(i+2,'read_events','wake-one','unknown',sentinel,JSON.stringify({status:'unknown',reason}),110,111,112));
+  db.close(); const app = buildApp(f.options);
+  try {
+    const response = await app.inject('/api/wakes/wake-one?groupId=11');
+    reasons.forEach((reason,i) => { const tool=response.json().tools[i+1]; assert.equal(tool.reasonCode,reason); assert.equal(tool.state,'unknown'); assert.equal(tool.status,'unknown'); assert.equal(tool.outcome,'unknown'); assert.notEqual(statusLabel(reason),reason); });
+    assert.doesNotMatch(response.body,new RegExp(sentinel));
+  } finally { await app.close(); f.cleanup(); }
+});
+
+test("old-scope wake session reset projects safe rotation reasons without completing the new wake", async () => {
+  const f = fixture(), db = new DatabaseSync(f.sessionPath);
+  db.prepare("UPDATE model_session_journal SET session_id='new-session' WHERE wake_id='wake-two'").run();
+  const app = buildApp(f.options);
+  try {
+    for (const reasonCode of ['reset', 'session_rotated', 'response_state_expired', 'configuration_changed', 'transcript_resource_boundary', 'transient_images_lost', 'recovered_after_crash']) {
+      db.prepare("UPDATE model_session_journal SET payload=? WHERE wake_id='wake-one' AND kind='wake_finish'").run(JSON.stringify({reason:'session_reset',reason_code:reasonCode,sent_submissions:1,private:sentinel}));
+      const response = await app.inject('/api/wakes/wake-one?groupId=11'), wake = response.json().wake;
+      assert.equal(wake.sessionId,'session'); assert.equal(wake.outcome,'session_reset');
+      assert.equal(wake.reasonCode,reasonCode); assert.equal(wake.diagnostics.sent_submissions,1);
+      assert.equal(statusLabel(wake.outcome),'会话重置/轮换');
+      assert.doesNotMatch(response.body,new RegExp(sentinel));
+      const newer = (await app.inject('/api/wakes/wake-two?groupId=11')).json().wake;
+      assert.equal(newer.sessionId,'new-session'); assert.equal(newer.outcome,null);
+      assert.equal(newer.finishedAt,null); assert.equal(newer.reasonCode,null);
+    }
+  } finally { db.close(); await app.close(); f.cleanup(); }
+});
+
 test("unavailable telemetry and wrong group identity remain honest", async () => {
   const f = fixture(),
     app = buildApp({

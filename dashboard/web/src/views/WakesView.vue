@@ -49,6 +49,7 @@ function next() {
                     <th>开始时间</th>
                     <th>群组</th>
                     <th>结果</th>
+                    <th>原因代码</th>
                     <th>已关联请求</th>
                     <th>工具调用</th>
                     <th>输入 / 输出</th>
@@ -66,6 +67,7 @@ function next() {
                     <td>
                       <span class="badge">{{ status(wake.outcome) }}</span>
                     </td>
+                    <td>{{ wake.reasonCode ?? "未记录" }}</td>
                     <td>{{ number(wake.modelRequests) }}</td>
                     <td>{{ number(wake.toolCalls) }}</td>
                     <td>
