@@ -1,85 +1,47 @@
 import test from 'node:test';
+import {withFixtureModel} from './config-fixture.js';
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,writeFileSync,rmSync,readFileSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {ConfigError,loadAppConfig} from '../src/config-loader.js';
-
-function fixture(t:{after(fn:()=>void):void},source=''){
- const dir=mkdtempSync(join(tmpdir(),'listener-attention-config-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
- mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'fixture persona');
- // Preserve explicit bot inputs; other fixtures use a synthetic global owner.
- const config=(text:string)=>writeFileSync(join(dir,'config.toml'),/^\s*\[bot\]/m.test(text)?text:text+'\n[bot]\nowner_id="778899"\n');config(source);
- const load=()=>loadAppConfig({configPath:join(dir,'config.toml'),env:{ONEBOT_ACCESS_TOKEN:'fixture-token',OPENAI_API_KEY:'fixture-key'}});
- return {config,load};
+import {loadAppConfig,ConfigError} from '../src/config-loader.js';
+import type {AppConfig} from '../src/app-config.js';
+function fixture(t:{after(fn:()=>void):void}){
+  const dir=mkdtempSync(join(tmpdir(),'attention-policy-config-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'persona');
+  return(source:string):AppConfig=>{writeFileSync(join(dir,'config.toml'),withFixtureModel(source));return loadAppConfig({configPath:join(dir,'config.toml'),env:{ONEBOT_ACCESS_TOKEN:'fixture',OPENAI_API_KEY:'fixture-key'}});};
 }
-
-test('attention defaults off with sixteen plans and never implicitly enables a group',t=>{
- const f=fixture(t);let c=f.load();
- assert.deepEqual(c.listener.attention,{enabled:false,maxPlans:16});assert.deepEqual(c.groups,[]);
- f.config('[attention]\nenabled=true');c=f.load();assert.equal(c.listener.attention?.enabled,true);assert.deepEqual(c.groups,[]);
- f.config('[groups."11"]\n[groups."22"]');c=f.load();
- for(const group of c.groups)assert.deepEqual(group.attention,{enabled:false,maxPlans:16});
- assert.deepEqual([...c.onebot.allowedGroups],['11','22']);
+test('manage_attention defaults direct without enabling a group or random participation',t=>{
+  const load=fixture(t),base=load('');assert.deepEqual(base.resolveGroup('11').tools.manage_attention,{mode:'direct',maxPlans:16});
+  const app=load('[defaults.tools]\nmanage_attention="direct"');
+  assert.deepEqual(app.resolveGroup('11').tools.manage_attention,{mode:'direct',maxPlans:16});
+  assert.equal(app.defaultsEnabled,false);assert.equal(app.resolveGroup('11').enabled,false);assert.equal(app.resolveGroup('11').reply.random,false);
+  assert.deepEqual([...app.onebot.allowedGroups],[]);
 });
-
-test('attention group overrides deeply inherit and allocate independent objects',t=>{
- const f=fixture(t,'[attention]\nenabled=true\nmax_plans=24\n[groups."11".attention]\nenabled=false\n[groups."22".attention]\nmax_plans=7\n[groups."33"]');
- const c=f.load(),a=c.groups.find(g=>g.groupId==='11')!,b=c.groups.find(g=>g.groupId==='22')!,d=c.groups.find(g=>g.groupId==='33')!;
- assert.deepEqual(a.attention,{enabled:false,maxPlans:24});assert.deepEqual(b.attention,{enabled:true,maxPlans:7});assert.deepEqual(d.attention,{enabled:true,maxPlans:24});
- for(const group of c.groups)assert.notEqual(group.attention,c.listener.attention);
- assert.notEqual(a.attention,b.attention);assert.notEqual(b.attention,d.attention);
- a.attention!.maxPlans=1;b.attention!.enabled=false;
- assert.deepEqual(c.listener.attention,{enabled:true,maxPlans:24});assert.deepEqual(d.attention,{enabled:true,maxPlans:24});
- f.config('[attention]\nenabled=false\nmax_plans=19\n[groups."11".attention]\nenabled=true');
- assert.deepEqual(f.load().groups[0]!.attention,{enabled:true,maxPlans:19});
+test('attention union replacement resets options, absent policy inherits, and result copies are isolated',t=>{
+  const app=fixture(t)('[defaults.tools]\nmanage_attention={mode="direct",max_plans=24}\n[groups."11".tools]\nmanage_attention="off"\n[groups."22".tools]\nmanage_attention="direct"\n[groups."33".tools]\nmanage_attention={mode="direct",max_plans=7}');
+  assert.equal(app.resolveGroup('11').tools.manage_attention.mode,'off');
+  assert.deepEqual(app.resolveGroup('22').tools.manage_attention,{mode:'direct',maxPlans:16});
+  assert.deepEqual(app.resolveGroup('33').tools.manage_attention,{mode:'direct',maxPlans:7});
+  const g=app.resolveGroup('99');assert.deepEqual(g.tools.manage_attention,{mode:'direct',maxPlans:24});g.tools.manage_attention.maxPlans=1;
+  assert.equal(app.resolveGroup('99').tools.manage_attention.maxPlans,24);
 });
-
-test('attention accepts integer capacity endpoints globally and per group',t=>{
- const f=fixture(t);
- for(const value of [1,16,32]){
-  f.config(`[attention]\nmax_plans=${value}\n[groups."11".attention]\nmax_plans=${value}`);
-  const c=f.load();assert.equal(c.listener.attention?.maxPlans,value);assert.equal(c.groups[0]!.attention?.maxPlans,value);
- }
+test('attention capacity endpoints are accepted in defaults and disabled group policy',t=>{
+  const load=fixture(t);
+  for(const scope of ['defaults.tools','groups."11".tools'])for(const value of [1,16,32])assert.equal(load(`[groups."11"]\nenabled=false\n[${scope}]\nmanage_attention={mode="direct",max_plans=${value}}`).resolveGroup('11').tools.manage_attention.maxPlans,value);
 });
-
-test('attention rejects unknown keys and incorrect table types at both scopes',t=>{
- const f=fixture(t);
- for(const header of ['attention','groups."11".attention']){
-  for(const field of ['unexpected_secret="do-not-echo"','maxPlans=16','enabled="true"','enabled=1','enabled=[]','enabled={ value=true }','max_plans="16"','max_plans=true','max_plans=[]','max_plans={}']){
-   f.config(`[${header}]\n${field}`);
-   assert.throws(()=>f.load(),error=>error instanceof ConfigError&&!error.message.includes('do-not-echo')&&!error.message.includes('unexpected_secret'));
+test('attention rejects off objects, confirm, malformed capacity and unknown fields even when the group is disabled',t=>{
+  const load=fixture(t);
+  for(const scope of ['defaults.tools','groups."11".tools']){
+    for(const value of ['0','33','-1','1.5','nan','inf','-inf','9007199254740992','"16"','true','[]','{}'])assert.throws(()=>load(`[groups."11"]\nenabled=false\n[${scope}]\nmanage_attention={mode="direct",max_plans=${value}}`),ConfigError);
+    for(const value of ['true','false','[]','16','{}','"confirm"','{mode="confirm"}','{mode="off"}','{mode="off",max_plans=16}','{mode="direct",maxPlans=16}','{mode="direct",enabled=true}','{mode="direct",unexpected="PRIVATE_VALUE"}'])assert.throws(()=>load(`[groups."11"]\nenabled=false\n[${scope}]\nmanage_attention=${value}`),e=>e instanceof ConfigError&&!e.message.includes('PRIVATE_VALUE'));
   }
- }
- for(const value of ['false','[]','"secret-body"','16','1979-05-27']){
-  for(const prefix of ['', '[groups."11"]\n']){
-   f.config(`${prefix}attention=${value}`);assert.throws(()=>f.load(),ConfigError);
-  }
- }
+  for(const scope of ['','[defaults]\n','[groups."11"]\nenabled=false\n'])assert.throws(()=>load(scope+'attention={enabled=true,max_plans=16}'),ConfigError);
 });
-
-test('attention validates capacity even when attention or the service group is disabled',t=>{
- const f=fixture(t);
- for(const value of ['0','33','-1','1.5','nan','inf','-inf','9007199254740992']){
-  for(const source of [`[attention]\nenabled=false\nmax_plans=${value}`,`[groups."11".attention]\nenabled=false\nmax_plans=${value}`,`[groups."11"]\nenabled=false\n[groups."11".attention]\nmax_plans=${value}`]){
-   f.config(source);assert.throws(()=>f.load(),ConfigError);
-  }
- }
- f.config('[groups."11"]\nenabled=false\n[groups."11".attention]\nunknown=true');assert.throws(()=>f.load(),ConfigError);
- f.config('[groups."11"]\nenabled=false\n[groups."11".attention]\nenabled="false"');assert.throws(()=>f.load(),ConfigError);
-});
-
-test('attention leaves random participation settings independent and retains groups-only scope',t=>{
- const f=fixture(t,'[attention]\nenabled=true\n[reply]\nrandom_probability=0.42\n[groups."11"]\n[groups."22".reply]\nrandom_probability=0');
- const c=f.load();assert.equal(c.listener.randomReplyProbability,0.42);
- assert.equal(c.groups.find(g=>g.groupId==='11')!.randomReplyProbability,0.42);
- assert.equal(c.groups.find(g=>g.groupId==='22')!.randomReplyProbability,0);
- assert.ok(c.groups.every(g=>g.attention?.enabled));
- f.config('[bot]\ngroup_id="11"\n[attention]\nenabled=true\n[groups."11"]');assert.throws(()=>f.load(),ConfigError);
-});
-
-test('example documents a valid default-off attention configuration',t=>{
- const source=readFileSync(new URL('../config.example.toml',import.meta.url),'utf8');
- const f=fixture(t,source),c=f.load();assert.deepEqual(c.listener.attention,{enabled:false,maxPlans:16});
- assert.ok(c.groups.every(g=>g.attention?.enabled===false&&g.attention.maxPlans===16));
+test('attention and random participation are independent unions rather than inherited product flags',t=>{
+  const app=fixture(t)('[defaults.reply]\nrandom={probability=0.42,cooldown_ms=1000,max_per_minute=6}\n[defaults.tools]\nmanage_attention="direct"\n[groups."11".reply]\nrandom=false\n[groups."22".reply]\nrandom={probability=0}\n[groups."33".tools]\nmanage_attention="off"');
+  assert.equal(app.resolveGroup('11').reply.random,false);assert.equal(app.resolveGroup('11').tools.manage_attention.mode,'direct');
+  assert.deepEqual(app.resolveGroup('22').reply.random,{probability:0,cooldownMs:60000,maxPerMinute:2});
+  assert.deepEqual(app.resolveGroup('33').reply.random,{probability:0.42,cooldownMs:1000,maxPerMinute:6});assert.equal(app.resolveGroup('33').tools.manage_attention.mode,'off');
+  assert.equal(app.onebot.allowPrivate,false);
 });

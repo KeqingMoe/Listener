@@ -55,6 +55,7 @@ test('real entrypoint uses the configured nondefault owner for confirmation and 
   socket.on('message',raw=>{try{
    const call=JSON.parse(raw.toString());calls.push(call);let data:unknown;
    if(call.action==='get_login_info')data={user_id:SELF};
+    else if(call.action==='get_group_list')data=[A,B].map(group_id=>({group_id}));
    else if(call.action==='get_group_member_info'){
     assert.ok([A,B].includes(call.params.group_id));assert.equal(call.params.no_cache,true);assert.ok([SELF,TARGET].includes(call.params.user_id));
     data={group_id:call.params.group_id,user_id:call.params.user_id,role:call.params.user_id===SELF?'admin':'member'};
@@ -78,13 +79,52 @@ test('real entrypoint uses the configured nondefault owner for confirmation and 
  try{
   const listening=ws.address()?Promise.resolve():once(ws,'listening');http.listen(0,'127.0.0.1');await Promise.all([listening,once(http,'listening')]);const wsPort=(ws.address() as AddressInfo).port,httpPort=(http.address() as AddressInfo).port;
   mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'Isolated autonomous moderation fixture.');writeFileSync(join(dir,'.env'),'FIXTURE_TOKEN=fixture-token\nFIXTURE_KEY=fixture-key\n',{mode:0o600});
-  writeFileSync(join(dir,'config.toml'),`[bot]\nowner_id="${LOCAL_OWNER}"\n[onebot]\nurl="ws://127.0.0.1:${wsPort}"\ntoken_env="FIXTURE_TOKEN"\n[ai]\nenabled=true\nbase_url="http://127.0.0.1:${httpPort}/v1"\nmodel="fixture-moderation"\napi_key_env="FIXTURE_KEY"\ntimeout_ms=10000\n[reply]\ndelay_ms=[100,100]\ncooldown_ms=1000\nrandom_probability=0\n[tools]\nreactions=false\nmembers=false\nmention=false\n[tools.moderation]\nmute="off"\nunmute="off"\nrecall="off"\nmember_card="off"\n[logging]\nlevel="debug"\nconsole=true\nfile=false\n[groups."${A}".tools.moderation]\nmute="direct"\n[groups."${B}".tools.moderation]\nmute="confirm"\n`);
+  writeFileSync(join(dir,'config.toml'),`[bot]
+owner_id = "${LOCAL_OWNER}"
+[onebot]
+url = "ws://127.0.0.1:${wsPort}"
+token_env = "FIXTURE_TOKEN"
+[model]
+base_url = "http://127.0.0.1:${httpPort}/v1"
+model = "fixture-moderation"
+api_key_env = "FIXTURE_KEY"
+timeout_ms = 10000
+[storage]
+directory = "data"
+telemetry_path = "data/listener.sqlite.telemetry.sqlite"
+[defaults]
+enabled = false
+persona = "prompts/listener.md"
+reply = { delay_ms = [100,100], cooldown_ms = 1000, random = false }
+messages.mentions = false
+observation.reactions = false
+tools = {
+  get_group_members = "off",
+  get_member_info = "off",
+  react_message = "off",
+  mute_member = "off",
+  unmute_member = "off",
+  recall_message = "off",
+  set_member_card = "off",
+}
+[logging]
+level = "debug"
+console = true
+file = false
+[groups."${A}"]
+enabled = true
+tools.mute_member = "direct"
+[groups."${B}"]
+enabled = true
+tools.mute_member = "confirm"
+`);
   child=spawn(process.execPath,['--import',import.meta.resolve('tsx'),fileURLToPath(new URL('../src/index.ts',import.meta.url))],{cwd:dir,env:{PATH:process.env.PATH??'',HOME:dir,NODE_NO_WARNINGS:'1'},stdio:['ignore','pipe','pipe']});exit=new Promise((resolve,reject)=>{child!.once('error',error=>{fail(error);reject(error);});child!.once('close',(code,signal)=>{resolve({code,signal});notify();});});void exit.catch(()=>{});for(const stream of [child.stdout!,child.stderr!])stream.on('data',chunk=>{output=(output+chunk.toString()).slice(-128*1024);notify();});
   await wait(()=>output.includes('onebot.ready'),'startup');peer!.send(JSON.stringify(event(A,'101')));await wait(()=>ended()===1,'autonomous direct action and silence');
   assert.equal(requests.length,3);assert.equal(mutations().length,1);assert.equal(sends.length,0);
-  assert.deepEqual(calls.map(c=>c.action),['get_login_info','get_login_info','get_group_member_info','get_group_member_info','set_group_ban']);
+  assert.deepEqual(calls.map(c=>c.action),['get_login_info','get_group_list','get_login_info','get_group_member_info','get_group_member_info','set_group_ban']);
+   const beforeProposal=calls.length;
   peer!.send(JSON.stringify(event(B,'201')));await wait(()=>ended()===2,'autonomous confirmation proposal');assert.equal(requests.length,5);assert.equal(mutations().length,1);assert.equal(sends.length,1);
-  assert.deepEqual(calls.slice(5).map(c=>c.action),['get_login_info','get_group_member_info','get_group_member_info','send_group_msg']);
+  assert.deepEqual(calls.slice(beforeProposal).map(c=>c.action),['get_login_info','get_group_member_info','get_group_member_info','send_group_msg']);
   const beforeUnauthorized=calls.length;peer!.send(JSON.stringify(event(B,'202',OWNER_ID,`/confirm ${notificationCode}`)));await wait(()=>output.includes('command.denied'),'nonowner confirmation denial');assert.equal(calls.length,beforeUnauthorized);
   peer!.send(JSON.stringify(event(A,'102',LOCAL_OWNER,`/confirm ${notificationCode}`)));await wait(()=>commandsEnded()===1,'wrong-group owner confirmation denial');assert.equal(sends.length,2);assert.equal(calls.length,beforeUnauthorized+1);assert.equal(mutations().length,1);
   const beforeConfirmation=calls.length;peer!.send(JSON.stringify(event(B,'203',LOCAL_OWNER,`/confirm ${notificationCode}`)));await wait(()=>commandsEnded()===2,'owner confirms in original group');

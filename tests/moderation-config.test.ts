@@ -1,91 +1,57 @@
 import test from 'node:test';
+import {withFixtureModel} from './config-fixture.js';
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,writeFileSync,rmSync,readFileSync,existsSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,rmSync,existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {ConfigError,loadAppConfig} from '../src/config-loader.js';
-import type {ModerationMode} from '../src/listener-config.js';
-
-const fields=['mute','unmute','recall','member_card'] as const;
-const keys=['mute','unmute','recall','memberCard'] as const;
-const modes:ModerationMode[]=['off','confirm','direct'];
-const defaults={mute:'off',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600};
+import type {AppConfig} from '../src/app-config.js';
+const names=['mute_member','unmute_member','recall_message','set_member_card'] as const;
 function fixture(t:{after(fn:()=>void):void}){
- const dir=mkdtempSync(join(tmpdir(),'listener-moderation-config-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
- mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'fixture persona');
- // Preserve explicit bot inputs; other fixtures use a synthetic global owner.
- const config=(source:string)=>writeFileSync(join(dir,'config.toml'),/^\s*\[bot\]/m.test(source)?source:source+'\n[bot]\nowner_id="778899"\n');config('');
- const load=()=>loadAppConfig({configPath:join(dir,'config.toml'),env:{ONEBOT_ACCESS_TOKEN:'test-token'}});
- return {dir,config,load};
+  const dir=mkdtempSync(join(tmpdir(),'moderation-policy-config-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'persona');
+  return {dir,load(source:string):AppConfig{writeFileSync(join(dir,'config.toml'),withFixtureModel(source));return loadAppConfig({configPath:join(dir,'config.toml'),env:{ONEBOT_ACCESS_TOKEN:'fixture',OPENAI_API_KEY:'fixture-key'}});}};
 }
-
-test('all management capabilities default off globally and per group without changing other defaults',t=>{
- const f=fixture(t);let c=f.load();assert.deepEqual(c.listener.tools?.moderation,defaults);assert.deepEqual(c.groups,[]);
- assert.equal(c.listener.tools?.members,true);assert.equal(c.listener.tools?.mention,true);assert.equal(c.listener.tools?.reactions,false);
- f.config('[groups."11"]\n[groups."22"]');c=f.load();assert.equal(c.groups.length,2);
- for(const group of c.groups)assert.deepEqual(group.tools?.moderation,defaults);
- assert.equal(existsSync(join(f.dir,'data')),false);
+test('management defaults confirm with separate confirmation policy and no implicit group enablement',t=>{
+  const f=fixture(t),app=f.load('[groups."11"]\n[groups."22"]');
+  for(const id of ['11','22','99']){const g=app.resolveGroup(id);assert.equal(g.enabled,false);for(const name of names)assert.equal(g.tools[name].mode,'confirm');assert.equal(g.tools.mute_member.maxSeconds,600);assert.deepEqual(g.confirmation,{ttlSeconds:60});}
+  assert.equal(existsSync(join(f.dir,'data')),false);
 });
-
-test('each capability accepts exactly three explicit modes including disabled groups',t=>{
- const f=fixture(t);
- for(const mode of modes)for(let index=0;index<fields.length;index++){
-  const field=fields[index]!,key=keys[index]!;
-  f.config(`[tools.moderation]\n${field}="${mode}"\n[groups."11"]`);
-  let c=f.load();assert.equal(c.listener.tools!.moderation[key],mode);assert.equal(c.groups[0]!.tools!.moderation[key],mode);
-  for(const sibling of keys.filter(other=>other!==key))assert.equal(c.groups[0]!.tools!.moderation[sibling],'off');
-  f.config(`[groups."11".tools.moderation]\n${field}="${mode}"`);c=f.load();assert.equal(c.listener.tools!.moderation[key],'off');assert.equal(c.groups[0]!.tools!.moderation[key],mode);
-  f.config(`[groups."11"]\nenabled=false\n[groups."11".tools.moderation]\n${field}="${mode}"`);assert.deepEqual(f.load().groups,[]);
- }
-});
-
-test('boolean compatibility, normalization, typo and scalar coercion are all rejected even in disabled groups',t=>{
- const f=fixture(t);
- const invalid=['true','false','0','1','1.5','nan','inf','null','[]','{}','1979-05-27','"true"','"false"','""','"OFF"','"Confirm"','"DIRECT"','" off"','"off "','"confirm\\n"','"auto"','"enabled"','"disabled"','"SENSITIVE_INVALID_MODE"'];
- for(const field of fields)for(const value of invalid){
-  for(const source of [`[tools.moderation]\n${field}=${value}`,`[groups."11".tools.moderation]\n${field}=${value}`,`[groups."11"]\nenabled=false\n[groups."11".tools.moderation]\n${field}=${value}`]){
-   f.config(source);assert.throws(()=>f.load(),e=>e instanceof ConfigError&&!e.message.includes('SENSITIVE_INVALID_MODE'),`${field}=${value}`);
+test('all four management tools accept three string modes and only active object branches',t=>{
+  const {load}=fixture(t);
+  for(const scope of ['defaults.tools','groups."11".tools'])for(const name of names)for(const mode of ['off','confirm','direct']){
+    const app=load(`[groups."11"]\nenabled=false\n[${scope}]\n${name}="${mode}"`),g=app.resolveGroup('11');
+    assert.equal(g.tools[name].mode,mode);for(const sibling of names.filter(x=>x!==name))assert.equal(g.tools[sibling].mode,'confirm');
+    const object=`[${scope}]\n${name}={mode="${mode}"}`;
+    if(mode==='off')assert.throws(()=>load(object),ConfigError);else assert.equal(load(object).resolveGroup('11').tools[name].mode,mode);
   }
- }
 });
-
-test('mute and unmute inherit independently while overrides preserve siblings and global limits',t=>{
- const f=fixture(t);f.config('[tools.moderation]\nmute="direct"\nunmute="confirm"\nrecall="confirm"\nmember_card="off"\nconfirmation_ttl_seconds=40\nmax_mute_seconds=300\n[groups."11".tools.moderation]\nmute="off"\nunmute="direct"\nmax_mute_seconds=120\n[groups."22".tools.moderation]\nrecall="direct"\nconfirmation_ttl_seconds=15\n[groups."33"]');
- const c=f.load(),a=c.groups.find(g=>g.groupId==='11')!.tools!.moderation,b=c.groups.find(g=>g.groupId==='22')!.tools!.moderation,d=c.groups.find(g=>g.groupId==='33')!.tools!.moderation;
- assert.deepEqual(a,{mute:'off',unmute:'direct',recall:'confirm',memberCard:'off',confirmationTtlSeconds:40,maxMuteSeconds:120});
- assert.deepEqual(b,{mute:'direct',unmute:'confirm',recall:'direct',memberCard:'off',confirmationTtlSeconds:15,maxMuteSeconds:300});
- assert.deepEqual(d,c.listener.tools!.moderation);assert.notEqual(d,c.listener.tools!.moderation);assert.notEqual(a,b);
- a.unmute='off';assert.equal(b.unmute,'confirm');assert.equal(d.unmute,'confirm');assert.equal(c.listener.tools!.moderation.unmute,'confirm');
- f.config('[tools.moderation]\nmute="direct"\n[groups."11"]');assert.equal(f.load().groups[0]!.tools!.moderation.unmute,'off');
- f.config('[tools.moderation]\nunmute="direct"\n[groups."11"]');assert.equal(f.load().groups[0]!.tools!.moderation.mute,'off');
+test('management rejects invalid scalar types, normalization and unknown parameters in all scopes',t=>{
+  const {load}=fixture(t);
+  for(const scope of ['defaults.tools','groups."11".tools'])for(const name of names)for(const value of ['true','false','0','1','1.5','nan','inf','[]','{}','1979-05-27','"true"','""','"OFF"','"Confirm"','" off"','"off "','"confirm\\n"','"auto"','"PRIVATE_INVALID_MODE"','{mode="off",max_seconds=10}','{mode="direct",SECRET_UNKNOWN_KEY="PRIVATE_INVALID_MODE"}'])
+    assert.throws(()=>load(`[groups."11"]\nenabled=false\n[${scope}]\n${name}=${value}`),e=>e instanceof ConfigError&&!e.message.includes('PRIVATE_INVALID_MODE')&&!e.message.includes('SECRET_UNKNOWN_KEY'),`${name}=${value}`);
+  for(const scope of ['defaults.tools','groups."11".tools'])for(const name of ['mute','unmute','recall','member_card','moderation'])assert.throws(()=>load(`[${scope}]\n${name}="direct"`),ConfigError);
 });
-
-test('TTL and mute duration limits retain the same strict ranges for every mode',t=>{
- const f=fixture(t);
- for(const mode of modes)for(const [field,min,max] of [['confirmation_ttl_seconds',1,60],['max_mute_seconds',1,600]] as const){
-  for(const value of [min,max]){
-   f.config(`[tools.moderation]\nmute="${mode}"\n${field}=${value}\n[groups."11"]`);assert.equal(f.load().groups.length,1);
-   f.config(`[groups."11"]\nenabled=false\n[groups."11".tools.moderation]\nunmute="${mode}"\n${field}=${value}`);assert.deepEqual(f.load().groups,[]);
+test('mute options replace as a union, unmute is independent, and confirmation TTL inherits separately',t=>{
+  const app=fixture(t).load('[defaults.tools]\nmute_member={mode="direct",max_seconds=300}\nunmute_member="confirm"\nrecall_message="confirm"\n[defaults.confirmation]\nttl_seconds=40\n[groups."11".tools]\nmute_member="confirm"\nunmute_member="direct"\n[groups."22".tools]\nmute_member={mode="direct",max_seconds=120}\n[groups."22".confirmation]\nttl_seconds=15\n[groups."33".tools]\nmute_member="off"');
+  assert.deepEqual(app.resolveGroup('11').tools.mute_member,{mode:'confirm',maxSeconds:600});
+  assert.deepEqual(app.resolveGroup('22').tools.mute_member,{mode:'direct',maxSeconds:120});
+  assert.equal(app.resolveGroup('33').tools.mute_member.mode,'off');
+  assert.equal(app.resolveGroup('11').tools.unmute_member.mode,'direct');assert.equal(app.resolveGroup('22').tools.unmute_member.mode,'confirm');
+  assert.equal(app.resolveGroup('11').confirmation.ttlSeconds,40);assert.equal(app.resolveGroup('22').confirmation.ttlSeconds,15);
+  const snapshot=app.resolveGroup('99');snapshot.tools.mute_member.maxSeconds=1;snapshot.confirmation.ttlSeconds=1;
+  assert.equal(app.resolveGroup('99').tools.mute_member.maxSeconds,300);assert.equal(app.resolveGroup('99').confirmation.ttlSeconds,40);
+});
+test('TTL and mute duration strict endpoints and invalid ranges apply even to disabled groups',t=>{
+  const {load}=fixture(t);
+  for(const scope of ['defaults','groups."11"']){
+    for(const ttl of [1,60])assert.equal(load(`[${scope}.confirmation]\nttl_seconds=${ttl}`).resolveGroup('11').confirmation.ttlSeconds,ttl);
+    for(const mode of ['confirm','direct'])for(const seconds of [1,600])assert.equal(load(`[${scope}.tools]\nmute_member={mode="${mode}",max_seconds=${seconds}}`).resolveGroup('11').tools.mute_member.maxSeconds,seconds);
+    for(const value of ['0','61','1.5','true','false','"1"','nan','inf','[]','{}'])assert.throws(()=>load(`[groups."11"]\nenabled=false\n[${scope}.confirmation]\nttl_seconds=${value}`),ConfigError);
+    for(const value of ['0','601','-1','1.5','true','"1"','nan','inf','[]','{}','9007199254740992'])for(const mode of ['confirm','direct'])assert.throws(()=>load(`[groups."11"]\nenabled=false\n[${scope}.tools]\nmute_member={mode="${mode}",max_seconds=${value}}`),ConfigError);
+    for(const name of ['unmute_member','recall_message','set_member_card'])assert.throws(()=>load(`[${scope}.tools]\n${name}={mode="direct",max_seconds=10}`),ConfigError);
+    for(const value of ['true','[]','"secret"'])assert.throws(()=>load(`[${scope}]\nconfirmation=${value}`),ConfigError);
+    assert.throws(()=>load(`[${scope}.confirmation]\nconfirmation_ttl_seconds=60`),ConfigError);
+    assert.throws(()=>load(`[${scope}.tools]\nmax_mute_seconds=600`),ConfigError);
   }
-  for(const value of [String(min-1),String(max+1),'1.5','true','false','"1"','nan','inf'])for(const header of ['tools.moderation','groups."11".tools.moderation']){
-   f.config(`[groups."11"]\nenabled=false\n[${header}]\nmute="${mode}"\n${field}=${value}`);assert.throws(()=>f.load(),ConfigError);
-  }
- }
-});
-
-test('future capabilities and nested modes are rejected rather than silently authorized',t=>{
- const f=fixture(t);
- for(const header of ['tools.moderation','groups."11".tools.moderation']){
-  for(const field of ['kick','announcement','ban','unmute_member','SECRET_UNKNOWN_KEY']){
-   f.config(`[groups."11"]\nenabled=false\n[${header}]\n${field}="direct"`);
-   assert.throws(()=>f.load(),e=>e instanceof ConfigError&&!e.message.includes('SECRET_UNKNOWN_KEY'));
-  }
-  for(const field of fields){f.config(`[${header}.${field}]\nmode="direct"`);assert.throws(()=>f.load(),ConfigError);}
- }
-});
-
-test('distributed example explicitly uses off for all four capabilities and documents autonomous authorization',t=>{
- const f=fixture(t),source=readFileSync(new URL('../config.example.toml',import.meta.url),'utf8');f.config(source);const c=f.load();
- assert.deepEqual(c.listener.tools?.moderation,defaults);assert.ok(c.groups.every(g=>JSON.stringify(g.tools?.moderation)===JSON.stringify(defaults)));
- assert.match(source,/不接受旧 true\/false/);assert.match(source,/direct 不要求主人先发指令/);assert.match(source,/主人 \/confirm/);
 });

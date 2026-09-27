@@ -25,7 +25,7 @@ test('unconfigured logging is no-op and sanitization is strict at every level', 
   for (const level of ['debug', 'info', 'warn', 'error'] as const) {
     log(level, 'app.safe', {
       actor_id: 123, message_id: -4, group_id: '123', duration_ms: 1.2, count: Infinity,
-      reason: 'prefix_needle_suffix', status: 'ok', phase: 'BAD', ai_enabled: true,
+      reason: 'prefix_needle_suffix', status: 'ok', phase: 'BAD', submitted: true,
       tool: 'send_message', action: 'get_msg', tools: ['get_member_info', 'send_message', 'secret'],
       turn_id: 't_0123456789abcdef', command_id: 'c_0123456789abcdef', image_id: 'img_-1_2',
       body: 'private', content: 'private', card: 'private', confirmationcode: 'private',
@@ -49,7 +49,7 @@ test('unconfigured logging is no-op and sanitization is strict at every level', 
     assert.equal(row.action, 'get_msg');
     assert.deepEqual(row.tools, ['get_member_info']);
     assert.equal(row.status, 'ok');
-    assert.equal(row.ai_enabled, true);
+    assert.equal(row.submitted, true);
     assert.equal(row.turn_id, 't_0123456789abcdef');
     assert.match(String(row.time), /^\d{4}-\d{2}-\d{2}T/);
     assert.ok(!JSON.stringify(row).includes('private'));
@@ -107,8 +107,8 @@ test('viewer revalidates untrusted records and ignores freeform messages', () =>
   assert.doesNotThrow(() => log('info', 'app.test', hostile));
   assert.deepEqual(sanitizeLogFields(hostile), {});
   let reads = 0;
-  const alternating = { get ai_enabled() { return ++reads === 1 ? true : { body: 'private' }; } };
-  assert.deepEqual(sanitizeLogFields(alternating), { ai_enabled: true });
+  const alternating = { get submitted() { return ++reads === 1 ? true : { body: 'private' }; } };
+  assert.deepEqual(sanitizeLogFields(alternating), { submitted: true });
   const customArray = ['finish'];
   customArray.slice = () => { throw new Error('must not invoke user method'); };
   assert.deepEqual(sanitizeLogFields({ tools: customArray }), { tools: ['finish'] });

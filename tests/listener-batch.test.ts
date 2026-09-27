@@ -158,8 +158,8 @@ test('new caller during first send does not cancel later single-message calls be
   } finally { sending.resolve({ message_id: '90001' }); await s.bot.stop(); }
 });
 
-for (const phase of ['compact', 'model', 'tool'] as const) test(`arrivals during ${phase} stay outside sealed prompt and read_message scope`, async () => {
-  const held = gate<void>(); let compactCalls = 0; let rounds = 0; let toolStarted = false;
+for (const phase of ['model', 'tool'] as const) test(`arrivals during ${phase} stay outside sealed prompt and read_message scope`, async () => {
+  const held = gate<void>(); let rounds = 0; let toolStarted = false;
   const s = setup({ complete: async () => {
     rounds++;
     if (rounds === 1 && phase === 'model') await held.promise;
@@ -170,10 +170,9 @@ for (const phase of ['compact', 'model', 'tool'] as const) test(`arrivals during
     if (action === 'get_group_member_list') { toolStarted = true; await held.promise; return []; }
     return {};
   } });
-  if (phase === 'compact') s.memory.compactHook = async () => { if (++compactCalls === 1) await held.promise; };
   try {
     await s.bot.receive(event('1'), self);
-    await until(() => phase === 'compact' ? compactCalls === 1 : phase === 'tool' ? toolStarted : s.requests.length === 1);
+    await until(() => phase === 'tool' ? toolStarted : s.requests.length === 1);
     await s.bot.receive(event('2'), self);
     held.resolve();
     const finalRound = phase === 'tool' ? 2 : 1;

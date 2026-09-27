@@ -7,6 +7,8 @@ import { extractMessageContent, projectMessage } from './message-content.js';
 
 export interface GroupToolsOptions {
   members?: boolean;
+  getGroupMembers?: boolean;
+  getMemberInfo?: boolean;
   mention?: boolean;
   groupId?: string;
 }
@@ -57,9 +59,12 @@ export class GroupTools {
   private readonly groupId: string;
   constructor(private api: Api, private memory: Memory, options: GroupToolsOptions = {}) {
     if (!object(options) || ![Object.prototype, null].includes(Object.getPrototypeOf(options)) ||
-      Reflect.ownKeys(options).some(key => typeof key !== 'string' || !['members', 'mention', 'groupId'].includes(key))) throw new Error('Invalid group tool options');
+      Reflect.ownKeys(options).some(key => typeof key !== 'string' || !['members', 'getGroupMembers', 'getMemberInfo', 'mention', 'groupId'].includes(key))) throw new Error('Invalid group tool options');
     this.groupId = resolveGroupId(options.groupId);
-    const policy = { members: true, mention: true, ...options, groupId: this.groupId };
+    for(const key of ['getGroupMembers','getMemberInfo'])if(Object.hasOwn(options,key)&&typeof options[key]!=='boolean')throw new Error('Invalid group tool options');
+    const getGroupMembers=options.getGroupMembers??options.members??true,getMemberInfo=options.getMemberInfo??options.members??true;
+    if(typeof getGroupMembers!=='boolean'||typeof getMemberInfo!=='boolean')throw new Error('Invalid group tool options');
+    const policy = { members: true, mention: true, ...options, groupId: this.groupId,getGroupMembers,getMemberInfo };
     if (typeof policy.members !== 'boolean' || typeof policy.mention !== 'boolean') throw new Error('Invalid group tool options');
     this.options = Object.freeze(policy);
   }
@@ -83,7 +88,7 @@ export class GroupTools {
   async execute(name: string, args: unknown, context: TurnContext): Promise<JsonObject> {
     try {
       this.scope(context);
-      if (!this.options.members && (name === 'get_group_members' || name === 'get_member_info')) fail('tool_disabled');
+      if ((name === 'get_group_members' && !this.options.getGroupMembers) || (name === 'get_member_info' && !this.options.getMemberInfo)) fail('tool_disabled');
       if (name === 'get_group_members') {
         fields(args, ['search', 'offset', 'limit']);
         if (args.search !== undefined && (typeof args.search !== 'string' || args.search.length > 100)) fail();

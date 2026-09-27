@@ -1,117 +1,65 @@
-import test from "node:test";
-import assert from "node:assert/strict";
-import {
-  mkdtempSync,
-  mkdirSync,
-  writeFileSync,
-  readFileSync,
-  rmSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { loadAppConfig, ConfigError } from "../src/config-loader.js";
-import {
-  EXTENDED_TOOL_NAMES,
-  EXTENDED_READ_ONLY_TOOLS,
-  enabledExtendedTools,
-} from "../src/extended-tool-config.js";
-test("configuration example enumerates every extension without granting any capability", (t) => {
-  const config = fixture(t)(
-    readFileSync(
-      join(import.meta.dirname, "..", "config.example.toml"),
-      "utf8",
-    ),
-  );
-  assert.deepEqual(
-    Object.keys(config.listener.tools!.extended!).sort(),
-    [...EXTENDED_TOOL_NAMES].sort(),
-  );
-  assert.ok(
-    Object.values(config.listener.tools!.extended!).every(
-      (mode) => mode === "off",
-    ),
-  );
-  assert.deepEqual(enabledExtendedTools(config.listener.tools!.extended), []);
-});
-function fixture(t: { after(fn: () => void): void }) {
-  const dir = mkdtempSync(join(tmpdir(), "extended-tools-config-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  mkdirSync(join(dir, "prompts"));
-  writeFileSync(join(dir, "prompts/listener.md"), "synthetic persona");
-  return (text: string) => {
-    // Keep explicit bot inputs (including the distributed example) unchanged.
-    const source = /^\s*\[bot\]/m.test(text)
-      ? text
-      : text + '\n[bot]\nowner_id="778899"\n';
-    writeFileSync(join(dir, "config.toml"), source);
-    return loadAppConfig({
-      configPath: join(dir, "config.toml"),
-      env: { ONEBOT_ACCESS_TOKEN: "fixture" },
-    });
-  };
+import test from 'node:test';
+import {withFixtureModel} from './config-fixture.js';
+import assert from 'node:assert/strict';
+import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {loadAppConfig,ConfigError} from '../src/config-loader.js';
+import type {AppConfig} from '../src/app-config.js';
+import {TOOL_NAMES} from '../src/tool-policy.js';
+import {EXTENDED_TOOL_NAMES,EXTENDED_READ_ONLY_TOOLS} from '../src/extended-tool-config.js';
+function fixture(t:{after(fn:()=>void):void}) {
+  const dir=mkdtempSync(join(tmpdir(),'tool-policy-config-'));
+  t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'synthetic persona');
+  return (source:string):AppConfig=>{writeFileSync(join(dir,'config.toml'),withFixtureModel(source));return loadAppConfig({configPath:join(dir,'config.toml'),env:{ONEBOT_ACCESS_TOKEN:'fixture',OPENAI_API_KEY:'fixture-key'}});};
 }
-test("new tools are off by default including high-impact capabilities", (t) => {
-  const config = fixture(t)("");
-  assert.equal(config.listener.tools?.extended, undefined);
-  assert.deepEqual(enabledExtendedTools(config.listener.tools?.extended), []);
-  for (const name of EXTENDED_TOOL_NAMES)
-    assert.deepEqual(enabledExtendedTools({ [name]: "off" }), []);
+const noConfirm=new Set<string>([...EXTENDED_READ_ONLY_TOOLS,'get_group_members','get_member_info','react_message','get_reaction_users','view_images','read_forward','manage_attention']);
+const scopes=['defaults.tools','groups."11".tools'] as const;
+test('catalog covers existing and optional tools, defaults are complete and do not enable service',t=>{
+  const expected=[...EXTENDED_TOOL_NAMES,'mute_member','unmute_member','recall_message','set_member_card','get_group_members','get_member_info','react_message','get_reaction_users','view_images','read_forward','manage_attention'];
+  assert.deepEqual([...TOOL_NAMES].sort(),expected.sort());assert.equal(new Set(TOOL_NAMES).size,TOOL_NAMES.length);
+  const app=fixture(t)(''),group=app.resolveGroup('11');
+  assert.equal(app.defaultsEnabled,false);assert.equal(group.enabled,false);
+  assert.deepEqual(Object.keys(group.tools).sort(),[...TOOL_NAMES].sort());
+  const interactive=new Set(['poke_member','group_sign','send_group_image','forward_message','send_group_forward','send_group_ai_voice']);
+  for(const name of TOOL_NAMES)assert.equal(group.tools[name].mode,name==='leave_group'?'off':noConfirm.has(name)||interactive.has(name)?'direct':'confirm',name);
 });
-test("each extended capability requires explicit direct and remains group scoped", (t) => {
-  const load = fixture(t);
-  for (const name of EXTENDED_TOOL_NAMES)
-    assert.deepEqual(
-      enabledExtendedTools(
-        load(`[tools.extended]\n${name}="direct"`).listener.tools?.extended,
-      ),
-      [name],
-    );
-  const config = load(
-    '[tools.extended]\nget_group_info="direct"\nkick_member="off"\n[groups."1".tools.extended]\nkick_member="direct"\n[groups."2".tools.extended]\nget_group_info="off"',
-  );
-  assert.deepEqual(enabledExtendedTools(config.groups[0]!.tools?.extended), [
-    "get_group_info",
-    "kick_member",
-  ]);
-  assert.deepEqual(enabledExtendedTools(config.groups[1]!.tools?.extended), []);
-  assert.deepEqual(enabledExtendedTools(config.listener.tools?.extended), [
-    "get_group_info",
-  ]);
-  config.groups[0]!.tools!.extended!.get_group_info = "off";
-  assert.equal(config.listener.tools!.extended!.get_group_info, "direct");
-});
-test("write capabilities support confirm and inherit independently without enabling direct execution", (t) => {
-  const load = fixture(t);
-  for (const name of EXTENDED_TOOL_NAMES) {
-    if (EXTENDED_READ_ONLY_TOOLS.includes(name))
-      assert.throws(
-        () => load(`[tools.extended]\n${name}="confirm"`),
-        ConfigError,
-      );
-    else
-      assert.equal(
-        load(`[tools.extended]\n${name}="confirm"`).listener.tools!.extended![
-          name
-        ],
-        "confirm",
-      );
+test('every tool validates string and object modes at both scopes including disabled groups',t=>{
+  const load=fixture(t);
+  for(const scope of scopes)for(const name of TOOL_NAMES)for(const mode of ['off','direct','confirm']){
+    const source=`[groups."11"]\nenabled=false\n[${scope}]\n${name}="${mode}"`;
+    if(mode==='confirm'&&noConfirm.has(name))assert.throws(()=>load(source),ConfigError,name);
+    else assert.equal(load(source).resolveGroup('11').tools[name].mode,mode,name);
+    const object=`[groups."11"]\nenabled=false\n[${scope}]\n${name}={mode="${mode}"}`;
+    if(mode==='off'||(mode==='confirm'&&noConfirm.has(name)))assert.throws(()=>load(object),ConfigError,name);
+    else assert.equal(load(object).resolveGroup('11').tools[name].mode,mode,name);
   }
-  const config = load(
-    '[tools.extended]\nkick_member="confirm"\ndelete_group_file="confirm"\n[groups."1".tools.extended]\nkick_member="off"\n[groups."2".tools.extended]\nkick_member="direct"',
-  );
-  assert.equal(config.groups[0]!.tools!.extended!.kick_member, "off");
-  assert.equal(config.groups[0]!.tools!.extended!.delete_group_file, "confirm");
-  assert.equal(config.groups[1]!.tools!.extended!.kick_member, "direct");
-  assert.equal(config.listener.tools!.extended!.kick_member, "confirm");
 });
-test("unknown names and implicit or unsupported modes fail even in disabled groups", (t) => {
-  const load = fixture(t);
-  for (const prefix of [
-    "[tools.extended]",
-    '[groups."1"]\nenabled=false\n[groups."1".tools.extended]',
-  ]) {
-    for (const value of ["true", "false", '"on"', "1", "[]", "{}"])
-      assert.throws(() => load(`${prefix}\nkick_member=${value}`), ConfigError);
-    assert.throws(() => load(`${prefix}\nunknown_tool="direct"`), ConfigError);
+test('every tool rejects coercion, implicit modes, off objects and invented options without leaking values',t=>{
+  const load=fixture(t);
+  for(const scope of scopes)for(const name of TOOL_NAMES)for(const value of ['true','false','0','1.5','nan','inf','[]','{}','"on"','"DIRECT"','" direct"','{mode=true}','{mode="off"}','{mode="direct",unexpected="PRIVATE_SENTINEL"}']){
+    assert.throws(()=>load(`[groups."11"]\nenabled=false\n[${scope}]\n${name}=${value}`),e=>e instanceof ConfigError&&!e.message.includes('PRIVATE_SENTINEL'),`${name}=${value}`);
+  }
+  for(const scope of scopes)for(const name of ['moderation','extended','members','mention','reactions','send_message','read_message','finish','unknown_tool'])
+    assert.throws(()=>load(`[${scope}]\n${name}="direct"`),ConfigError);
+  for(const source of ['[tools.extended]\nkick_member="direct"','[defaults]\ntools=true','[groups."11"]\nenabled=false\ntools=[]'])assert.throws(()=>load(source),ConfigError);
+});
+test('tool union replacement resets options to branch defaults while absent tools inherit isolated copies',t=>{
+  const app=fixture(t)('[defaults.tools]\nview_images={mode="direct",max_per_turn=1,max_download_mb=2}\nkick_member="confirm"\n[groups."11".tools]\nview_images={mode="direct",max_per_turn=2}\nkick_member="off"\n[groups."22".tools]\nview_images="direct"\n[groups."33"]');
+  assert.deepEqual(app.resolveGroup('11').tools.view_images,{mode:'direct',maxPerTurn:2,maxDownloadMb:10});
+  assert.deepEqual(app.resolveGroup('22').tools.view_images,{mode:'direct',maxPerTurn:3,maxDownloadMb:10});
+  const inherited=app.resolveGroup('33');assert.deepEqual(inherited.tools.view_images,{mode:'direct',maxPerTurn:1,maxDownloadMb:2});
+  assert.equal(app.resolveGroup('11').tools.kick_member.mode,'off');assert.equal(app.resolveGroup('22').tools.kick_member.mode,'confirm');
+  inherited.tools.view_images.maxDownloadMb=9;inherited.tools.kick_member.mode='direct';
+  assert.equal(app.resolveGroup('33').tools.view_images.maxDownloadMb,2);assert.equal(app.resolveGroup('999').tools.kick_member.mode,'confirm');
+});
+test('image option endpoints and invalid numeric or misplaced options are checked while service is disabled',t=>{
+  const load=fixture(t);
+  for(const scope of scopes)for(const [key,min,max,field] of [['max_per_turn',1,3,'maxPerTurn'],['max_download_mb',1,10,'maxDownloadMb']] as const){
+    for(const value of [min,max])assert.equal(load(`[${scope}]\nview_images={mode="direct",${key}=${value}}`).resolveGroup('11').tools.view_images[field],value);
+    for(const value of [String(min-1),String(max+1),'1.5','true','"1"','[]','{}','nan','inf','9007199254740992'])
+      assert.throws(()=>load(`[groups."11"]\nenabled=false\n[${scope}]\nview_images={mode="direct",${key}=${value}}`),ConfigError);
+    assert.throws(()=>load(`[${scope}]\npoke_member={mode="direct",${key}=1}`),ConfigError);
   }
 });

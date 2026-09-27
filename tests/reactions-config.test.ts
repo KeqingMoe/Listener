@@ -1,76 +1,52 @@
 import test from 'node:test';
+import {withFixtureModel} from './config-fixture.js';
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,writeFileSync,rmSync,readFileSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {ConfigError,loadAppConfig} from '../src/config-loader.js';
-
-function fixture(t:{after(fn:()=>void):void},source=''){
- const dir=mkdtempSync(join(tmpdir(),'listener-reactions-config-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
- mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'fixture persona');
- // Preserve explicit bot inputs; other fixtures use a synthetic global owner.
- const config=(text:string)=>writeFileSync(join(dir,'config.toml'),/^\s*\[bot\]/m.test(text)?text:text+'\n[bot]\nowner_id="778899"\n');config(source);
- const load=()=>loadAppConfig({configPath:join(dir,'config.toml'),env:{ONEBOT_ACCESS_TOKEN:'fixture-token',OPENAI_API_KEY:'fixture-key'}});
- return {config,load};
+import {loadAppConfig,ConfigError} from '../src/config-loader.js';
+import type {AppConfig} from '../src/app-config.js';
+function fixture(t:{after(fn:()=>void):void}){
+  const dir=mkdtempSync(join(tmpdir(),'reaction-policy-config-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'persona');
+  return(source:string):AppConfig=>{writeFileSync(join(dir,'config.toml'),withFixtureModel(source));return loadAppConfig({configPath:join(dir,'config.toml'),env:{ONEBOT_ACCESS_TOKEN:'fixture',OPENAI_API_KEY:'fixture-key'}});};
 }
-
-test('reactions default off and do not implicitly enable groups or AI',t=>{
- const f=fixture(t);let c=f.load();
- assert.equal(c.listener.tools?.reactions,false);assert.deepEqual(c.groups,[]);assert.equal(c.listener.enabled,false);
- assert.equal(c.listener.tools?.members,true);assert.equal(c.listener.tools?.mention,true);
- assert.equal(c.listener.tools?.moderation.mute,'off');assert.equal(c.listener.tools?.moderation.unmute,'off');assert.equal(c.listener.tools?.moderation.recall,'off');assert.equal(c.listener.tools?.moderation.memberCard,'off');
- f.config('[tools]\nreactions=true');c=f.load();assert.equal(c.listener.tools?.reactions,true);assert.deepEqual(c.groups,[]);assert.equal(c.listener.enabled,false);
- f.config('[groups."11"]\n[groups."22"]');c=f.load();assert.ok(c.groups.every(g=>g.tools?.reactions===false));
+test('background observation and reaction tools default on without enabling a group',t=>{
+  const app=fixture(t)(''),g=app.resolveGroup('11');
+  assert.deepEqual(g.observation,{reactions:true});assert.equal(g.tools.react_message.mode,'direct');assert.equal(g.tools.get_reaction_users.mode,'direct');
+  assert.equal(g.enabled,false);assert.equal(g.messages.mentions,true);assert.equal(g.tools.get_group_members.mode,'direct');
 });
-
-test('reaction overrides deeply inherit and leave siblings and other tools independent',t=>{
- const f=fixture(t,'[tools]\nreactions=true\nmembers=false\nmention=false\n[tools.moderation]\nmute="off"\nrecall="off"\nmember_card="off"\n[groups."11".tools]\nreactions=false\n[groups."22".tools]\nmembers=true\n[groups."33"]');
- const c=f.load(),a=c.groups.find(g=>g.groupId==='11')!,b=c.groups.find(g=>g.groupId==='22')!,d=c.groups.find(g=>g.groupId==='33')!;
- assert.equal(a.tools?.reactions,false);assert.equal(b.tools?.reactions,true);assert.equal(d.tools?.reactions,true);
- assert.equal(a.tools?.members,false);assert.equal(b.tools?.members,true);assert.equal(d.tools?.members,false);
- assert.ok(c.groups.every(g=>g.tools?.mention===false&&g.tools.moderation.mute==='off'&&g.tools.moderation.unmute==='off'&&g.tools.moderation.recall==='off'&&g.tools.moderation.memberCard==='off'));
- for(const group of c.groups){assert.notEqual(group.tools,c.listener.tools);assert.notEqual(group.tools?.moderation,c.listener.tools?.moderation);}
- assert.notEqual(a.tools,b.tools);b.tools!.reactions=false;
- assert.equal(c.listener.tools?.reactions,true);assert.equal(d.tools?.reactions,true);
- f.config('[tools]\nreactions=false\n[groups."11".tools]\nreactions=true\n[groups."22"]');const override=f.load();
- assert.equal(override.groups.find(g=>g.groupId==='11')!.tools?.reactions,true);assert.equal(override.groups.find(g=>g.groupId==='22')!.tools?.reactions,false);
-});
-
-test('reactions require literal booleans globally and in every group even if disabled',t=>{
- const f=fixture(t);
- for(const value of ['"true"','"false"','0','1','[]','{}','1.5','nan','inf','1979-05-27']){
-  for(const source of [`[tools]\nreactions=${value}`,`[groups."11".tools]\nreactions=${value}`,`[groups."11"]\nenabled=false\n[groups."11".tools]\nreactions=${value}`,`[ai]\nenabled=false\n[groups."11".tools]\nreactions=${value}`]){
-   f.config(source);assert.throws(()=>f.load(),ConfigError);
+test('all observation/tool combinations are independently expressible without implicit service enablement',t=>{
+  const load=fixture(t);
+  for(const observe of [false,true])for(const react of ['off','direct'])for(const users of ['off','direct']){
+    const app=load(`[defaults.observation]\nreactions=${observe}\n[defaults.tools]\nreact_message="${react}"\nget_reaction_users="${users}"`),g=app.resolveGroup('11');
+    assert.equal(g.observation.reactions,observe);assert.equal(g.tools.react_message.mode,react);assert.equal(g.tools.get_reaction_users.mode,users);
+    assert.equal(g.enabled,false);assert.equal(g.reply.random,false);assert.deepEqual([...app.onebot.allowedGroups],[]);
   }
- }
- for(const value of ['true','false']){
-  f.config(`[tools]\nreactions=${value}\n[groups."11"]\nenabled=false\n[groups."11".tools]\nreactions=${value}`);
-  assert.deepEqual(f.load().groups,[]);
- }
 });
-
-test('reaction configuration does not relax unknown tool keys or accept nested settings',t=>{
- const f=fixture(t);
- for(const header of ['tools','groups."11".tools']){
-  for(const source of [`[${header}]\nreactions=true\nreaction=true`,`[${header}]\nreactions=true\nunknown_secret="do-not-echo"`,`[${header}.reactions]\nenabled=true`]){
-   f.config(source);assert.throws(()=>f.load(),error=>error instanceof ConfigError&&!error.message.includes('do-not-echo'));
+test('group overrides keep observation, actions, user lookup, mentions and member lookup separate',t=>{
+  const app=fixture(t)('[defaults.observation]\nreactions=true\n[defaults.messages]\nmentions=false\n[defaults.tools]\nreact_message="direct"\nget_reaction_users="direct"\nget_group_members="off"\n[groups."11".observation]\nreactions=false\n[groups."22".tools]\nreact_message="off"\nget_group_members="direct"\n[groups."33".tools]\nget_reaction_users="off"');
+  assert.equal(app.resolveGroup('11').observation.reactions,false);assert.equal(app.resolveGroup('11').tools.react_message.mode,'direct');assert.equal(app.resolveGroup('11').tools.get_reaction_users.mode,'direct');
+  assert.equal(app.resolveGroup('22').observation.reactions,true);assert.equal(app.resolveGroup('22').tools.react_message.mode,'off');assert.equal(app.resolveGroup('22').tools.get_reaction_users.mode,'direct');assert.equal(app.resolveGroup('22').tools.get_group_members.mode,'direct');
+  assert.equal(app.resolveGroup('33').tools.get_reaction_users.mode,'off');assert.equal(app.resolveGroup('33').tools.get_group_members.mode,'off');
+  for(const id of ['11','22','33']){const g=app.resolveGroup(id);assert.equal(g.messages.mentions,false);assert.equal(g.tools.mute_member.mode,'confirm');}
+  const snapshot=app.resolveGroup('99');snapshot.observation.reactions=false;snapshot.tools.react_message.mode='off';assert.equal(app.resolveGroup('99').observation.reactions,true);assert.equal(app.resolveGroup('99').tools.react_message.mode,'direct');
+});
+test('observation requires literal booleans and rejects tables, unknown keys and old switches even in disabled groups',t=>{
+  const load=fixture(t);
+  for(const scope of ['defaults','groups."11"']){
+    for(const value of ['"true"','"false"','0','1','[]','{}','1.5','nan','inf','1979-05-27'])assert.throws(()=>load(`[groups."11"]\nenabled=false\n[${scope}.observation]\nreactions=${value}`),ConfigError);
+    for(const value of ['true','false'])assert.equal(load(`[${scope}.observation]\nreactions=${value}`).resolveGroup('11').observation.reactions,value==='true');
+    for(const value of ['false','[]','"secret"'])assert.throws(()=>load(`[${scope}]\nobservation=${value}`),ConfigError);
+    assert.throws(()=>load(`[${scope}.observation]\nreactions=true\nunknown="PRIVATE_VALUE"`),e=>e instanceof ConfigError&&!e.message.includes('PRIVATE_VALUE'));
+    assert.throws(()=>load(`[${scope}.tools]\nreactions=true`),ConfigError);
+    assert.throws(()=>load(`[${scope}.messages]\nmentions="false"`),ConfigError);
   }
- }
- f.config('[groups."11"]\nenabled=false\n[groups."11".tools]\nreactions=false\nunknown=true');assert.throws(()=>f.load(),ConfigError);
 });
-
-test('reaction toggles leave reply probability, attention and moderation policy defaults unchanged',t=>{
- const f=fixture(t,'[tools]\nreactions=true\n[reply]\nrandom_probability=0.42\n[groups."11"]\n[groups."22".tools]\nreactions=false');
- const c=f.load();assert.equal(c.listener.randomReplyProbability,0.42);
- for(const group of c.groups){
-  assert.equal(group.randomReplyProbability,0.42);assert.deepEqual(group.attention,{enabled:false,maxPlans:16});
-  assert.deepEqual(group.tools?.moderation,{mute:'off',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600});
- }
- assert.deepEqual([...c.onebot.allowedGroups],['11','22']);assert.equal(c.onebot.allowPrivate,false);
-});
-
-test('configuration example keeps reactions default off and documents independent scope',t=>{
- const source=readFileSync(new URL('../config.example.toml',import.meta.url),'utf8');const f=fixture(t,source),c=f.load();
- assert.equal(c.listener.tools?.reactions,false);assert.ok(c.groups.every(g=>g.tools?.reactions===false));
- assert.match(source,/关闭不会自动移除已有回应/);assert.match(source,/不需主人确认/);assert.match(source,/sysface（329）\+ emoji（165）/);
+test('reaction tools accept off/direct or direct objects, never confirmation, boolean modes or object off',t=>{
+  const load=fixture(t);
+  for(const scope of ['defaults.tools','groups."11".tools'])for(const name of ['react_message','get_reaction_users']){
+    assert.equal(load(`[${scope}]\n${name}={mode="direct"}`).resolveGroup('11').tools[name as 'react_message'|'get_reaction_users'].mode,'direct');
+    for(const value of ['true','false','"confirm"','{mode="confirm"}','{mode="off"}','{mode="direct",enabled=true}','{mode="direct",max_per_turn=1}'])assert.throws(()=>load(`[groups."11"]\nenabled=false\n[${scope}]\n${name}=${value}`),ConfigError);
+  }
 });

@@ -231,17 +231,18 @@ test(
         try {
           const call = JSON.parse(raw.toString());
           calls.push(call.action);
-          assert.equal(
-            call.action,
-            "get_login_info",
-            "notices and silent observations never make external requests",
+          assert.ok(
+            ["get_login_info", "get_group_list"].includes(call.action),
+            "only startup identity/membership discovery may make external requests",
           );
           socket.send(
             JSON.stringify({
               echo: call.echo,
               status: "ok",
               retcode: 0,
-              data: { user_id: SELF },
+              data: call.action === "get_group_list"
+                ? [GROUP, OTHER, DISABLED].map(group_id => ({ group_id }))
+                : { user_id: SELF },
             }),
           );
           notify();
@@ -304,7 +305,34 @@ test(
       );
       writeFileSync(
         join(dir, "config.toml"),
-        `[bot]\nowner_id="778899"\n[onebot]\nurl="ws://127.0.0.1:${(ws.address() as AddressInfo).port}"\ntoken_env="FIXTURE_TOKEN"\n[ai]\nenabled=true\nbase_url="http://127.0.0.1:${(http.address() as AddressInfo).port}/v1"\nmodel="fixture-world-notices"\napi_key_env="FIXTURE_KEY"\ntimeout_ms=10000\n[reply]\ndelay_ms=[100,100]\ncooldown_ms=1000\nrandom_probability=0\n[logging]\nlevel="debug"\nconsole=true\nfile=false\n[groups."${GROUP}"]\n[groups."${OTHER}"]\n[groups."${DISABLED}"]\nenabled=false\n`,
+        `[bot]
+owner_id = "778899"
+[onebot]
+url = "ws://127.0.0.1:${(ws.address() as AddressInfo).port}"
+token_env = "FIXTURE_TOKEN"
+[model]
+base_url = "http://127.0.0.1:${(http.address() as AddressInfo).port}/v1"
+model = "fixture-world-notices"
+api_key_env = "FIXTURE_KEY"
+timeout_ms = 10000
+[storage]
+directory = "data"
+telemetry_path = "data/listener.sqlite.telemetry.sqlite"
+[defaults]
+enabled = false
+persona = "prompts/listener.md"
+reply = { delay_ms = [100,100], cooldown_ms = 1000, random = false }
+[logging]
+level = "debug"
+console = true
+file = false
+[groups."${GROUP}"]
+enabled = true
+[groups."${OTHER}"]
+enabled = true
+[groups."${DISABLED}"]
+enabled = false
+`,
       );
       child = spawn(
         process.execPath,
@@ -374,7 +402,7 @@ test(
         /trigger\.accepted|trigger\.scheduled|turn\.start/,
       );
       assert.equal(modelCalls, 0);
-      assert.deepEqual(calls, ["get_login_info"]);
+      assert.deepEqual(calls, ["get_login_info", "get_group_list"]);
       const ownPath = join(dir, `data/groups/${GROUP}/listener.sqlite.events.sqlite`),
         otherPath = join(
           dir,
@@ -422,7 +450,7 @@ test(
       );
       await wait(() => output.includes("turn.end"), "observation wake");
       assert.equal(modelCalls, 2);
-      assert.deepEqual(calls, ["get_login_info"]);
+      assert.deepEqual(calls, ["get_login_info", "get_group_list"]);
       child.kill("SIGTERM");
       assert.deepEqual(await bounded(exit), { code: 0, signal: null });
       const persisted = JSON.stringify(events(ownPath));

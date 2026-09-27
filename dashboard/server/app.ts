@@ -117,6 +117,7 @@ export function buildApp(options: AppOptions) {
       .send({ error: "unavailable", message: "Data temporarily unavailable" });
   });
   const parse = (value: unknown, extra: string[] = []) => {
+    repository.refreshGroups();
     const q = value as Record<string, unknown>;
     if (
       Object.keys(q).some(
@@ -131,7 +132,7 @@ export function buildApp(options: AppOptions) {
     if (q.groupId !== undefined) {
       if (
         typeof q.groupId !== "string" ||
-        !options.groups.some((g) => g.groupId === q.groupId)
+        !repository.groups.some((g) => g.groupId === q.groupId)
       )
         throw new InvalidQuery();
       groupId = q.groupId;
@@ -139,9 +140,10 @@ export function buildApp(options: AppOptions) {
     return { range: { since, until } as Range, groupId, q };
   };
   app.get("/api/meta", async (req) => {
+    repository.refreshGroups();
     if (Object.keys(req.query as object).length) throw new InvalidQuery();
     return {
-      groups: options.groups.map((g) => ({ groupId: g.groupId })),
+      groups: repository.groups.map((g) => ({ groupId: g.groupId })),
       readOnly: true,
       maxRangeDays: 31,
       now: now(),
@@ -171,7 +173,7 @@ export function buildApp(options: AppOptions) {
       availability: repository.availability(),
       summary: summarize(rows),
       series,
-      groups: options.groups
+      groups: repository.groups
         .filter((g) => !groupId || g.groupId === groupId)
         .map((g) => ({
           groupId: g.groupId,
@@ -184,7 +186,7 @@ export function buildApp(options: AppOptions) {
       limit = integer(q.limit, 30);
     if (limit < 1 || limit > 100) throw new InvalidQuery();
     const binding = createHash("sha256")
-      .update(JSON.stringify({ range, groupId }))
+      .update(JSON.stringify({ range, groupId, groups: repository.groups.filter(g => !groupId || g.groupId === groupId).map(g => g.groupId).sort() }))
       .digest("hex");
     let offset = 0;
     if (q.cursor !== undefined) {
@@ -224,12 +226,13 @@ export function buildApp(options: AppOptions) {
     };
   });
   app.get("/api/wakes/:id", async (req, reply) => {
+    repository.refreshGroups();
     const q = req.query as Record<string, unknown>,
       id = (req.params as { id: string }).id;
     if (
       Object.keys(q).some((k) => k !== "groupId") ||
       typeof q.groupId !== "string" ||
-      !options.groups.some((g) => g.groupId === q.groupId) ||
+      !repository.groups.some((g) => g.groupId === q.groupId) ||
       !id ||
       id.length > 128 ||
       /[\x00-\x1f]/.test(id)

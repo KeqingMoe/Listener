@@ -48,6 +48,7 @@ test('real entrypoint queries reaction users on demand, keeps pagination opaque,
   socket.on('message',raw=>{try{
    const call=JSON.parse(raw.toString());calls.push(call);let data:unknown;
    if(call.action==='get_login_info')data={user_id:SELF};
+    else if(call.action==='get_group_list')data=[{group_id:GROUP}];
    else if(call.action==='send_group_msg'){assert.equal(call.params.group_id,GROUP);const id=String(9001+sent++),own=message(id,'fixture bot',SELF);own.message=call.params.message;stored.set(id,own);data={message_id:id};}
    else if(call.action==='get_msg'){const id=String(call.params.message_id),original=stored.get(id);assert.ok(original,'only known local group message IDs may be queried');data={message_type:'group',group_id:GROUP,message_id:id,sender:{user_id:original.user_id},user_id:original.user_id,time:original.time,message:original.message,emoji_likes_list:id===TARGET?[{emoji_id:'76',emoji_type:'1',likes_cnt:'2'}]:[]};}
    else if(call.action==='fetch_emoji_like'){
@@ -66,7 +67,37 @@ test('real entrypoint queries reaction users on demand, keeps pagination opaque,
  try{
   const listening=ws.address()?Promise.resolve():once(ws,'listening');http.listen(0,'127.0.0.1');await Promise.all([listening,once(http,'listening')]);const wsPort=(ws.address() as AddressInfo).port,httpPort=(http.address() as AddressInfo).port;
   mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'Isolated reaction-user listing fixture.');writeFileSync(join(dir,'.env'),'FIXTURE_TOKEN=fixture-token\nFIXTURE_KEY=fixture-key\n',{mode:0o600});
-  writeFileSync(join(dir,'config.toml'),`[bot]\nowner_id="${OWNER_ID}"\n[onebot]\nurl="ws://127.0.0.1:${wsPort}"\ntoken_env="FIXTURE_TOKEN"\n[ai]\nenabled=true\nbase_url="http://127.0.0.1:${httpPort}/v1"\nmodel="fixture-reaction-users"\napi_key_env="FIXTURE_KEY"\ntimeout_ms=10000\n[reply]\ndelay_ms=[100,100]\ncooldown_ms=1000\nrandom_probability=0\n[tools]\nreactions=true\nmembers=false\n[logging]\nlevel="debug"\nconsole=true\nfile=false\n[groups."${GROUP}"]\n`);
+  writeFileSync(join(dir,'config.toml'),`[bot]
+owner_id = "${OWNER_ID}"
+[onebot]
+url = "ws://127.0.0.1:${wsPort}"
+token_env = "FIXTURE_TOKEN"
+[model]
+base_url = "http://127.0.0.1:${httpPort}/v1"
+model = "fixture-reaction-users"
+api_key_env = "FIXTURE_KEY"
+timeout_ms = 10000
+[storage]
+directory = "data"
+telemetry_path = "data/listener.sqlite.telemetry.sqlite"
+[defaults]
+enabled = false
+persona = "prompts/listener.md"
+reply = { delay_ms = [100,100], cooldown_ms = 1000, random = false }
+observation.reactions = true
+tools = {
+  get_group_members = "off",
+  get_member_info = "off",
+  react_message = "direct",
+  get_reaction_users = "direct",
+}
+[logging]
+level = "debug"
+console = true
+file = false
+[groups."${GROUP}"]
+enabled = true
+`);
   child=spawn(process.execPath,['--import',import.meta.resolve('tsx'),fileURLToPath(new URL('../src/index.ts',import.meta.url))],{cwd:dir,env:{PATH:process.env.PATH??'',HOME:dir,NODE_NO_WARNINGS:'1'},stdio:['ignore','pipe','pipe']});exit=new Promise((resolve,reject)=>{child!.once('error',error=>{fail(error);reject(error);});child!.once('close',(code,signal)=>{resolve({code,signal});notify();});});void exit.catch(()=>{});for(const stream of [child.stdout!,child.stderr!])stream.on('data',chunk=>{output=(output+chunk.toString()).slice(-128*1024);notify();});
   await wait(()=>output.includes('onebot.ready'),'startup');emit('101');await wait(()=>ended()===1,'initial reply');assert.equal(sent,1);assert.equal(pages,0);
   emit('102');await wait(()=>ended()===2,'paginated actor query answered');assert.equal(pages,3);assert.equal(sent,2);assert.equal(requests.length,7);assert.ok(!output.includes('avatar-secret.invalid'));assert.ok(!output.includes('native-cookie-never-to-model'));

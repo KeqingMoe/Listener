@@ -55,6 +55,7 @@ test('real entrypoint performs isolated reactions, exposes only local ledger sta
   socket.on('message',raw=>{try{
    const call=JSON.parse(raw.toString());calls.push(call);let data:unknown;
    if(call.action==='get_login_info')data={user_id:SELF,nickname:'fixture Listener'};
+    else if(call.action==='get_group_list')data=[A,B].map(group_id=>({group_id}));
    else if(call.action==='get_msg'){
     assert.deepEqual(Object.keys(call.params),['message_id']);const id=String(call.params.message_id),original=events.get(id);assert.ok(original,'only known fixture messages may be fetched');
     verified.set(id,(verified.get(id)??0)+1);data={message_type:'group',group_id:original.group_id,message_id:id,sender:{user_id:original.user_id},time:original.time,message:original.message,emoji_likes_list:[{emoji_id:'76',emoji_type:'1',likes_cnt:original.group_id===A?'3':'4'}]};
@@ -82,14 +83,45 @@ test('real entrypoint performs isolated reactions, exposes only local ledger sta
   const wsPort=(ws.address() as AddressInfo).port,httpPort=(http.address() as AddressInfo).port;
   mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'Local reaction fixture, no external provider or QQ connection.');
   writeFileSync(join(dir,'.env'),'FIXTURE_ONEBOT_TOKEN=fixture-onebot-token\nFIXTURE_MODEL_KEY=fixture-model-key\n',{mode:0o600});
-  writeFileSync(join(dir,'config.toml'),`[bot]\nowner_id="778899"\n[onebot]\nurl="ws://127.0.0.1:${wsPort}"\ntoken_env="FIXTURE_ONEBOT_TOKEN"\n[ai]\nenabled=true\nbase_url="http://127.0.0.1:${httpPort}/v1"\nmodel="fixture-reactions-model"\napi_key_env="FIXTURE_MODEL_KEY"\ntimeout_ms=10000\nmax_concurrent_turns=2\n[reply]\ndelay_ms=[100,100]\ncooldown_ms=1000\nrandom_probability=0\n[tools]\nreactions=true\n[logging]\nlevel="debug"\nconsole=true\nfile=false\n[groups."${A}"]\n[groups."${B}"]\n`);
+  writeFileSync(join(dir,'config.toml'),`[bot]
+owner_id = "778899"
+[onebot]
+url = "ws://127.0.0.1:${wsPort}"
+token_env = "FIXTURE_ONEBOT_TOKEN"
+[model]
+base_url = "http://127.0.0.1:${httpPort}/v1"
+model = "fixture-reactions-model"
+api_key_env = "FIXTURE_MODEL_KEY"
+timeout_ms = 10000
+[runtime]
+max_concurrent_turns = 2
+[storage]
+directory = "data"
+telemetry_path = "data/listener.sqlite.telemetry.sqlite"
+[defaults]
+enabled = false
+persona = "prompts/listener.md"
+reply = { delay_ms = [100,100], cooldown_ms = 1000, random = false }
+observation.reactions = true
+tools = { react_message = "direct", get_reaction_users = "direct" }
+[logging]
+level = "debug"
+console = true
+file = false
+[groups."${A}"]
+enabled = true
+[groups."${B}"]
+enabled = true
+`);
   child=spawn(process.execPath,['--import',import.meta.resolve('tsx'),fileURLToPath(new URL('../src/index.ts',import.meta.url))],{cwd:dir,env:{PATH:process.env.PATH??'',HOME:dir,NODE_NO_WARNINGS:'1'},stdio:['ignore','pipe','pipe']});
   childExited=new Promise((resolve,reject)=>{child!.once('error',error=>{fail(error);reject(error);});child!.once('close',(code,signal)=>{resolve({code,signal});notify();});});void childExited.catch(()=>{});
   for(const stream of [child.stdout!,child.stderr!])stream.on('data',chunk=>{output=(output+chunk.toString()).slice(-128*1024);notify();});
-  await wait(()=>output.includes('onebot.ready'),'ready');assert.ok(peer);assert.match(output,/app\.reactions_ready/);
+  await wait(()=>output.includes('onebot.ready'),'ready');assert.ok(peer);
+   assert.doesNotMatch(output,/app\.group_ready/,'membership discovery must not eagerly open group runtimes');
   peer.send(JSON.stringify({post_type:'notice',notice_type:'group_msg_emoji_like',group_id:A,self_id:SELF,user_id:'111',message_id:'101'}));
   emit(A,'101','only-A-reaction-body');emit(B,'201','only-B-reaction-body');
   await wait(()=>ended()>=2&&mutations().length===2,'first reaction turns');
+   assert.match(output,/app\.reactions_ready/,'reaction catalog is prepared when the first trusted group event opens its runtime');
   assert.equal(connectionCount,1);assert.equal(calls.filter(c=>c.action==='get_login_info').length,1);assert.equal(sends().length,1);assert.equal(sends()[0]!.params.group_id,A);
   assert.deepEqual(new Set(mutations().map(c=>`${c.params.message_id}:${c.params.emoji_id}:${c.params.set}`)),new Set(['101:76:true','201:128077:true']));
   for(const first of requests){const annotation=JSON.parse(first.body.messages.filter((m:any)=>m.role==='tool').at(-1).content).message.reactions;assert.equal(annotation.status,'observed');assert.equal(annotation.items[0].count,first.group===A?3:4);assert.ok(!Object.hasOwn(annotation,'contains_bot'));}

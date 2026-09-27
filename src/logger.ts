@@ -19,7 +19,7 @@ const actions = new Set([...tools, 'get_login_info', 'get_msg', 'get_group_membe
 export function managedLogFilename(name: string): boolean { return owned.test(name); }
 const numeric = ['duration_ms','wait_ms','round','sent_messages','images','width','height','bytes','input_bytes','output_bytes','prompt_tokens','completion_tokens','total_tokens','input_tokens','output_tokens','cached_input_tokens','reasoning_tokens','cache_hit_rate','http_status','retcode','attempt','rows_before','rows_after','chars_before','chars_after','seconds','count','dropped','retry','start','end','total','depth','direct_count','omitted_direct','reactions','reaction_unknown','reaction_failures','tool_calls','model_rounds','tool_calls_limit','management_executed','management_unknown','management_submitted','sent_submissions','reaction_submitted'];
 const ids = ['group_id','actor_id','message_id','target_id','reply_to'];
-const bools = ['ai_enabled','images_enabled','forward_enabled','attention_enabled','reactions_enabled','first_frame_only','submitted','effect_confirmed','effect_unknown','provider_reported_failure','cancelled_after_dispatch','local_projection_failed','cached','duplicate','dispatched'];
+const bools = ['images_enabled','forward_enabled','attention_enabled','reactions_enabled','first_frame_only','submitted','effect_confirmed','effect_unknown','provider_reported_failure','cancelled_after_dispatch','local_projection_failed','cached','duplicate','dispatched'];
 const codes = ['outcome','reason','status','phase','trigger'];
 const context = new AsyncLocalStorage<Record<string, unknown>>();
 let secrets: string[] = [];

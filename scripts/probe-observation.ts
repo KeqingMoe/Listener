@@ -12,7 +12,7 @@ import type {ModelRequestRecord} from '../src/model-usage.js';
 // Deliberately opt-in: this spends model tokens, never connects to OneBot/QQ,
 // never loads real message databases, and never offers a sending tool.
 if(process.argv.slice(2).join(' ')!=='--allow-model-network')throw new Error('Use --allow-model-network to run the bounded synthetic probe');
-const {listener:config}=loadAppConfig();
+const {model:config}=loadAppConfig();
 const directory=mkdtempSync(join(tmpdir(),'qqbot-observation-probe-'));
 const groupId='999001',selfId='999002';
 const records:ModelRequestRecord[]=[];

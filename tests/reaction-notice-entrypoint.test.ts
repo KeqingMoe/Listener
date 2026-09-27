@@ -46,6 +46,7 @@ test('real entrypoint receives wire reaction notices and refreshes the bot messa
   socket.on('message',raw=>{try{
    const call=JSON.parse(raw.toString());calls.push(call);let data:unknown;
    if(call.action==='get_login_info')data={user_id:SELF};
+    else if(call.action==='get_group_list')data=[GROUP,OTHER].map(group_id=>({group_id}));
    else if(call.action==='send_group_msg'){
     assert.equal(call.params.group_id,GROUP);const own=message(BOT_MESSAGE,'bot message to receive reaction',SELF);own.message=call.params.message;stored.set(BOT_MESSAGE,own);data={message_id:BOT_MESSAGE};
    }else if(call.action==='get_msg'){
@@ -71,7 +72,34 @@ test('real entrypoint receives wire reaction notices and refreshes the bot messa
   const wsPort=(ws.address() as AddressInfo).port,httpPort=(http.address() as AddressInfo).port;
   mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'Isolated fake reaction-notice integration test.');
   writeFileSync(join(dir,'.env'),'FIXTURE_TOKEN=fixture-token\nFIXTURE_KEY=fixture-key\n',{mode:0o600});
-  writeFileSync(join(dir,'config.toml'),`[bot]\nowner_id="778899"\n[onebot]\nurl="ws://127.0.0.1:${wsPort}"\ntoken_env="FIXTURE_TOKEN"\n[ai]\nenabled=true\nbase_url="http://127.0.0.1:${httpPort}/v1"\nmodel="fixture-notice-model"\napi_key_env="FIXTURE_KEY"\ntimeout_ms=10000\n[reply]\ndelay_ms=[100,100]\ncooldown_ms=1000\nrandom_probability=0\n[tools]\nreactions=true\n[attention]\nenabled=true\n[logging]\nlevel="debug"\nconsole=true\nfile=false\n[groups."${GROUP}"]\n[groups."${OTHER}"]\n`);
+  writeFileSync(join(dir,'config.toml'),`[bot]
+owner_id = "778899"
+[onebot]
+url = "ws://127.0.0.1:${wsPort}"
+token_env = "FIXTURE_TOKEN"
+[model]
+base_url = "http://127.0.0.1:${httpPort}/v1"
+model = "fixture-notice-model"
+api_key_env = "FIXTURE_KEY"
+timeout_ms = 10000
+[storage]
+directory = "data"
+telemetry_path = "data/listener.sqlite.telemetry.sqlite"
+[defaults]
+enabled = false
+persona = "prompts/listener.md"
+reply = { delay_ms = [100,100], cooldown_ms = 1000, random = false }
+observation.reactions = true
+tools = { react_message = "direct", get_reaction_users = "direct", manage_attention = "direct" }
+[logging]
+level = "debug"
+console = true
+file = false
+[groups."${GROUP}"]
+enabled = true
+[groups."${OTHER}"]
+enabled = true
+`);
   child=spawn(process.execPath,['--import',import.meta.resolve('tsx'),fileURLToPath(new URL('../src/index.ts',import.meta.url))],{cwd:dir,env:{PATH:process.env.PATH??'',HOME:dir,NODE_NO_WARNINGS:'1'},stdio:['ignore','pipe','pipe']});
   exit=new Promise((resolve,reject)=>{child!.once('error',error=>{fail(error);reject(error);});child!.once('close',(code,signal)=>{resolve({code,signal});notify();});});void exit.catch(()=>{});
   for(const stream of [child.stdout!,child.stderr!])stream.on('data',chunk=>{output=(output+chunk.toString()).slice(-128*1024);notify();});
@@ -80,7 +108,7 @@ test('real entrypoint receives wire reaction notices and refreshes the bot messa
   emitMessage('102');await wait(()=>ended()===2,'explicit observation reads reaction target');assert.equal(botReads(),1);assert.equal(payloads[1].group_id,GROUP);assert.equal(JSON.stringify(payloads[1]).includes('fixture normal turn'),false);
   const initialBotReads=botReads(),initialCalls=calls.length;
   botCount=3;
-  const notice={post_type:'notice',notice_type:'group_msg_emoji_like',group_id:GROUP,message_id:BOT_MESSAGE,likes:[{emoji_id:'76',count:9000}],is_add:true,user_id:'111'};
+  const notice={post_type:'notice',self_id:SELF,notice_type:'group_msg_emoji_like',group_id:GROUP,message_id:BOT_MESSAGE,likes:[{emoji_id:'76',count:9000}],is_add:true,user_id:'111'};
   for(const event of [{...notice,group_id:'888'},{...notice,group_id:OTHER},{...notice,notice_type:'friend_msg_emoji_like'},{...notice,post_type:'message',message_type:'private'}])peer!.send(JSON.stringify(event));
   await barrier();assert.equal(payloads.length,2);assert.equal(calls.length,initialCalls,'irrelevant notice packets do not fetch or send');
   emitMessage('103');await wait(()=>ended()===3,'foreign notifications did not dirty target');assert.equal(botReads(),initialBotReads,'foreign notices cannot invalidate the fresh own-group aggregate cache');

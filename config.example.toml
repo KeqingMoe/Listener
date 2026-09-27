@@ -1,188 +1,65 @@
-# Copy to config.toml. Store only the selected secrets in .env (or process environment).
-# All relative file paths, including .env, resolve from the config.toml directory.
+# 首次使用时复制为 config.toml；不要覆盖已有配置。
+# QQ号、群号是占位值，必须替换；模型名称和模型密钥必填。
+# 密钥写入 .env：ONEBOT_ACCESS_TOKEN、OPENAI_API_KEY。
+# 相对路径以 config.toml 所在目录为基准。完整参考：docs/configuration.md。
+
 [bot]
-name = 'Listener'
-# Placeholder only: replace with your real local owner QQ before enabling any group.
-# Required for enabled groups; one global owner, never overridden per group or through chat.
-owner_id = '100000001'
-owner_name = '時雨てる'
+name = "Listener"
+owner_id = "100000001"
+owner_name = "主人"
 
 [onebot]
-url = 'ws://127.0.0.1:3001'
-token_env = 'ONEBOT_ACCESS_TOKEN'
-api_timeout_ms = 10000
-reconnect_base_ms = 1000
-reconnect_max_ms = 30000
-heartbeat_ms = 30000
+url = "ws://127.0.0.1:3001"
 
-[ai]
+[model]
+base_url = "https://api.openai.com/v1"
+model = "" # 必填：填写服务商提供的、支持工具调用的模型名称。
+
+[defaults]
+# false：只服务显式启用的群；true：服务Bot加入的所有群，可按群排除。
 enabled = false
-base_url = 'https://api.openai.com/v1'
-model = '' # Set a model and provide OPENAI_API_KEY before enabling AI.
-api_key_env = 'OPENAI_API_KEY'
-timeout_ms = 45000
-max_output_tokens = 1200
-max_concurrent_turns = 2 # 全局并行处理群批次数，1..8；模型/密钥仍由全部群共享
-max_tool_calls_per_wake = 96 # 一次唤醒所有工具共享的调用预算，1..4096
-wake_timeout_ms = 90000 # 一次唤醒总超时，1000..600000
-transport = 'chat' # chat 或 responses
-session_max_context_bytes = 524288 # 会话上下文容量，65536..8388608 字节
-server_compaction = 'off' # auto 需要 responses、阈值以及实际验证过的服务端压缩支持
-# compact_threshold = 65536 # 1024..1000000；仅 server_compaction='auto' 时配置
-# 接口接受参数不代表真正支持自动压缩，未验证支持时保持 off。
+persona = "prompts/listener.md"
+reply.random = false
+session.transport = "chat" # chat 或 responses，须与模型服务匹配。
 
-[persona]
-file = 'prompts/listener.md'
+# 后台 reaction 观察默认开启，与添加回应和查询回应者的工具权限独立。
 
-# 使用同一个 [ai] 模型的原生多模态能力；模型必须支持图片输入。
-# 关闭时不提供 view_images，也不会为图片查看下载或向模型上传图片。
-# tools.extended.send_group_image 独立控制图片发送；开启后会下载转码本群图片。
-[images]
-enabled = false
-max_per_turn = 3 # 每轮最多3张，失败尝试也占额度
-max_download_mb = 10 # 单张最多10MiB；解码后最多4000万像素，缩放到2048边长
+[defaults.tools]
+# 以下展示常用工具，值均与程序默认一致；未列出的工具仍使用各自默认值。
+# QQ功能：查询、互动及媒体发送默认direct，群管和群文件写默认confirm。
+get_group_info = "direct" # 查询QQ群名称、人数等资料。
+poke_member = "direct" # QQ拍一拍／戳一戳指定群成员。
+react_message = "direct" # 添加或取消消息下方的表情回应，不是发送表情消息。
+send_group_ai_voice = "direct" # 使用QQ提供的AI声线发送文字转语音，不是本项目模型生成音频。
+mute_member = {
+  mode = "confirm", # 禁言需主人确认；direct为自主执行，off为关闭。
+  max_seconds = 600,
+}
+leave_group = "off" # Bot退出当前群，默认不开放。
 
-# 按1-based start和必填limit读取合并转发；无额外条数配额，仍受通用输出/缓存资源边界限制。
-# 嵌套需再次调用工具，不自动展开；转发内部图片暂时只显示占位。
-[forward]
-enabled = false
+# Bot辅助工具：服务于模型的阅读、理解或后续关注，不是QQ中的同名操作。
+view_images = {
+  mode = "direct", # 读取本群可核验图片，供当前模型看图；需要模型支持图片输入。
+  max_per_turn = 3,
+  max_download_mb = 10,
+}
+read_forward = "direct" # 展开合并转发内容供模型阅读，不会发送转发。
+manage_attention = {
+  mode = "direct", # 安排对后续消息、成员或时间条件的关注。
+  max_plans = 16,
+}
+# 完整工具用途、默认模式和配置参数见 docs/configuration.md。
 
-# 关注计划：可等待下一条消息（next）、指定成员（member）、定时（timer）或活跃度（activity）。
-# 同一计划内多个条件是 OR 关系；多份计划独立共存，命中一份不会取消其他计划。
-# 不取代随机抽签；不需要随机参与时自行把 reply.random_probability 调为 0。
-# 没有新消息时不调用模型；/reset、断线和重启会清空计划，计划不写入数据库。
-[attention]
-enabled = false
-max_plans = 16 # 每群最多1..32份计划的资源上限，不是回复条数或表情数量配额
-
-# 所有级别均不记录正文、密钥、图片或完整工具参数。
-[logging]
-level = 'info' # debug/info/warn/error；普通消息跳过原因仅 debug
-console = true
-file = true
-directory = 'data/logs' # 相对 config.toml；JSONL 文件不入库
-retention_days = 7 # 按 UTC 天，在写入时清理；1..30
-max_file_mb = 20 # MiB，1..100；跨日或到达大小上限轮转
-max_total_mb = 200 # MiB，必须 >= max_file_mb，最大1000
-
-[reply]
-mention = true
-quote_bot = true
-random_probability = 0.03
-delay_ms = [1200, 3000]
-cooldown_ms = 5000
-
-[reply.random]
-cooldown_ms = 60000
-max_per_minute = 2
-
-[memory]
-path = 'data/listener.sqlite'
-# Optional: explicitly bind this existing legacy path to its real original group.
-# Placeholder only; uncomment with the actual local group ID if preserving an old database.
-# legacy_group_id = '100000002'
-# Without mapping, every group uses dirname(path)/groups/<group_id>/listener.sqlite.
-# Mapping does not admit groups, migrate files, or rewrite database identity; per-group path wins.
-retention_days = 7
-context_chars = 24000
-
-[tools]
-members = true
-mention = true
-# 给当前群消息添加／取消自己的表情回应，不是发送 face 消息，不需主人确认。
-# 同时自动在模型看到的消息旁展示已知 reaction 快照；通知只更新缓存，不唤醒模型。
-# 不依赖模型主动查询、不修改摘要；缺失或空快照不能断言无人回应。
-# 独立于 members、mention 和 moderation；关闭不会自动移除已有回应。
-# 候选目录来自完整 NapCat sysface（329）+ emoji（165），不表示逐项实测可用。
-reactions = false
-
-# 每项独立：off（默认禁用）、confirm（自主提出，由主人 /confirm 确认）、direct（自主决定并执行）。
-# 不接受旧 true/false；direct 不要求主人先发指令，仍校验本群目标及 QQ 实际权限。
-[tools.moderation]
-mute = 'off'
-unmute = 'off' # 解禁独立于禁言授权
-recall = 'off'
-member_card = 'off'
-confirmation_ttl_seconds = 60
-max_mute_seconds = 600
-
-# 扩展写操作逐项授权：off（默认禁用）、confirm（主人逐次确认）、direct（直接执行）。
-# confirm复用同群 /confirm、10项共享队列和tools.moderation.confirmation_ttl_seconds。
-# 只读工具使用off/direct；不接受true/false或on。
-# 群级可用 [groups.'123456789'.tools.extended] 覆盖，未填写项继承全局。
-# 所有新工具均默认 off；只开启需要的项。踢人、退群、管理员和删除等请谨慎。
-# 正常提交但未核验效果返回ok+submitted；真正超时、断线或回执异常才是unknown，禁止盲重试。
-[tools.extended]
-get_group_info = 'off'
-get_group_honor = 'off'
-get_group_mutes = 'off'
-read_group_notices = 'off'
-read_group_essence = 'off'
-poke_member = 'off'
-group_sign = 'off'
-send_group_image = 'off' # 仅发送已核验的本群图片引用，不接受任意URL或本地路径
-forward_message = 'off'
-send_group_forward = 'off'
-get_group_ai_voices = 'off'
-send_group_ai_voice = 'off' # 当前NapCat返回的0不是消息ID；正常提交标记submitted，不伪造消息ID
-get_group_file_space = 'off'
-list_group_files = 'off'
-read_group_text_file = 'off' # 只能读取本群列表颁发的临时句柄；正文不可信
-upload_group_text_file = 'off' # 仅上传工具参数生成的UTF-8文字，不读取本机文件
-create_group_folder = 'off'
-delete_group_file = 'off'
-delete_group_folder = 'off'
-set_group_name = 'off'
-set_group_title = 'off'
-set_group_whole_mute = 'off'
-kick_member = 'off'
-set_group_admin = 'off'
-set_group_essence = 'off'
-remove_group_essence = 'off'
-publish_group_notice = 'off'
-delete_group_notice = 'off'
-leave_group = 'off' # 退群不可自动恢复；上游没有可靠的独立“解散群”参数语义
-list_group_requests = 'off' # 仅本群待处理入群申请，实际账号仍须管理员或群主
-respond_group_request = 'off' # 审批前重新核验；只接受列表颁发的本群临时句柄
-
-# 显式服务白名单，最多32个配置群。上方均为全局默认，各群仅覆盖需要不同的字段。
-# groups 是唯一白名单来源；未配置、空表或全部 enabled=false 均不服务任何群。禁用群的配置仍须合法。
-# 占位群号：必须替换为本地真实群号；不是内置白名单或旧库绑定。
-[groups.'100000002']
+[groups."100000002"]
 enabled = true
 
-# 新增群示例（替换群号后取消注释）：默认只在本群响应，不共享聊天记忆。
-# [groups.'123456789']
-# enabled = true
-# [groups.'123456789'.ai]
-# max_tool_calls_per_wake = 128 # 仅覆盖本群；其余字段继承全局
-# wake_timeout_ms = 120000
-# transport = 'responses' # 分群可覆盖会话传输／容量／压缩配置，模型和密钥仍共享
-# session_max_context_bytes = 1048576
-# server_compaction = 'off' # 显式 off 会清除继承的压缩阈值
-# [groups.'123456789'.reply]
-# random_probability = 0
-# [groups.'123456789'.tools]
-# reactions = true # 仅为这个群启用；其他 tools 字段继承全局
-# [groups.'123456789'.tools.moderation]
-# mute = 'confirm'
-# unmute = 'direct'
-# recall = 'off'
-# member_card = 'off'
-# [groups.'123456789'.images]
-# enabled = true
-# [groups.'123456789'.forward]
-# enabled = true
-# [groups.'123456789'.attention]
-# enabled = true
-# max_plans = 16 # 未填写的字段继承全局 attention
-# [groups.'123456789'.memory]
-# retention_days = 7
-# context_chars = 24000
-# path = 'data/groups/123456789/listener.sqlite' # 默认已按群隔离，无需填写；不能与其他启用群共用文件
-# [groups.'123456789'.persona]
-# append_file = 'prompts/group-extra.md' # 可选，每文件最多16KiB UTF-8，追加于全局人设后；文件须存在
+# 可选：仅调整本群的禁言时长上限，仍需主人确认。
+# tools.mute_member = {
+#   mode = "confirm",
+#   max_seconds = 120,
+# }
 
-# 仅显式匹配全局 memory.legacy_group_id 的群默认沿用 memory.path，不迁移或重标记数据库。
-# 未配置映射时所有群（含示例群）均使用 memory.path 所在目录下的 groups/<群号>/listener.sqlite。
-# 每群不能覆盖 AI/密钥/模型、连接、名字或主人身份；管理模式可逐项覆盖全局默认。
+# 可选：启用第二个群，使用独立人设文件（文件须存在）。
+# [groups."123456789"]
+# enabled = true
+# persona = "prompts/group.md"

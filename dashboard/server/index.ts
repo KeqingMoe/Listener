@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { loadAppConfig } from "../../src/config-loader.js";
+import { dashboardGroupSources } from "./sources.js";
 import { buildApp } from "./app.js";
 import { parseListenOptions } from "./cli.js";
 const { host, port, help } = parseListenOptions(process.argv.slice(2));
@@ -11,11 +12,9 @@ if (help) {
 }
 const config = loadAppConfig();
 const app = buildApp({
-  groups: config.groups.map((g) => ({
-    groupId: g.groupId!,
-    sessionPath: `${g.memoryPath}.session.sqlite`,
-  })),
-  telemetryPath: `${config.listener.memoryPath}.telemetry.sqlite`,
+  // Historical read authorization is separate from live bot membership/routing.
+  getGroups: () => dashboardGroupSources(config),
+  telemetryPath: config.storage.telemetryPath,
   webRoot: resolve("dist-dashboard/web"),
   listenHost: host,
 });

@@ -1,3 +1,4 @@
+import type { ResolvedToolPolicies } from './tool-policy.js';
 import type { ForwardConfig } from './forward-tools.js';
 import type { ExtendedToolsConfig } from './extended-tool-config.js';
 export interface ImagesConfig { enabled: boolean; maxPerTurn: number; maxDownloadMb: number }
@@ -17,6 +18,7 @@ export interface ToolsConfig {
   extended?: ExtendedToolsConfig;
   moderation: ModerationPolicy;
 }
+/** Low-level module options. Deployments obtain a complete policy from toListenerConfig. */
 export interface ListenerConfig {
   groupId?: string;
   /** Trusted global deployment owner; never accepted from group overrides or chat. */
@@ -30,8 +32,21 @@ export interface ListenerConfig {
   randomReplyProbability?: number; randomCooldownMs?: number; randomMaxPerMinute?: number; delayMaxMs?: number;
   persona?: string; botName?: string; ownerName?: string;
   mentionEnabled?: boolean; quoteBotEnabled?: boolean;
+  /** Resolved authorization takes precedence over the module-specific projections below. */
+  toolPermissions?: ResolvedToolPolicies;
+  observeReactions?: boolean;
+  messageMentions?: boolean;
+  confirmationTtlSeconds?: number;
   tools?: ToolsConfig;
   images?: ImagesConfig;
   forward?: ForwardConfig;
   attention?: { enabled: boolean; maxPlans: number };
+}
+
+/** The application boundary always supplies a complete, independently scoped policy. */
+export interface ResolvedListenerConfig extends ListenerConfig {
+  toolPermissions: ResolvedToolPolicies;
+  observeReactions: boolean;
+  messageMentions: boolean;
+  confirmationTtlSeconds: number;
 }

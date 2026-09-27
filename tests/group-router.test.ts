@@ -40,7 +40,7 @@ test('routing registry rejects duplicate groups or a shared Listener instance',(
  assert.throws(()=>new GroupRouter([['1',a.service],['1',b.service]]));
  assert.throws(()=>new GroupRouter([['1',a.service],['2',a.service]]));
  assert.throws(()=>new GroupRouter([['01',a.service]]));
- assert.throws(()=>new GroupRouter(Array.from({length:33},(_,n)=>[String(n+1),handler().service] as const)));
+ assert.equal(new GroupRouter(Array.from({length:64},(_,n)=>[String(n+1),handler().service] as const)).size,64);
  assert.equal(new GroupRouter([]).size,0);
 });
 test('a slow group receive never serializes delivery to another group',async()=>{

@@ -50,6 +50,7 @@ test('actual entrypoint shares local transports, isolates two group databases, a
   socket.on('message',raw=>{try{
    const call=JSON.parse(raw.toString());calls.push(call);let data:unknown;
    if(call.action==='get_login_info')data={user_id:SELF,nickname:'Listener fixture'};
+    else if(call.action==='get_group_list')data=[A,B].map(group_id=>({group_id}));
    else{assert.equal(call.action,'send_group_msg');assert.ok(call.params.group_id===A||call.params.group_id===B);data={message_id:String(80000+calls.length)};}
    socket.send(JSON.stringify({status:'ok',retcode:0,data,echo:call.echo}));notify();
   }catch(error){fail(error);}});notify();
@@ -67,7 +68,34 @@ test('actual entrypoint shares local transports, isolates two group databases, a
   http.listen(0,'127.0.0.1');await Promise.all([once(http,'listening'),wsListening]);
   const httpPort=(http.address() as AddressInfo).port,wsPort=(ws.address() as AddressInfo).port;
   mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'You are Listener in a local integration fixture.');
-  writeFileSync(join(dir,'config.toml'),`[bot]\nowner_id="778899"\n[onebot]\nurl="ws://127.0.0.1:${wsPort}"\ntoken_env="FIXTURE_ONEBOT_TOKEN"\n[ai]\nenabled=true\nbase_url="http://127.0.0.1:${httpPort}/v1"\nmodel="fixture-model"\napi_key_env="FIXTURE_MODEL_KEY"\ntimeout_ms=10000\nmax_concurrent_turns=1\n[reply]\ndelay_ms=[100,100]\ncooldown_ms=1000\nrandom_probability=0\n[logging]\nlevel="debug"\nconsole=true\nfile=false\n[groups."${A}"]\n[groups."${B}"]\n`);
+  writeFileSync(join(dir,'config.toml'),`[bot]
+owner_id = "778899"
+[onebot]
+url = "ws://127.0.0.1:${wsPort}"
+token_env = "FIXTURE_ONEBOT_TOKEN"
+[model]
+base_url = "http://127.0.0.1:${httpPort}/v1"
+model = "fixture-model"
+api_key_env = "FIXTURE_MODEL_KEY"
+timeout_ms = 10000
+[runtime]
+max_concurrent_turns = 1
+[storage]
+directory = "data"
+telemetry_path = "data/listener.sqlite.telemetry.sqlite"
+[defaults]
+enabled = false
+persona = "prompts/listener.md"
+reply = { delay_ms = [100,100], cooldown_ms = 1000, random = false }
+[logging]
+level = "debug"
+console = true
+file = false
+[groups."${A}"]
+enabled = true
+[groups."${B}"]
+enabled = true
+`);
   child=spawn(process.execPath,['--import',import.meta.resolve('tsx'),fileURLToPath(new URL('../src/index.ts',import.meta.url))],{
    cwd:dir,env:{PATH:process.env.PATH??'',HOME:dir,NODE_NO_WARNINGS:'1',FIXTURE_ONEBOT_TOKEN:'fixture-onebot-token',FIXTURE_MODEL_KEY:'fixture-model-key'},stdio:['ignore','pipe','pipe'],
   });

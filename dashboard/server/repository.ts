@@ -14,7 +14,10 @@ export interface GroupSource {
   sessionPath: string;
 }
 export interface Sources {
-  groups: GroupSource[];
+  /** Static sources for embedded callers/tests; production uses getGroups exclusively. */
+  groups?: GroupSource[];
+  /** Returns current, policy-filtered and membership-proven sources. Failure closes access. */
+  getGroups?: () => GroupSource[];
   telemetryPath: string;
 }
 type Row = Record<string, any>;
@@ -64,14 +67,44 @@ export function summarize(rows: Row[]): UsageSummary {
   };
 }
 export class Repository {
-  private handles = new Map<string, DatabaseSync>();
-  constructor(readonly sources: Sources) {}
+  private handles = new Map<string, { db: DatabaseSync; path: string; groupId?: string; identity: string }>();
+  private currentGroups: GroupSource[] = [];
+  constructor(readonly sources: Sources) { this.refreshGroups(); }
+  get groups(): readonly GroupSource[] { return this.currentGroups; }
+  /** Called once at the start of each synchronous API read, never mid-query. */
+  refreshGroups(): void {
+    let groups: GroupSource[];
+    try {
+      const input = this.sources.getGroups ? this.sources.getGroups() : this.sources.groups ?? [];
+      const ids = new Set<string>();
+      if (!Array.isArray(input)) throw new Error('invalid_sources');
+      groups = input.map(source => {
+        if (!source || typeof source.groupId !== 'string' || !/^[1-9]\d{0,31}$/.test(source.groupId) ||
+            typeof source.sessionPath !== 'string' || !source.sessionPath || source.sessionPath.includes('\0') || ids.has(source.groupId)) throw new Error('invalid_sources');
+        ids.add(source.groupId);
+        return { groupId: source.groupId, sessionPath: source.sessionPath };
+      });
+    } catch { groups = []; }
+    this.currentGroups = groups;
+    for (const [key, handle] of this.handles) {
+      if (handle.groupId && !groups.some(group => group.groupId === handle.groupId && group.sessionPath === handle.path)) this.drop(key);
+    }
+  }
+  private drop(key: string): void {
+    const handle = this.handles.get(key);
+    this.handles.delete(key);
+    try { handle?.db.close(); } catch { /* Already unavailable; never retain it. */ }
+  }
   private open(path: string, groupId?: string): DatabaseSync | null {
-    if (this.handles.has(path)) return this.handles.get(path)!;
+    const key = JSON.stringify([groupId ?? null, path]);
     let db: DatabaseSync | undefined;
     try {
-      if (!lstatSync(path).isFile()) return null;
-      db = new DatabaseSync(path, { readOnly: true });
+      const stat = lstatSync(path, { bigint: true });
+      if (!stat.isFile()) { this.drop(key); return null; }
+      const identity = `${stat.dev}:${stat.ino}`;
+      let cached = this.handles.get(key);
+      if (cached && cached.identity !== identity) { this.drop(key); cached = undefined; }
+      db = cached?.db ?? new DatabaseSync(path, { readOnly: true });
       db.exec("PRAGMA query_only=ON; PRAGMA busy_timeout=250;");
       if (groupId) {
         if (
@@ -82,6 +115,7 @@ export class Repository {
             .get()?.group_id !== groupId
         ) {
           db.close();
+          this.handles.delete(key);
           return null;
         }
         db.prepare("SELECT seq FROM model_session_journal LIMIT 0").all();
@@ -90,31 +124,31 @@ export class Repository {
           "SELECT request_id FROM model_session_messages LIMIT 0",
         ).all();
       } else db.prepare("SELECT request_id FROM model_requests LIMIT 0").all();
-      this.handles.set(path, db);
+      this.handles.set(key, { db, path, groupId, identity });
       return db;
     } catch {
       try {
         db?.close();
       } catch {}
+      this.handles.delete(key);
       return null;
     }
   }
   session(groupId: string) {
-    const source = this.sources.groups.find((g) => g.groupId === groupId);
+    const source = this.groups.find((g) => g.groupId === groupId);
     return source ? this.open(source.sessionPath, groupId) : null;
   }
   availability(): Availability {
     return {
       telemetry: this.open(this.sources.telemetryPath) !== null,
-      sessions: this.sources.groups.map((g) => ({
+      sessions: this.groups.map((g) => ({
         groupId: g.groupId,
         available: this.session(g.groupId) !== null,
       })),
     };
   }
   close() {
-    for (const db of this.handles.values()) db.close();
-    this.handles.clear();
+    for (const key of this.handles.keys()) this.drop(key);
   }
   private bounded(rows: Row[], cap = 10000) {
     if (rows.length > cap) throw new ResourceLimit("Narrow query range");
@@ -123,15 +157,16 @@ export class Repository {
   requests(range: Range, groupId?: string): Row[] {
     const db = this.open(this.sources.telemetryPath);
     if (!db) return [];
-    const ids = groupId ? [groupId] : this.sources.groups.map((g) => g.groupId);
-    if (!ids.length) return [];
-    return this.bounded(
-      db
-        .prepare(
-          `SELECT request_id,group_id,started_at,ended_at,duration_ms,status,transport,input_tokens,output_tokens,cached_input_tokens FROM model_requests WHERE started_at>=? AND started_at<=? AND group_id IN (${ids.map(() => "?").join(",")}) ORDER BY started_at,request_id LIMIT 10001`,
-        )
-        .all(range.since, range.until, ...ids) as Row[],
-    );
+    const ids = this.groups.filter(g => !groupId || g.groupId === groupId).map(g => g.groupId);
+    const result: Row[] = [];
+    for (let i = 0; i < ids.length; i += 200) {
+      const batch = ids.slice(i, i + 200);
+      result.push(...db.prepare(
+        `SELECT request_id,group_id,started_at,ended_at,duration_ms,status,transport,input_tokens,output_tokens,cached_input_tokens FROM model_requests WHERE started_at>=? AND started_at<=? AND group_id IN (${batch.map(() => "?").join(",")}) ORDER BY started_at,request_id LIMIT 10001`,
+      ).all(range.since, range.until, ...batch) as Row[]);
+      this.bounded(result);
+    }
+    return result.sort((a, b) => a.started_at - b.started_at || String(a.request_id).localeCompare(String(b.request_id)));
   }
   private finish(db: DatabaseSync, wakeId: string) {
     const row = db
@@ -242,7 +277,7 @@ export class Repository {
     limit: number,
   ) {
     const result: Array<{ groupId: string; row: Row; db: DatabaseSync }> = [];
-    for (const g of this.sources.groups.filter(
+    for (const g of this.groups.filter(
       (g) => !groupId || g.groupId === groupId,
     )) {
       const db = this.session(g.groupId);
@@ -253,6 +288,7 @@ export class Repository {
         )
         .all(range.since, range.until, offset + limit + 1) as Row[];
       for (const row of rows) result.push({ groupId: g.groupId, row, db });
+      if (result.length > 10000) throw new ResourceLimit();
     }
     result.sort(
       (a, b) =>
@@ -358,7 +394,7 @@ export class Repository {
   tools(range: Range, groupId?: string): ToolSummary[] {
     const byName = new Map<string, Row[]>();
     let count = 0;
-    for (const g of this.sources.groups.filter(
+    for (const g of this.groups.filter(
       (g) => !groupId || g.groupId === groupId,
     )) {
       const db = this.session(g.groupId);

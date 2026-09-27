@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { ToolRegistry } from "../src/tool-registry.js";
 import { loadAppConfig } from "../src/config-loader.js";
+import { toListenerConfig } from "../src/config-runtime.js";
 import {
   createExtendedTools,
   buildExtendedToolDefinitions,
@@ -376,13 +377,14 @@ test("loaded TOML is the source of per-group registration without capability lea
   const path = join(dir, "config.toml");
   writeFileSync(
     path,
-    '[bot]\nowner_id="778899"\n[groups."111".tools.extended]\nget_group_info="direct"\n[groups."222".tools.extended]\nget_group_info="off"\n',
+    '[bot]\nowner_id="778899"\n[model]\nmodel="fixture-model"\n[defaults.tools]\n' + EXTENDED_TOOL_NAMES.map(name => `${name}="off"`).join('\n') + '\n[groups."111"]\nenabled=true\ntools.get_group_info="direct"\n[groups."222"]\nenabled=true\ntools.get_group_info="off"\n',
   );
   const loaded = loadAppConfig({
     configPath: path,
-    env: { ONEBOT_ACCESS_TOKEN: "fixture" },
+    env: { ONEBOT_ACCESS_TOKEN: "fixture", OPENAI_API_KEY: "fixture-key" },
   });
-  assert.deepEqual(enabledExtendedTools(loaded.listener.tools?.extended), []);
+  assert.deepEqual(enabledExtendedTools(toListenerConfig(loaded,loaded.resolveGroup('333')).tools?.extended), []);
+  assert.equal(loaded.resolveGroup('333').enabled,false);
   let calls = 0;
   const api: Api = {
     async call() {
@@ -390,7 +392,8 @@ test("loaded TOML is the source of per-group registration without capability lea
       throw new Error("unexpected API");
     },
   };
-  for (const group of loaded.groups) {
+  for (const id of loaded.configuredGroupIds) {
+    const group=toListenerConfig(loaded,loaded.resolveGroup(id));
     const registry = createExtendedTools(
       api,
       memory(),

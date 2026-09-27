@@ -64,6 +64,7 @@ test('real entrypoint preserves native segments, literal marker text and structu
   socket.on('message',raw=>{try{
    const call=JSON.parse(raw.toString());calls.push(call);let data:unknown;
    if(call.action==='get_login_info')data={user_id:SELF};
+    else if(call.action==='get_group_list')data=[{group_id:GROUP}];
    else if(call.action==='send_group_msg'){
     assert.equal(call.params.group_id,GROUP);assert.ok(Array.isArray(call.params.message),'wire messages must not be serialized CQ strings');
     if(sent===0)assert.deepEqual(call.params.message,[{type:'face',data:{id:'0'}},{type:'text',data:{text:LITERAL}}]);
@@ -84,11 +85,38 @@ test('real entrypoint preserves native segments, literal marker text and structu
   const dbPath=join(dir,'data/listener.sqlite'),legacyEntry={messageId:'98',userId:'222',nickname:'legacy user',time:Math.floor(Date.now()/1000)-20,text:LITERAL};
   const initial=new SQLiteMemory({path:dbPath,groupId:GROUP,maxContextChars:24000,retentionDays:7});assert.equal(initial.append(legacyEntry),true);initial.close();
   const before=new DatabaseSync(dbPath,{readOnly:true});let legacyBytes:string;try{legacyBytes=before.prepare("SELECT entry FROM listener_messages WHERE message_id='98'").get()!.entry as string;}finally{before.close();}
-  writeFileSync(join(dir,'config.toml'),`[bot]\nowner_id="${OWNER_ID}"\n[memory]\nlegacy_group_id="${GROUP}"\n[onebot]\nurl="ws://127.0.0.1:${wsPort}"\ntoken_env="FIXTURE_TOKEN"\n[ai]\nenabled=true\nbase_url="http://127.0.0.1:${httpPort}/v1"\nmodel="fixture-structured"\napi_key_env="FIXTURE_KEY"\ntimeout_ms=10000\n[reply]\ndelay_ms=[100,100]\ncooldown_ms=1000\nrandom_probability=0\n[tools]\nreactions=false\nmembers=false\nmention=false\n[logging]\nlevel="debug"\nconsole=true\nfile=false\n[groups."${GROUP}"]\n`);
+  writeFileSync(join(dir,'config.toml'),`[bot]
+owner_id = "${OWNER_ID}"
+[onebot]
+url = "ws://127.0.0.1:${wsPort}"
+token_env = "FIXTURE_TOKEN"
+[model]
+base_url = "http://127.0.0.1:${httpPort}/v1"
+model = "fixture-structured"
+api_key_env = "FIXTURE_KEY"
+timeout_ms = 10000
+[storage]
+directory = "data"
+telemetry_path = "data/listener.sqlite.telemetry.sqlite"
+[defaults]
+enabled = false
+persona = "prompts/listener.md"
+reply = { delay_ms = [100,100], cooldown_ms = 1000, random = false }
+messages.mentions = false
+observation.reactions = false
+tools = { get_group_members = "off", get_member_info = "off", react_message = "off" }
+[logging]
+level = "debug"
+console = true
+file = false
+[groups."${GROUP}"]
+enabled = true
+storage.database = "data/listener.sqlite"
+`);
   child=spawn(process.execPath,['--import',import.meta.resolve('tsx'),fileURLToPath(new URL('../src/index.ts',import.meta.url))],{cwd:dir,env:{PATH:process.env.PATH??'',HOME:dir,NODE_NO_WARNINGS:'1'},stdio:['ignore','pipe','pipe']});exit=new Promise((resolve,reject)=>{child!.once('error',error=>{fail(error);reject(error);});child!.once('close',(code,signal)=>{resolve({code,signal});notify();});});void exit.catch(()=>{});for(const stream of [child.stdout!,child.stderr!])stream.on('data',chunk=>{output=(output+chunk.toString()).slice(-128*1024);notify();});
   await wait(()=>output.includes('onebot.ready'),'startup');peer!.send(JSON.stringify(event('101',true)));await wait(()=>ended()===1,'first native/literal reply');assert.equal(sent,1);
   peer!.send(JSON.stringify(event('102')));await wait(()=>ended()===2,'local structured read and literal reply');assert.equal(sent,2);assert.equal(requests.length,5);
-  assert.deepEqual(calls.map(c=>c.action),['get_login_info','send_group_msg','send_group_msg'],'local reads and literal mention text must not trigger member lookups or other RPCs');
+  assert.deepEqual(calls.map(c=>c.action),['get_login_info','get_group_list','send_group_msg','send_group_msg'],'after startup discovery, local reads and literal mention text must not trigger member lookups or other RPCs');
   assert.ok(!output.includes(LITERAL));assert.ok(!output.includes(IGNORED_NAME));assert.equal(child.kill('SIGTERM'),true);assert.deepEqual(await bounded(exit),{code:0,signal:null});assert.ok(output.includes('app.stopped'));
   const db=new DatabaseSync(dbPath,{readOnly:true});try{
    const records=db.prepare('SELECT message_id,entry FROM listener_messages ORDER BY seq').all(),rows=records.map(r=>JSON.parse(r.entry as string));

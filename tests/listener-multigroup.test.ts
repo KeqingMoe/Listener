@@ -131,15 +131,16 @@ for(const action of ['reset','disconnect','stop'] as const)test(`queued group ${
  }finally{a.resolve(silent());await s.close();}
 });
 
-test('global concurrency two covers summary calls as well as conversation requests',async()=>{
- const a=gate<Completion>(),b=gate<Completion>();const s=setup({groups:[A,B,C],concurrency:2,complete:r=>r.phase==='summary'?(r.group===A?abortable(a.promise,r.signal):r.group===B?abortable(b.promise,r.signal):silent()):silent()});
- for(const [id,memory]of s.memories)memory.compactHook=async(model,signal)=>{await model.complete([{role:'system',content:`summary:${id}`}],[],signal);};
+test('global concurrency two covers conversation requests without obsolete summaries',async()=>{
+ let summaries=0;
+ const a=gate<Completion>(),b=gate<Completion>();const s=setup({groups:[A,B,C],concurrency:2,complete:r=>r.group===A?abortable(a.promise,r.signal):r.group===B?abortable(b.promise,r.signal):silent()});
+ for(const memory of s.memories.values())memory.compactHook=async()=>{summaries++;throw Error('obsolete_summary');};
  try{
   await s.router.receive(event(A,'1'),SELF);await s.router.receive(event(B,'1'),SELF);await until(()=>s.requests.length===2);
-  assert.deepEqual(new Set(s.requests.map(r=>r.group)),new Set([A,B]));assert.ok(s.requests.every(r=>r.phase==='summary'));
+  assert.deepEqual(new Set(s.requests.map(r=>r.group)),new Set([A,B]));assert.ok(s.requests.every(r=>r.phase==='conversation'));
   await s.router.receive(event(C,'1'),SELF);await until(()=>s.scheduler.waitingCount===1);assert.equal(s.scheduler.activeCount,2);
   a.resolve(silent());await until(()=>s.requests.some(r=>r.group===C&&r.phase==='conversation'));assert.equal(s.requests.find(r=>r.group===B)!.signal?.aborted,false);
-  b.resolve(silent());await until(()=>s.scheduler.activeCount===0);assert.equal(s.maxActiveModels,2);assert.equal(s.requests.length,6);
+  b.resolve(silent());await until(()=>s.scheduler.activeCount===0);assert.equal(s.maxActiveModels,2);assert.equal(s.requests.length,3);assert.equal(summaries,0);
  }finally{a.resolve(silent());b.resolve(silent());await s.close();}
 });
 

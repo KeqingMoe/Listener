@@ -124,11 +124,11 @@ test('disabled reactions never prefetch and do not decorate any model context',a
  }finally{await s.close();}
 });
 
-test('summary sees only original undecorated memory and runs before observation lookups',async()=>{
- const s=setup({summarize:true,api:action=>{if(action==='get_msg')assert.equal(s.summaries.length,1);}});try{
-  await s.receive(event('1'));await settled(s,1);assert.equal(s.summaries.length,1);const summarySource=JSON.parse(s.summaries[0]![1]!.content as string);
+test('observation preserves the original cache without invoking an extra summary model',async()=>{
+ const s=setup({summarize:true,api:action=>{if(action==='get_msg')assert.equal(s.summaries.length,0);}});try{
+  await s.receive(event('1'));await settled(s,1);assert.equal(s.summaries.length,0);assert.equal(s.requests.length,1);const summarySource=JSON.parse(s.memory.context());
   assert.deepEqual(summarySource.summary,{untrusted:true,text:'original summary body'});assert.ok(summarySource.messages.every((m:any)=>!Object.hasOwn(m,'reactions')));assert.ok(payload(s.requests[0]!).current_batch.messages[0].reactions);
-  assert.ok(s.memory.compactInputs.every(raw=>!raw.includes('emoji_id')));assert.ok(s.memory.rawContexts.every(raw=>!raw.includes('emoji_id')));assert.equal(s.memory.rows.length,1);
+  assert.deepEqual(s.memory.compactInputs,[]);assert.ok(s.memory.rawContexts.every(raw=>!raw.includes('emoji_id')));assert.equal(s.memory.rows.length,1);
  }finally{await s.close();}
 });
 
