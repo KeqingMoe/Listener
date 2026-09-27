@@ -58,6 +58,17 @@ test('counts and time expose metadata without message or callback body and do no
   }finally{s.store.close();}
 });
 
+test('mixed cursor filters stay rejected with a bounded corrective hint, while the same cursor remains usable',async()=>{
+ const s=setup();try{
+  s.add(1);s.add(2);const first=await s.run('read_messages',{limit:1,direction:'backward'});assert.equal(typeof first.next_cursor,'string');
+  const rejected=await s.run('read_messages',{limit:1,cursor:first.next_cursor,direction:'backward'});
+  assert.equal(rejected.status,'error');assert.equal(rejected.error,'invalid_arguments');assert.equal(rejected.reason_code,'cursor_with_filters');
+  assert.match(String(rejected.hint),/只能传cursor和limit/);assert.ok(!JSON.stringify(rejected).includes(String(first.next_cursor)));
+  const next=await s.run('read_messages',{limit:1,cursor:first.next_cursor});assert.equal(next.status,'ok');assert.equal(list(next,'messages').length,1);
+  assert.equal(s.store.getState('ai').observationWatermark,0);
+ }finally{s.store.close();}
+});
+
 test('required limit and scope validation reject invalid types, unknown fields and invented numeric cursors',async()=>{
   const s=setup();try{
     for(const name of ['read_events','read_messages'])for(const limit of [undefined,0,-1,1.2,NaN,Infinity,'3',true,null,Number.MAX_SAFE_INTEGER+1])assert.equal((await s.run(name,{limit})).error,'invalid_arguments');

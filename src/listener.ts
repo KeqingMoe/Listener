@@ -27,7 +27,7 @@ import { annotateReactionBatch, annotateReactionContext, annotateReactionReadRes
 import type { WorldEventStore } from './world-events.js';
 import { normalizeOneBotEvent, recordToolMessage } from './world-event-ingest.js';
 
-import type { ModelSession } from './model-session.js';
+import type { ModelSession, ModelSessionScope } from './model-session.js';
 import { WorldTools, WORLD_TOOL_NAMES, buildWorldTools } from './world-tools.js';
 import { ResponsesModel, ResponseStateExpiredError } from './responses-model.js';
 import { buildExtendedToolDefinitions, createExtendedTools } from './extended-tools.js';
@@ -267,7 +267,11 @@ export class Listener {
       ...(this.lastAttentionCommit?{last_commit:this.lastAttentionCommit}:{})};
   }
   private resetModeration(): void { this.moderation.dispose(); this.moderation = new Moderation(this.api, Date.now, this.config.tools?.moderation,this.groupId,this.ownerId); }
-  private cancelActive(reason: string): void { this.activeCancelReason = reason; this.active?.abort(); this.admission?.abort(); }
+  private cancelActive(reason: string): void {
+    // Keep the first cancellation cause, even if shutdown follows an expired wake.
+    if(this.active&&!this.active.signal.aborted){this.activeCancelReason=reason;this.active.abort(reason);}
+    if(this.admission&&!this.admission.signal.aborted)this.admission.abort(reason);
+  }
   private acknowledgeObserved(through:number):void {
     const acknowledged=(messageId:string)=>{const sequence=this.worldMessageSequences.get(messageId);return sequence!==undefined&&sequence<=through;};
     for(const [key,item] of this.unread)if(acknowledged(item.entry.messageId))this.unread.delete(key);
@@ -606,9 +610,13 @@ export class Listener {
     const generation = this.generation;
     let attentionTransaction:AttentionTransaction|undefined;
     const attentionRejections:string[]=[];
-    const lifetime = setTimeout(() => controller.abort(), wakeTimeoutMs);
+    const lifetime = setTimeout(() => {
+      if(!controller.signal.aborted){this.activeCancelReason='turn_timeout';controller.abort('turn_timeout');}
+    }, wakeTimeoutMs);
+    const cancellationReason=()=>this.activeCancelReason??(controller.signal.aborted?'cancelled':'generation_changed');
     const session=this.runtime.session;
     let sessionStarted=false,assistantSeq:number|undefined, recoveredResponseState=false;
+    let sessionScope:ModelSessionScope|undefined;
     let sending=false,finished=false,lastWakeSendAt=0;
     const sendResults=new Map<string,JsonObject>();
     const valid = () => !controller.signal.aborted && !this.stopped && this.connected && generation === this.generation;
@@ -702,7 +710,7 @@ export class Listener {
         this.worldState=()=>({...(this.attention?{attention_state:this.attentionContext(batch)}:{}),...(this.config.tools?.reactions?{reaction_state:this.reactionContext(workingMemory)}:{})});
         this.worldTools??=new WorldTools({store:this.runtime.world!,groupId:this.groupId,selfId:trigger.context.selfId,wake:()=>this.worldWake,currentBudget:()=>this.worldBudget(),state:()=>this.worldState()});
         session.beginWake(observedSystemPrompt(this.config,this.groupId),tools,{wake_id:batch.turnId,group_id:this.groupId,trigger:{type:batch.kind},wake_budget:wakeBudget()});
-        sessionStarted=true;
+        sessionStarted=true;sessionScope=session.state();
       }
       const messages: ChatMessage[] = session ? [] : [
         {role:'system',content:buildSystemPrompt({...this.config,groupId:this.groupId})},
@@ -733,6 +741,7 @@ export class Listener {
             session.reset('response_state_expired');
             if(this.model instanceof ResponsesModel)this.model.reset();
             session.beginWake(observedSystemPrompt(this.config,this.groupId),tools,{wake_id:batch.turnId,group_id:this.groupId,trigger:{type:batch.kind},wake_budget:wakeBudget(),recovery:{read_tools_again:true,earlier_actions_may_have_completed:toolCalls>0}});
+            sessionScope=session.state();
             assistantSeq=undefined;continue;
           }
           throw error;
@@ -774,12 +783,12 @@ export class Listener {
             outcome=sentMessages?'replied':'silent';finished=true;terminal=true;traceResult({status:'ok'});appendToolResult(call,{status:'ok'});break;
           }
           if(managementNeedsReview&&(call.function.name==='send_message'||extendedTools.isSideEffect(call.function.name)||(customFaceNeedsReview&&call.function.name==='finish'))){
-            const blocked={status:'error',error:'management_result_review_required'};traceResult(blocked);
+            const blocked={status:'error',error:'management_result_review_required',reason_code:'management_result_review_required'};traceResult(blocked);
             appendToolResult(call,blocked);continue;
           }
           if ((viewingImages || readingForward) && (extendedTools.isSideEffect(call.function.name) || ['send_message','finish','manage_attention','react_message',...MODERATION_TOOLS.map(tool=>tool.function.name)].includes(call.function.name))) {
             traceResult({status:'error',error:viewingImages?'image_first':'forward_first'});
-            appendToolResult(call,{status:'error',error:viewingImages?'先接收本轮图片内容，再在下一轮决定回复或操作。':'先接收本轮转发读取结果，再在下一轮决定回复或操作。'});
+            appendToolResult(call,{status:'error',reason_code:viewingImages?'image_first':'forward_first',error:viewingImages?'先接收本轮图片内容，再在下一轮决定回复或操作。':'先接收本轮转发读取结果，再在下一轮决定回复或操作。'});
             continue;
           }
           if(EXTENDED_TOOL_NAMES.includes(call.function.name as typeof EXTENDED_TOOL_NAMES[number])){
@@ -978,8 +987,8 @@ export class Listener {
         }
       }
     } catch(error) {
-      if(session&&sessionStarted){try{session.skipPending('operation_failed');}catch{log('error','session.checkpoint_failed',{reason:'operation_failed'});}}
-      if(session&&error instanceof ResponseStateExpiredError){session.reset('response_state_expired');sessionStarted=false;}
+      if(session&&sessionStarted){try{session.skipPending(!valid()?cancellationReason():error instanceof ModelError?error.code:'operation_failed',sessionScope);}catch{log('error','session.checkpoint_failed',{reason:'operation_failed'});}}
+      if(session&&error instanceof ResponseStateExpiredError&&sessionScope&&session.state().sessionId===sessionScope.sessionId&&session.state().wakeId===sessionScope.wakeId){session.reset('response_state_expired');sessionStarted=false;}
       outcome = sending ? 'delivery_unknown' : error instanceof ModelError ? 'model_failed' : 'failed';
       reason = error instanceof ModelError || error instanceof OneBotError ? error.code : 'operation_failed';
     } finally {
@@ -988,10 +997,20 @@ export class Listener {
       if(outcome==='silent')outcome=sentSubmissions?'message_submitted':reactionUnknown?'reaction_unknown':reactedCount?'reacted':reactionSubmitted?'reaction_submitted':reactionFailures?'reaction_failed':managementSubmitted?'operation_submitted':'silent';
       if (!valid() && outcome !== 'delivery_unknown') {
         outcome=sentMessages||sentSubmissions?'partial_reply_cancelled':reactedCount||reactionUnknown||reactionSubmitted?'partial_reaction_cancelled':managementExecuted||managementUnknown||managementSubmitted?'partial_management_cancelled':'cancelled';
-        reason=this.activeCancelReason ?? (controller.signal.aborted?'turn_timeout':'generation_changed');
+        reason=cancellationReason();
       }
       if(session&&sessionStarted){
-        try { if(!valid())session.skipPending('cancelled'); session.finishWake(outcome); }
+        try {
+          if(!valid())session.skipPending(cancellationReason(),sessionScope);
+          session.finishWake(outcome,{
+            reason_code:reason??(['tool_budget_exhausted','prose_suppressed'].includes(outcome)?outcome:undefined),
+            duration_ms:Math.max(0,Date.now()-started),model_rounds:modelRounds,tool_calls:toolCalls,
+            tool_calls_limit:toolCallsLimit,wake_timeout_ms:wakeTimeoutMs,
+            sent_messages:sentMessages,sent_submissions:sentSubmissions,
+            management_executed:managementExecuted,management_submitted:managementSubmitted,management_unknown:managementUnknown,
+            reactions:reactedCount,reaction_submitted:reactionSubmitted,reaction_unknown:reactionUnknown,reaction_failures:reactionFailures,
+          },sessionScope);
+        }
         catch { outcome='failed';reason='session_checkpoint_failed';log('error','session.checkpoint_failed',{reason}); }
       }
       if(this.config.tools?.reactions&&generation===this.generation&&this.connected&&!this.stopped&&(reactedCount||reactionUnknown||reactionFailures||reactionSubmitted)){

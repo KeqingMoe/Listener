@@ -142,7 +142,7 @@ export class WorldTools {
     const state = this.options.store.getState(CONSUMER);
     let query: Cursor;
     if (own(a,'cursor')) {
-      if (Object.keys(a).some(k=>!['limit','cursor'].includes(k))) fail('invalid_arguments');
+      if (Object.keys(a).some(k=>!['limit','cursor'].includes(k))) fail('cursor_with_filters');
       if (typeof a.cursor !== 'string' || !/^wc_[0-9a-f]{48}$/.test(a.cursor)) fail('invalid_cursor');
       const prior = this.cursors.get(a.cursor); if (!prior || prior.kind !== kind) fail('invalid_cursor');
       query = prior;
@@ -189,6 +189,7 @@ export class WorldTools {
       return {status:'error',error:'unknown_tool'};
     } catch (error) {
       const code=error instanceof Error?error.message:'';
+      if(code==='cursor_with_filters')return {status:'error',error:'invalid_arguments',reason_code:'cursor_with_filters',hint:'分页游标已绑定方向和过滤条件；续页只能传cursor和limit。若要改变查询条件，请移除cursor发起新查询。'};
       return {status:'error',error:['invalid_arguments','invalid_cursor','invalid_ack_cursor','forbidden_group','resource_limit','cancelled'].includes(code)?code:'tool_failed'};
     }
   }

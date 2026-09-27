@@ -2,10 +2,12 @@ import { chmodSync, closeSync, constants, existsSync, fstatSync, lstatSync, open
 import { dirname, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
+import { normalizeWakeDiagnostics } from './wake-diagnostics.js';
 import { resolveGroupId, type ChatContentPart, type ChatMessage, type Completion, type JsonObject, type ToolDefinition } from './contracts.js';
 
 export interface ModelSessionOptions { path:string; groupId?:string; maxTranscriptBytes?:number }
 export interface ModelSessionState { sessionId:string; generation:number; wakeId?:string; resetReason?:string; needsRecovery:boolean }
+export interface ModelSessionScope { sessionId:string; wakeId?:string }
 export interface AssistantCheckpoint { assistantSeq:number; callIds:string[] }
 export interface ToolWindow { since:number; until:number; wakeId?:string; sessionId?:string }
 export interface ToolCounts { invocations:number; started:number; completed:number; successes:number; errors:number; unknown:number; skipped:number; pending:number; totalDurationMs:number; meanDurationMs:number|null; modelRequests:number; externalRequests:null }
@@ -118,7 +120,14 @@ export class ModelSession {
   return Number(this.db.prepare('INSERT INTO model_session_messages(session_id,wake_id,message,bytes,transient_image,request_id) VALUES(?,?,?,?,?,?)').run(this.stateValue.sessionId,this.stateValue.wakeId??null,text,bytes,transient?1:0,requestId??null).lastInsertRowid);
  }
  private rotate(reason:string):void {
-  this.resolvePending(reason);this.audit('session_reset',{reason,next_generation:this.stateValue.generation+1});
+  this.resolvePending(reason);
+  if(this.stateValue.wakeId){
+   // End the old scope before rotation; late callbacks must never end a new session.
+   const detail=normalizeWakeDiagnostics({reason_code:reason==='owner_reset'?'reset':reason});
+   const terminal={reason:'session_reset',reason_code:typeof detail.reason_code==='string'?detail.reason_code:'session_rotated'};
+   this.audit('wake_terminal',terminal);this.audit('wake_finish',terminal);
+  }
+  this.audit('session_reset',{reason,next_generation:this.stateValue.generation+1});
   this.stateValue={sessionId:randomUUID(),generation:this.stateValue.generation+1,resetReason:reason,needsRecovery:true};
   this.saveMeta();this.db.prepare('UPDATE model_session_meta SET fingerprint=NULL,checkpoint=NULL WHERE singleton=1').run();
  }
@@ -214,9 +223,11 @@ export class ModelSession {
  private resolvePending(reason:string):void {
   for(const row of this.pending())this.complete(row,row.state==='started'?{status:'unknown',error:'execution_result_unknown',reason}:{status:'skipped',error:reason},row.state==='started'?'unknown':'skipped');
  }
- skipPending(reason:string):void {reasonText(reason);this.transaction(()=>this.resolvePending(reason));}
- finishWake(reason='finished'):void {
-  reasonText(reason);this.transaction(()=>{this.resolvePending(reason);this.audit('wake_terminal',{reason});this.audit('wake_finish',{reason});delete this.stateValue.wakeId;this.saveMeta();});
+ private matchesScope(scope?:ModelSessionScope):boolean {return scope===undefined||!!scope.wakeId&&scope.sessionId===this.stateValue.sessionId&&scope.wakeId===this.stateValue.wakeId;}
+ skipPending(reason:string,scope?:ModelSessionScope):void {reasonText(reason);this.transaction(()=>{if(this.matchesScope(scope))this.resolvePending(reason);});}
+ finishWake(reason='finished',diagnostics?:unknown,scope?:ModelSessionScope):void {
+  reasonText(reason);const detail=normalizeWakeDiagnostics(diagnostics);
+  this.transaction(()=>{if(!this.matchesScope(scope))return;this.resolvePending(typeof detail.reason_code==='string'?detail.reason_code:reason);this.audit('wake_terminal',{reason,...detail});this.audit('wake_finish',{reason,...detail});delete this.stateValue.wakeId;this.saveMeta();});
  }
  reset(reason='reset'):void {reasonText(reason);this.transaction(()=>this.rotate(reason));this.images.clear();}
  getTransportCheckpoint():JsonObject|undefined {
