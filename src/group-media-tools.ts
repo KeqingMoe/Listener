@@ -11,7 +11,7 @@ import {
 import { ImageTools, imageReferences } from "./image-tools.js";
 import type { ImageDownloader } from "./image-download.js";
 import { extractMessageContent } from "./message-content.js";
-import { afterDispatch, writeFailure, DuplicateMessageAckError } from './operation-result.js';
+import { afterDispatch, writeFailure, DuplicateMessageAckError, UnverifiedMessageAckError } from './operation-result.js';
 
 export const GROUP_MEDIA_TOOL_NAMES = [
   "send_group_image",
@@ -397,6 +397,7 @@ export class GroupMediaTools {
       try { this.options.onSent?.(entry, receipt); }
       catch(error) {
         if(error instanceof DuplicateMessageAckError)return {...unknown(),error:'duplicate_message_ack'};
+        if(error instanceof UnverifiedMessageAckError)return {...unknown(),error:'message_ack_unverified'};
         projectionFailed=true;
       }
       return afterDispatch({

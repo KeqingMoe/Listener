@@ -134,7 +134,9 @@ function canonicalStoragePath(path:string,field:string,depth=0,cache=new Map<str
  * dynamic candidate before opening databases. No mutation, enumeration, or I/O creation. */
 export function assertStoragePaths(storage:AppConfig['storage'],groups:readonly ResolvedGroupConfig[]):void {
   const canonicalCache=new Map<string,string>();
-  const databases=[{path:storage.telemetryPath,field:'storage.telemetry_path'}];
+  const databases=[{path:storage.telemetryPath,field:'storage.telemetry_path'},
+    {path:resolve(storage.directory,'custom-faces.sqlite'),field:'storage.directory'},
+    {path:resolve(storage.directory,'custom-face-operations.sqlite'),field:'storage.directory'}];
   for(const group of groups)for(const path of [group.storage.databasePath,group.storage.databasePath+'.events.sqlite',group.storage.databasePath+'.session.sqlite'])databases.push({path,field:'groups.storage.database'});
   const paths:Array<{path:string;field:string;owner:string}>=[{path:storage.registryPath,field:'storage.registry_path',owner:'registry'}];
   databases.forEach(({path,field},index)=>{
@@ -152,14 +154,20 @@ export function assertStoragePaths(storage:AppConfig['storage'],groups:readonly 
   }
   const ordered=[...names.keys()].map(path=>path+'/').sort();
   for(let i=1;i<ordered.length;i++)if(ordered[i]!.startsWith(ordered[i-1]!))fail('storage','存储文件与父路径冲突');
+  const originals=canonicalStoragePath(storage.customFaceDirectory,'storage.custom_face_directory',0,canonicalCache);
+  for(const path of names.keys())if(path===originals||path.startsWith(originals+'/')||originals.startsWith(path+'/'))fail('storage.custom_face_directory','原始素材目录必须独立于存储文件');
+  try{const stat=lstatSync(storage.customFaceDirectory);if(!stat.isDirectory()||stat.isSymbolicLink())fail('storage.custom_face_directory','必须是独立普通目录');}catch(error){if(error instanceof ConfigError)throw error;if((error as NodeJS.ErrnoException).code!=='ENOENT')fail('storage.custom_face_directory','无法核验素材目录');}
 }
 export function loadAppConfig(options:{configPath?:string;envPath?:string;env?:NodeJS.ProcessEnv}={}):AppConfig {
   const configPath=resolve(options.configPath??'config.toml'),base=dirname(configPath);let parsed:unknown,source='';
   try{source=readFileSync(configPath,'utf8');parsed=parseToml(source);}catch{return fail('config.toml','无法读取或TOML格式无效');}
   const root=table(parsed,'config',['bot','onebot','model','runtime','storage','logging','defaults','groups']);
-  const bot=table(root.bot,'bot',['name','owner_id','owner_name']),one=table(root.onebot,'onebot',['url','token_env','api_timeout_ms','reconnect_base_ms','reconnect_max_ms','heartbeat_ms']),model=table(root.model,'model',['base_url','model','api_key_env','timeout_ms','max_output_tokens']),runtime=table(root.runtime,'runtime',['max_concurrent_turns']),rawStorage=table(root.storage,'storage',['directory','telemetry_path','registry_path']),logs=table(root.logging,'logging',['level','console','file']);
+  const bot=table(root.bot,'bot',['name','owner_id','owner_name']),one=table(root.onebot,'onebot',['url','token_env','api_timeout_ms','reconnect_base_ms','reconnect_max_ms','heartbeat_ms']),model=table(root.model,'model',['base_url','model','api_key_env','timeout_ms','max_output_tokens']),runtime=table(root.runtime,'runtime',['max_concurrent_turns']),rawStorage=table(root.storage,'storage',['directory','telemetry_path','registry_path','custom_face_directory','napcat_custom_face_directory']),logs=table(root.logging,'logging',['level','console','file']);
   const directory=filePath(text(rawStorage,'directory','storage','data'),base,'storage.directory');
-  const storage={directory,telemetryPath:filePath(text(rawStorage,'telemetry_path','storage',resolve(directory,'telemetry.sqlite')),base,'storage.telemetry_path'),registryPath:filePath(text(rawStorage,'registry_path','storage',resolve(directory,'group-registry.json')),base,'storage.registry_path')};
+  const customFaceDirectory=filePath(text(rawStorage,'custom_face_directory','storage',resolve(directory,'custom-face-originals')),base,'storage.custom_face_directory');
+  const napcatCustomFaceDirectory=text(rawStorage,'napcat_custom_face_directory','storage',customFaceDirectory);
+  if(!napcatCustomFaceDirectory.startsWith('/')||napcatCustomFaceDirectory.includes('\\')||napcatCustomFaceDirectory.split('/').some(part=>part==='.'||part==='..')||napcatCustomFaceDirectory==='/')fail('storage.napcat_custom_face_directory','必须是专用的绝对POSIX目录，不得含路径跳转');
+  const storage={directory,telemetryPath:filePath(text(rawStorage,'telemetry_path','storage',resolve(directory,'telemetry.sqlite')),base,'storage.telemetry_path'),registryPath:filePath(text(rawStorage,'registry_path','storage',resolve(directory,'group-registry.json')),base,'storage.registry_path'),customFaceDirectory,napcatCustomFaceDirectory};
   const defaultsRaw=table(root.defaults,'defaults',POLICY_KEYS),defaultPolicy=policy(defaultsRaw,'defaults',base,directory,'1');
   const defaultDatabaseExplicit=own(table(defaultsRaw.storage,'defaults.storage',['database']),'database');
   const configured=table(root.groups,'groups',root.groups&&typeof root.groups==='object'&&!Array.isArray(root.groups)?Object.keys(root.groups):[]);

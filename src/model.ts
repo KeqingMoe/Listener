@@ -1,5 +1,6 @@
 import type { ChatMessage, Completion, Model, ToolCall, ToolDefinition } from './contracts.js';
 import { log } from './logger.js';
+import { EXTENDED_TOOL_NAMES } from './extended-tool-config.js';
 import { randomUUID } from 'node:crypto';
 import { parseChatUsage, type ModelRequestRecord, type ModelUsage } from './model-usage.js';
 export type { ModelRequestRecord, ModelUsage } from './model-usage.js';
@@ -11,7 +12,7 @@ export class ModelError extends Error {
     this.name = 'ModelError';
   }
 }
-const KNOWN_TOOLS = new Set(['send_message', 'finish', 'get_group_members', 'get_member_info', 'read_message', 'view_images', 'read_forward', 'mute_member', 'unmute_member', 'recall_message', 'set_member_card', 'manage_attention', 'react_message', 'get_reaction_users']);
+const KNOWN_TOOLS = new Set([...EXTENDED_TOOL_NAMES, 'send_message', 'finish', 'get_group_members', 'get_member_info', 'read_message', 'view_images', 'read_forward', 'mute_member', 'unmute_member', 'recall_message', 'set_member_card', 'manage_attention', 'react_message', 'get_reaction_users']);
 function usageLogFields(u: ModelUsage): Record<string,number> {
   const fields:Record<string,number>={};
   for(const [field,key] of [['input_tokens','inputTokens'],['output_tokens','outputTokens'],['total_tokens','totalTokens'],['cached_input_tokens','cachedInputTokens'],['reasoning_tokens','reasoningTokens'],['prompt_tokens','inputTokens'],['completion_tokens','outputTokens']] as const){const n=u[key];if(n!=null)fields[field]=n;}

@@ -22,7 +22,7 @@ test('catalog covers existing and optional tools, defaults are complete and do n
   const app=fixture(t)(''),group=app.resolveGroup('11');
   assert.equal(app.defaultsEnabled,false);assert.equal(group.enabled,false);
   assert.deepEqual(Object.keys(group.tools).sort(),[...TOOL_NAMES].sort());
-  const interactive=new Set(['poke_member','group_sign','send_group_image','forward_message','send_group_forward','send_group_ai_voice']);
+  const interactive=new Set(['poke_member','group_sign','send_group_image','forward_message','send_group_forward','send_group_ai_voice','send_custom_face','add_custom_face','delete_custom_face','set_custom_face_description']);
   for(const name of TOOL_NAMES)assert.equal(group.tools[name].mode,name==='leave_group'?'off':noConfirm.has(name)||interactive.has(name)?'direct':'confirm',name);
 });
 test('every tool validates string and object modes at both scopes including disabled groups',t=>{

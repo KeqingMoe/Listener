@@ -15,7 +15,7 @@ export interface AppConfig {
   onebot:Config;
   model:{baseUrl:string;apiKey:string;model:string;timeoutMs:number;maxTokens:number};
   runtime:{maxConcurrentTurns:number};
-  storage:{directory:string;telemetryPath:string;registryPath:string};
+  storage:{directory:string;telemetryPath:string;registryPath:string;customFaceDirectory:string;napcatCustomFaceDirectory:string};
   logging:LoggingConfig;
   defaultsEnabled:boolean;
   configuredGroupIds:readonly string[];

@@ -30,6 +30,12 @@ export const EXTENDED_TOOL_NAMES = [
   "delete_group_folder",
   "list_group_requests",
   "respond_group_request",
+  "list_custom_faces",
+  "view_custom_face",
+  "send_custom_face",
+  "add_custom_face",
+  "delete_custom_face",
+  "set_custom_face_description",
 ] as const;
 export type ExtendedToolName = (typeof EXTENDED_TOOL_NAMES)[number];
 export const EXTENDED_READ_ONLY_TOOLS: readonly ExtendedToolName[] = [
@@ -43,6 +49,8 @@ export const EXTENDED_READ_ONLY_TOOLS: readonly ExtendedToolName[] = [
   "list_group_files",
   "read_group_text_file",
   "list_group_requests",
+  "list_custom_faces",
+  "view_custom_face",
 ];
 export type ExtendedToolMode = "off" | "confirm" | "direct";
 export type ExtendedToolsConfig = Partial<

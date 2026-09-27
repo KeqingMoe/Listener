@@ -36,6 +36,12 @@ const titles: Record<string, string> = {
   delete_group_folder: "删除群文件目录",
   list_group_requests: "查询入群申请",
   respond_group_request: "同意或拒绝入群申请",
+  list_custom_faces: "检索账号共享收藏表情",
+  view_custom_face: "查看收藏表情图片",
+  send_custom_face: "发送收藏表情原图",
+  add_custom_face: "收藏本群图片并标注（账号共享）",
+  delete_custom_face: "删除收藏表情（影响账号共享收藏）",
+  set_custom_face_description: "修改收藏表情描述（账号共享）",
 };
 function fail(code: string): never {
   throw new Error(code);
@@ -344,9 +350,9 @@ export function prepareExtendedConfirmation(
     )
       fail("invalid_confirmation_details");
     if (
-      ["file_handle", "folder_handle", "request_handle"].some((k) =>
+      (["file_handle", "folder_handle", "request_handle", "face_ref"].some((k) =>
         Object.hasOwn(safe, k),
-      ) &&
+      ) || name === 'add_custom_face') &&
       (!trustedDetails ||
         !trustedDetails.replace(/[\p{Cf}\p{Cc}\p{Zl}\p{Zp}]/gu, "").trim())
     )

@@ -1,5 +1,5 @@
 import { mkdirSync, chmodSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { loadAppConfig, ConfigError, assertStoragePaths } from './config-loader.js';
 import { toListenerConfig } from './config-runtime.js';
 import { OneBotClient } from './client.js';
@@ -19,9 +19,14 @@ import { configureLogging, getLogContext, log } from './logger.js';
 import { TelemetryStore } from './telemetry.js';
 import { FACE_CATALOG, EXAMPLE_FACE_CATALOG } from './face-catalog.js';
 import { getReactionCatalog } from './reaction-catalog.js';
+import { CustomFaceStore } from './custom-face-store.js';
+import { CustomFaceCoordinator } from './custom-face-coordinator.js';
+import { SharedCustomFaceStaging } from './custom-face-staging.js';
 let logger: ReturnType<typeof configureLogging> | undefined;
 let telemetry: TelemetryStore | undefined;
 let registry: GroupRegistry | undefined;
+let customFaceStore: CustomFaceStore | undefined;
+let customFaceCoordinator: CustomFaceCoordinator | undefined;
 
 async function main(): Promise<void> {
   const app=loadAppConfig();
@@ -42,6 +47,10 @@ async function main(): Promise<void> {
   const enabledGroups=new Map(declared.map(group=>[group.groupId,group.enabled]));
   if(declared.some(group=>group.enabled&&group.session.compaction!==false))throw new Error('Server compaction is not verified for this endpoint');
   registry=new GroupRegistry(app,()=>log('warn','app.registry_failed',{reason:'storage_failed'}));
+  mkdirSync(app.storage.directory,{recursive:true,mode:0o700});
+  customFaceStore=new CustomFaceStore({path:resolve(app.storage.directory,'custom-faces.sqlite')});
+  customFaceCoordinator=new CustomFaceCoordinator({path:resolve(app.storage.directory,'custom-face-operations.sqlite')});
+  const customFaces={store:customFaceStore,coordinator:customFaceCoordinator,staging:new SharedCustomFaceStaging({directory:app.storage.customFaceDirectory,providerDirectory:app.storage.napcatCustomFaceDirectory})};
   const modelOptions={...modelConfig,onRequest:(record:ModelRequestRecord)=>{
     const trace=getLogContext();
     try{telemetry?.record({...record,...(typeof trace.group_id==='string'?{groupId:trace.group_id}:{}),...(typeof trace.turn_id==='string'?{turnId:trace.turn_id}:{}),...(typeof trace.phase==='string'?{phase:trace.phase}:{})});}
@@ -79,7 +88,7 @@ async function main(): Promise<void> {
         if(model instanceof ResponsesModel){const checkpoint=session.getTransportCheckpoint();if(checkpoint){try{model.restoreContinuationCheckpoint(checkpoint);}catch{session.reset('invalid_transport_checkpoint');}}}
         for(const entry of memory.recent())world.appendMessage(entry,{source:'migration',observedAt:entry.time});
         chmodSync(policy.storage.databasePath,0o600);
-        const listener=new Listener(client,model,memory,group,Math.random,undefined,scheduler,{world,session,modelRequestId:()=>lastRequestId});
+        const listener=new Listener(client,model,memory,group,Math.random,undefined,scheduler,{world,session,modelRequestId:()=>lastRequestId,customFaces});
         if(group.observeReactions)log('info','app.reactions_ready',{count:getReactionCatalog().length});
         log('info','app.group_ready',{group_id:groupId});
         return listener;
@@ -106,7 +115,9 @@ async function main(): Promise<void> {
       if(results.some(result=>result.status==='rejected')){log('error','app.shutdown_failed',{reason:'operation_failed'});process.exitCode=1;}
       else log('info','app.stopped');
     }).finally(async()=>{
-      try{registry?.close();}catch{log('warn','app.registry_failed',{reason:'close_failed'});}
+      try{customFaceCoordinator?.close();}catch{log('warn','app.custom_faces_close_failed',{reason:'close_failed'});}
+       try{customFaceStore?.close();}catch{log('warn','app.custom_faces_close_failed',{reason:'close_failed'});}
+       try{registry?.close();}catch{log('warn','app.registry_failed',{reason:'close_failed'});}
       try{telemetry?.close();}catch{log('warn','model.telemetry_failed',{reason:'close_failed'});}
       await logger?.close();process.exit(process.exitCode??0);
     });
@@ -114,6 +125,8 @@ async function main(): Promise<void> {
   process.on('SIGINT',stop);process.on('SIGTERM',stop);client.start();
 }
 void main().catch(async(error:unknown)=>{
+  try{customFaceCoordinator?.close();}catch{}
+  try{customFaceStore?.close();}catch{}
   try{registry?.close();}catch{}
   try{telemetry?.close();}catch{}
   if(logger){log('error','app.startup_failed',{reason:'startup_failed'});await logger.close();}

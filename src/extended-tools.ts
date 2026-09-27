@@ -31,6 +31,7 @@ import {
   GROUP_ACTION_TOOL_NAMES,
 } from "./group-action-tools.js";
 import { ToolRegistry, type RegisteredTool } from "./tool-registry.js";
+import { CustomFaceTools, CUSTOM_FACE_TOOL_NAMES, buildCustomFaceToolDefinitions, type CustomFaceOptions } from './custom-face-tools.js';
 
 export interface ExtendedToolOptions {
   downloader?: ImageDownloader;
@@ -38,6 +39,7 @@ export interface ExtendedToolOptions {
   onSent?: GroupMediaOptions['onSent'];
   files?: GroupFileTools;
   requests?: GroupRequestTools;
+  customFaces?: Omit<CustomFaceOptions, 'beforeSend' | 'onSent'>;
   requestConfirmation?: (
     name: string,
     args: unknown,
@@ -172,6 +174,19 @@ export function createExtendedTools(
         execute: (args, context, signal) =>
           requests.execute(definition.function.name, args, context, signal),
       });
+  const customNames = CUSTOM_FACE_TOOL_NAMES.filter(name => enabled.has(name));
+  const customFaces = options.customFaces ? new CustomFaceTools(api, groupId, customNames, memory, {
+    ...options.customFaces, beforeSend: options.beforeSend, onSent: options.onSent,
+  }) : undefined;
+  // Schema construction is pure: never create a SQLite store or touch the provider
+  // merely to describe these capabilities. Production injects one root repository.
+  for (const definition of buildCustomFaceToolDefinitions(customNames)) register({
+    definition,
+    sideEffect: !['list_custom_faces', 'view_custom_face'].includes(definition.function.name),
+    execute: (args, context, signal) => customFaces
+      ? customFaces.execute(definition.function.name, args, context, signal)
+      : Promise.resolve({ status: 'error', error: 'custom_faces_unavailable' }),
+  });
   return registry;
 }
 const noApi: Api = {

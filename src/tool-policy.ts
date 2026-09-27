@@ -9,7 +9,7 @@ export type ResolvedToolPolicies = {
 };
 export interface ToolCapability { defaultMode: ToolMode; confirm: boolean; options: Readonly<Record<string, { field: 'maxSeconds'|'maxPerTurn'|'maxDownloadMb'|'maxPlans'; default: number; min: number; max: number }>> }
 const noConfirmation = new Set<string>([...EXTENDED_READ_ONLY_TOOLS, 'get_group_members', 'get_member_info', 'react_message', 'get_reaction_users', 'view_images', 'read_forward', 'manage_attention']);
-const directByDefault = new Set<string>([...noConfirmation, 'poke_member', 'group_sign', 'send_group_image', 'forward_message', 'send_group_forward', 'send_group_ai_voice']);
+const directByDefault = new Set<string>([...noConfirmation, 'poke_member', 'group_sign', 'send_group_image', 'forward_message', 'send_group_forward', 'send_group_ai_voice', 'send_custom_face', 'add_custom_face', 'delete_custom_face', 'set_custom_face_description']);
 export const TOOL_CAPABILITIES: Readonly<Record<ToolName, ToolCapability>> = Object.fromEntries(TOOL_NAMES.map(name => [name, Object.freeze({
   defaultMode: name === 'leave_group' ? 'off' : directByDefault.has(name) ? 'direct' : 'confirm',
   confirm: !noConfirmation.has(name),

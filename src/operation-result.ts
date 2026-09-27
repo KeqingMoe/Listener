@@ -5,6 +5,10 @@ import type { JsonObject } from './contracts.js';
 export class DuplicateMessageAckError extends Error {
   constructor() { super('duplicate_message_ack'); this.name = 'DuplicateMessageAckError'; }
 }
+/** Identity verification failed before claiming an ACK; this is not a projection-only failure. */
+export class UnverifiedMessageAckError extends Error {
+  constructor() { super('message_ack_unverified'); this.name = 'UnverifiedMessageAckError'; }
+}
 
 /** A successful provider submission is not a failure or proof of the final QQ state. */
 export function submittedResult(details: JsonObject = {}): JsonObject {

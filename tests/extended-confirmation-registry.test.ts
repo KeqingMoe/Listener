@@ -13,8 +13,8 @@ const memory: Memory = {recent:()=>[],find:()=>undefined,append:()=>false,contex
 function source(){let calls=0;const api:Api={async call(){calls++;throw new Error('unexpected native call PRIVATE');}};return {api,get calls(){return calls;}};}
 
 // Deliberately bypass the TOML loader: this guard must live in the dispatch layer.
-test('all 21 write capabilities fail closed in confirm mode without a confirmation adapter',async()=>{
-  assert.equal(writes.length,21);
+test('all 25 write capabilities fail closed in confirm mode without a confirmation adapter',async()=>{
+  assert.equal(writes.length,25);
   for(const name of writes){
     const native=source(),config:ExtendedToolsConfig={[name]:'confirm'};
     const registry=createExtendedTools(native.api,memory,LISTENER_GROUP,config);
@@ -43,7 +43,7 @@ test('all confirm write handlers route only to the adapter and retain original t
 });
 
 test('all read-only capabilities reject confirm rather than becoming directly executable',()=>{
-  assert.equal(EXTENDED_READ_ONLY_TOOLS.length,10);
+  assert.equal(EXTENDED_READ_ONLY_TOOLS.length,12);
   for(const name of EXTENDED_READ_ONLY_TOOLS){
     const native=source();
     assert.throws(()=>createExtendedTools(native.api,memory,LISTENER_GROUP,{[name]:'confirm'}),/Read-only tools do not support mutation confirmation/,name);
