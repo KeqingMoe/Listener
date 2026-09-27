@@ -3,13 +3,16 @@ import { log } from './logger.js';
 import { EXTENDED_TOOL_NAMES } from './extended-tool-config.js';
 import { randomUUID } from 'node:crypto';
 import { parseChatUsage, type ModelRequestRecord, type ModelUsage } from './model-usage.js';
-export type { ModelRequestRecord, ModelUsage } from './model-usage.js';
+export type { ModelRequestRecord, ModelUsage, ModelRequestDiagnostics } from './model-usage.js';
+import { normalizeModelRequestDiagnostics, providerDiagnostics, upstreamAbortSource, type ModelRequestDiagnostics } from './model-diagnostics.js';
 
 export type ModelErrorCode = 'cancelled' | 'timeout' | 'http_error' | 'network_error' | 'response_too_large' | 'invalid_response' | 'truncated_response';
 export class ModelError extends Error {
-  constructor(readonly code: ModelErrorCode, readonly httpStatus?: number) {
+  readonly diagnostics?: ModelRequestDiagnostics;
+  constructor(readonly code: ModelErrorCode, readonly httpStatus?: number, diagnostics?: ModelRequestDiagnostics) {
     super(code === 'cancelled' || code === 'timeout' ? 'Model request aborted or timed out' : 'Model request failed');
     this.name = 'ModelError';
+    this.diagnostics = normalizeModelRequestDiagnostics(diagnostics);
   }
 }
 const KNOWN_TOOLS = new Set([...EXTENDED_TOOL_NAMES, 'send_message', 'finish', 'get_group_members', 'get_member_info', 'read_message', 'view_images', 'read_forward', 'mute_member', 'unmute_member', 'recall_message', 'set_member_card', 'manage_attention', 'react_message', 'get_reaction_users']);
@@ -85,8 +88,10 @@ export class OpenAIModel implements Model {
     let abortReason: 'cancelled' | 'timeout' | undefined;
     let failure: ModelErrorCode = 'network_error';
     let httpStatus: number | undefined;
-    const abort = () => { abortReason ??= 'cancelled'; controller.abort(); };
-    const timer = setTimeout(() => { abortReason ??= 'timeout'; controller.abort(); }, this.options.timeoutMs);
+    const diagnostics: ModelRequestDiagnostics = { requestMode: 'fresh', requestTimeoutMs: this.options.timeoutMs };
+    let stage: ModelRequestDiagnostics['failureStage'] = 'request';
+    const abort = () => { if (!abortReason) { abortReason = 'cancelled'; diagnostics.abortSource = upstreamAbortSource(signal?.reason); } controller.abort(); };
+    const timer = setTimeout(() => { if (!abortReason) { abortReason = 'timeout'; diagnostics.abortSource = 'request_timeout'; } controller.abort(); }, this.options.timeoutMs);
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) abort();
     try {
@@ -96,7 +101,12 @@ export class OpenAIModel implements Model {
         body: JSON.stringify({ model: this.options.model, messages, max_tokens: this.options.maxTokens,
           stream: false, ...(tools.length ? { tools, tool_choice: 'auto' } : {}) }),
       });
-      if (!response.ok) { failure = 'http_error'; httpStatus = response.status; await response.body?.cancel(); throw Error(); }
+      if (!response.ok) {
+        failure = 'http_error'; httpStatus = response.status; stage = 'http_status'; diagnostics.providerCategory = 'unknown';
+        // Preserve fail-fast HTTP handling: diagnostics must not wait for an error body.
+        await response.body?.cancel(); throw Error();
+      }
+      stage = 'response_body';
       if (!response.body) { failure = 'invalid_response'; throw Error(); }
       const length = response.headers.get('content-length');
       if (length && Number(length) > MAX_RESPONSE_BYTES) { failure = 'response_too_large'; await response.body.cancel(); throw Error(); }
@@ -112,13 +122,16 @@ export class OpenAIModel implements Model {
           chunks.push(chunk.value);
         }
       } finally { reader.releaseLock(); }
-      failure = 'invalid_response';
+      failure = 'invalid_response'; stage = 'response_parse';
       const value: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)));
+      stage = 'response_validate';
       requestUsage = parseChatUsage(object(value) ? value.usage : undefined);
       if (object(value) && Array.isArray(value.choices) && value.choices.some((choice: unknown) => object(choice) && choice.finish_reason === 'length')) {
         failure = 'truncated_response'; throw Error();
       }
+      if (object(value) && value.error != null) Object.assign(diagnostics, providerDiagnostics(value));
       const result = validate(value);
+      stage = 'post_response';
       if (controller.signal.aborted) throw Error();
       requestStatus = 'success';
       log('info', 'model.complete', { duration_ms: performance.now() - started, tools: toolNames, outcome: 'success', ...usageLogFields(requestUsage) });
@@ -126,7 +139,8 @@ export class OpenAIModel implements Model {
     } catch {
       const code = abortReason ?? failure;
       log(code === 'cancelled' ? 'info' : 'warn', 'model.failed', { duration_ms: performance.now() - started, tools: toolNames, reason: code, ...usageLogFields(requestUsage), ...(httpStatus === undefined ? {} : { http_status: httpStatus }) });
-      throw new ModelError(code, httpStatus);
+      diagnostics.failureStage = stage;
+      throw new ModelError(code, httpStatus, diagnostics);
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener('abort', abort);
@@ -135,6 +149,7 @@ export class OpenAIModel implements Model {
         requestId, startedAt, endedAt: Date.now(), durationMs: Math.max(0, performance.now() - started),
         transport: 'chat', model: this.options.model, status: requestStatus,
         ...(code ? { errorCode: code } : {}), ...(httpStatus === undefined ? {} : { httpStatus }), usage: requestUsage,
+        diagnostics: normalizeModelRequestDiagnostics(diagnostics),
       };
       try { this.options.onRequest?.(record); } catch { /* telemetry observers are non-critical */ }
     }

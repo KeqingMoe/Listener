@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { ChatContentPart, ChatMessage, Completion, Model, ToolCall, ToolDefinition } from './contracts.js';
 import { ModelError, type ModelErrorCode, type OpenAIModelOptions } from './model.js';
 import { parseResponsesUsage, type ModelRequestRecord, type ModelUsage } from './model-usage.js';
+import { normalizeModelRequestDiagnostics, providerDiagnostics, upstreamAbortSource, type ModelRequestDiagnostics } from './model-diagnostics.js';
 
 const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 const MAX_BYTES=2*1024*1024, MAX_ARGS=16*1024;
@@ -9,7 +10,7 @@ const hash=(v:string)=>createHash('sha256').update(v).digest('hex');
 const bounded=(v:unknown,max:number):v is string=>typeof v==='string'&&v.length>0&&v.length<=max&&!/[\u0000-\u001f\u007f]/.test(v);
 export class ResponseStateExpiredError extends ModelError {
   readonly stateExpired=true;
-  constructor(httpStatus?:number){super('invalid_response',httpStatus);this.name='ResponseStateExpiredError';}
+  constructor(httpStatus?:number,diagnostics?:ModelRequestDiagnostics){super('invalid_response',httpStatus,diagnostics);this.name='ResponseStateExpiredError';}
 }
 export interface ResponsesModelOptions extends OpenAIModelOptions {
   sessionId:string; compactionThreshold?:number; serverCompactionVerified?:boolean;
@@ -65,16 +66,18 @@ function completion(raw:Record<string,unknown>):Completion {
   if(calls.length>8)throw new ModelError('invalid_response');
   return {content:texts.length?texts.join('\n'):null,tool_calls:calls};
 }
-async function readBody(response:Response):Promise<unknown>{
+async function readBody(response:Response,stage:(value:ModelRequestDiagnostics['failureStage'])=>void):Promise<unknown>{
+  stage('response_body');
   if(!response.body)throw new ModelError('invalid_response');
   const length=response.headers.get('content-length');
   if(length&&Number(length)>MAX_BYTES){await response.body.cancel();throw new ModelError('response_too_large');}
   const reader=response.body.getReader(),chunks:Uint8Array[]=[];let size=0;
   try{while(true){const x=await reader.read();if(x.done)break;size+=x.value.byteLength;if(size>MAX_BYTES){await reader.cancel();throw new ModelError('response_too_large');}chunks.push(x.value);}}finally{reader.releaseLock();}
+  stage('response_parse');
   try{return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(chunks)));}catch{throw new ModelError('invalid_response');}
 }
 const expired=(raw:unknown):boolean=>object(raw)&&object(raw.error)&&
-  ['previous_response_not_found','previous_response_id_not_found','response_not_found'].includes(String(raw.error.code));
+  typeof raw.error.code==='string'&&['previous_response_not_found','previous_response_id_not_found','response_not_found'].includes(raw.error.code);
 /** One instance per conversation. Prefix mutations start an explicit fresh chain. */
 export class ResponsesModel implements Model {
   private readonly options:ResponsesModelOptions;
@@ -135,27 +138,34 @@ export class ResponsesModel implements Model {
     const baselineLength=liveMatch?this.state!.baselineMessages.length:restored?.baselineLength??0;
     const responseId=liveMatch?this.state!.responseId:restored?.responseId;
     const input=(reuse?snapshot.slice(baselineLength):snapshot).flatMap(inputItem);
+    const diagnostics:ModelRequestDiagnostics={requestMode:liveMatch?'continue_live':restoredMatch?'continue_restored':'fresh',requestTimeoutMs:this.options.timeoutMs};
+    let stage:ModelRequestDiagnostics['failureStage']='request';
     const controller=new AbortController();let aborted:'cancelled'|'timeout'|undefined;
-    const stop=()=>{aborted??='cancelled';controller.abort();};signal?.addEventListener('abort',stop,{once:true});if(signal?.aborted)stop();
-    const timer=setTimeout(()=>{aborted??='timeout';controller.abort();},this.options.timeoutMs);
+    const stop=()=>{if(!aborted){aborted='cancelled';diagnostics.abortSource=upstreamAbortSource(signal?.reason);}controller.abort();};signal?.addEventListener('abort',stop,{once:true});if(signal?.aborted)stop();
+    const timer=setTimeout(()=>{if(!aborted){aborted='timeout';diagnostics.abortSource='request_timeout';}controller.abort();},this.options.timeoutMs);
     try{
       const body:Record<string,unknown>={model:this.options.model,input,instructions,store:true,stream:false,max_output_tokens:this.options.maxTokens,prompt_cache_key:this.cacheKey,
         ...(functions.length?{tools:functions,tool_choice:'auto'}:{}),...(reuse?{previous_response_id:responseId}:{})};
       if(this.options.serverCompactionVerified&&this.options.compactionThreshold!==undefined)body.context_management=[{type:'compaction',compact_threshold:this.options.compactionThreshold}];
       const response=await fetch(this.endpoint,{method:'POST',redirect:'error',signal:controller.signal,headers:{'content-type':'application/json',authorization:`Bearer ${this.options.apiKey}`},body:JSON.stringify(body)});
       if(!response.ok){
-        httpStatus=response.status;failure='http_error';
-        let raw:unknown;try{raw=await readBody(response);}catch{/* Preserve HTTP failure without remote diagnostics. */}
+        httpStatus=response.status;failure='http_error';stage='http_status';
+        let raw:unknown;try{raw=await readBody(response,()=>{});}catch{/* Keep HTTP status/code even for non-JSON or oversized error bodies. */}
+        Object.assign(diagnostics,providerDiagnostics(raw));
         if(reuse&&expired(raw))throw new ResponseStateExpiredError(httpStatus);
         throw new ModelError('http_error',httpStatus);
       }
-      failure='invalid_response';const raw=await readBody(response);
+      failure='invalid_response';const raw=await readBody(response,value=>{stage=value;});
+      stage='response_validate';
       if(!object(raw))throw new ModelError('invalid_response');
       usage=parseResponsesUsage(raw.usage);
+      if(raw.error!=null)Object.assign(diagnostics,providerDiagnostics(raw));
       if(expired(raw)&&reuse)throw new ResponseStateExpiredError();
       if(raw.status==='incomplete')throw new ModelError('truncated_response');
       if(raw.error!=null)throw new ModelError('invalid_response');
       const result=completion(raw);
+      stage='post_response';
+      if(generation!==this.generation&&!aborted)diagnostics.abortSource='generation_changed';
       if(controller.signal.aborted||generation!==this.generation)throw new ModelError('cancelled');
       const assistant:ChatMessage={role:'assistant',content:result.content,...(result.tool_calls.length?{tool_calls:structuredClone(result.tool_calls)}:{})};
       this.state={responseId:raw.id as string,baselineMessages:[...snapshot,assistant],headerHash,outputItems:structuredClone(raw.output as unknown[])};
@@ -165,12 +175,13 @@ export class ResponsesModel implements Model {
     }catch(error){
       this.state=undefined;this.baselineWithoutContent=undefined;this.restored=undefined;
       const code=aborted??(error instanceof ModelError?error.code:failure);failure=code;
-      if(error instanceof ResponseStateExpiredError&&!aborted)throw error;
-      throw new ModelError(code,httpStatus);
+      diagnostics.failureStage=stage;
+      if(error instanceof ResponseStateExpiredError&&!aborted)throw new ResponseStateExpiredError(httpStatus,diagnostics);
+      throw new ModelError(code,httpStatus,diagnostics);
     }finally{
       clearTimeout(timer);signal?.removeEventListener('abort',stop);this.busy=false;
       try{this.options.onRequest?.({requestId,startedAt,endedAt:Date.now(),durationMs:Math.max(0,performance.now()-started),transport:'responses',model:this.options.model,status,
-        ...(status==='error'?{errorCode:failure}:{}),...(httpStatus===undefined?{}:{httpStatus}),usage});}catch{/* Observers never change transport results. */}
+        ...(status==='error'?{errorCode:failure}:{}),...(httpStatus===undefined?{}:{httpStatus}),usage,diagnostics:normalizeModelRequestDiagnostics(diagnostics)});}catch{/* Observers never change transport results. */}
     }
   }
 }

@@ -1,3 +1,5 @@
+import type { ModelRequestDiagnostics } from './model-diagnostics.js';
+export type { ModelRequestDiagnostics } from './model-diagnostics.js';
 export interface ModelUsage {
   inputTokens?: number | null;
   outputTokens?: number | null;
@@ -18,6 +20,7 @@ export interface ModelRequestRecord {
   errorCode?: RequestErrorCode;
   httpStatus?: number;
   usage: ModelUsage;
+  diagnostics?: ModelRequestDiagnostics;
 }
 const object = (v: unknown): Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {};
 const count = (v: unknown): number | null => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : null;
