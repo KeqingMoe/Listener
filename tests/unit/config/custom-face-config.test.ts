@@ -79,13 +79,13 @@ test('explicit off survives defaults and only the selected group override re-ena
 });
 
 test('favorite view permission is independent while the existing image parameters supply shared limits', t => {
-  const configured = fixture(t, { defaults: 'tools.view_images={mode="direct",max_per_turn=1,max_download_mb=2}' }).load();
+  const configured = fixture(t, { defaults: 'tools.view_images={mode="direct",max_download_mb=2}' }).load();
   const first = toListenerConfig(configured, configured.resolveGroup(GROUP));
-  assert.equal(first.images?.maxPerTurn, 1); assert.equal(first.images?.maxDownloadMb, 2);
+  assert.equal(first.images?.maxDownloadMb, 2);
   assert.equal(first.tools?.extended?.view_custom_face, 'direct');
   const disabled = fixture(t, { defaults: 'tools.view_images="off"' }).load();
   const second = toListenerConfig(disabled, disabled.resolveGroup(GROUP));
-  assert.equal(second.images?.enabled, false); assert.equal(second.images?.maxPerTurn, 3); assert.equal(second.images?.maxDownloadMb, 10);
+  assert.equal(second.images?.enabled, false); assert.equal(second.images?.maxDownloadMb, 10);
   const names = buildToolDefinitions(second, true).map(tool => tool.function.name);
   assert.equal(names.includes('view_images'), false); assert.equal(names.includes('view_custom_face'), true);
   const wrongPlace = fixture(t, { defaults: 'tools.view_custom_face={mode="direct",max_per_turn=1}' });

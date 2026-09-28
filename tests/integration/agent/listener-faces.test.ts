@@ -53,7 +53,7 @@ test('super face layout guidance survives both mention modes without restricting
     assert.ok(send.function.description.includes(FACE_LAYOUT_GUIDANCE));
     const params:any=send.function.parameters;
     assert.equal(params.properties.parts,undefined);
-    assert.equal(params.properties.segments.maxItems,12);
+    assert.equal(params.properties.segments.maxItems,undefined);
     assert.ok(params.properties.reply_to);
   }
 });
@@ -75,7 +75,7 @@ test('send tool includes strict ordinary and animated face choices without addin
   for (const id of ['0', '6', '14', '20', '21', '22', '32', '375']) assert.ok(face.properties.id.enum.includes(id), id);
   assert.ok(!face.properties.id.enum.includes('999999'));
   assert.equal(params.properties.parts, undefined);
-  assert.equal(params.properties.segments.maxItems, 12);
+  assert.equal(params.properties.segments.maxItems, undefined);
 });
 
 test('mention-disabled tool schema keeps face variant and removes only at', () => {

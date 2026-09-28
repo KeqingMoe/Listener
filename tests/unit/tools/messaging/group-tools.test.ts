@@ -75,7 +75,9 @@ test('schemas advertise structured segments, fixed group tools, no legacy text',
   assert.deepEqual(GROUP_TOOLS.map(t => t.function.name), ['get_group_members', 'get_member_info', 'read_message']);
   const parameters = SEND_MESSAGE_TOOL.function.parameters as any;
   assert.equal(parameters.properties.parts,undefined);assert.equal(parameters.properties.text,undefined);
-  assert.deepEqual(parameters.required,['segments']);assert.equal(parameters.properties.segments.maxItems,12);
+  assert.deepEqual(parameters.required,['segments']);assert.equal(parameters.properties.segments.minItems,1);
+  assert.equal(parameters.properties.segments.maxItems,undefined);
+  assert.equal(parameters.properties.segments.items.oneOf[0].properties.text.maxLength,undefined);
 });
 
 test('prepare serializes native at without sending or mutating input; nonowner allowed', async () => {
@@ -96,19 +98,18 @@ test('single-message syntax validation precedes remote verification', async () =
   const {tools,calls}=setup();await assert.rejects(tools.prepareMessage({segments:[{type:'at',user_id:'123'},{type:'text',text:42}]},context));assert.equal(calls.length,0);
 });
 
-test('reject extras, invalid structured mentions, whitespace ids, all/self, mixed representations and limits', async () => {
+test('reject extras, invalid structured mentions, whitespace ids, all/self, mixed representations and empty or control text', async () => {
   const { tools, calls } = setup();
   const badParts = [
     { text: 'hello', group_id: LISTENER_GROUP }, { text: 'hello', segments: [] },
-    { text: '  ' }, { text: 'a'.repeat(801) },
-    { segments: [{ type: 'text', text: 'a'.repeat(500) }, { type: 'text', text: 'b'.repeat(301) }] },
-    { segments: Array.from({ length: 13 }, () => ({ type: 'text', text: 'x' })) },
+    ...['', ' \n\t ', 'bad\u0000text', 'x'.repeat(1000)+'\u0001'].map(text => message(text)),
+    ...['image', 'record', 'video', 'file', 'forward', 'reply'].map(type => ({ segments: [{ type, resource: 'arbitrary' }] })),
     ...['all', '0', '999', '999\n', '123\n', ' 123', '123 ', '01'].map(user_id => ({ segments: [{ type: 'at', user_id }] })),
     { segments: [{ type: 'at', user_id: '123', qq: 'all' }] }, { segments: [{ type: 'text', text: 'a', extra: true }] },
     { text: 'hello', reply_to: ' 1' }, { text: 'hello', reply_to: 1 },
   ];
   for (const part of badParts) await assert.rejects(tools.prepareMessage(part, context), /invalid_arguments/, JSON.stringify(part));
-  for (const args of [{ segments: [] }, { parts: [{text:'a'}] }, { segments: Array(13).fill({type:'text',text:'x'}) }]) await assert.rejects(tools.prepareMessage(args,context));
+  for (const args of [{ segments: [] }, { parts: [{text:'a'}] }]) await assert.rejects(tools.prepareMessage(args,context));
   assert.equal(calls.length, 0);
 });
 
@@ -204,10 +205,18 @@ test('remote read and reply verification reject wrong group, type and id', async
   assert.equal((await tools.prepareMessage(message('reply','2'), context)).replyTo, '2');
 });
 
-test('mention limit applies within one message and remote output fields stay bounded', async () => {
+test('long messages and repeated mentions retain all segments while verification is deduplicated', async () => {
   const { tools, calls } = setup();
-  await assert.rejects(tools.prepareMessage({segments:Array(4).fill({type:'at',user_id:'123'})},context));
-  assert.equal(calls.length, 0);
+  const text = '字😀'.repeat(801);
+  assert.equal((await tools.prepareMessage(message(text),context)).text,text);
+  const segments = [...Array.from({length:13},()=>({type:'text',text})), ...Array.from({length:5},()=>({type:'at',user_id:'123'}))];
+  const prepared = await tools.prepareMessage({segments},context);
+  assert.equal(prepared.segments.length,18);
+  assert.equal(prepared.text,text.repeat(13)+'[at:123]'.repeat(5));
+  assert.equal(calls.length,1);
+});
+
+test('remote output fields stay resource bounded independently of send limits', async () => {
   const bounded = setup(remote({ sender: { user_id: '123', nickname: 'n'.repeat(1000) }, message: [{ type: 'text', data: { text: 'x'.repeat(10000) } }] }));
   const result = await bounded.tools.execute('read_message', { message_id: '2' }, context);
   const message=result.message as any;

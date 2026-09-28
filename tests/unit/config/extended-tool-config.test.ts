@@ -46,17 +46,29 @@ test('every tool rejects coercion, implicit modes, off objects and invented opti
   for(const source of ['[tools.extended]\nkick_member="direct"','[defaults]\ntools=true','[groups."11"]\nenabled=false\ntools=[]'])assert.throws(()=>load(source),ConfigError);
 });
 test('tool union replacement resets options to branch defaults while absent tools inherit isolated copies',t=>{
-  const app=fixture(t)('[defaults.tools]\nview_images={mode="direct",max_per_turn=1,max_download_mb=2}\nkick_member="confirm"\n[groups."11".tools]\nview_images={mode="direct",max_per_turn=2}\nkick_member="off"\n[groups."22".tools]\nview_images="direct"\n[groups."33"]');
-  assert.deepEqual(app.resolveGroup('11').tools.view_images,{mode:'direct',maxPerTurn:2,maxDownloadMb:10});
-  assert.deepEqual(app.resolveGroup('22').tools.view_images,{mode:'direct',maxPerTurn:3,maxDownloadMb:10});
-  const inherited=app.resolveGroup('33');assert.deepEqual(inherited.tools.view_images,{mode:'direct',maxPerTurn:1,maxDownloadMb:2});
+  const app=fixture(t)('[defaults.tools]\nview_images={mode="direct",max_download_mb=2}\nkick_member="confirm"\n[groups."11".tools]\nview_images={mode="direct"}\nkick_member="off"\n[groups."22".tools]\nview_images="direct"\n[groups."33"]');
+  assert.deepEqual(app.resolveGroup('11').tools.view_images,{mode:'direct',maxDownloadMb:10});
+  assert.deepEqual(app.resolveGroup('22').tools.view_images,{mode:'direct',maxDownloadMb:10});
+  const inherited=app.resolveGroup('33');assert.deepEqual(inherited.tools.view_images,{mode:'direct',maxDownloadMb:2});
   assert.equal(app.resolveGroup('11').tools.kick_member.mode,'off');assert.equal(app.resolveGroup('22').tools.kick_member.mode,'confirm');
   inherited.tools.view_images.maxDownloadMb=9;inherited.tools.kick_member.mode='direct';
   assert.equal(app.resolveGroup('33').tools.view_images.maxDownloadMb,2);assert.equal(app.resolveGroup('999').tools.kick_member.mode,'confirm');
 });
+test('removed image count configuration is rejected without compatibility',t=>{
+  const load=fixture(t);
+  for(const scope of scopes)assert.throws(()=>load(`[${scope}]\nview_images={mode="direct",max_per_turn=3}`),ConfigError);
+});
+test('mute duration defaults and endpoints use the platform maximum',t=>{
+  const load=fixture(t);
+  assert.equal(load('').resolveGroup('11').tools.mute_member.maxSeconds,2592000);
+  for(const scope of scopes){
+    for(const value of [601,2592000])assert.equal(load(`[${scope}]\nmute_member={mode="direct",max_seconds=${value}}`).resolveGroup('11').tools.mute_member.maxSeconds,value);
+    assert.throws(()=>load(`[${scope}]\nmute_member={mode="direct",max_seconds=2592001}`),ConfigError);
+  }
+});
 test('image option endpoints and invalid numeric or misplaced options are checked while service is disabled',t=>{
   const load=fixture(t);
-  for(const scope of scopes)for(const [key,min,max,field] of [['max_per_turn',1,3,'maxPerTurn'],['max_download_mb',1,10,'maxDownloadMb']] as const){
+  for(const scope of scopes)for(const [key,min,max,field] of [['max_download_mb',1,10,'maxDownloadMb']] as const){
     for(const value of [min,max])assert.equal(load(`[${scope}]\nview_images={mode="direct",${key}=${value}}`).resolveGroup('11').tools.view_images[field],value);
     for(const value of [String(min-1),String(max+1),'1.5','true','"1"','[]','{}','nan','inf','9007199254740992'])
       assert.throws(()=>load(`[groups."11"]\nenabled=false\n[${scope}]\nview_images={mode="direct",${key}=${value}}`),ConfigError);

@@ -5,6 +5,7 @@ import { Listener } from '../../../src/agent/listener.js';
 import { buildToolDefinitions } from '../../../src/agent/tool-definitions.js';
 import {GroupTools} from '../../../src/tools/messaging/tools.js';
 import {Moderation} from '../../../src/tools/management/moderation.js';
+import { MAX_MUTE_SECONDS } from '../../../src/contracts/tool-limits.js';
 import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.js';
 import { type Api } from '../../../src/contracts/onebot.js';
 import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.js';
@@ -33,6 +34,20 @@ test('send is single-message strict, finish replaces old terminal tool',async()=
  const p=await tools.prepareMessage({segments:[{type:'text',text:'[CQ:at,qq=all]'}]},ctx);assert.deepEqual(p.segments,[{type:'text',data:{text:'[CQ:at,qq=all]'}}]);
  const defs=buildToolDefinitions(cfg);assert.ok(defs.some(t=>t.function.name==='finish'));assert.ok(!defs.some(t=>t.function.name==='stay_silent'));
  const s=setup(i=>i===0?done(call('stay_silent')):done(call('finish')));try{await s.bot.receive(event(),self);await settle(s,2);assert.equal(results(s.requests[1]!)[0].status,'error');}finally{await s.bot.stop();}
+});
+
+test('send executes long text, many segments and more than three mentions without truncation',async()=>{
+ const text='字😀'.repeat(801),ids=['123','124','125','126','123'];
+ const segments=[...Array.from({length:130},(_,i)=>({type:'text',text:i===0?text:'x'})),...ids.map(user_id=>({type:'at',user_id}))];
+ const s=setup(i=>i===0?done(call('send_message',{segments})):done(call('finish')));
+ try{
+  await s.bot.receive(event(),self);await settle(s,2);
+  assert.equal(results(s.requests[1]!)[0].status,'ok');
+  const sends=s.calls.filter(c=>c.action==='send_group_msg');assert.equal(sends.length,1);
+  assert.deepEqual(sends[0]!.params.message,[...Array.from({length:130},(_,i)=>({type:'text',data:{text:i===0?text:'x'}})),...ids.map(qq=>({type:'at',data:{qq}}))]);
+  assert.deepEqual(s.calls.filter(c=>c.action==='get_group_member_info').map(c=>c.params.user_id),['123','124','125','126']);
+  assert.equal(s.memory.rows.filter(e=>e.bot).length,1);
+ }finally{await s.bot.stop();}
 });
 
 test('send-send-finish sends two identical messages and stops all later calls',async()=>{
@@ -73,6 +88,17 @@ test('management cycles execute changed state while immediate identical duplicat
  const mute=()=>call('mute_member',{user_id:actor,seconds:60});
  const s=setup(()=>done(mute(),mute(),call('unmute_member',{user_id:actor}),mute(),call('finish')),{tools});
  try{await s.bot.receive(event(),self);await settle(s);assert.deepEqual(s.calls.filter(c=>c.action==='set_group_ban').map(c=>c.params.duration),[60,0,60]);}finally{await s.bot.stop();}
+});
+
+test('listener executes adopted thirty-day cap and rejects one second above before native dispatch',async()=>{
+ const tools={members:true,mention:true,moderation:{mute:'direct' as const,unmute:'off' as const,recall:'off' as const,memberCard:'off' as const,confirmationTtlSeconds:60,maxMuteSeconds:MAX_MUTE_SECONDS}};
+ const s=setup(i=>i===0?done(call('mute_member',{user_id:actor,seconds:MAX_MUTE_SECONDS})):i===1?done(call('mute_member',{user_id:actor,seconds:MAX_MUTE_SECONDS+1})):done(call('finish')),{tools});
+ try{
+  await s.bot.receive(event(),self);await settle(s,3);
+  assert.equal(results(s.requests[1]!)[0].status,'executed');
+  assert.equal(results(s.requests[2]!).at(-1).error,'invalid_arguments');
+  assert.deepEqual(s.calls.filter(c=>c.action==='set_group_ban').map(c=>c.params.duration),[MAX_MUTE_SECONDS]);
+ }finally{await s.bot.stop();}
 });
 
 test('cancelPending invalidates only the specified confirmation code',async()=>{

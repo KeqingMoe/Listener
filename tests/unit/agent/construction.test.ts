@@ -65,7 +65,7 @@ for (let mask = 0; mask < 8; mask++) {
   test(`legacy construction independently selects mention=${mention}, images=${images}, forward=${forward}`, () => {
     const input = freeze(config({
       tools: { members: true, mention, reactions: false, moderation: { ...offModeration } },
-      images: { enabled: images, maxPerTurn: 2, maxDownloadMb: 1 },
+      images: { enabled: images, maxDownloadMb: 1 },
       forward: { enabled: forward },
     }));
     const before = structuredClone(input), tools = buildToolDefinitions(input);
@@ -75,7 +75,6 @@ for (let mask = 0; mask < 8; mask++) {
     assert.ok(segmentKinds(tools).includes('face'));
     if (images) {
       const expected = structuredClone(VIEW_IMAGES_TOOL);
-      (expected.function.parameters as any).properties.image_ids.maxItems = 2;
       assert.deepEqual(get(tools, 'view_images'), expected);
     }
     if (forward) assert.deepEqual(get(tools, 'read_forward'), READ_FORWARD_TOOL);
@@ -119,7 +118,7 @@ test('legacy reaction fallback enables query and observation, while resolved pol
 test('resolved off permissions override every enabled legacy projection without altering frozen input', () => {
   const input = freeze(config({
     tools: { members: true, mention: true, reactions: true, moderation: { ...offModeration, mute: 'direct' }, extended: { poke_member: 'direct', list_custom_faces: 'direct' } },
-    images: { enabled: true, maxPerTurn: 3, maxDownloadMb: 10 }, forward: { enabled: true }, attention: { enabled: true, maxPlans: 16 },
+    images: { enabled: true, maxDownloadMb: 10 }, forward: { enabled: true }, attention: { enabled: true, maxPlans: 16 },
     toolPermissions: policies(), messageMentions: false,
   }));
   const before = structuredClone(input), tools = buildToolDefinitions(input), prompt = buildSystemPrompt(input);
@@ -134,10 +133,10 @@ test('resolved off permissions override every enabled legacy projection without 
 test('resolved selections override disabled legacy flags and preserve shared schema ordering and limits', () => {
   const input = freeze(config({
     tools: { members: false, mention: false, reactions: false, moderation: { ...offModeration } },
-    images: { enabled: false, maxPerTurn: 3, maxDownloadMb: 10 }, forward: { enabled: false }, attention: { enabled: false, maxPlans: 16 },
+    images: { enabled: false, maxDownloadMb: 10 }, forward: { enabled: false }, attention: { enabled: false, maxPlans: 16 },
     messageMentions: true, confirmationTtlSeconds: 17,
     toolPermissions: policies({
-      get_member_info: { mode: 'direct' }, view_images: { mode: 'direct', maxPerTurn: 1, maxDownloadMb: 2 },
+      get_member_info: { mode: 'direct' }, view_images: { mode: 'direct', maxDownloadMb: 2 },
       read_forward: { mode: 'direct' }, react_message: { mode: 'direct' }, get_reaction_users: { mode: 'direct' },
       manage_attention: { mode: 'direct', maxPlans: 3 }, mute_member: { mode: 'confirm', maxSeconds: 41 },
       unmute_member: { mode: 'direct' }, poke_member: { mode: 'confirm' }, list_custom_faces: { mode: 'direct' }, send_custom_face: { mode: 'direct' },
@@ -153,7 +152,7 @@ test('resolved selections override disabled legacy flags and preserve shared sch
   ]);
   assert.equal(new Set(names(tools)).size, tools.length);
   assert.ok(segmentKinds(tools).includes('at'));
-  assert.equal((get(tools, 'view_images').function.parameters as any).properties.image_ids.maxItems, 1);
+  assert.equal((get(tools, 'view_images').function.parameters as any).properties.image_ids.maxItems, undefined);
   assert.deepEqual(get(tools, 'manage_attention'), MANAGE_ATTENTION_TOOL);
   for (const expected of [...buildWorldTools(), ...moderation, ...extended]) assert.deepEqual(get(tools, expected.function.name), expected);
   const prompt = buildSystemPrompt(input);
@@ -170,7 +169,7 @@ test('resolved selections override disabled legacy flags and preserve shared sch
 test('returned definitions are deeply independent across repeats, option changes, and shared templates', () => {
   const input = freeze(config({
     tools: { members: true, mention: true, reactions: true, moderation: { ...offModeration, mute: 'confirm', recall: 'direct' }, extended: { poke_member: 'confirm', list_custom_faces: 'direct', send_custom_face: 'direct' } },
-    images: { enabled: true, maxPerTurn: 2, maxDownloadMb: 1 }, forward: { enabled: true }, attention: { enabled: true, maxPlans: 2 },
+    images: { enabled: true, maxDownloadMb: 1 }, forward: { enabled: true }, attention: { enabled: true, maxPlans: 2 },
   }));
   const templates = [CHAT_TOOLS, VIEW_IMAGES_TOOL, READ_FORWARD_TOOL, GET_REACTION_USERS_TOOL, MANAGE_ATTENTION_TOOL];
   const templateBefore = structuredClone(templates), before = structuredClone(input);
@@ -178,7 +177,7 @@ test('returned definitions are deeply independent across repeats, option changes
   const poisoned = buildToolDefinitions(input, true);
   pollute(poisoned);
   assert.deepEqual(buildToolDefinitions(input, true), baseline);
-  const reduced = freeze(config({ tools: { members: false, mention: false, reactions: false, moderation: { ...offModeration } }, images: { enabled: true, maxPerTurn: 1, maxDownloadMb: 1 } }));
+  const reduced = freeze(config({ tools: { members: false, mention: false, reactions: false, moderation: { ...offModeration } }, images: { enabled: true, maxDownloadMb: 1 } }));
   assert.ok(!segmentKinds(buildToolDefinitions(reduced)).includes('at'));
   assert.deepEqual(buildToolDefinitions(input, true), baseline);
   assert.deepEqual(templates, templateBefore);

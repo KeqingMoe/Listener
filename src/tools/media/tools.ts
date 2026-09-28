@@ -6,7 +6,7 @@ import { type Memory, type TimelineEntry } from "../../contracts/messages.js";
 import { type ToolDefinition, type TurnContext } from "../../contracts/tools.js";
 import { ImageTools } from "../images/tools.js";
 import { imageReferences } from "../../onebot/image-references.js";
-import type { ImageDownloader } from "../images/download.js";
+import { downloadSendImage, type ImageDownloader } from "../images/download.js";
 import { extractMessageContent } from "../../world/message-content.js";
 import { afterDispatch, writeFailure, DuplicateMessageAckError, UnverifiedMessageAckError } from '../../onebot/operation-result.js';
 
@@ -300,8 +300,8 @@ export class GroupMediaTools {
         const image = new ImageTools(
           this.api,
           this.memory,
-          { enabled: true, maxPerTurn: 1, maxDownloadMb: 10 },
-          this.options.downloader,
+          { enabled: true, maxDownloadMb: 10 },
+          this.options.downloader ?? downloadSendImage,
           this.groupId,
         );
         const viewed = await image.view(

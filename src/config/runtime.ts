@@ -17,7 +17,7 @@ export function applyToolPolicies(config: ListenerConfig): ListenerConfig {
     mention:config.messageMentions??true,reactions:direct('react_message'),extended,
     moderation:{mute:mode('mute_member'),unmute:mode('unmute_member'),recall:mode('recall_message'),memberCard:mode('set_member_card'),
       confirmationTtlSeconds:config.confirmationTtlSeconds??60,maxMuteSeconds:policies.mute_member.maxSeconds??TOOL_CAPABILITIES.mute_member.options.max_seconds!.default}},
-    images:{enabled:direct('view_images'),maxPerTurn:policies.view_images.maxPerTurn??TOOL_CAPABILITIES.view_images.options.max_per_turn!.default,maxDownloadMb:policies.view_images.maxDownloadMb??TOOL_CAPABILITIES.view_images.options.max_download_mb!.default},
+    images:{enabled:direct('view_images'),maxDownloadMb:policies.view_images.maxDownloadMb??TOOL_CAPABILITIES.view_images.options.max_download_mb!.default},
     forward:{enabled:direct('read_forward')},
     attention:{enabled:direct('manage_attention'),maxPlans:policies.manage_attention.maxPlans??TOOL_CAPABILITIES.manage_attention.options.max_plans!.default}};
 }

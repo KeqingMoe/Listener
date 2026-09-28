@@ -27,7 +27,7 @@ function api(handler:(action:string,params:Record<string,unknown>)=>unknown){
 }
 const member=(groupId:string)=>({group_id:groupId,user_id:user,nickname:'member',role:'member'});
 const msg=(groupId:string,id='1',message:unknown[]=[{type:'text',data:{text:groupId}}])=>({message_type:'group',group_id:groupId,message_id:id,sender:{user_id:user},message});
-const imageOptions={enabled:true,maxPerTurn:3,maxDownloadMb:1};
+const imageOptions={enabled:true,maxDownloadMb:1};
 const forwardOptions={enabled:true};
 const forwardArgs={forward_id:'fwd_1_0',start:1,limit:1};
 

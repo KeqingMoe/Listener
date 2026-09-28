@@ -42,6 +42,14 @@ test('image and forward structure exposes only supplied bound refs, never their 
  assert.doesNotMatch(JSON.stringify(result),/https|RAW_|PRIVATE_BODY/);
 });
 
+test('all five image references survive wire extraction and model projection',()=>{
+ const refs=Array.from({length:5},(_,index)=>({id:`img_12_${index}`,index}));
+ const result=extractMessageContent('12',refs.map(()=>({type:'image',data:{}})),refs);
+ assert.deepEqual(result.segments,refs.map(ref=>({type:'image',image_id:ref.id,content_status:'not_viewed'})));
+ const projected=projectMessage(row({...result,images:refs}));
+ assert.deepEqual(projected.segments,result.segments);
+});
+
 test('JSON cards use only matched pre-extracted refs and unavailable media stays explicitly unread',()=>{
  const card={type:'json',data:{data:'PRIVATE_JSON_BODY'}};
  assert.deepEqual(extractMessageContent('12',[card],[],[{id:'fwd_12_0',index:0,count:3,countSource:'verified'}]).segments,[{type:'forward',forward_id:'fwd_12_0',content_status:'not_read',count:3,count_source:'verified'}]);

@@ -93,7 +93,7 @@ export class SQLiteMemory implements Memory {
     if (Array.isArray(entry.images)) {
       safe.images = entry.images.filter(image => image && Number.isInteger(image.index) && image.index >= 0 && image.index < 128 &&
         typeof image.id === 'string' && image.id === `img_${entry.messageId}_${image.index}` && /^img_-?\d{1,32}_\d{1,3}$/.test(image.id))
-        .slice(0,3).map(image => ({id:image.id,index:image.index}));
+        .slice(0,128).map(image => ({id:image.id,index:image.index}));
     }
     if (Array.isArray(entry.forwards)) safe.forwards = sanitizeForwardReferences(entry.messageId,entry.forwards);
     const content = sanitizeMessageContent(entry.messageId, entry.segments, safe.images, safe.forwards);

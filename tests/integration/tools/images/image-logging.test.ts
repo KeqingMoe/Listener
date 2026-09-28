@@ -51,7 +51,7 @@ test('actual transfer and native decode have separate timings and inherit image 
   const rows = await capture(async () => {
     const memory: Memory = { recent: () => [{ messageId: '1', userId: '123', nickname: secret, text: secret, time: 1, images: [{ id: 'img_1_0', index: 0 }] }], find: () => undefined, append: () => true, context: () => '', compact: async () => {}, clear() {}, close() {} };
     const tools = new ImageTools({ async call() { return { message_type: 'group', group_id: LISTENER_GROUP, message_id: '1', sender: { user_id: '123', card: secret }, message: [{ type: 'image', data: { url } }] }; } }, memory,
-      { enabled: true, maxPerTurn: 1, maxDownloadMb: 1 }, createImageDownloader(network(bytes)));
+      { enabled: true, maxDownloadMb: 1 }, createImageDownloader(network(bytes)));
     const result = await tools.view({ image_ids: ['img_1_0'] }, { actorId: '123', selfId: '999', groupId: LISTENER_GROUP, messageId: '1' }, tools.createTurn());
     assert.equal(result.result.status, 'ok');
   });

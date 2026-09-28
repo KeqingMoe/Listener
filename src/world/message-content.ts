@@ -24,7 +24,7 @@ function safeRefs(messageId:string,images:unknown,forwards:unknown):{images:Imag
  if(numeric(messageId,true)!==messageId)return output;
  for(const [values,prefix,dest] of [[images,'img',output.images],[forwards,'fwd',output.forwards]] as const){
   if(!array(values))continue;const seen=new Set<string>();
-  for(let i=0;i<Math.min(values.length,MAX_SEGMENTS)&&dest.length<MAX_REFS;i++){
+  for(let i=0;i<Math.min(values.length,MAX_SEGMENTS)&&(prefix==='img'||dest.length<MAX_REFS);i++){
    const ref=item(values,i);if(!object(ref)||!Number.isInteger(ref.index)||(ref.index as number)<0||(ref.index as number)>=MAX_SEGMENTS||ref.id!==`${prefix}_${messageId}_${ref.index}`||seen.has(ref.id as string))continue;
    const value:ForwardReference={id:ref.id as string,index:ref.index as number};
    if(prefix==='fwd'&&typeof ref.count==='number'&&Number.isSafeInteger(ref.count)&&ref.count>=0&&ref.count<=1000&&(ref.countSource==='verified'||(ref.countSource==='hint'&&ref.count>0))){value.count=ref.count;value.countSource=ref.countSource;}

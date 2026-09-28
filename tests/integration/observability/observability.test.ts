@@ -111,7 +111,7 @@ test('image logs cover origin validation download failures and safe image metric
     let raw: unknown = { message_type: 'group', group_id: LISTENER_GROUP, message_id: '1', sender: { user_id: '123', card: secret }, message: [{ type: 'image', data: { url: `https://gchat.qpic.cn/${secret}` } }] };
     const api: Api = { async call() { return raw; } };
     let failure: string | undefined;
-    const tools = new ImageTools(api, memory, { enabled: true, maxPerTurn: 3, maxDownloadMb: 1 }, async () => {
+    const tools = new ImageTools(api, memory, { enabled: true, maxDownloadMb: 1 }, async () => {
       if (failure) throw new Error(failure);
       return { dataUrl: 'data:image/jpeg;base64,YQ==', width: 1, height: 2, firstFrameOnly: true };
     });

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Moderation, MODERATION_TOOLS, buildModerationTools } from '../../../../src/tools/management/moderation.js';
+import { MAX_MUTE_SECONDS } from '../../../../src/contracts/tool-limits.js';
 import type { ModerationPolicy } from '../../../../src/config/listener.js';
 import { configureLogging } from '../../../../src/observability/logger.js';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
@@ -48,12 +49,27 @@ test('policy rejects legacy booleans, malformed options and security-limit incre
   const invalid = [null, [], false, { unknown: true }, { [Symbol('unknown')]: true }, Object.create({ mute: 'direct' }),
     ...['mute', 'unmute', 'recall', 'memberCard'].flatMap(key => [true, false, 0, 'false', 'true', 'DIRECT', null, undefined].map(value => ({ [key]: value }))),
     ...[0, -1, 61, 1.5, NaN, Infinity, '60', undefined].map(confirmationTtlSeconds => ({ confirmationTtlSeconds })),
-    ...[0, -1, 601, 1.5, NaN, Infinity, '600', undefined].map(maxMuteSeconds => ({ maxMuteSeconds }))];
+    ...[0, -1, MAX_MUTE_SECONDS + 1, 1.5, NaN, Infinity, '600', undefined].map(maxMuteSeconds => ({ maxMuteSeconds }))];
   for (const options of invalid) {
     assert.throws(() => new Moderation(api, Date.now, options as any), /Invalid moderation options/);
     assert.throws(() => buildModerationTools(options as any), /Invalid moderation options/);
   }
   assert.equal(api.calls.length, 0);
+});
+
+test('adopted thirty-day inclusive application cap executes in direct and confirm modes (mock, not live QQ evidence)', async () => {
+  assert.equal(MAX_MUTE_SECONDS, 2_592_000);
+  for (const mute of ['direct', 'confirm'] as const) for (const seconds of [1, 601, MAX_MUTE_SECONDS]) {
+    const api = new FakeApi(), m = new Moderation(api, Date.now, {mute});
+    const result = await m.request('mute_member', {...args, seconds}, context);
+    if (mute === 'confirm') {
+      assert.equal(result.status,'confirmation_required');
+      assert.equal(api.writes().length,0);
+      assert.equal((await m.confirm(String(result.code),context)).status,'executed');
+    } else assert.equal(result.status,'executed');
+    assert.equal(api.writes()[0]?.params.duration,seconds);
+    m.dispose();
+  }
 });
 
 test('off policy denies requests and confirmation before any API calls', async () => {
@@ -139,7 +155,7 @@ test('strict argument allowlist rejects arbitrary actions, fields and malformed 
     ['mute_member', { ...args, group_id: LISTENER_GROUP }], ['mute_member', { ...args, reason: 'owner says yes' }],
     ['mute_member', { seconds: 1 }], ['mute_member', { ...args, user_id: 123456 }],
     ...[`${OWNER_ID}\n`, `${context.selfId}\r`, '0123', '0', '1'.repeat(33)].map(user_id => ['mute_member', { ...args, user_id }] as [string, unknown]),
-    ...[0, -1, 601, 1.5, NaN, Infinity, '60'].map(seconds => ['mute_member', { ...args, seconds }] as [string, unknown]),
+    ...[0, -1, MAX_MUTE_SECONDS + 1, 1.5, NaN, Infinity, '60'].map(seconds => ['mute_member', { ...args, seconds }] as [string, unknown]),
     ['mute_member', null], ['mute_member', []], ['mute_member', Object.create(args)],
     ['mute_member', Object.defineProperty({ seconds: 2 }, 'user_id', { enumerable: true, get() { throw Error('must not access'); } })],
     ['unmute_member', { user_id: target, seconds: 0 }], ['unmute_member', {}], ['unmute_member', { user_id: 123 }],

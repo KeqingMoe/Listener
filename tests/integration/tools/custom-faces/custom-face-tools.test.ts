@@ -141,19 +141,20 @@ test('group-bound refs cannot be borrowed, and changed resId/md5/emoId/descripti
   assert.equal(writes(f).length, 0);
 });
 
-test('view gives actual JPEG visual attachments separately, marks GIF first-frame-only, and spends shared budget', async t => {
-  const budget = { attemptedIds: new Set(['img_7_0', 'img_8_0']), loadedIds: new Set<string>() };
-  const f = fixture({ bytes: GIF, extras: { imageBudget: budget } }); t.after(() => f.close());
+test('view gives actual JPEG attachments, marks GIF first-frame-only, and shares success state without quotas', async t => {
+  const state = { loadedIds: new Set(['img_7_0', 'img_8_0', 'img_9_0', 'img_10_0', 'img_11_0']) };
+  const f = fixture({ bytes: GIF, extras: { imageState: state } }); t.after(() => f.close());
   const ref = await firstRef(f), result = await f.execute('view_custom_face', { face_ref: ref });
   assert.equal(result.status, 'ok'); assert.equal(result.first_frame_only, true);
-  assert.equal(budget.attemptedIds.size, 3); assert.ok(budget.loadedIds.has(ref));
+  assert.equal(state.loadedIds.size, 6); assert.ok(state.loadedIds.has(ref));
   assert.equal(f.visuals.length, 2); assert.equal(f.visuals[1]?.type, 'image_url');
   assert.match(JSON.stringify(f.visuals[1]), /data:image\/jpeg;base64/);
   assert.ok(!JSON.stringify(result).includes('base64'));
   await f.execute('view_custom_face', { face_ref: ref }); assert.equal(f.visuals.length, 2);
   const second = favorite(GIF, { resId: 'OTHER_RES', emoId: 1 }); f.rows.push(second);
   const list = await f.execute('list_custom_faces'); const other = (list.items as JsonObject[]).find(i => i.face_ref !== ref)!.face_ref;
-  assert.equal((await f.execute('view_custom_face', { face_ref: other })).error, 'image_budget_exhausted');
+  assert.equal((await f.execute('view_custom_face', { face_ref: other })).status, 'ok');
+  assert.equal(f.downloads, 2);
 });
 
 test('single-frame GIF reports the actual shared preview first-frame policy, separately from animation', async t => {
@@ -166,12 +167,49 @@ test('single-frame GIF reports the actual shared preview first-frame policy, sep
   assert.match(text, /"first_frame_only":true/); assert.match(text, /"animated":false/);
 });
 
-test('failed/incorrect original image consumes one view attempt and never produces visual content', async t => {
+test('failed original verification remains retryable without producing visual content', async t => {
   const f = fixture({ rows: [favorite(PNG, { md5: 'f'.repeat(32) })] }); t.after(() => f.close());
   const ref = await firstRef(f);
-  assert.equal((await f.execute('view_custom_face', { face_ref: ref })).error, 'image_identity_mismatch');
-  assert.equal((await f.execute('view_custom_face', { face_ref: ref })).error, 'image_unavailable');
-  assert.equal(f.visuals.length, 0); assert.equal(f.downloads, 1);
+  for (let i = 0; i < 5; i++) assert.equal((await f.execute('view_custom_face', { face_ref: ref })).error, 'image_identity_mismatch');
+  assert.equal(f.visuals.length, 0); assert.equal(f.downloads, 5);
+});
+
+test('five distinct custom faces and a transient failure can all load in one shared state', async t => {
+  let attempts = 0;
+  const f = fixture({ rows: Array.from({ length: 5 }, (_, i) => favorite(PNG, { resId: `FACE_${i}`, emoId: i })), extras: {
+    originalDownloader: async () => {
+      if (++attempts <= 5) throw new Error('temporary transfer failure');
+      return validateOriginalImage(PNG);
+    },
+  } }); t.after(() => f.close());
+  const list = await f.execute('list_custom_faces');
+  const refs = (list.items as JsonObject[]).map(item => item.face_ref);
+  assert.equal(refs.length, 5);
+  for (let i = 0; i < 5; i++) assert.equal((await f.execute('view_custom_face', { face_ref: refs[0] })).status, 'error');
+  for (const ref of refs) assert.equal((await f.execute('view_custom_face', { face_ref: ref })).status, 'ok');
+  assert.equal(attempts, 10); assert.equal(f.visuals.length, 10);
+});
+
+test('large custom face preview shrinks only model pixels; collection staging and send retain exact original', async t => {
+  const bytes = await sharp({ create: { width: 3200, height: 1600, channels: 4, background: '#ff000080' } }).png().toBuffer();
+  const f = fixture({ bytes, rows: [] }); t.after(() => f.close());
+  const added = await f.execute('add_custom_face', { image_id: 'img_11_0', description: 'large original' });
+  assert.equal(added.collection_binding_confirmed, true); assert.equal(f.stages, 1);
+  const ref = added.face_ref as string;
+  const before = f.downloads;
+  const viewed = await f.execute('view_custom_face', { face_ref: ref });
+  assert.equal(viewed.status, 'ok'); assert.equal(viewed.width, 1568); assert.equal(viewed.height, 784);
+  assert.equal(f.downloads, before + 1);
+  const attachment = f.visuals.find(p => p.type === 'image_url');
+  assert.ok(attachment?.type === 'image_url');
+  const preview = await sharp(Buffer.from(attachment.image_url.url.split(',')[1]!, 'base64')).metadata();
+  assert.equal(preview.width, 1568); assert.equal(preview.height, 784);
+  assert.equal((await f.execute('send_custom_face', { face_ref: ref })).status, 'executed');
+  const sent = f.calls.find(c => c.action === 'send_group_msg')!;
+  const file = ((sent.params!.message as JsonObject[])[0]!.data as JsonObject).file as string;
+  assert.deepEqual(Buffer.from(file.slice('base64://'.length), 'base64'), bytes);
+  const add = f.calls.find(c => c.action === 'add_custom_face')!;
+  assert.equal(add.params!.md5, md5(bytes)); assert.equal(add.params!.file_size, bytes.length);
 });
 
 test('GIF sends original bytes, not preview JPEG, and normal explicit repeated calls send again', async t => {

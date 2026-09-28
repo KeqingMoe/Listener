@@ -29,8 +29,8 @@ export const GROUP_TOOLS: ToolDefinition[] = [
   tool('get_member_info', '读取当前群指定成员的基本资料。', schema({ user_id: { type: 'string' } }, ['user_id'])),
   tool('read_message', '读取当前群本地消息或本地近期消息引用的消息。', schema({ message_id: { type: 'string' } }, ['message_id'])),
 ];
-const MESSAGE_SEGMENTS_SCHEMA = { type: 'array', minItems: 1, maxItems: 12, items: { oneOf: [schema({ type: { const: 'text' }, text: { type: 'string', maxLength: 800 } }, ['type', 'text']), schema({ type: { const: 'at' }, user_id: { type: 'string' } }, ['type', 'user_id']), schema({ type: { const: 'face' }, id: FACE_ID_SCHEMA, name: {type:'string',maxLength:80,description:'可选名称说明，仅供阅读；不会发往QQ，实际表情只由id决定。'} }, ['type', 'id'])] } };
-export const SEND_MESSAGE_TOOL = tool('send_message', '向当前群发送一条文字、QQ原生表情或混合消息；发送后返回message_id，可以继续使用工具，最后必须调用 finish。face必须使用目录id，可选name仅是说明且不传给QQ，不支持连击或指定动画结果。text包括括号标记和CQ样式在内都按原文发送，不转成操作；真正@须使用at片段并核验本群成员，不支持全体或自己。每条最多12片段、800文字字符。' + FACE_LAYOUT_GUIDANCE, schema({ segments: MESSAGE_SEGMENTS_SCHEMA, reply_to: { type: 'string' } }, ['segments']));
+const MESSAGE_SEGMENTS_SCHEMA = { type: 'array', minItems: 1, items: { oneOf: [schema({ type: { const: 'text' }, text: { type: 'string' } }, ['type', 'text']), schema({ type: { const: 'at' }, user_id: { type: 'string' } }, ['type', 'user_id']), schema({ type: { const: 'face' }, id: FACE_ID_SCHEMA, name: {type:'string',maxLength:80,description:'可选名称说明，仅供阅读；不会发往QQ，实际表情只由id决定。'} }, ['type', 'id'])] } };
+export const SEND_MESSAGE_TOOL = tool('send_message', '向当前群发送一条文字、QQ原生表情或混合消息；发送后返回message_id，可以继续使用工具，最后必须调用 finish。face必须使用目录id，可选name仅是说明且不传给QQ，不支持连击或指定动画结果。text包括括号标记和CQ样式在内都按原文发送，不转成操作；真正@须使用at片段并核验本群成员，不支持全体或自己。' + FACE_LAYOUT_GUIDANCE, schema({ segments: MESSAGE_SEGMENTS_SCHEMA, reply_to: { type: 'string' } }, ['segments']));
 
 function object(v: unknown): v is JsonObject { return !!v && typeof v === 'object' && !Array.isArray(v); }
 function fail(code = 'invalid_arguments'): never { throw new Error(code); }
@@ -132,15 +132,15 @@ export class GroupTools {
   }
   async prepareMessage(args: unknown, context: TurnContext): Promise<PreparedMessage> {
     this.scope(context); fields(args, ['segments', 'reply_to']);
-    if (!Array.isArray(args.segments) || args.segments.length < 1 || args.segments.length > 12) fail();
-    let atCount = 0, textLength = 0, visible = false;
+    if (!Array.isArray(args.segments) || args.segments.length < 1) fail();
+    let visible = false;
     const targets = new Set<string>();
     const segments: PreparedMessage['segments'] = args.segments.map(segment => {
       if (!object(segment)) fail();
       if (segment.type === 'text') {
         fields(segment, ['type', 'text']);
         if (typeof segment.text !== 'string' || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(segment.text)) fail();
-        textLength += segment.text.length; visible ||= !!segment.text.trim();
+        visible ||= !!segment.text.trim();
         return { type: 'text' as const, data: { text: segment.text } };
       }
       if (segment.type === 'face') {
@@ -152,11 +152,11 @@ export class GroupTools {
       if (!this.options.mention) fail('tool_disabled');
       fields(segment, ['type', 'user_id']);
       const target = identifier(segment.user_id);
-      if (target === context.selfId || ++atCount > 3) fail();
+      if (target === context.selfId) fail();
       targets.add(target); visible = true;
       return { type: 'at' as const, data: { qq: target } };
     });
-    if (!visible || textLength > 800) fail();
+    if (!visible) fail();
     const replyTo = Object.hasOwn(args, 'reply_to') ? identifier(args.reply_to, true) : undefined;
     for (const target of targets) member(await this.call('get_group_member_info', { group_id: this.groupId, user_id: target, no_cache: true }), this.groupId, target);
     if (replyTo !== undefined && !this.memory.find(replyTo)) {

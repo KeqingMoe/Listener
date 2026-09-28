@@ -126,7 +126,7 @@ test('explicit modes, independent observation and group overrides survive the ne
   assert.equal(group.tools.poke_member.mode, 'direct');
   assert.equal(other.tools.poke_member.mode, 'off');
   assert.equal(group.tools.mute_member.mode, 'confirm');
-  assert.equal(group.tools.mute_member.maxSeconds, 600);
+  assert.equal(group.tools.mute_member.maxSeconds, 2592000);
   assert.equal(other.tools.mute_member.mode, 'direct');
   assert.equal(other.tools.mute_member.maxSeconds, 120);
   assert.equal(group.observation.reactions, false);

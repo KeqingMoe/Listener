@@ -5,6 +5,7 @@ import type { ClientRequest, IncomingMessage } from 'node:http';
 import { isIP } from 'node:net';
 import ipaddr from 'ipaddr.js';
 import sharp from 'sharp';
+import { MODEL_IMAGE_MAX_EDGE } from '../../contracts/tool-limits.js';
 import { log } from '../../observability/logger.js';
 
 export interface DownloadedImage {
@@ -82,8 +83,13 @@ export function hasSupportedImageSignature(bytes: Buffer): boolean {
       bytes.subarray(8, 12).equals(Buffer.from('WEBP')));
 }
 
+/** Fixed model preview bound; callers cannot request original-size model input. */
+export function prepareImage(bytes: Buffer, signal?: AbortSignal): Promise<DownloadedImage> {
+  return prepareNormalizedImage(bytes, MODEL_IMAGE_MAX_EDGE, signal);
+}
+
 /** Decode bytes only (never filenames), flatten the first frame, strip metadata. */
-export async function prepareImage(bytes: Buffer, signal?: AbortSignal): Promise<DownloadedImage> {
+async function prepareNormalizedImage(bytes: Buffer, maxEdge: number, signal?: AbortSignal): Promise<DownloadedImage> {
   checkAbort(signal);
   if (!Buffer.isBuffer(bytes) || bytes.length === 0 || bytes.length > MAX_INPUT_BYTES) {
     throw fail('Invalid image data size');
@@ -117,7 +123,7 @@ export async function prepareImage(bytes: Buffer, signal?: AbortSignal): Promise
     }
     checkAbort(signal);
     const { data, info } = await decoder.rotate()
-      .resize({ width: 2048, height: 2048, fit: 'inside', withoutEnlargement: true })
+      .resize({ width: maxEdge, height: maxEdge, fit: 'inside', withoutEnlargement: true })
       .flatten({ background: '#ffffff' })
       .jpeg({ quality: 85 })
       .toBuffer({ resolveWithObject: true });
@@ -275,6 +281,13 @@ function createSafeImageDownloader<T>(
 export function createImageDownloader(dependencies: ImageDownloadDependencies = {}): ImageDownloader {
   return createSafeImageDownloader(dependencies, validateImageUrl, prepareImage);
 }
+
+/** Native group sends retain their previous normalized 2048px policy, not model previews. */
+export function createSendImageDownloader(dependencies: ImageDownloadDependencies = {}): ImageDownloader {
+  return createSafeImageDownloader(dependencies, validateImageUrl,
+    (bytes, signal) => prepareNormalizedImage(bytes, 2048, signal));
+}
+export const downloadSendImage: ImageDownloader = createSendImageDownloader();
 
 export interface OriginalImage {
   bytes: Buffer;

@@ -131,7 +131,7 @@ test('twelve actor pages and a thirteenth answer round use the shared budget wit
 
 for(const feature of ['images','forward'] as const)test(`actor lookup remains a readonly operation alongside a ${feature} read request`,async()=>{
  const reading=feature==='images'?call('view_images',{image_ids:['img_1_1']}):call('read_forward',{forward_id:'fwd_1_1',start:1,limit:1});
- const s=setup({settings:feature==='images'?{images:{enabled:true,maxPerTurn:1,maxDownloadMb:1}}:{forward:{enabled:true}},respond:r=>r.index===0?complete(query(),reading):complete(silent())});try{await s.receive(event('1'));await settled(s,2);assert.equal(fetches(s).length,1);assert.equal(results(s.requests[1]!)[0].status,'ok');assert.equal(results(s.requests[1]!)[1].status,'error','missing attachment is handled independently of the users query');}finally{await s.close();}
+ const s=setup({settings:feature==='images'?{images:{enabled:true,maxDownloadMb:1}}:{forward:{enabled:true}},respond:r=>r.index===0?complete(query(),reading):complete(silent())});try{await s.receive(event('1'));await settled(s,2);assert.equal(fetches(s).length,1);assert.equal(results(s.requests[1]!)[0].status,'ok');assert.equal(results(s.requests[1]!)[1].status,'error','missing attachment is handled independently of the users query');}finally{await s.close();}
 });
 
 test('foreign group proof never reaches the actor-list API',async()=>{

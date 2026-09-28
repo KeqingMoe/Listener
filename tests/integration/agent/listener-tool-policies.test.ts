@@ -52,9 +52,9 @@ async function run(overrides:Partial<ResolvedToolPolicies>,calls:ReturnType<type
 }
 
 test('unique adapter combines app credentials and group policy without leaking shared settings into group',()=>{
- const {app,group,config}=fixture({view_images:{mode:'direct',maxPerTurn:2,maxDownloadMb:4},mute_member:{mode:'confirm',maxSeconds:45},manage_attention:{mode:'direct',maxPlans:5}});
+ const {app,group,config}=fixture({view_images:{mode:'direct',maxDownloadMb:4},mute_member:{mode:'confirm',maxSeconds:45},manage_attention:{mode:'direct',maxPlans:5}});
  assert.equal(config.apiKey,app.model.apiKey);assert.equal(config.maxTokens,8192);assert.equal(config.ownerId,OWNER);assert.equal(config.persona,group.persona);assert.equal(config.sessionMaxContextBytes,524288);assert.equal(config.serverCompaction,'off');assert.equal(config.compactThreshold,undefined);
- assert.equal(config.tools?.moderation.maxMuteSeconds,45);assert.equal(config.tools?.moderation.confirmationTtlSeconds,37);assert.deepEqual(config.images,{enabled:true,maxPerTurn:2,maxDownloadMb:4});assert.deepEqual(config.attention,{enabled:true,maxPlans:5});
+ assert.equal(config.tools?.moderation.maxMuteSeconds,45);assert.equal(config.tools?.moderation.confirmationTtlSeconds,37);assert.deepEqual(config.images,{enabled:true,maxDownloadMb:4});assert.deepEqual(config.attention,{enabled:true,maxPlans:5});
  assert.equal('apiKey' in group,false);group.tools.mute_member.mode='off';assert.equal(config.toolPermissions?.mute_member.mode,'confirm');
  group.session.compaction={thresholdTokens:8192};const compact=toListenerConfig(app,group);assert.equal(compact.serverCompaction,'auto');assert.equal(compact.compactThreshold,8192);assert.equal('serverCompactionVerified' in compact,false);
  assert.equal(config.enabled,true);group.enabled=false;assert.equal(toListenerConfig(app,group).enabled,false);
@@ -67,7 +67,7 @@ test('every optional tool exposes only its explicit policy; required tools stay 
   assert.deepEqual(TOOL_NAMES.filter(n=>defs.includes(n)),[name],`${name}:${mode}`);
   for(const core of ['read_message','send_message','finish','read_events'])assert.ok(defs.includes(core));
  }}
- const {config}=fixture();config.tools={members:true,mention:true,reactions:true,moderation:{mute:'direct',unmute:'direct',recall:'direct',memberCard:'direct',confirmationTtlSeconds:60,maxMuteSeconds:600},extended:{kick_member:'direct'}};config.images={enabled:true,maxPerTurn:3,maxDownloadMb:10};config.attention={enabled:true,maxPlans:16};
+ const {config}=fixture();config.tools={members:true,mention:true,reactions:true,moderation:{mute:'direct',unmute:'direct',recall:'direct',memberCard:'direct',confirmationTtlSeconds:60,maxMuteSeconds:600},extended:{kick_member:'direct'}};config.images={enabled:true,maxDownloadMb:10};config.attention={enabled:true,maxPlans:16};
  assert.deepEqual(TOOL_NAMES.filter(n=>buildToolDefinitions(config,true).some(t=>t.function.name===n)),[]);
 });
 
@@ -117,13 +117,13 @@ test('new policy path never invokes legacy summaries even in a low-level fixture
  const out=await run({get_member_info:{mode:'direct'}},[tool('get_member_info',{user_id:MEMBER})],false,false);assert.equal(out.results.get('get_member_info')?.status,'ok');assert.equal(out.summaryCalls,0);
 });
 
-test('resolved view_images options enforce attempt capacity and downloader byte budget',async()=>{
- const {config}=fixture({view_images:{mode:'direct',maxPerTurn:2,maxDownloadMb:4}}),memory=new Cache(),limits:number[]=[];
+test('resolved view_images options enforce only the per-image downloader byte budget',async()=>{
+ const {config}=fixture({view_images:{mode:'direct',maxDownloadMb:4}}),memory=new Cache(),limits:number[]=[];
  memory.append({messageId:'1',userId:MEMBER,nickname:'fixture',text:'[图片]',time:Date.now()/1000,images:[0,1,2].map(index=>({id:`img_1_${index}`,index}))});
  const api:Api={async call(){return {message_id:'1',message_type:'group',group_id:GROUP,sender:{user_id:MEMBER},message:[0,1,2].map(i=>({type:'image',data:{url:`https://images.example.test/${i}.png`}}))};}};
  const images=new ImageTools(api,memory,config.images!,async(_url,limit)=>{limits.push(limit);return {dataUrl:'data:image/png;base64,AA==',width:1,height:1,firstFrameOnly:false};},GROUP);
  const result=await images.view({image_ids:['img_1_0','img_1_1','img_1_2']},{groupId:GROUP,actorId:MEMBER,selfId:SELF,messageId:'1'},images.createTurn());
- assert.deepEqual(limits,[4*1024*1024,4*1024*1024]);assert.deepEqual(result.result.loaded_ids,['img_1_0','img_1_1']);assert.deepEqual(result.result.failed_ids,['img_1_2']);
+ assert.deepEqual(limits,[4*1024*1024,4*1024*1024,4*1024*1024]);assert.deepEqual(result.result.loaded_ids,['img_1_0','img_1_1','img_1_2']);assert.deepEqual(result.result.failed_ids,[]);
 });
 
 test('resolved mute and attention resource options reach actual execution guards',async()=>{

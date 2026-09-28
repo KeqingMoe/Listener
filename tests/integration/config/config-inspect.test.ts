@@ -46,7 +46,7 @@ tools.mute_member = "confirm"
   assert.equal(result.sources['reply.cooldown_ms'], 'defaults');
   assert.equal(result.sources['reply.random.probability'], 'group');
   assert.equal(result.sources['reply.random.cooldown_ms'], 'program_default');
-  assert.deepEqual(result.values.tools.mute_member, { mode: 'confirm', max_seconds: 600 });
+  assert.deepEqual(result.values.tools.mute_member, { mode: 'confirm', max_seconds: 2592000 });
   assert.equal(result.sources['tools.mute_member.mode'], 'group');
   assert.equal(result.sources['tools.mute_member.max_seconds'], 'program_default');
   assert.equal(result.values.session.compaction, false);

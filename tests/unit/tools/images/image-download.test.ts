@@ -5,7 +5,7 @@ import { PassThrough } from 'node:stream';
 import type { IncomingMessage, ClientRequest } from 'node:http';
 import type { RequestOptions } from 'node:https';
 import sharp from 'sharp';
-import { createImageDownloader, hasSupportedImageSignature, isPublicAddress, prepareImage, validateImageUrl, type ImageDownloadDependencies } from '../../../../src/tools/images/download.js';
+import { createImageDownloader, createSendImageDownloader, hasSupportedImageSignature, isPublicAddress, prepareImage, validateImageUrl, type ImageDownloadDependencies } from '../../../../src/tools/images/download.js';
 
 const URL = 'https://gchat.qpic.cn/image?token=SECRET';
 const png = () => sharp({ create: { width: 8, height: 4, channels: 4, background: '#ff000080' } }).png().toBuffer();
@@ -42,6 +42,20 @@ function fakeNetwork(body: Buffer, settings: { status?: number; headers?: Record
   };
   return { request, lookup, get options() { return options; }, get destroyed() { return destroyed; }, get requests() { return requests; } };
 }
+
+test('native sends retain 2048 normalization independently of fixed 1568 model previews', async () => {
+  for (const [width, height, sendWidth, sendHeight] of [[3200, 1600, 2048, 1024], [1800, 900, 1800, 900]]) {
+    const bytes = await sharp({ create: { width: width!, height: height!, channels: 3, background: 'red' } }).png().toBuffer();
+    const network = fakeNetwork(bytes);
+    const sent = await createSendImageDownloader(network)(URL, 1024 * 1024);
+    assert.equal(network.requests, 1);
+    assert.equal(sent.width, sendWidth); assert.equal(sent.height, sendHeight);
+    const actual = await sharp(Buffer.from(sent.dataUrl.split(',')[1]!, 'base64')).metadata();
+    assert.equal(actual.width, sendWidth); assert.equal(actual.height, sendHeight);
+    const model = await createImageDownloader(fakeNetwork(bytes))(URL, 1024 * 1024);
+    assert.equal(model.width, 1568); assert.equal(model.height, 784);
+  }
+});
 
 test('signature gate rejects SVG/PDF/HEIF and spoofed MIME data before native decoding', async () => {
   for (const bytes of [
@@ -180,7 +194,14 @@ test('real PNG/JPEG/GIF decode produces only JPEG with first-frame policy and st
 test('resizes without enlargement and rejects huge dimensions, malformed, HTML, SVG and unsupported formats', async () => {
   const large = await sharp({ create: { width: 4096, height: 1024, channels: 3, background: 'red' } }).png().toBuffer();
   const result = await prepareImage(large);
-  assert.equal(result.width, 2048); assert.equal(result.height, 512);
+  assert.equal(result.width, 1568); assert.equal(result.height, 392);
+  for (const [width, height, expectedWidth, expectedHeight] of [[1024, 4096, 392, 1568], [3200, 3200, 1568, 1568], [3001, 1000, 1568, 522], [8, 4, 8, 4]]) {
+    const input = await sharp({ create: { width: width!, height: height!, channels: 3, background: 'red' } }).png().toBuffer();
+    const preview = await prepareImage(input);
+    assert.equal(preview.width, expectedWidth); assert.equal(preview.height, expectedHeight);
+    const actual = await sharp(Buffer.from(preview.dataUrl.split(',')[1]!, 'base64')).metadata();
+    assert.equal(actual.width, expectedWidth); assert.equal(actual.height, expectedHeight);
+  }
   const huge = await sharp({ create: { width: 7000, height: 6000, channels: 3, background: 'red' } }).png().toBuffer();
   const tiff = await sharp(await png()).tiff().toBuffer();
   for (const bytes of [huge, tiff, Buffer.alloc(0), Buffer.from('SECRET <html>not an image</html>'),

@@ -25,12 +25,12 @@ test('execution inherits ordinary fields independently and contains no model cre
 });
 test('execution endpoints are accepted at defaults and disabled group scope',t=>{
   const load=fixture(t);
-  for(const scope of ['defaults.execution','groups."11".execution'])for(const [key,values,field] of [['max_tool_calls_per_wake',[1,4096],'maxToolCallsPerWake'],['wake_timeout_ms',[1000,600000],'wakeTimeoutMs']] as const)for(const value of values)
+  for(const scope of ['defaults.execution','groups."11".execution'])for(const [key,values,field] of [['max_tool_calls_per_wake',[1,4097,600001,Number.MAX_SAFE_INTEGER],'maxToolCallsPerWake'],['wake_timeout_ms',[1000,600000],'wakeTimeoutMs']] as const)for(const value of values)
     assert.equal(load(`[groups."11"]\nenabled=false\n[${scope}]\n${key}=${value}`).resolveGroup('11').execution[field],value);
 });
 test('execution budgets reject coercion, fractional, nonfinite, zero and out-of-range values even when disabled',t=>{
   const load=fixture(t);
-  for(const scope of ['defaults.execution','groups."11".execution'])for(const [key,invalid] of [['max_tool_calls_per_wake',['0','-1','4097']],['wake_timeout_ms',['0','999','600001']]] as const)for(const value of [...invalid,'1.5','true','false','"96"','[]','{}','nan','inf','-inf','9007199254740992'])
+  for(const scope of ['defaults.execution','groups."11".execution'])for(const [key,invalid] of [['max_tool_calls_per_wake',['0','-1']],['wake_timeout_ms',['0','999','600001']]] as const)for(const value of [...invalid,'1.5','true','false','"96"','[]','{}','nan','inf','-inf','9007199254740992'])
     assert.throws(()=>load(`[groups."11"]\nenabled=false\n[${scope}]\n${key}=${value}`),ConfigError,`${key}=${value}`);
 });
 test('execution rejects misplaced model/global settings, unknown fields, old ai sections and invalid table types',t=>{

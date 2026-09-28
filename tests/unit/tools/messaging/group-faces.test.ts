@@ -48,23 +48,23 @@ test('text at and face retain exact segment order and local reply target', async
   assert.deepEqual(s.calls.map(c => c.action), ['get_group_member_info']);
 });
 
-test('one message supports twelve faces without a separate face or parts quota',async()=>{
- const s=setup(),twelve=Array.from({length:12},()=>face('375'));
- assert.equal((await s.tools.prepareMessage(part(twelve),context)).segments.length,12);
- await assert.rejects(s.tools.prepareMessage(part([...twelve,face('0')]),context),/invalid_arguments/);
- await assert.rejects(s.tools.prepareMessage({parts:[part(twelve)]},context),/invalid_arguments/);
+test('one message supports more than twelve faces without a separate face or parts quota',async()=>{
+ const s=setup(),faces=Array.from({length:20},()=>face('375'));
+ assert.equal((await s.tools.prepareMessage(part(faces),context)).segments.length,20);
+ await assert.rejects(s.tools.prepareMessage({parts:[part(faces)]},context),/invalid_arguments/);
  assert.equal(s.calls.length,0);
 });
 
-test('faces do not consume mention quota and disabling mentions preserves faces', async () => {
+test('faces coexist with many verified mentions and disabling mentions preserves faces', async () => {
   const s = setup();
   const ats = ['456', '457', '458'].map(user_id => ({ type: 'at', user_id }));
   const result = await s.tools.prepareMessage(part([...ats, ...Array.from({ length: 9 }, () => face('20'))]), context);
   assert.equal(result.segments.length, 12);
   assert.equal(s.calls.length, 3);
-  const denied = setup();
-  await assert.rejects(denied.tools.prepareMessage(part([...ats, { type: 'at', user_id: '459' }, face('0')]), context));
-  assert.equal(denied.calls.length, 0);
+  const many = setup();
+  const prepared = await many.tools.prepareMessage(part([...ats, { type: 'at', user_id: '459' }, face('0')]), context);
+  assert.equal(prepared.segments.length,5);
+  assert.equal(many.calls.length,4);
   const noMention = setup({ mention: false });
   assert.equal((await noMention.tools.prepareMessage(part([face('375')]), context)).segments.length, 1);
   await assert.rejects(noMention.tools.prepareMessage(part([face('20'), ats[0]]), context), /tool_disabled/);

@@ -31,7 +31,6 @@ export function buildToolDefinitions(config: ListenerConfig, worldEnabled=false)
   }
   if (config.images?.enabled) {
     const imageTool = structuredClone(VIEW_IMAGES_TOOL);
-    (imageTool.function.parameters as any).properties.image_ids.maxItems = config.images.maxPerTurn;
     tools.push(imageTool);
   }
   if (config.forward?.enabled) {

@@ -18,7 +18,7 @@ function identifier(v: unknown, message = false): string | undefined {
 export function imageReferences(messageId: string, segments: unknown): ImageReference[] {
   if (typeof messageId !== 'string' || identifier(messageId, true) !== messageId || !Array.isArray(segments)) return [];
   const refs: ImageReference[] = [];
-  for (let index = 0; index < Math.min(segments.length, 128) && refs.length < 3; index++) {
+  for (let index = 0; index < Math.min(segments.length, 128); index++) {
     const segment: unknown = segments[index];
     if (object(segment) && segment.type === 'image') refs.push({ id: `img_${messageId}_${index}`, index });
   }

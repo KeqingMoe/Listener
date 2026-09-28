@@ -30,6 +30,8 @@ model = "" # 必填：填写服务商提供的、支持工具调用的模型名�
 enabled = false
 persona = "prompts/listener.md"
 reply.random = false
+# 一次唤醒全部工具共享调用次数；默认96，安全正整数范围1..9007199254740991。
+execution.max_tool_calls_per_wake = 96
 
 # 后台 reaction 观察默认开启，与添加回应和查询回应者的工具权限独立。
 
@@ -42,14 +44,14 @@ react_message = "direct" # 添加或取消消息下方的表情回应，不是�
 send_group_ai_voice = "direct" # 使用QQ提供的AI声线发送文字转语音，不是本项目模型生成音频。
 mute_member = {
   mode = "confirm", # 禁言需主人确认；direct为自主执行，off为关闭。
-  max_seconds = 600,
+  max_seconds = 2592000, # 默认及最大30天；可显式设置更小的正整数秒数。
 }
 leave_group = "off" # Bot退出当前群，默认不开放。
 
 # 自定义收藏是Bot账号共享资源，开启本群工具即授权访问共享收藏，不是商城整套。
 # 四个写工具也可改为confirm或off；list/view只支持direct或off。
 list_custom_faces = "direct" # 自动读取有界收藏目录、按描述或本地标签检索，无需手工清单。
-view_custom_face = "direct" # 将收藏图交给模型查看；与view_images共用本轮看图预算。
+view_custom_face = "direct" # 将收藏图交给模型查看；与view_images共享去重状态及单图下载上限，无图片数量配额。
 send_custom_face = "direct" # 发送原始收藏图片，保留GIF/WebP，不发送预览JPEG。
 add_custom_face = "direct" # 收藏本群可核验图片，随后回查并设置描述，分阶段报告结果。
 delete_custom_face = "direct" # 删除账号收藏，会影响其他群；正常提交不等于已核验删除。
@@ -58,8 +60,8 @@ set_custom_face_description = "direct" # 修改QQ描述；可附本地检索标�
 # Bot辅助工具：服务于模型的阅读、理解或后续关注，不是QQ中的同名操作。
 view_images = {
   mode = "direct", # 读取本群可核验图片，供当前模型看图；需要模型支持图片输入。
-  max_per_turn = 3, # view_images与view_custom_face共用，不是各3张。
-  max_download_mb = 10, # 收藏原图下载也受此上限及格式校验限制。
+  # 两种看图工具共享本轮成功读取去重状态，失败可重试；不限制图片数量。
+  max_download_mb = 10, # 单图下载默认10 MiB，范围1..10 MiB；收藏原图下载也受此上限及格式校验限制。
 }
 read_forward = "direct" # 展开合并转发内容供模型阅读，不会发送转发。
 manage_attention = {

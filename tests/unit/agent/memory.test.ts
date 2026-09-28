@@ -40,6 +40,20 @@ test('image references survive persistence without transport URLs, bytes or unkn
   }finally{memory.close();rmSync(dir,{recursive:true,force:true});}
 });
 
+test('five image references remain usable after SQLite reopen and context projection', () => {
+  const dir=mkdtempSync(join(tmpdir(),'listener-five-images-'));const path=join(dir,'memory.sqlite');
+  const images=Array.from({length:5},(_,index)=>({id:`img_10_${index}`,index}));
+  const segments=images.map(image=>({type:'image' as const,image_id:image.id,content_status:'not_viewed' as const}));
+  let memory=new SQLiteMemory({path,maxContextChars:8000,retentionDays:7});
+  try {
+    memory.append({...entry(10),images,segments});
+    memory.close();memory=new SQLiteMemory({path,maxContextChars:8000,retentionDays:7});
+    assert.deepEqual(memory.find('10')?.images,images);
+    assert.deepEqual(memory.find('10')?.segments,segments);
+    assert.deepEqual(JSON.parse(memory.context()).messages[0].segments,segments);
+  } finally {memory.close();rmSync(dir,{recursive:true,force:true});}
+});
+
 test('raw capacity and context are strictly bounded, including escaped messages', () => {
   const memory = make(8000);
   try {

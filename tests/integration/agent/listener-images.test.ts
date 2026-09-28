@@ -14,7 +14,7 @@ const self = '900000001';
 const transportUrl = 'https://example.invalid/image?private-key=secret';
 const bytes = 'data:image/png;base64,YQ==';
 const attachment = { type: 'image', data: { url: transportUrl, file: '/private/image.png' } };
-const cfg: ListenerConfig = { enabled: true, baseUrl: 'https://example.invalid/v1', apiKey: 'test', model: 'same-model', timeoutMs: 2000, maxTokens: 128, debounceMs: 5, cooldownMs: 5, memoryPath: ':memory:', maxContextChars: 8000, retentionDays: 7, images: { enabled: true, maxPerTurn: 3, maxDownloadMb: 10 } };
+const cfg: ListenerConfig = { enabled: true, baseUrl: 'https://example.invalid/v1', apiKey: 'test', model: 'same-model', timeoutMs: 2000, maxTokens: 128, debounceMs: 5, cooldownMs: 5, memoryPath: ':memory:', maxContextChars: 8000, retentionDays: 7, images: { enabled: true, maxDownloadMb: 10 } };
 class MockMemory implements Memory {
   entries: TimelineEntry[] = [];
   append(entry: TimelineEntry) { if (this.find(entry.messageId)) return false; this.entries.push(entry); return true; }
@@ -116,15 +116,15 @@ test('disabled images hide schema and reject forged view calls without API or do
   } finally { await s.bot.stop(); }
 });
 
-test('image turn budget spans model calls and duplicates do not reload', async () => {
-  const s = setup([completion(view(['img_1_1'], 'v1')), completion(view(['img_1_1', 'img_1_2'], 'v2')), completion(view(['img_1_3'], 'v3')), completion(send(),call('finish','finish',{}))], { images: { ...cfg.images!, maxPerTurn: 2 } });
+test('image state deduplicates successful loads across model calls without a count budget', async () => {
+  const s = setup([completion(view(['img_1_1'], 'v1')), completion(view(['img_1_1', 'img_1_2'], 'v2')), completion(view(['img_1_3'], 'v3')), completion(send(),call('finish','finish',{}))]);
   try {
     await s.bot.receive(event({ message: [{ type: 'at', data: { qq: self } }, attachment, attachment, attachment] }), self);
     await until(() => s.apiCalls.some(c => c.action === 'send_group_msg'));
-    assert.equal(s.downloads.length, 2); assert.equal(s.apiCalls.filter(c => c.action === 'get_msg').length, 2);
+    assert.equal(s.downloads.length, 3); assert.equal(s.apiCalls.filter(c => c.action === 'get_msg').length, 3);
     const response = s.requests[3]!.find(m => m.role === 'tool' && m.tool_call_id === 'v3')!;
-    const result = JSON.parse(response.content as string); assert.equal(result.status, 'error'); assert.deepEqual(result.failed_ids, ['img_1_3']);
-    assert.equal(s.requests[3]!.filter(m => Array.isArray(m.content)).length, 2);
+    const result = JSON.parse(response.content as string); assert.equal(result.status, 'ok'); assert.deepEqual(result.loaded_ids, ['img_1_3']);
+    assert.equal(s.requests[3]!.filter(m => Array.isArray(m.content)).length, 3);
   } finally { await s.bot.stop(); }
 });
 

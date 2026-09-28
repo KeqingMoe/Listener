@@ -190,7 +190,7 @@ function fixture(options: {
     retentionDays: 7,
     randomReplyProbability: 0,
     ...(options.images
-      ? { images: { enabled: true, maxPerTurn: 3, maxDownloadMb: 10 } }
+      ? { images: { enabled: true, maxDownloadMb: 10 } }
       : {}),
     ...(options.forward ? { forward: { enabled: true } } : {}),
     tools: {

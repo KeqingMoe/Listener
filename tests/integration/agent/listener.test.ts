@@ -119,7 +119,7 @@ test('configured tool schemas hide disabled abilities without mutating single-me
 test('single-message schema and explicit finish replace parts and legacy silence tools',()=>{
  const tools=buildToolDefinitions(cfg);
  const send=tools.find(t=>t.function.name==='send_message')!.function.parameters as any;
- assert.deepEqual(send.required,['segments']);assert.equal(send.properties.parts,undefined);assert.equal(send.properties.text,undefined);assert.equal(send.properties.segments.maxItems,12);assert.ok(send.properties.reply_to);
+ assert.deepEqual(send.required,['segments']);assert.equal(send.properties.parts,undefined);assert.equal(send.properties.text,undefined);assert.equal(send.properties.segments.maxItems,undefined);assert.ok(send.properties.reply_to);
  assert.ok(tools.some(t=>t.function.name==='finish'));assert.ok(!tools.some(t=>t.function.name==='stay_silent'));
  const prompt=buildSystemPrompt(cfg);assert.ok(!prompt.includes('max_parts'));assert.ok(prompt.includes('finish'));
 });

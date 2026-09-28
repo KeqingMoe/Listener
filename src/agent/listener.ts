@@ -141,7 +141,7 @@ export class Listener {
   private lastRandomAt = -Infinity;
   private randomAttempts: number[] = [];
   constructor(private api: Api, private model: Model | undefined, private memory: Memory | undefined, private config: ListenerConfig, private random: () => number = Math.random, private imageDownloader?: ImageDownloader, private turnScheduler?: TurnAdmission, private runtime: ListenerRuntime = {}) {
-    for(const [key,min,max] of [['maxToolCallsPerWake',1,4096],['wakeTimeoutMs',1000,600000]] as const){
+    for(const [key,min,max] of [['maxToolCallsPerWake',1,Number.MAX_SAFE_INTEGER],['wakeTimeoutMs',1000,600000]] as const){
       const value=config[key];
       if(value!==undefined&&(!Number.isSafeInteger(value)||value<min||value>max))throw new Error('Invalid wake budget configuration');
     }
@@ -388,7 +388,7 @@ export class Listener {
           // Do not capture turnApi or its expired wake guard: /confirm is a later owner command.
           const executor=createExtendedTools(this.api,memory,this.groupId,{...this.config.tools?.extended,[name]:'direct'},{
             files:this.groupFiles,requests:this.groupRequests,downloader:this.imageDownloader,
-            customFaces:this.customFaces?{...this.customFaces,maxPerTurn:this.config.images?.maxPerTurn??3,maxDownloadMb:this.config.images?.maxDownloadMb??10}:undefined,
+            customFaces:this.customFaces?{...this.customFaces,maxDownloadMb:this.config.images?.maxDownloadMb??10}:undefined,
             beforeSend:()=>this.captureSendReceipt(),
             onSent:(entry,receipt)=>{
               this.claimMessageAck(entry,receipt);
@@ -617,7 +617,7 @@ export class Listener {
         getMemberInfo:optionalToolEnabled(this.config,'get_member_info',this.config.tools?.members!==false),
       });
       const imageTools=this.config.images?.enabled?new ImageTools(this.api,workingMemory,this.config.images,this.imageDownloader,this.groupId):undefined;
-      const imageState = imageTools?.createTurn() ?? {attemptedIds:new Set<string>(),loadedIds:new Set<string>()};
+      const imageState = imageTools?.createTurn() ?? {loadedIds:new Set<string>()};
       const pendingCustomFaceImages:ChatContentPart[]=[];
       const forwardTools=this.config.forward?.enabled?new ForwardTools(this.api,workingMemory,this.config.forward,this.groupId):undefined;
       const reactionTools=this.config.tools?.reactions?new ReactionTools(turnApi,workingMemory,this.groupId):undefined;
@@ -628,8 +628,8 @@ export class Listener {
       const extendedTools=createExtendedTools(turnApi,workingMemory,this.groupId,this.config.tools?.extended,{
         downloader:this.imageDownloader,files:this.groupFiles,requests:this.groupRequests,
         customFaces:this.customFaces?{
-          ...this.customFaces,imageBudget:imageState,
-          maxPerTurn:this.config.images?.maxPerTurn??3,maxDownloadMb:this.config.images?.maxDownloadMb??10,
+          ...this.customFaces,imageState,
+          maxDownloadMb:this.config.images?.maxDownloadMb??10,
           onVisualContent:parts=>{if(valid())pendingCustomFaceImages.push(...parts);},
         }:undefined,
         requestConfirmation:(name,args,definition,context,signal)=>this.proposeExtended(name,args,definition,context,workingMemory,signal),

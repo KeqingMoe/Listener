@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { MAX_MUTE_SECONDS } from '../../contracts/tool-limits.js';
 import { writeFailure } from '../../onebot/operation-result.js';
 import { log } from '../../observability/logger.js';
 import type { ModerationPolicy } from '../../config/listener.js';
@@ -11,7 +12,7 @@ type Mode = 'off' | 'confirm' | 'direct';
 const userIdSchema = { type: 'string', maxLength: 32, pattern: '^[1-9][0-9]*$', description: 'Target QQ user ID in this group; actual QQ permissions apply. Nicknames are not identity proof.' };
 const parameters = (properties: JsonObject, required: string[]): JsonObject => ({ type: 'object', additionalProperties: false, properties, required });
 export const MODERATION_TOOLS: ToolDefinition[] = [
-  { type: 'function', function: { name: 'mute_member', description: 'Mute an eligible current-group member under the configured capability policy.', parameters: parameters({ user_id: userIdSchema, seconds: { type: 'integer', minimum: 1, maximum: 600 } }, ['user_id', 'seconds']) } },
+  { type: 'function', function: { name: 'mute_member', description: 'Mute an eligible current-group member under the configured capability policy.', parameters: parameters({ user_id: userIdSchema, seconds: { type: 'integer', minimum: 1, maximum: MAX_MUTE_SECONDS } }, ['user_id', 'seconds']) } },
   { type: 'function', function: { name: 'unmute_member', description: 'Unmute an eligible current-group member under the configured capability policy.', parameters: parameters({ user_id: userIdSchema }, ['user_id']) } },
   { type: 'function', function: { name: 'recall_message', description: 'Recall a verified current-group message under the configured capability policy, including messages sent by the bot itself. Recalling own messages does not require a group administrator role; QQ may still reject expired or otherwise ineligible messages.', parameters: parameters({ message_id: { type: 'string', maxLength: 17, pattern: '^(0|-?[1-9][0-9]*)$' } }, ['message_id']) } },
   { type: 'function', function: { name: 'set_member_card', description: 'Change an eligible current-group member card under the configured capability policy.', parameters: parameters({ user_id: userIdSchema, card: { type: 'string', minLength: 1, maxLength: 60 } }, ['user_id', 'card']) } },
@@ -51,12 +52,12 @@ function messageId(value: unknown): string | undefined {
 class Denied extends Error { constructor(readonly code: string) { super(code); } }
 const deny = (code = 'verification_failed'): never => { throw new Denied(code); };
 function policy(options: Partial<ModerationPolicy> = {}): Readonly<ModerationPolicy> {
-  const defaults: ModerationPolicy = { mute: 'off', unmute: 'off', recall: 'off', memberCard: 'off', confirmationTtlSeconds: 60, maxMuteSeconds: 600 };
+  const defaults: ModerationPolicy = { mute: 'off', unmute: 'off', recall: 'off', memberCard: 'off', confirmationTtlSeconds: 60, maxMuteSeconds: MAX_MUTE_SECONDS };
   if (!record(options) || Reflect.ownKeys(options).some(key => typeof key !== 'string' || !Object.hasOwn(defaults, key))) throw new Error('Invalid moderation options');
   const value = { ...defaults, ...options };
   if (['mute', 'unmute', 'recall', 'memberCard'].some(key => !['off', 'confirm', 'direct'].includes(value[key as keyof ModerationPolicy] as string)) ||
     !Number.isInteger(value.confirmationTtlSeconds) || value.confirmationTtlSeconds < 1 || value.confirmationTtlSeconds > 60 ||
-    !Number.isInteger(value.maxMuteSeconds) || value.maxMuteSeconds < 1 || value.maxMuteSeconds > 600) throw new Error('Invalid moderation options');
+    !Number.isInteger(value.maxMuteSeconds) || value.maxMuteSeconds < 1 || value.maxMuteSeconds > MAX_MUTE_SECONDS) throw new Error('Invalid moderation options');
   return Object.freeze(value);
 }
 export function buildModerationTools(options: Partial<ModerationPolicy> = {}): ToolDefinition[] {

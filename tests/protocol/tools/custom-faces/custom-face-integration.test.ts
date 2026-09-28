@@ -65,7 +65,6 @@ interface FixtureOptions {
   shared?: Pick<CustomFaceRuntime, 'store' | 'coordinator'>;
   provider?: ProviderState;
   imagesEnabled?: boolean;
-  maxImages?: number;
   extended?: ExtendedToolsConfig;
   protocol?: 'chat' | 'responses';
   original?: OriginalImageDownloader;
@@ -133,7 +132,7 @@ async function fixture(t: { after(fn: () => Promise<unknown>): void }, options: 
     model = new CapturingResponsesModel({ baseUrl: `http://127.0.0.1:${address.port}`, apiKey: 'SYNTHETIC_KEY', model: 'fixture', sessionId: `fixture-${group}`, timeoutMs: 5000, maxTokens: 256 });
   }
   const config: ListenerConfig = { groupId: group, ownerId: OWNER, enabled: true, baseUrl: 'https://example.invalid', apiKey: 'fixture', model: 'fixture', timeoutMs: 5000, maxTokens: 256, debounceMs: 1, cooldownMs: 0, memoryPath: paths.memory, maxContextChars: 40000, retentionDays: 7, randomReplyProbability: 0,
-    images: { enabled: options.imagesEnabled ?? true, maxPerTurn: options.maxImages ?? 3, maxDownloadMb: 2 },
+    images: { enabled: options.imagesEnabled ?? true, maxDownloadMb: 2 },
     tools: { members: false, mention: false, reactions: false, extended: options.extended ?? direct, moderation: { mute: 'off', unmute: 'off', recall: 'off', memberCard: 'off', maxMuteSeconds: 600, confirmationTtlSeconds: 60 } },
   };
   const listener = new Listener(api, model, memory, config, () => 0,
@@ -257,18 +256,18 @@ test('view_custom_face works independently with ordinary view_images disabled', 
   await h.run(); assert.ok(h.schemas.every(names => names.includes('view_custom_face') && !names.includes('view_images'))); assert.equal(h.normalImageDownloads.length, 0);
 });
 
-for (const customFirst of [true, false]) test(`both viewers consume one shared wake budget: customFirst=${customFirst}`, async t => {
-  const h = await fixture(t, { maxImages: 1, respond(messages, round) {
+for (const customFirst of [true, false]) test(`both viewers load independently without a shared image count quota: customFirst=${customFirst}`, async t => {
+  const h = await fixture(t, { respond(messages, round) {
     if (round === 1) return completion(call('list', 'list_custom_faces'));
     if (round === 2) {
       const custom = call('custom-view', 'view_custom_face', { face_ref: ref(messages) }), normal = call('normal-view', 'view_images', { image_ids: ['img_1_2'] });
       return completion(...(customFirst ? [custom, normal] : [normal, custom]));
     }
     assert.equal(result(messages, customFirst ? 'custom-view' : 'normal-view').status, 'ok');
-    assert.equal(result(messages, customFirst ? 'normal-view' : 'custom-view').status, 'error');
-    assert.equal(images(messages).length, 1); return finish();
+    assert.equal(result(messages, customFirst ? 'normal-view' : 'custom-view').status, 'ok');
+    assert.equal(images(messages).length, 2); return finish();
   } });
-  await h.run(); assert.equal(h.originalCalls.length + h.normalImageDownloads.length, 1);
+  await h.run(); assert.equal(h.originalCalls.length + h.normalImageDownloads.length, 2);
 });
 
 for (const blocked of ['send_custom_face', 'add_custom_face', 'delete_custom_face', 'set_custom_face_description', 'finish']) test(`same-response view barrier blocks ${blocked} until the actual image has reached the model`, async t => {

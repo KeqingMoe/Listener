@@ -10,7 +10,7 @@ import type { ImagesConfig } from '../../../../src/config/listener.js';
 import type { ImageDownloader } from '../../../../src/tools/images/download.js';
 
 const context: TurnContext = { groupId: LISTENER_GROUP, actorId: '123', messageId: '1', selfId: '999' };
-const options: ImagesConfig = { enabled: true, maxPerTurn: 3, maxDownloadMb: 10 };
+const options: ImagesConfig = { enabled: true, maxDownloadMb: 10 };
 const url = 'https://example.invalid/secret?key=hidden';
 const segment = { type: 'image', data: { url, file: '/private/secret' } };
 const entry: TimelineEntry = { messageId: '1', userId: '123', nickname: 'Alice', time: 42, text: '[图片]', images: [{ id: 'img_1_0', index: 0 }], replyTo: '2' };
@@ -27,7 +27,7 @@ function setup(response: unknown = remote(), entries = [entry], policy = { ...op
 test('reference extraction is pure, bounded, and preserves original segment indices', () => {
   const segments = [{ type: 'text' }, segment, segment, { type: 'reply' }, segment, segment];
   const original = structuredClone(segments);
-  assert.deepEqual(imageReferences('-123', segments), [{ id: 'img_-123_1', index: 1 }, { id: 'img_-123_2', index: 2 }, { id: 'img_-123_4', index: 4 }]);
+  assert.deepEqual(imageReferences('-123', segments), [{ id: 'img_-123_1', index: 1 }, { id: 'img_-123_2', index: 2 }, { id: 'img_-123_4', index: 4 }, { id: 'img_-123_5', index: 5 }]);
   assert.deepEqual(segments, original);
   for (const id of ['1\n', 'x', '1'.repeat(33), 'https://bad']) assert.deepEqual(imageReferences(id, segments), []);
   assert.deepEqual(imageReferences('1', [...Array(128).fill(null), segment]), []);
@@ -40,9 +40,9 @@ test('strict schema and runtime argument validation prevent all lookups', async 
   assert.equal(VIEW_IMAGES_TOOL.function.name, 'view_images');
   assert.equal(p.additionalProperties, false);
   assert.deepEqual(p.required, ['image_ids']);
-  assert.equal(p.properties.image_ids.minItems, 1); assert.equal(p.properties.image_ids.maxItems, 3);
+  assert.equal(p.properties.image_ids.minItems, 1); assert.equal(p.properties.image_ids.maxItems, undefined);
   const s = setup();
-  for (const args of [null, [], {}, { image_ids: [] }, { image_ids: Array(4).fill('img_1_0') }, { image_ids: ['img_1_0'], url }, ...['img_1_128', 'img_1_00', 'img_1_0\n', 'img_x_0', 'img_1_0/path', `img_${'1'.repeat(33)}_0`, url, '/tmp/a'].map(id => ({ image_ids: [id] }))]) {
+  for (const args of [null, [], {}, { image_ids: [] }, { image_ids: ['img_1_0'], url }, ...['img_1_128', 'img_1_00', 'img_1_0\n', 'img_x_0', 'img_1_0/path', `img_${'1'.repeat(33)}_0`, url, '/tmp/a'].map(id => ({ image_ids: [id] }))]) {
     assert.equal((await s.tools.view(args, context, s.state)).result.status, 'error');
   }
   assert.equal(s.calls.length, 0); assert.equal(s.downloads.length, 0);
@@ -86,6 +86,17 @@ test('all remote origin and identity checks precede download including quoted ta
   const q = setup(remote({ message_id: '2', sender: { user_id: '456' } })); assert.equal((await q.view(['img_2_0'])).result.status, 'ok');
 });
 
+test('129-segment messages allow a verified first image without inspecting tail getters', async () => {
+  let touches = 0;
+  const message = Array(129).fill(null); message[0] = segment;
+  Object.defineProperty(message, 128, { get() { touches++; throw new Error('unobserved tail'); } });
+  const s = setup(remote({ message }));
+  assert.equal((await s.view()).result.status, 'ok');
+  assert.equal(s.downloads.length, 1); assert.equal(touches, 0);
+  assert.equal((await s.view(['img_1_128'])).result.error, 'invalid_arguments');
+  assert.equal(touches, 0);
+});
+
 test('HTTPS destinations only reach downloader after verified origin; no file fallback', async () => {
   for (const data of [{ file: '/etc/passwd' }, { file: 'a'.repeat(32) }, { url: 'http://localhost/a' }, { url: 'file:///etc/passwd' }, { url: 'data:image/png;base64,YQ==' }, { url: 'https://user:pass@example.com/' }]) {
     const s = setup(remote({ message: [{ type: 'image', data }] })); assert.equal((await s.view()).result.status, 'error'); assert.equal(s.downloads.length, 0); assert.deepEqual(s.calls.map(c => c.action), ['get_msg']);
@@ -104,17 +115,30 @@ test('image payload identifies untrusted provenance and first-frame limitation w
   assert.equal(s.downloads[0]![1], 10 * 1024 * 1024);
 });
 
-test('unique attempt budget spans calls, duplicates never retry successes or failures', async () => {
-  const s = setup(remote(), [entry], { ...options, maxPerTurn: 2 });
-  assert.equal((await s.tools.view({ image_ids: ['img_1_0', 'img_1_0'] }, context, s.state)).result.status, 'ok');
-  assert.equal((await s.tools.view({ image_ids: ['img_1_0'] }, context, s.state)).content.length, 0);
-  const partial = await s.tools.view({ image_ids: ['img_1_0', 'img_99_0'] }, context, s.state); assert.equal(partial.result.status, 'partial');
-  assert.equal((await s.tools.view({ image_ids: ['img_2_0'] }, context, s.state)).result.status, 'error');
-  assert.equal((await s.tools.view({ image_ids: ['img_99_0'] }, context, s.state)).result.status, 'error');
-  assert.equal(s.state.attemptedIds.size, 2); assert.equal(s.calls.length, 1); assert.equal(s.downloads.length, 1);
-  const bad = setup(new Error(`body=${url}`));
-  for (let i = 0; i < 2; i++) assert.equal((await bad.tools.view({ image_ids: ['img_1_0'] }, context, bad.state)).result.error, 'image_unavailable');
-  assert.equal(bad.calls.length, 1);
+test('five images load in one call and successful attachments are reused without a quota', async () => {
+  const segments = Array(5).fill(segment);
+  const refs = imageReferences('1', segments);
+  assert.equal(refs.length, 5);
+  const s = setup(remote({ message: segments }), [{ ...entry, images: refs }]);
+  const result = await s.tools.view({ image_ids: refs.map(r => r.id) }, context, s.state);
+  assert.equal(result.result.status, 'ok'); assert.equal(result.content.length, 10);
+  assert.equal(s.downloads.length, 5); assert.equal(s.state.loadedIds.size, 5);
+  assert.equal((await s.tools.view({ image_ids: ['img_1_0', 'img_1_0'] }, context, s.state)).content.length, 0);
+  assert.equal(s.downloads.length, 5);
+});
+
+test('repeated download failures remain retryable and later succeed in the same turn', async () => {
+  let attempts = 0;
+  const s = setup(remote(), [entry], options, async () => {
+    if (++attempts <= 5) throw new Error('temporary failure');
+    return image;
+  });
+  for (let i = 0; i < 5; i++) {
+    assert.equal((await s.tools.view({ image_ids: ['img_1_0'] }, context, s.state)).result.error, 'image_unavailable');
+    assert.equal(s.state.loadedIds.size, 0);
+  }
+  assert.equal((await s.tools.view({ image_ids: ['img_1_0'] }, context, s.state)).result.status, 'ok');
+  assert.equal(s.downloads.length, 6);
 });
 
 test('abort before lookup, after lookup and after download discards content', async () => {
@@ -128,9 +152,9 @@ test('abort before lookup, after lookup and after download discards content', as
   }
 });
 
-test('abort on second lookup discards first image and retains attempt budget', async () => {
+test('abort on second lookup discards first image and leaves no successful attachment state', async () => {
   const controller = new AbortController(); let calls = 0;
   const s = setup(() => { if (++calls === 2) controller.abort(); return remote({ message_id: String(calls) }); });
   const r = await s.tools.view({ image_ids: ['img_1_0', 'img_2_0'] }, context, s.state, controller.signal);
-  assert.equal(r.result.error, 'cancelled'); assert.deepEqual(r.content, []); assert.equal(s.state.loadedIds.size, 0); assert.equal(s.state.attemptedIds.size, 2);
+  assert.equal(r.result.error, 'cancelled'); assert.deepEqual(r.content, []); assert.equal(s.state.loadedIds.size, 0);
 });

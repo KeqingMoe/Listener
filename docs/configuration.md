@@ -96,7 +96,7 @@ transport = {
 | `reply.random` | false | 随机参与关闭；开启用参数对象，不能写true |
 | `session.max_transcript_bytes` | 524288 | 范围65536..8388608；本地模型会话容量，不是服务商的token窗口 |
 | `session.compaction` | false | 服务端压缩关闭；参数形式为`{threshold_tokens}`，当前运行入口不支持启用，保持false |
-| `execution.max_tool_calls_per_wake` | 96 | 范围1..4096；一次唤醒全部工具共享 |
+| `execution.max_tool_calls_per_wake` | 96 | 安全正整数，范围1..9007199254740991；一次唤醒全部工具共享 |
 | `execution.wake_timeout_ms` | 90000 | 范围1000..600000；一次完整唤醒的时间预算 |
 | `messages.mentions` | true | 允许Bot发送成员@，不改变被@触发；不支持@全体或@自己 |
 | `observation.reactions` | true | 后台反应观察；与添加回应、查询回应者的工具权限分别设置 |
@@ -212,7 +212,7 @@ napcat_custom_face_directory = "/qqbot-custom-faces"
 | `get_group_file_space` | direct | 否 | 无 | QQ功能 | 查询群文件数量与空间信息；部分上游数值可能是占位值。 |
 | `list_group_files` | direct | 否 | 无 | QQ功能 | 查看群根目录或指定文件夹的文件、目录及可操作引用，不保证列出全部文件。 |
 | `list_group_requests` | direct | 否 | 无 | QQ功能 | 查看本群待处理的直接入群申请，需Bot有管理员权限；不显示邀请Bot加入其他群的请求。 |
-| `view_images` | direct | 否 | `max_per_turn`默认3，范围1..3；`max_download_mb`默认10，范围1..10 | Bot辅助 | 读取本群可核验图片并提供给模型理解；需要模型支持原生图片输入。 |
+| `view_images` | direct | 否 | `max_download_mb`默认10，范围1..10 MiB；单张图片下载上限，无图片数量配额 | Bot辅助 | 读取本群可核验图片并提供给模型理解；需要模型支持原生图片输入。 |
 | `read_forward` | direct | 否 | 无 | Bot辅助 | 按需展开合并转发供模型阅读，不会将内容转发到群里。 |
 | `read_group_text_file` | direct | 否 | 无 | Bot辅助 | 下载并读取本群列表中选定文件的文本内容，不是PDF／Office等通用文档解析器。 |
 
@@ -234,7 +234,7 @@ napcat_custom_face_directory = "/qqbot-custom-faces"
 | 工具 | 默认 | 支持confirm | 配置参数 | 类别 | 用途 |
 | --- | --- | --- | --- | --- | --- |
 | `list_custom_faces` | direct | 否 | 无 | QQ功能 | 自动读取Bot账号的有界收藏目录，按QQ描述或本地标签检索并返回可操作引用；不是商城系列或跨群历史查询。 |
-| `view_custom_face` | direct | 否 | 无，复用`view_images`的资源上限 | Bot辅助 | 将所选收藏图片作为视觉附件交给模型；动态图预览仅首帧，需要支持图片输入的模型。 |
+| `view_custom_face` | direct | 否 | 无，复用`view_images.max_download_mb`的单张图片下载上限 | Bot辅助 | 将所选收藏图片作为视觉附件交给模型；动态图预览仅首帧，需要支持图片输入的模型。 |
 | `send_custom_face` | direct | 是 | 无 | QQ功能 | 发送所引用的原始收藏图片，保留GIF/WebP等受支持格式，不把预览JPEG当作原图。 |
 | `add_custom_face` | direct | 是 | 无 | QQ功能 | 收藏本群可核验图片，并回查目标、设置QQ描述；可附本地检索标签，各阶段分别报告。 |
 | `delete_custom_face` | direct | 是 | 无 | QQ功能 | 删除引用对应的账号收藏，正常提交后立即撤销本地引用，但不冒充QQ删除效果已确认。 |
@@ -244,7 +244,7 @@ napcat_custom_face_directory = "/qqbot-custom-faces"
 
 | 工具 | 默认 | 支持confirm | 配置参数 | 类别 | 用途 |
 | --- | --- | --- | --- | --- | --- |
-| `mute_member` | confirm | 是 | `max_seconds`默认600，范围1..600 | QQ功能 | 禁言指定群成员，时长必须为正且不超过配置上限。 |
+| `mute_member` | confirm | 是 | `max_seconds`默认2592000，范围1..2592000（30天） | QQ功能 | 禁言指定群成员，时长必须为正且不超过配置上限。 |
 | `unmute_member` | confirm | 是 | 无 | QQ功能 | 解除指定成员的禁言，不解除全员禁言。 |
 | `recall_message` | confirm | 是 | 无 | QQ功能 | 撤回可核验的本群消息，受Bot实际QQ权限限制。 |
 | `set_member_card` | confirm | 是 | 无 | QQ功能 | 修改成员在本群的群名片，不改其账号昵称。 |
@@ -293,7 +293,7 @@ mute_member = {
 [groups."100000002"]
 enabled = true
 tools.mute_member = "direct"
-# 本群完整替换mute_member配置，max_seconds采用程序默认600。
+# 本群完整替换mute_member配置，max_seconds采用程序默认2592000（30天）。
 # 若希望仍限制为120秒，本群也需要写包含mode和max_seconds的对象。
 ```
 
@@ -336,7 +336,7 @@ tools.mute_member = "direct"
 
 每次QQ目录请求最多取512项，QQ接口没有已核实的服务端游标。本地索引只保存已观察资源；`coverage=observed_prefix`、`directory_complete=false`不代表全账号目录。`cursor`／`next_cursor`只用于本地固定快照，不能借分页宣称QQ全量覆盖；空列表或当前前缀未出现某项，也不能证明它已被删除。具体查看、发送和修改仍须重新核验，不能只凭旧缓存操作。
 
-`view_images`和`view_custom_face`权限独立：关闭前者不会关闭后者，但两者共同消耗每次唤醒的视觉预算，使用本群`view_images.max_per_turn`和`max_download_mb`解析后的上限，不是各获得一份额度。将`view_images`设为`off`时不能附加参数，其数值采用程序默认上限。发送图片不等于模型已经看过图片。
+`view_images`和`view_custom_face`权限独立：关闭前者不会关闭后者。两者没有图片数量配额，在同一次唤醒中共享成功读取去重状态：成功加载的图片会去重，加载失败的图片可以重试。两者使用本群`view_images.max_download_mb`解析后的单张图片下载上限，默认10 MiB，范围1..10 MiB。将`view_images`设为`off`时不能附加参数，此上限采用程序默认值。发送图片不等于模型已经看过图片。提供给模型的图片保持比例缩放，最长边不超过1568像素，不放大小图；不提供绕过缩放的原图查看入口。
 
 受支持的收藏原图为JPEG、PNG、GIF、WebP；GIF/WebP发送保留原始字节，预览可转为JPEG但只展示首帧，并明确`first_frame_only`。本版拒绝APNG；原图最多10MiB、512帧、总计4000万像素，同时受配置的更小下载上限约束。未知或无法验证的内容不降级成静态图发送。图库操作、看图和原图下载仍受同一唤醒的工具次数、时间和取消约束。
 
@@ -346,7 +346,7 @@ tools.mute_member = "direct"
 
 一次唤醒可以连续查询和操作，全部工具共享调用数与时间预算；非法调用、失败和缓存命中也消耗调用次数。主人之后的确认不属于模型额外工具调用。一次完整唤醒达到时间预算，不表示此前所有工具都失败，也不撤销已提交操作。
 
-普通消息每条最多12个片段、800文字字符、3个成员@；不支持@全体或@自己。多人的请求会合批处理；进入本轮后的新消息由后续批次处理。普通文字里的CQ或媒体标记不会自动执行为操作。
+普通消息不另设片段、文字长度或成员@数量配额；上游QQ仍可能拒绝请求。不支持@全体或@自己。多人的请求会合批处理；进入本轮后的新消息由后续批次处理。普通文字里的CQ或媒体标记不会自动执行为操作。
 
 关注计划可以等待下一消息、指定成员、指定时间或活跃度条件；多个条件满足任一个即可。没有未读消息时不额外调用模型；重置、断线或停止会清空运行期计划。
 

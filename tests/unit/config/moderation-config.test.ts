@@ -14,7 +14,7 @@ function fixture(t:{after(fn:()=>void):void}){
 }
 test('management defaults confirm with separate confirmation policy and no implicit group enablement',t=>{
   const f=fixture(t),app=f.load('[groups."11"]\n[groups."22"]');
-  for(const id of ['11','22','99']){const g=app.resolveGroup(id);assert.equal(g.enabled,false);for(const name of names)assert.equal(g.tools[name].mode,'confirm');assert.equal(g.tools.mute_member.maxSeconds,600);assert.deepEqual(g.confirmation,{ttlSeconds:60});}
+  for(const id of ['11','22','99']){const g=app.resolveGroup(id);assert.equal(g.enabled,false);for(const name of names)assert.equal(g.tools[name].mode,'confirm');assert.equal(g.tools.mute_member.maxSeconds,2592000);assert.deepEqual(g.confirmation,{ttlSeconds:60});}
   assert.equal(existsSync(join(f.dir,'data')),false);
 });
 test('all four management tools accept three string modes and only active object branches',t=>{
@@ -34,7 +34,7 @@ test('management rejects invalid scalar types, normalization and unknown paramet
 });
 test('mute options replace as a union, unmute is independent, and confirmation TTL inherits separately',t=>{
   const app=fixture(t).load('[defaults.tools]\nmute_member={mode="direct",max_seconds=300}\nunmute_member="confirm"\nrecall_message="confirm"\n[defaults.confirmation]\nttl_seconds=40\n[groups."11".tools]\nmute_member="confirm"\nunmute_member="direct"\n[groups."22".tools]\nmute_member={mode="direct",max_seconds=120}\n[groups."22".confirmation]\nttl_seconds=15\n[groups."33".tools]\nmute_member="off"');
-  assert.deepEqual(app.resolveGroup('11').tools.mute_member,{mode:'confirm',maxSeconds:600});
+  assert.deepEqual(app.resolveGroup('11').tools.mute_member,{mode:'confirm',maxSeconds:2592000});
   assert.deepEqual(app.resolveGroup('22').tools.mute_member,{mode:'direct',maxSeconds:120});
   assert.equal(app.resolveGroup('33').tools.mute_member.mode,'off');
   assert.equal(app.resolveGroup('11').tools.unmute_member.mode,'direct');assert.equal(app.resolveGroup('22').tools.unmute_member.mode,'confirm');
@@ -46,9 +46,9 @@ test('TTL and mute duration strict endpoints and invalid ranges apply even to di
   const {load}=fixture(t);
   for(const scope of ['defaults','groups."11"']){
     for(const ttl of [1,60])assert.equal(load(`[${scope}.confirmation]\nttl_seconds=${ttl}`).resolveGroup('11').confirmation.ttlSeconds,ttl);
-    for(const mode of ['confirm','direct'])for(const seconds of [1,600])assert.equal(load(`[${scope}.tools]\nmute_member={mode="${mode}",max_seconds=${seconds}}`).resolveGroup('11').tools.mute_member.maxSeconds,seconds);
+    for(const mode of ['confirm','direct'])for(const seconds of [1,601,2592000])assert.equal(load(`[${scope}.tools]\nmute_member={mode="${mode}",max_seconds=${seconds}}`).resolveGroup('11').tools.mute_member.maxSeconds,seconds);
     for(const value of ['0','61','1.5','true','false','"1"','nan','inf','[]','{}'])assert.throws(()=>load(`[groups."11"]\nenabled=false\n[${scope}.confirmation]\nttl_seconds=${value}`),ConfigError);
-    for(const value of ['0','601','-1','1.5','true','"1"','nan','inf','[]','{}','9007199254740992'])for(const mode of ['confirm','direct'])assert.throws(()=>load(`[groups."11"]\nenabled=false\n[${scope}.tools]\nmute_member={mode="${mode}",max_seconds=${value}}`),ConfigError);
+    for(const value of ['0','2592001','-1','1.5','true','"1"','nan','inf','[]','{}','9007199254740992'])for(const mode of ['confirm','direct'])assert.throws(()=>load(`[groups."11"]\nenabled=false\n[${scope}.tools]\nmute_member={mode="${mode}",max_seconds=${value}}`),ConfigError);
     for(const name of ['unmute_member','recall_message','set_member_card'])assert.throws(()=>load(`[${scope}.tools]\n${name}={mode="direct",max_seconds=10}`),ConfigError);
     for(const value of ['true','[]','"secret"'])assert.throws(()=>load(`[${scope}]\nconfirmation=${value}`),ConfigError);
     assert.throws(()=>load(`[${scope}.confirmation]\nconfirmation_ttl_seconds=60`),ConfigError);

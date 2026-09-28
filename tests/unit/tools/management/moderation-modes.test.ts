@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Moderation, buildModerationTools, MODERATION_TOOLS, HELP } from '../../../../src/tools/management/moderation.js';
+import { MAX_MUTE_SECONDS } from '../../../../src/contracts/tool-limits.js';
 import type { ModerationPolicy, ModerationMode } from '../../../../src/config/listener.js';
 import { LISTENER_GROUP, OWNER_ID } from '../../../../src/contracts/identity.js';
 import { type Api } from '../../../../src/contracts/onebot.js';
@@ -71,8 +72,8 @@ test('schema filters off capabilities, reflects modes and reduced bounds, and ca
   const seconds = (tools[0]!.function.parameters.properties as JsonObject).seconds as JsonObject;
   assert.equal(seconds.minimum, 1); assert.equal(seconds.maximum, 12); seconds.maximum = 10000;
   tools[1]!.function.description = 'unsafe overwrite'; settings.unmute = 'off';
-  assert.equal(((MODERATION_TOOLS[0]!.function.parameters.properties as JsonObject).seconds as JsonObject).maximum, 600);
-  assert.equal(((buildModerationTools({ mute: 'direct' })[0]!.function.parameters.properties as JsonObject).seconds as JsonObject).maximum, 600);
+  assert.equal(((MODERATION_TOOLS[0]!.function.parameters.properties as JsonObject).seconds as JsonObject).maximum, MAX_MUTE_SECONDS);
+  assert.equal(((buildModerationTools({ mute: 'direct' })[0]!.function.parameters.properties as JsonObject).seconds as JsonObject).maximum, MAX_MUTE_SECONDS);
   assert.ok(buildModerationTools({ unmute: 'confirm' })[0]!.function.description.includes('owner /confirm'));
 });
 
