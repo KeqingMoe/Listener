@@ -11,8 +11,10 @@ const router = createRouter({
   routes: [
     { path: "/", component: Overview },
     { path: "/wakes", component: Wakes },
+    { path: "/requests", component: () => import('./views/RequestsView.vue') },
     { path: "/wakes/:groupId/:wakeId", component: WakeDetail },
     { path: "/tools", component: Tools },
+    { path: "/events", component: () => import('./views/EventsView.vue') },
   ],
 });
 createApp(App).use(router).mount("#app");
