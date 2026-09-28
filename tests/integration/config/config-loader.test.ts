@@ -15,6 +15,12 @@ function fixture(t:{after(fn:()=>void):void},source=''){
 test('complete app/group defaults have no credentials in resolved policy and no implicit enabled group',t=>{
  const f=fixture(t),c=f.load(),g=c.resolveGroup('22');assert.equal(Object.hasOwn(c.runtime,'aiEnabled'),false);assert.equal(c.runtime.maxConcurrentTurns,2);assert.equal(c.model.maxTokens,8192);assert.equal(c.defaultsEnabled,false);assert.deepEqual(c.configuredGroupIds,[]);assert.equal(g.enabled,false);assert.equal(g.persona,'默认人设');assert.equal(g.personaPath,join(f.dir,'prompts/listener.md'));assert.equal(g.storage.databasePath,join(f.dir,'data/groups/22/listener.sqlite'));assert.equal(c.storage.telemetryPath,join(f.dir,'data/telemetry.sqlite'));assert.equal(c.storage.registryPath,join(f.dir,'data/group-registry.json'));assert.equal(c.identity.ownerId,OWNER_ID);assert.equal(c.onebot.allowPrivate,false);assert.deepEqual([...c.onebot.allowedGroups],[]);assert.equal(g.reply.random,false);assert.equal(g.session.compaction,false);assert.equal(g.execution.maxToolCallsPerWake,96);assert.equal(g.tools.mute_member.mode,'confirm');assert.equal(g.tools.get_member_info.mode,'direct');assert.equal('apiKey'in g,false);assert.equal('model'in g,false);assert.equal(existsSync(join(f.dir,'data')),false);
 });
+test('opencode_headers defaults false and only accepts model-level booleans',t=>{
+ const f=fixture(t);assert.equal(f.load().model.opencodeHeaders,false);
+ for(const value of [true,false]){f.config(`[model]\nopencode_headers=${value}`);assert.equal(f.load().model.opencodeHeaders,value);}
+ for(const value of ['"true"','1','[]','{}']){f.config(`[model]\nopencode_headers=${value}`);assert.throws(()=>f.load(),ConfigError);}
+ for(const source of ['[model]\nopencode_go_headers=true','[defaults]\nopencode_headers=true','[groups."22"]\nopencode_headers=true']){f.config(source);assert.throws(()=>f.load(),ConfigError);}
+});
 test('old root fields, version, and every unknown nested field are rejected without echoing input',t=>{
  const f=fixture(t);
  for(const key of ['version','ai','memory','persona','reply','tools','images','forward','attention','SENSITIVE_KEY']){f.config(`${key}="SENSITIVE_VALUE"`);assert.throws(()=>f.load(),e=>e instanceof ConfigError&&!e.message.includes('SENSITIVE'));}

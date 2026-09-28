@@ -13,7 +13,7 @@ export interface AppConfig {
   configPath:string;
   identity:{name:string;ownerId:string;ownerName:string};
   onebot:Config;
-  model:{baseUrl:string;apiKey:string;model:string;timeoutMs:number;maxTokens:number};
+  model:{baseUrl:string;apiKey:string;model:string;timeoutMs:number;maxTokens:number;opencodeHeaders:boolean};
   runtime:{maxConcurrentTurns:number};
   storage:{directory:string;telemetryPath:string;registryPath:string;customFaceDirectory:string;napcatCustomFaceDirectory:string};
   logging:LoggingConfig;

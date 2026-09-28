@@ -81,7 +81,10 @@ async function main(): Promise<void> {
       let memory:SQLiteMemory|undefined,world:WorldEventStore|undefined,session:ModelSession|undefined;
       const contexts=new Map<string,{groupId:string;turnId?:string;phase?:string;wakeId?:string}>();
       const context=()=>{const trace=getLogContext();return {groupId,...(typeof trace.turn_id==='string'?{turnId:trace.turn_id}:{}),...(typeof trace.phase==='string'?{phase:trace.phase}:{}),...(session?.state().wakeId?{wakeId:session.state().wakeId!}:{})};};
-      const scoped={...modelOptions,onRequestStart:(record:ModelRequestStart)=>{
+      const scoped={...modelOptions,...(app.model.opencodeHeaders?{requestHeaders:()=>{
+        if(!session)throw new Error('Model session is not initialized');
+        return {'x-opencode-session':session.state().sessionId};
+      }}:{}),onRequestStart:(record:ModelRequestStart)=>{
         const scope=context();contexts.set(record.requestId,scope);lastRequestId=record.requestId;
         try{telemetry?.beginRequest({...record,...scope});}catch{log('warn','model.telemetry_failed',{reason:'storage_failed'});}
       },onRequest:(record:ModelRequestRecord)=>{

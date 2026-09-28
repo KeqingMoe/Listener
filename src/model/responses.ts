@@ -5,6 +5,7 @@ import { ModelError, type ModelErrorCode, type OpenAIModelOptions } from './chat
 import { providerRequestId, responseInspection } from '../observability/request-inspection.js';
 import { parseResponsesUsage, type ModelRequestInspection, type ModelRequestRecord, type ModelUsage } from '../observability/model-usage.js';
 import { normalizeModelRequestDiagnostics, providerDiagnostics, upstreamAbortSource, type ModelRequestDiagnostics } from '../observability/model-diagnostics.js';
+import { MODEL_USER_AGENT } from '../config/version.js';
 
 const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 const MAX_BYTES=2*1024*1024, MAX_ARGS=16*1024;
@@ -153,7 +154,9 @@ export class ResponsesModel implements Model {
       if(this.options.serverCompactionVerified&&this.options.compactionThreshold!==undefined)body.context_management=[{type:'compaction',compact_threshold:this.options.compactionThreshold}];
       const requestJson=JSON.stringify(body);inspection.requestJson=requestJson;
       try{this.options.onRequestStart?.(Object.freeze({requestId,startedAt,transport:'responses',model:this.options.model,requestJson,requestMode:diagnostics.requestMode??'fresh',...(reuse?{previousResponseId:responseId}:{})}));}catch{}
-      const response=await fetch(this.endpoint,{method:'POST',redirect:'error',signal:controller.signal,headers:{'content-type':'application/json',authorization:`Bearer ${this.options.apiKey}`},body:requestJson});
+      const headers=new Headers(this.options.requestHeaders?.());
+      headers.set('content-type','application/json');headers.set('authorization',`Bearer ${this.options.apiKey}`);headers.set('user-agent',MODEL_USER_AGENT);
+      const response=await fetch(this.endpoint,{method:'POST',redirect:'error',signal:controller.signal,headers,body:requestJson});
       inspection.providerRequestId=providerRequestId(response.headers);
       if(!response.ok){
         httpStatus=response.status;failure='http_error';stage='http_status';

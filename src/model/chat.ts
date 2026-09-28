@@ -1,4 +1,5 @@
 import type { ChatMessage, Completion, Model } from '../contracts/model.js';
+import { MODEL_USER_AGENT } from '../config/version.js';
 import type { ToolCall, ToolDefinition } from '../contracts/tools.js';
 import { log } from '../observability/logger.js';
 import { EXTENDED_TOOL_NAMES } from '../config/extended-tools.js';
@@ -28,6 +29,8 @@ export interface OpenAIModelOptions {
   baseUrl: string; apiKey: string; model: string; timeoutMs: number; maxTokens: number;
   onRequestStart?: (record: ModelRequestStart) => void;
   onRequest?: (record: ModelRequestRecord) => void;
+  /** Evaluated per request; authentication, content type and User-Agent remain authoritative. */
+  requestHeaders?: () => Readonly<Record<string,string>>;
 }
 const MAX_RESPONSE_BYTES = 256 * 1024;
 const MAX_ARGUMENT_BYTES = 16 * 1024;
@@ -104,9 +107,11 @@ export class OpenAIModel implements Model {
         stream: false, ...(tools.length ? { tools, tool_choice: 'auto' } : {}) });
       inspection.requestJson = requestJson;
       try { this.options.onRequestStart?.(Object.freeze({requestId, startedAt, transport:'chat', model:this.options.model, requestJson, requestMode:'fresh'})); } catch {}
+      const headers = new Headers(this.options.requestHeaders?.());
+      headers.set('content-type', 'application/json');headers.set('authorization', `Bearer ${this.options.apiKey}`);headers.set('user-agent', MODEL_USER_AGENT);
       const response = await fetch(this.endpoint, {
         method: 'POST', redirect: 'error', signal: controller.signal,
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.options.apiKey}` },
+        headers,
         body: requestJson,
       });
       inspection.providerRequestId = providerRequestId(response.headers);

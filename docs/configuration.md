@@ -34,6 +34,7 @@ npm run config:check -- --group 123456789
 | | `api_key_env` | `OPENAI_API_KEY`，指定**必填**的模型密钥环境变量 |
 | | `timeout_ms` | 45000，范围1000..120000 |
 | | `max_output_tokens` | 8192，安全正整数；单次模型输出预算，仍受服务商限制 |
+| | `opencode_headers` | false；请求添加每群持久 `x-opencode-session` |
 | `runtime` | `max_concurrent_turns` | 2，范围1..8；全局同时运行的唤醒数，同一群不会并行唤醒 |
 | `storage` | `directory` | `data`，分群及全局数据文件的基准目录 |
 | | `telemetry_path` | `<directory>/telemetry.sqlite`，模型用量库 |
