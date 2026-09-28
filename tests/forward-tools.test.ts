@@ -233,11 +233,12 @@ test('cancelled child load preserves previous refs but commits no new refs or re
 });
 
 test('native forward messages keep ordered typed content and literal marker text distinct',async()=>{
- const literal='[QQ表情：吃瓜 id=271] [at:123] [CQ:face,id=271]';
- const s=setup({response:{messages:[node([text(literal),{type:'face',data:{id:'271'}},{type:'at',data:{qq:'123'}},{type:'at',data:{qq:'all'}},{type:'reply',data:{id:'77777777'}},{type:'image',data:{url:'https://secret.invalid/KEY'}}])]}});
+ // Use the hand-authored offline catalog; the literal and native face still share the same ID/name.
+ const literal='[QQ表情：微笑 id=14] [at:123] [CQ:face,id=14]';
+ const s=setup({response:{messages:[node([text(literal),{type:'face',data:{id:'14'}},{type:'at',data:{qq:'123'}},{type:'at',data:{qq:'all'}},{type:'reply',data:{id:'77777777'}},{type:'image',data:{url:'https://secret.invalid/KEY'}}])]}});
  const r=await s.read(),row=rows(r)[0]!;
  assert.equal(row.text,undefined);assert.equal(row.claimed_sender.user_id,'100000001');assert.equal(r.untrusted,true);
- assert.deepEqual(row.segments,[{type:'text',text:literal},{type:'face',id:'271',name:'吃瓜'},{type:'at',user_id:'123'},{type:'at',user_id:'all'},{type:'unsupported',kind:'forward_reply'},{type:'image',content_status:'not_viewed',reason:'forward_images_unsupported'}]);
+ assert.deepEqual(row.segments,[{type:'text',text:literal},{type:'face',id:'14',name:'微笑'},{type:'at',user_id:'123'},{type:'at',user_id:'all'},{type:'unsupported',kind:'forward_reply'},{type:'image',content_status:'not_viewed',reason:'forward_images_unsupported'}]);
  assert.ok(!JSON.stringify(r).includes('77777777'));assert.ok(!JSON.stringify(r).includes('secret.invalid'));assert.equal(s.calls.length,2);
 });
 

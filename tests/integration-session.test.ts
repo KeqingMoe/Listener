@@ -54,9 +54,11 @@ test('integrated session starts metadata-only, reads live arrivals, checkpoints 
 });
 
 test('live attention metadata survives session rotation and remains absent from wake input',async()=>{
+ // This scenario tests metadata persistence, not the optional upstream catalog: 76 is an offline fallback candidate.
+ const emojiId='76';let reactionWrites=0;
  const session=new ModelSession({path:':memory:',groupId:LISTENER_GROUP}),world=new WorldEventStore({path:':memory:',groupId:LISTENER_GROUP});let rounds=0;const requests:ChatMessage[][]=[];
- const listener=new Listener({async call(action,params){if(action==='get_msg')return {message_id:params?.message_id,message_type:'group',group_id:LISTENER_GROUP,user_id:'12345',sender:{user_id:'12345'},message:[{type:'text',data:{text:'BODY_PRIVATE'}}]};if(action==='set_msg_emoji_like')return {result:0};throw Error('unexpected API');}}, {async complete(messages){rounds++;requests.push(structuredClone(messages));
-  if(rounds===1)return completion(call('plan','manage_attention',{operation:'create',purpose:'wait for different member',any_of:[{type:'member_message',user_ids:['99988']}],expires_in_seconds:600}),call('react','react_message',{message_id:'1',emoji_id:'4',action:'add'}),call('finish-1','finish'));
+ const listener=new Listener({async call(action,params){if(action==='get_msg')return {message_id:params?.message_id,message_type:'group',group_id:LISTENER_GROUP,user_id:'12345',sender:{user_id:'12345'},message:[{type:'text',data:{text:'BODY_PRIVATE'}}]};if(action==='set_msg_emoji_like'){assert.deepEqual(params,{message_id:'1',emoji_id:emojiId,set:true});reactionWrites++;return {result:0};}throw Error('unexpected API');}}, {async complete(messages){rounds++;requests.push(structuredClone(messages));
+  if(rounds===1)return completion(call('plan','manage_attention',{operation:'create',purpose:'wait for different member',any_of:[{type:'member_message',user_ids:['99988']}],expires_in_seconds:600}),call('react','react_message',{message_id:'1',emoji_id:emojiId,action:'add'}),call('finish-1','finish'));
   if(rounds===2)return completion(call('state','get_wake_state'));
   return completion(call('finish-2','finish'));
  }},{...memory(),recent:()=>world.recentMessages(128)},{...config,attention:{enabled:true,maxPlans:16},tools:{members:true,mention:true,reactions:true,moderation:{mute:'off',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600}}},()=>0,undefined,undefined,{session,world});
@@ -69,7 +71,7 @@ test('live attention metadata survives session rotation and remains absent from 
   const state=JSON.parse(String(requests[2]!.find(m=>m.tool_call_id==='state')!.content));
   assert.equal(state.attention_state.active_plans.length,1);assert.equal(state.attention_state.active_plans[0].plan_id,planResult.plan_id);
   assert.equal(state.attention_state.active_plans[0].purpose,'wait for different member');assert.deepEqual(state.attention_state.active_plans[0].any_of,[{type:'member_message',user_ids:['99988']}]);
-  assert.equal(state.reaction_state.recent.length,1);assert.equal(state.reaction_state.recent[0].message_id,'1');assert.equal(state.reaction_state.recent[0].status,'ok');assert.equal(state.reaction_state.recent[0].submitted,true);assert.equal(state.reaction_state.recent[0].effect_confirmed,false);assert.equal(state.reaction_state.last_turn.confirmed,0);assert.equal(state.reaction_state.last_turn.submitted,1);assert.equal(state.group_id,LISTENER_GROUP);assert.doesNotMatch(JSON.stringify(state),/BODY_PRIVATE/);
+  assert.equal(reactionWrites,1);assert.equal(state.reaction_state.recent.length,1);assert.equal(state.reaction_state.recent[0].emoji_id,emojiId);assert.equal(state.reaction_state.recent[0].action,'add');assert.equal(state.reaction_state.recent[0].message_id,'1');assert.equal(state.reaction_state.recent[0].status,'ok');assert.equal(state.reaction_state.recent[0].submitted,true);assert.equal(state.reaction_state.recent[0].effect_confirmed,false);assert.equal(state.reaction_state.last_turn.confirmed,0);assert.equal(state.reaction_state.last_turn.submitted,1);assert.equal(state.group_id,LISTENER_GROUP);assert.doesNotMatch(JSON.stringify(state),/BODY_PRIVATE/);
  }finally{await listener.stop();}
 });
 

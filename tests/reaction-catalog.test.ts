@@ -1,12 +1,13 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, mkdirSync, symlinkSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { extractReactionCatalog, loadReactionCatalog, getReactionCatalog, isKnownReactionId, createReactionTool } from '../src/reaction-catalog.js';
 import { FACE_DATA_LIMIT } from '../src/sync-faces.js';
+import { fullReactionCatalogFixture } from './fixtures/reaction-catalog.js';
 
 const source = () => ({ sysface: [{ QSid: '0', QDes: '/惊讶', extra: { private: 'omit' } }, { QSid: '375', QDes: '/超级鼓掌', AniStickerType: 1 }],
   emoji: [{ QSid: '😊', QCid: '128522', QDes: '/嘿嘿', EMCode: 'not-the-id' }] });
@@ -25,17 +26,18 @@ test('projects both full sections without leaking upstream metadata and freezes 
 });
 
 test('complete synthetic 329-face plus 165-emoji catalog yields all 494 candidates', () => {
-  const raw = { sysface: Array.from({ length: 329 }, (_, i) => ({ QSid: String(i), QDes: `/face-${i}` })),
-    emoji: Array.from({ length: 165 }, (_, i) => ({ QSid: String.fromCodePoint(128000 + i), QCid: String(128000 + i), QDes: `/emoji-${i}` })) };
+  const raw = fullReactionCatalogFixture();
   const result = extractReactionCatalog(raw);
   assert.equal(result.length, 494); assert.equal(new Set(result.map(r => r.id)).size, 494);
   assert.equal(result.filter(r => r.kind === 'emoji').length, 165);
 });
 
-test('optional installed pinned raw resource includes all 494 entries', t => {
-  const path = new URL('../data/napcat-face-config-v4.18.28.json', import.meta.url);
-  if (!existsSync(path)) { t.skip('Full raw resource intentionally not tracked'); return; }
+test('loads all 494 entries from a complete synthetic raw resource offline', t => {
+  const { path } = fixture(t);
+  const raw = fullReactionCatalogFixture();
+  writeFileSync(path, JSON.stringify(raw));
   const data = loadReactionCatalog(path);
+  assert.deepEqual(data, extractReactionCatalog(raw));
   assert.equal(data.length, 494); assert.equal(data.filter(r => r.kind === 'face').length, 329);
   assert.equal(data.filter(r => r.kind === 'emoji').length, 165);
 });
