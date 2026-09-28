@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { WorldEventStore } from '../src/world-events.js';
+import { WorldEventStore } from '../src/world/events.js';
 import { WorldTools, buildWorldTools } from '../src/world-tools.js';
 import type { JsonObject, TimelineEntry } from '../src/contracts/index.js';
 

@@ -1,9 +1,9 @@
 import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
-import { FACE_CATALOG_VERSION, FACE_CATALOG_SOURCE, FACE_DATA_LIMIT, validateFaceCatalog, type FaceCatalogEntry } from './sync-faces.js';
+import { FACE_CATALOG_VERSION, FACE_CATALOG_SOURCE, FACE_DATA_LIMIT, validateFaceCatalog, type FaceCatalogEntry } from '../../sync-faces.js';
 
 export { FACE_CATALOG_VERSION, FACE_CATALOG_SOURCE, validateFaceCatalog };
 export type { FaceCatalogEntry };
-export const FACE_CATALOG_PATH = new URL('../data/qq-faces.json', import.meta.url);
+export const FACE_CATALOG_PATH = new URL('../../../data/qq-faces.json', import.meta.url);
 
 // Small hand-maintained public API examples, not a vendored upstream catalog.
 // A fresh offline checkout can render/send these; explicit faces:sync installs

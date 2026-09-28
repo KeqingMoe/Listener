@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Moderation, MODERATION_TOOLS, buildModerationTools } from '../src/moderation.js';
 import type { ModerationPolicy } from '../src/config/listener.js';
-import { configureLogging } from '../src/logger.js';
+import { configureLogging } from '../src/observability/logger.js';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

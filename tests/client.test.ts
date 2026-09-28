@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { OneBotClient } from '../src/client.js';
+import { OneBotClient } from '../src/onebot/client.js';
 
 async function fixture(handler?: (ws: WebSocket, packet: any) => void, heartbeatMs = 1000, loginData: (connection: number) => unknown = () => ({ user_id: 1 })) {
   const server = new WebSocketServer({ port: 0, host: '127.0.0.1' });

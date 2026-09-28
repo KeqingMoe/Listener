@@ -7,7 +7,7 @@ import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import sharp from 'sharp';
-import { configureLogging, withLogContext } from '../src/logger.js';
+import { configureLogging, withLogContext } from '../src/observability/logger.js';
 import { createImageDownloader, prepareImage, type ImageDownloadDependencies } from '../src/image-download.js';
 import { ImageTools } from '../src/image-tools.js';
 import { LISTENER_GROUP, type Memory } from '../src/contracts/index.js';

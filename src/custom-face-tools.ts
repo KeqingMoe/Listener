@@ -5,9 +5,9 @@ import { type CustomFaceStore, type CustomFaceRecord, type CustomFaceInput } fro
 import { CustomFaceCoordinator, CustomFaceCoordinationError } from './custom-face-coordinator.js';
 import { downloadOriginalImage, validateOriginalImage, prepareImage, type OriginalImageDownloader } from './image-download.js';
 import { imageReferences, type ImageTurnState } from './image-tools.js';
-import { extractMessageContent } from './message-content.js';
+import { extractMessageContent } from './world/message-content.js';
 import type { GroupMediaOptions } from './group-media-tools.js';
-import { afterDispatch, submittedResult, writeFailure, DuplicateMessageAckError, UnverifiedMessageAckError } from './operation-result.js';
+import { afterDispatch, submittedResult, writeFailure, DuplicateMessageAckError, UnverifiedMessageAckError } from './onebot/operation-result.js';
 
 export const CUSTOM_FACE_TOOL_NAMES = ['list_custom_faces', 'view_custom_face', 'send_custom_face', 'add_custom_face', 'delete_custom_face', 'set_custom_face_description'] as const;
 type Name = typeof CUSTOM_FACE_TOOL_NAMES[number];

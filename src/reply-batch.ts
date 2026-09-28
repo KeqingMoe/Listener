@@ -1,7 +1,7 @@
 import { OWNER_ID, resolveOwnerId, type JsonObject, type Memory, type TimelineEntry, type TurnContext } from './contracts/index.js';
-import { newTraceId } from './logger.js';
+import { newTraceId } from './observability/logger.js';
 import type { AttentionHit } from './attention.js';
-import { projectMessage } from './message-content.js';
+import { projectMessage } from './world/message-content.js';
 
 export interface BatchItem {
   entry: TimelineEntry;

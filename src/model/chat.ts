@@ -1,11 +1,11 @@
-import type { ChatMessage, Completion, Model, ToolCall, ToolDefinition } from './contracts/index.js';
-import { log } from './logger.js';
-import { EXTENDED_TOOL_NAMES } from './config/extended-tools.js';
+import type { ChatMessage, Completion, Model, ToolCall, ToolDefinition } from '../contracts/index.js';
+import { log } from '../observability/logger.js';
+import { EXTENDED_TOOL_NAMES } from '../config/extended-tools.js';
 import { randomUUID } from 'node:crypto';
-import { providerRequestId, readErrorInspection, responseInspection } from './request-inspection.js';
-import { parseChatUsage, type ModelRequestInspection, type ModelRequestStart, type ModelRequestRecord, type ModelUsage } from './model-usage.js';
-export type { ModelRequestRecord, ModelUsage, ModelRequestDiagnostics } from './model-usage.js';
-import { normalizeModelRequestDiagnostics, providerDiagnostics, upstreamAbortSource, type ModelRequestDiagnostics } from './model-diagnostics.js';
+import { providerRequestId, readErrorInspection, responseInspection } from '../observability/request-inspection.js';
+import { parseChatUsage, type ModelRequestInspection, type ModelRequestStart, type ModelRequestRecord, type ModelUsage } from '../observability/model-usage.js';
+export type { ModelRequestRecord, ModelUsage, ModelRequestDiagnostics } from '../observability/model-usage.js';
+import { normalizeModelRequestDiagnostics, providerDiagnostics, upstreamAbortSource, type ModelRequestDiagnostics } from '../observability/model-diagnostics.js';
 
 export type ModelErrorCode = 'cancelled' | 'timeout' | 'http_error' | 'network_error' | 'response_too_large' | 'invalid_response' | 'truncated_response';
 export class ModelError extends Error {

@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { FACE_CATALOG, FACE_CATALOG_VERSION, FACE_CATALOG_SOURCE, EXAMPLE_FACE_CATALOG, loadFaceCatalog, validateFaceCatalog } from '../src/face-catalog.js';
+import { FACE_CATALOG, FACE_CATALOG_VERSION, FACE_CATALOG_SOURCE, EXAMPLE_FACE_CATALOG, loadFaceCatalog, validateFaceCatalog } from '../src/onebot/catalog/faces.js';
 import { extractFaceCatalog, FACE_DATA_LIMIT } from '../src/sync-faces.js';
 import { faceMarker, isKnownFaceId, FACE_ID_SCHEMA } from '../src/face-tools.js';
 

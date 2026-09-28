@@ -1,4 +1,4 @@
-import type { ForwardReference } from '../forward-references.js';
+import type { ForwardReference } from '../onebot/forward-references.js';
 /** Low-level compatibility/test defaults, not deployment identities or database routing.
  * Production scope and identity come from trusted local configuration. */
 export const LISTENER_GROUP = '100000002';

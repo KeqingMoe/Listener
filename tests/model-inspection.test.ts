@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { OpenAIModel, ModelError } from '../src/model.js';
-import { ResponsesModel, ResponseStateExpiredError } from '../src/responses-model.js';
-import { sanitizeInspection, sanitizeInspectionValue } from '../src/request-inspection.js';
-import type { ModelRequestRecord, ModelRequestStart } from '../src/model-usage.js';
+import { OpenAIModel, ModelError } from '../src/model/chat.js';
+import { ResponsesModel, ResponseStateExpiredError } from '../src/model/responses.js';
+import { sanitizeInspection, sanitizeInspectionValue } from '../src/observability/request-inspection.js';
+import type { ModelRequestRecord, ModelRequestStart } from '../src/observability/model-usage.js';
 const options={baseUrl:'http://127.0.0.1:1/v1',apiKey:'fixture-api-key',model:'fixture',timeoutMs:1000,maxTokens:10};
 const reply={id:'chat-business-id',choices:[{finish_reason:'stop',message:{role:'assistant',content:'hello',reasoning_content:'actual provider reasoning'}}]};
 

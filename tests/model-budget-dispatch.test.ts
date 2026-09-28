@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {once} from 'node:events';
 import {setTimeout as delay} from 'node:timers/promises';
-import {OpenAIModel} from '../src/model.js';
+import {OpenAIModel} from '../src/model/chat.js';
 import {Listener} from '../src/listener.js';
 import {LISTENER_GROUP,type Memory,type TimelineEntry} from '../src/contracts/index.js';
 import type {ListenerConfig} from '../src/config/listener.js';

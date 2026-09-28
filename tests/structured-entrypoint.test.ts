@@ -12,7 +12,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {WebSocketServer,type WebSocket} from 'ws';
 import {LISTENER_GROUP,OWNER_ID} from '../src/contracts/index.js';
 import {SQLiteMemory} from '../src/memory.js';
-import {FACE_CATALOG} from '../src/face-catalog.js';
+import {FACE_CATALOG} from '../src/onebot/catalog/faces.js';
 
 const GROUP=LISTENER_GROUP,SELF='99999';
 const LITERAL='[QQ表情：吃瓜 id=271] [at:all] [CQ:at,qq=all]';

@@ -1,8 +1,8 @@
 import { DatabaseSync } from "node:sqlite";
 import { performanceMetrics, intervalDuration, requestDuration, type MetricTool } from '../shared/metrics.js';
 import { lstatSync } from "node:fs";
-import { normalizeModelRequestDiagnostics } from "../../src/model-diagnostics.js";
-import { normalizeWakeDiagnostics } from "../../src/wake-diagnostics.js";
+import { normalizeModelRequestDiagnostics } from "../../src/observability/model-diagnostics.js";
+import { normalizeWakeDiagnostics } from "../../src/observability/wake-diagnostics.js";
 import { requestOutcome, requestReason, toolOutcome, toolReason } from "../shared/outcomes.js";
 const parse = (value: unknown): unknown => { try { return typeof value === "string" ? JSON.parse(value) : undefined; } catch { return undefined; } };
 const toolProjection = ["status", "error", "reason", "reason_code"].map(key => `CASE WHEN json_valid(result) THEN json_extract(result,'$.${key}') ELSE NULL END AS ${key}`).join(",");

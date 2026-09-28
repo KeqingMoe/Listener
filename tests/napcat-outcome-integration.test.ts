@@ -7,11 +7,11 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { AddressInfo } from "node:net";
 import { WebSocketServer, type WebSocket } from "ws";
-import { OneBotClient } from "../src/client.js";
+import { OneBotClient } from "../src/onebot/client.js";
 import { Listener } from "../src/listener.js";
 import { ModelSession } from "../src/model-session.js";
-import { WorldEventStore } from "../src/world-events.js";
-import { configureLogging } from "../src/logger.js";
+import { WorldEventStore } from "../src/world/events.js";
+import { configureLogging } from "../src/observability/logger.js";
 import {
   OWNER_ID,
   type ChatMessage,

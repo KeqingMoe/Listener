@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { normalizeWakeDiagnostics } from '../src/wake-diagnostics.js';
+import { normalizeWakeDiagnostics } from '../src/observability/wake-diagnostics.js';
 import { ModelSession } from '../src/model-session.js';
-import { WorldEventStore } from '../src/world-events.js';
+import { WorldEventStore } from '../src/world/events.js';
 import { Listener } from '../src/listener.js';
-import { ModelError } from '../src/model.js';
+import { ModelError } from '../src/model/chat.js';
 import { LISTENER_GROUP, type Memory, type TimelineEntry, type Completion } from '../src/contracts/index.js';
 import type { ListenerConfig } from '../src/config/listener.js';
 

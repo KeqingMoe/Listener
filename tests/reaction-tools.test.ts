@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setImmediate as tick } from 'node:timers/promises';
 import { ReactionTools, createReactionTool, type ReactionTurn } from '../src/reaction-tools.js';
-import { submittedResult } from '../src/operation-result.js';
+import { submittedResult } from '../src/onebot/operation-result.js';
 import { LISTENER_GROUP, type Api, type Memory, type TimelineEntry, type TurnContext, type JsonObject } from '../src/contracts/index.js';
 
 const group = '22';

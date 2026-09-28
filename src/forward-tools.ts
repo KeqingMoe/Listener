@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import { LISTENER_GROUP, resolveGroupId, type Api, type JsonObject, type Memory, type MessageSegment, type ToolDefinition, type TurnContext } from './contracts/index.js';
-import { extractForward, type ExtractedForward, type ForwardReference } from './forward-references.js';
-import { log } from './logger.js';
-import { extractMessageContent } from './message-content.js';
+import { extractForward, type ExtractedForward, type ForwardReference } from './onebot/forward-references.js';
+import { log } from './observability/logger.js';
+import { extractMessageContent } from './world/message-content.js';
 
 export interface ForwardConfig { enabled: boolean }
 const ROOT = /^fwd_(-?\d{1,32})_(0|[1-9]\d?|1[01]\d|12[0-7])$/;

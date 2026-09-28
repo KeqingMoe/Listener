@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Listener } from '../src/listener.js';
 import { SQLiteMemory } from '../src/memory.js';
-import { configureLogging, managedLogFilename } from '../src/logger.js';
+import { configureLogging, managedLogFilename } from '../src/observability/logger.js';
 import type { ListenerConfig } from '../src/config/listener.js';
 import { LISTENER_GROUP, OWNER_ID, type Api, type ChatMessage, type Completion, type Memory, type Model, type TimelineEntry, type ToolCall } from '../src/contracts/index.js';
 

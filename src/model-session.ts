@@ -2,7 +2,7 @@ import { chmodSync, closeSync, constants, existsSync, fstatSync, lstatSync, open
 import { dirname, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
-import { normalizeWakeDiagnostics } from './wake-diagnostics.js';
+import { normalizeWakeDiagnostics } from './observability/wake-diagnostics.js';
 import { SESSION_INSPECTION_INDEXES } from './session-inspection-indexes.js';
 import { resolveGroupId, type ChatContentPart, type ChatMessage, type Completion, type JsonObject, type ToolDefinition } from './contracts/index.js';
 

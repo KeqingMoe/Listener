@@ -1,9 +1,9 @@
 import { resolveGroupId, type Api, type Memory, type JsonObject, type ToolDefinition, type TurnContext, type TimelineEntry } from './contracts/index.js';
 
 import { imageReferences } from './image-tools.js';
-import { forwardReferences } from './forward-references.js';
+import { forwardReferences } from './onebot/forward-references.js';
 import { FACE_ID_SCHEMA, FACE_LAYOUT_GUIDANCE, faceMarker, isKnownFaceId } from './face-tools.js';
-import { extractMessageContent, projectMessage } from './message-content.js';
+import { extractMessageContent, projectMessage } from './world/message-content.js';
 
 export interface GroupToolsOptions {
   members?: boolean;

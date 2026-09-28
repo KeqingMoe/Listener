@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { parse as parseToml } from 'smol-toml';
 import { parse as parseDotenv } from 'dotenv';
 import type { AppConfig, ResolvedGroupConfig } from './app.js';
-import type { LoggingConfig, LogLevel } from '../logger.js';
+import type { LoggingConfig, LogLevel } from '../observability/logger.js';
 import { OWNER_ID } from '../contracts/index.js';
 import { TOOL_NAMES, TOOL_CAPABILITIES, type ResolvedToolPolicies, type ToolMode, type ToolName, type ToolPolicy } from './tool-policy.js';
 

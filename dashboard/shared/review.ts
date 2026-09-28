@@ -1,6 +1,6 @@
 import type { Availability, Range, WakeItem } from './contracts.js';
 import type { CacheMetrics } from './metrics.js';
-import type { ModelRequestDiagnostics } from '../../src/model-diagnostics.js';
+import type { ModelRequestDiagnostics } from '../../src/observability/model-diagnostics.js';
 import type { RequestOutcome, ToolOutcome } from './outcomes.js';
 /** All unknown scalars are null. inputTokens is explicitly UNCACHED input. */
 export interface ReviewRequest extends CacheMetrics {

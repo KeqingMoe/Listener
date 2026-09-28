@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { extractReactionCatalog, loadReactionCatalog, getReactionCatalog, isKnownReactionId, createReactionTool } from '../src/reaction-catalog.js';
+import { extractReactionCatalog, loadReactionCatalog, getReactionCatalog, isKnownReactionId, createReactionTool } from '../src/onebot/catalog/reactions.js';
 import { FACE_DATA_LIMIT } from '../src/sync-faces.js';
 import { fullReactionCatalogFixture } from './fixtures/reaction-catalog.js';
 
@@ -119,7 +119,7 @@ test('enforces size cap including valid JSON padding and refuses symlinks/direct
 });
 
 test('module import does not open catalog, lazy initialization caches once', () => {
-  const url = new URL('../src/reaction-catalog.ts', import.meta.url).href;
+  const url = new URL('../src/onebot/catalog/reactions.ts', import.meta.url).href;
   const script = `import fs from 'node:fs';import{syncBuiltinESMExports}from'node:module';let reads=0;const original=fs.openSync;fs.openSync=function(path,...rest){if(String(path).includes('napcat-face-config-v')){reads++;throw Object.assign(new Error('missing'),{code:'ENOENT'});}return original.call(this,path,...rest);};syncBuiltinESMExports();const m=await import(${JSON.stringify(url)});if(reads!==0)throw Error('eager read');const first=m.getReactionCatalog();if(reads!==1||first!==m.getReactionCatalog())throw Error('not cached');m.createReactionTool();if(reads!==1)throw Error('reloaded');console.log('lazy-ok');`;
   assert.equal(execFileSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', script], { encoding: 'utf8' }).trim(), 'lazy-ok');
 });

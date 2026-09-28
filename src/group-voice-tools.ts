@@ -6,7 +6,7 @@ import {
   type ToolDefinition,
   type TurnContext,
 } from "./contracts/index.js";
-import { submittedResult, writeFailure, afterDispatch } from './operation-result.js';
+import { submittedResult, writeFailure, afterDispatch } from './onebot/operation-result.js';
 
 export const GROUP_VOICE_TOOL_NAMES = [
   "get_group_ai_voices",

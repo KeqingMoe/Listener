@@ -7,7 +7,7 @@ import {TOOL_NAMES,TOOL_CAPABILITIES,type ResolvedToolPolicies,type ToolName,typ
 import type {AppConfig,ResolvedGroupConfig} from '../src/config/app.js';
 import {GroupTools} from '../src/group-tools.js';
 import {ImageTools} from '../src/image-tools.js';
-import {WorldEventStore} from '../src/world-events.js';
+import {WorldEventStore} from '../src/world/events.js';
 import {ModelSession} from '../src/model-session.js';
 import type {Api,Memory,TimelineEntry,Model,ChatMessage,JsonObject} from '../src/contracts/index.js';
 const GROUP='334455',OWNER='778899',SELF='990011',MEMBER='123456';

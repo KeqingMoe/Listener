@@ -10,8 +10,8 @@ import {
 } from "./contracts/index.js";
 import { ImageTools, imageReferences } from "./image-tools.js";
 import type { ImageDownloader } from "./image-download.js";
-import { extractMessageContent } from "./message-content.js";
-import { afterDispatch, writeFailure, DuplicateMessageAckError, UnverifiedMessageAckError } from './operation-result.js';
+import { extractMessageContent } from "./world/message-content.js";
+import { afterDispatch, writeFailure, DuplicateMessageAckError, UnverifiedMessageAckError } from './onebot/operation-result.js';
 
 export const GROUP_MEDIA_TOOL_NAMES = [
   "send_group_image",

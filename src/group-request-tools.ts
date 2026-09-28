@@ -6,7 +6,7 @@ import {
   type ToolDefinition,
   type TurnContext,
 } from "./contracts/index.js";
-import { afterDispatch, submittedResult, writeFailure } from './operation-result.js';
+import { afterDispatch, submittedResult, writeFailure } from './onebot/operation-result.js';
 
 // Pinned NapCat v4.18.28 contracts:
 // packages/napcat-onebot/action/system/GetSystemMsg.ts: join_requests = type 7,

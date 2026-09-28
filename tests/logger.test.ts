@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import test from 'node:test';
-import { configureLogging, formatLogLine, log, managedLogFilename, newTraceId, sanitizeLogFields, withLogContext, type LoggingConfig } from '../src/logger.js';
+import { configureLogging, formatLogLine, log, managedLogFilename, newTraceId, sanitizeLogFields, withLogContext, type LoggingConfig } from '../src/observability/logger.js';
 
 const config = (directory: string, extra: Partial<LoggingConfig> = {}): LoggingConfig => ({ level: 'debug', console: false, file: true, directory, retentionDays: 7, maxFileMb: 1, maxTotalMb: 2, ...extra });
 async function fixture(t: { after(fn: () => Promise<void>): void }) {
@@ -187,7 +187,7 @@ test('queue overload drops records instead of creating unbounded writes', async 
 
 test('file failure falls back to readable console and respects minimum level', async t => {
   const root = await fixture(t); const blocked = join(root, 'blocked'); await writeFile(blocked, 'keep');
-  const script = `import { configureLogging, log } from './src/logger.ts';
+  const script = `import { configureLogging, log } from './src/observability/logger.ts';
     const logger = configureLogging(${JSON.stringify(config(blocked, { console: true, level: 'warn' }))});
     log('info','app.hidden'); log('warn','app.visible',{status:'ok',body:'private'}); await logger.close(); process.stdout.write('still-open\\n');`;
   const result = await promisify(execFile)(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', script], { cwd: process.cwd(), timeout: 5000 });
@@ -199,7 +199,7 @@ test('file failure falls back to readable console and respects minimum level', a
 });
 
 test('close is bounded even when console never completes a write', async () => {
-  const script = `import { configureLogging, log } from './src/logger.ts';
+  const script = `import { configureLogging, log } from './src/observability/logger.ts';
     const logger = configureLogging({level:'debug',console:true,file:false,directory:'.',retentionDays:1,maxFileMb:1,maxTotalMb:1});
     process.stdout.write = () => false;
     for(let i=0;i<10000;i++) log('info','app.stalled',{count:i});
@@ -210,7 +210,7 @@ test('close is bounded even when console never completes a write', async () => {
 
 test('real blocked stdout cannot halt disk logging or bounded application shutdown', async t => {
   const directory = join(await fixture(t), 'logs');
-  const script = `import { configureLogging, log } from './src/logger.ts';
+  const script = `import { configureLogging, log } from './src/observability/logger.ts';
     const logger=configureLogging(${JSON.stringify(config(directory, { console: true }))});
     for(let i=0;i<1000;i++) log('info','app.burst',{count:i,tools:Array(32).fill('get_group_members')});
     await logger.flush();
@@ -236,7 +236,7 @@ test('real blocked stdout cannot halt disk logging or bounded application shutdo
 });
 
 test('stdout EPIPE cannot escape as an uncaught exception', async () => {
-  const script = `import { configureLogging, log } from './src/logger.ts';
+  const script = `import { configureLogging, log } from './src/observability/logger.ts';
     const logger = configureLogging({level:'debug',console:true,file:false,directory:'.',retentionDays:1,maxFileMb:1,maxTotalMb:1});
     process.stdout.destroy(Object.assign(new Error('private'), {code:'EPIPE'}));
     log('error','app.failure'); await logger.close();

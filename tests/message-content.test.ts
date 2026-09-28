@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractMessageContent, sanitizeMessageContent, projectMessage, projectMessageContext } from '../src/message-content.js';
-import { FACE_CATALOG } from '../src/face-catalog.js';
+import { extractMessageContent, sanitizeMessageContent, projectMessage, projectMessageContext } from '../src/world/message-content.js';
+import { FACE_CATALOG } from '../src/onebot/catalog/faces.js';
 import type { TimelineEntry, MessageSegment } from '../src/contracts/index.js';
 
 const text=(value:string)=>({type:'text',data:{text:value}});

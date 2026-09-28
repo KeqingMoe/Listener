@@ -4,8 +4,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { configureLogging } from '../src/logger.js';
-import { submittedResult } from '../src/operation-result.js';
+import { configureLogging } from '../src/observability/logger.js';
+import { submittedResult } from '../src/onebot/operation-result.js';
 import { Moderation, type ExternalModerationProposal } from '../src/moderation.js';
 import { LISTENER_GROUP, OWNER_ID, type Api, type JsonObject, type TurnContext } from '../src/contracts/index.js';
 

@@ -20,7 +20,7 @@ import { GROUP_ACTION_TOOL_NAMES } from "../src/group-action-tools.js";
 import { GROUP_OBSERVATION_TOOL_NAMES } from "../src/group-observation-tools.js";
 import { Listener, buildToolDefinitions } from "../src/listener.js";
 import { ModelSession } from "../src/model-session.js";
-import { WorldEventStore } from "../src/world-events.js";
+import { WorldEventStore } from "../src/world/events.js";
 import type { ListenerConfig } from "../src/config/listener.js";
 import {
   LISTENER_GROUP,

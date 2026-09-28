@@ -1,9 +1,9 @@
 import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
-import { FACE_CATALOG_VERSION, FACE_DATA_LIMIT, extractFaceCatalog } from './sync-faces.js';
-import type { ToolDefinition } from './contracts/index.js';
+import { FACE_CATALOG_VERSION, FACE_DATA_LIMIT, extractFaceCatalog } from '../../sync-faces.js';
+import type { ToolDefinition } from '../../contracts/index.js';
 
 export interface ReactionEntry { readonly id: string; readonly name: string; readonly kind: 'face'|'emoji'; readonly emoji?: string }
-const defaultPath = new URL(`../data/napcat-face-config-v${FACE_CATALOG_VERSION}.json`, import.meta.url);
+const defaultPath = new URL(`../../../data/napcat-face-config-v${FACE_CATALOG_VERSION}.json`, import.meta.url);
 const invalid = (): never => { throw new Error('Invalid QQ reaction catalog'); };
 function record(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;

@@ -4,8 +4,8 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
-import {TelemetryStore,type TelemetryRecord} from '../src/telemetry.js';
-import type {ModelRequestStart} from '../src/model-usage.js';
+import {TelemetryStore,type TelemetryRecord} from '../src/observability/telemetry.js';
+import type {ModelRequestStart} from '../src/observability/model-usage.js';
 
 function fixture(run:(path:string,store:TelemetryStore,db:DatabaseSync)=>void):void {
   const dir=mkdtempSync(join(tmpdir(),'telemetry-inspection-'));

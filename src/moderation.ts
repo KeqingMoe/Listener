@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import { writeFailure } from './operation-result.js';
-import { log } from './logger.js';
+import { writeFailure } from './onebot/operation-result.js';
+import { log } from './observability/logger.js';
 import type { ModerationPolicy } from './config/listener.js';
 import { LISTENER_GROUP, resolveGroupId, OWNER_ID, resolveOwnerId, type Api, type JsonObject, type ToolDefinition, type TurnContext } from './contracts/index.js';
 

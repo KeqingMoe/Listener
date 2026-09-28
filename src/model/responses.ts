@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { ChatContentPart, ChatMessage, Completion, Model, ToolCall, ToolDefinition } from './contracts/index.js';
-import { ModelError, type ModelErrorCode, type OpenAIModelOptions } from './model.js';
-import { providerRequestId, responseInspection } from './request-inspection.js';
-import { parseResponsesUsage, type ModelRequestInspection, type ModelRequestRecord, type ModelUsage } from './model-usage.js';
-import { normalizeModelRequestDiagnostics, providerDiagnostics, upstreamAbortSource, type ModelRequestDiagnostics } from './model-diagnostics.js';
+import type { ChatContentPart, ChatMessage, Completion, Model, ToolCall, ToolDefinition } from '../contracts/index.js';
+import { ModelError, type ModelErrorCode, type OpenAIModelOptions } from './chat.js';
+import { providerRequestId, responseInspection } from '../observability/request-inspection.js';
+import { parseResponsesUsage, type ModelRequestInspection, type ModelRequestRecord, type ModelUsage } from '../observability/model-usage.js';
+import { normalizeModelRequestDiagnostics, providerDiagnostics, upstreamAbortSource, type ModelRequestDiagnostics } from '../observability/model-diagnostics.js';
 
 const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 const MAX_BYTES=2*1024*1024, MAX_ARGS=16*1024;

@@ -5,7 +5,7 @@ import type { ClientRequest, IncomingMessage } from 'node:http';
 import { isIP } from 'node:net';
 import ipaddr from 'ipaddr.js';
 import sharp from 'sharp';
-import { log } from './logger.js';
+import { log } from './observability/logger.js';
 
 export interface DownloadedImage {
   dataUrl: string;

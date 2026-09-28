@@ -6,8 +6,8 @@ import { CustomFaceTools, CUSTOM_FACE_TOOL_NAMES, buildCustomFaceToolDefinitions
 import { CustomFaceStore } from '../src/custom-face-store.js';
 import { CustomFaceCoordinator } from '../src/custom-face-coordinator.js';
 import { validateOriginalImage } from '../src/image-download.js';
-import { OneBotError } from '../src/client.js';
-import { DuplicateMessageAckError, UnverifiedMessageAckError } from '../src/operation-result.js';
+import { OneBotError } from '../src/onebot/client.js';
+import { DuplicateMessageAckError, UnverifiedMessageAckError } from '../src/onebot/operation-result.js';
 import type { Api, ChatContentPart, JsonObject, Memory, TimelineEntry, TurnContext } from '../src/contracts/index.js';
 
 const GROUP = '100000002', SELF = '123456789', USER = '100000001';

@@ -1,7 +1,7 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { setImmediate as tick } from 'node:timers/promises';
-import { ReactionObservations } from '../src/reaction-observations.js';
+import { ReactionObservations } from '../src/world/reaction-observations.js';
 import type { Api, JsonObject, Memory, TimelineEntry } from '../src/contracts/index.js';
 
 const group = '22';

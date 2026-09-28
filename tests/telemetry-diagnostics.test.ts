@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { TelemetryStore, type TelemetryRecord } from '../src/telemetry.js';
+import { TelemetryStore, type TelemetryRecord } from '../src/observability/telemetry.js';
 
 const base = (requestId: string): TelemetryRecord => ({
   requestId, startedAt: 100, endedAt: 110, durationMs: 10,
@@ -121,7 +121,7 @@ test('diagnostics getters, inherited values and proxies are never invoked or per
 test('concurrent old-schema openers serialize diagnostics migration', async t => {
   const path = temporaryDatabase(t);
   oldDatabase(path);
-  const moduleUrl = new URL('../src/telemetry.ts', import.meta.url).href;
+  const moduleUrl = new URL('../src/observability/telemetry.ts', import.meta.url).href;
   await Promise.all(Array.from({ length: 4 }, () => new Promise<void>((resolve, reject) => {
     const child = spawn(process.execPath, ['--import', 'tsx', '--input-type=module', '-e',
       `import { TelemetryStore } from ${JSON.stringify(moduleUrl)}; const store = new TelemetryStore(${JSON.stringify(path)}); store.close();`],

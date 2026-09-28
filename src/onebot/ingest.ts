@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
-import { extractMessageContent } from './message-content.js';
-import { imageReferences } from './image-tools.js';
+import { extractMessageContent } from '../world/message-content.js';
+import { imageReferences } from '../image-tools.js';
 import { forwardReferences } from './forward-references.js';
-import type { TimelineEntry } from './contracts/index.js';
-import type { EventSource, WorldEventInput, WorldEventStore } from './world-events.js';
+import type { TimelineEntry } from '../contracts/index.js';
+import type { EventSource, WorldEventInput, WorldEventStore } from '../world/events.js';
 
 const now = () => Date.now() / 1000;
 function object(value: unknown): value is Record<string, unknown> {

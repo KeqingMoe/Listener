@@ -6,8 +6,8 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Listener } from '../src/listener.js';
 import { ModelSession } from '../src/model-session.js';
-import { WorldEventStore } from '../src/world-events.js';
-import { ResponseStateExpiredError } from '../src/responses-model.js';
+import { WorldEventStore } from '../src/world/events.js';
+import { ResponseStateExpiredError } from '../src/model/responses.js';
 import { LISTENER_GROUP, type ChatMessage, type Completion, type Memory, type Model, type TimelineEntry } from '../src/contracts/index.js';
 import type { ListenerConfig } from '../src/config/listener.js';
 

@@ -8,7 +8,7 @@ import {
   type ToolDefinition,
   type TurnContext,
 } from "./contracts/index.js";
-import { submittedResult, writeFailure, afterDispatch } from './operation-result.js';
+import { submittedResult, writeFailure, afterDispatch } from './onebot/operation-result.js';
 
 /** NapCat v4.18.28: set_group_leave ignores is_dismiss; no dismiss tool is offered. */
 export const GROUP_ACTION_TOOL_NAMES = [

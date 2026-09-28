@@ -5,7 +5,7 @@ import {
   GROUP_FILE_TOOL_NAMES,
 } from "../src/group-file-tools.js";
 import { GroupRequestTools } from "../src/group-request-tools.js";
-import { OneBotError } from "../src/client.js";
+import { OneBotError } from "../src/onebot/client.js";
 import type { Api, JsonObject, TurnContext } from "../src/contracts/index.js";
 
 const ctx: TurnContext = {

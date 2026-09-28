@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ForwardTools, READ_FORWARD_TOOL, type ForwardConfig } from '../src/forward-tools.js';
-import { extractForward, forwardMarker, forwardReferences, sanitizeForwardReferences } from '../src/forward-references.js';
+import { extractForward, forwardMarker, forwardReferences, sanitizeForwardReferences } from '../src/onebot/forward-references.js';
 import { LISTENER_GROUP, type Api, type Memory, type TimelineEntry, type TurnContext } from '../src/contracts/index.js';
 
 const ctx: TurnContext = { groupId: LISTENER_GROUP, actorId: '123', messageId: '1', selfId: '999' };

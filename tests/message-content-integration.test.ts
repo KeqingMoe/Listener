@@ -4,7 +4,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {Listener,normalizeEvent} from '../src/listener.js';
 import {GroupTools} from '../src/group-tools.js';
 import {ReplyBatch} from '../src/reply-batch.js';
-import {projectMessage} from '../src/message-content.js';
+import {projectMessage} from '../src/world/message-content.js';
 import {LISTENER_GROUP,type Api,type Memory,type TimelineEntry,type ChatMessage,type Completion,type Model} from '../src/contracts/index.js';
 import type {ListenerConfig} from '../src/config/listener.js';
 const self='99999',actor='123';

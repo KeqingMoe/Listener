@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
 import { Listener } from "../src/listener.js";
 import { ModelSession } from "../src/model-session.js";
-import { WorldEventStore } from "../src/world-events.js";
+import { WorldEventStore } from "../src/world/events.js";
 import { SQLiteMemory } from "../src/memory.js";
 import {
   LISTENER_GROUP,

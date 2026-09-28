@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { resolveGroupId, type Api, type JsonObject, type ToolDefinition, type TurnContext } from './contracts/index.js';
 import { downloadGroupText, type GroupTextDownloader } from './group-file-download.js';
-import { afterDispatch, submittedResult, writeFailure } from './operation-result.js';
+import { afterDispatch, submittedResult, writeFailure } from './onebot/operation-result.js';
 
 export const GROUP_FILE_TOOL_NAMES = ['get_group_file_space', 'list_group_files', 'read_group_text_file', 'upload_group_text_file', 'create_group_folder', 'delete_group_file', 'delete_group_folder'] as const;
 export type GroupFileToolName = typeof GROUP_FILE_TOOL_NAMES[number];
