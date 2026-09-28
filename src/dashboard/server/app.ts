@@ -11,6 +11,7 @@ import {
 import type { Range } from "../contracts/contracts.js";
 import { registerReviewRoutes } from './review-routes.js';
 import { ReviewRepository } from './review-repository.js';
+import { buildRequestTrends } from './request-trends.js';
 import { isIP } from "node:net";
 import { AuthStore, sessionToken } from "./auth.js";
 import { authWrites, registerAuthRoutes } from "./auth-routes.js";
@@ -172,6 +173,11 @@ export function buildApp(options: AppOptions) {
       now: now(),
       availability: repository.availability(),
     };
+  });
+  app.get("/api/request-trends", async (req) => {
+    const { range, groupId } = parse(req.query);
+    const requests = reviewRepository.requests(range, groupId);
+    return buildRequestTrends(range, repository.availability(), requests);
   });
   app.get("/api/overview", async (req) => {
     const { range, groupId } = parse(req.query),
