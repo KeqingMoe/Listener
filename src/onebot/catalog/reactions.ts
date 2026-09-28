@@ -1,5 +1,5 @@
 import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
-import { FACE_CATALOG_VERSION, FACE_DATA_LIMIT, extractFaceCatalog } from '../../sync-faces.js';
+import { FACE_CATALOG_VERSION, FACE_DATA_LIMIT, extractFaceCatalog } from '../../cli/sync-faces.js';
 import type { ToolDefinition } from '../../contracts/index.js';
 
 export interface ReactionEntry { readonly id: string; readonly name: string; readonly kind: 'face'|'emoji'; readonly emoji?: string }

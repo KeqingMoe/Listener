@@ -132,7 +132,7 @@ test('multiline inline tables and trailing commas are accepted with same semanti
  const f=fixture(t,'[defaults]\nreply = {\n mention=false,\n random={probability=0.2,},\n}\n');assert.equal(f.load().resolveGroup('22').reply.mention,false);assert.deepEqual(f.load().resolveGroup('22').reply.random,{probability:0.2,cooldownMs:60000,maxPerMinute:2});
 });
 test('syntax errors and check CLI never expose snippets or secret markers',t=>{
- const f=fixture(t),cli=resolve('src/config-check.ts'),tsx=resolve('node_modules/tsx/dist/loader.mjs'),env={PATH:process.env.PATH,ONEBOT_ACCESS_TOKEN:'SENSITIVE_TOKEN',OPENAI_API_KEY:'SENSITIVE_MODEL_KEY'};
+ const f=fixture(t),cli=resolve('src/cli/config-check.ts'),tsx=resolve('node_modules/tsx/dist/loader.mjs'),env={PATH:process.env.PATH,ONEBOT_ACCESS_TOKEN:'SENSITIVE_TOKEN',OPENAI_API_KEY:'SENSITIVE_MODEL_KEY'};
  const ok=spawnSync(process.execPath,['--import',tsx,cli],{cwd:f.dir,env,encoding:'utf8'});assert.equal(ok.status,0,ok.stderr);assert.match(ok.stdout,/config valid/);assert.doesNotMatch(ok.stdout+ok.stderr,/SENSITIVE/);
  f.config('[model]\nmodel="SENSITIVE_PARSE');assert.throws(()=>f.load(),e=>e instanceof ConfigError&&!e.message.includes('SENSITIVE'));const bad=spawnSync(process.execPath,['--import',tsx,cli],{cwd:f.dir,env,encoding:'utf8'});assert.equal(bad.status,1);assert.doesNotMatch(bad.stderr,/SENSITIVE/);
 });

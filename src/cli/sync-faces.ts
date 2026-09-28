@@ -80,7 +80,7 @@ export async function syncFaces(): Promise<void> {
   const licenseText = new TextDecoder('utf-8', { fatal: true }).decode(license);
   if (!licenseText.includes('Limited Redistribution License for NapCat') || !licenseText.includes('Mlikiowa')) throw new Error('Unexpected QQ face source license');
   const catalog = extractFaceCatalog(JSON.parse(decoded));
-  const directory = new URL('../data/', import.meta.url);
+  const directory = new URL('../../data/', import.meta.url);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const info = await lstat(directory);
   if (info.isSymbolicLink() || !info.isDirectory()) throw new Error('Invalid QQ face data directory');

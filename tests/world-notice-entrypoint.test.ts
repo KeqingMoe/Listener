@@ -339,7 +339,7 @@ enabled = false
         [
           "--import",
           import.meta.resolve("tsx"),
-          fileURLToPath(new URL("../src/index.ts", import.meta.url)),
+          fileURLToPath(new URL("../src/app/bot.ts", import.meta.url)),
         ],
         {
           cwd: dir,

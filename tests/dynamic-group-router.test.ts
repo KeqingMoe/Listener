@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {GroupRouter,type GroupHandler} from '../src/group-router.js';
+import {GroupRouter,type GroupHandler} from '../src/app/group-router.js';
 const message=(groupId:string)=>({post_type:'message',message_type:'group',self_id:'99',group_id:groupId,user_id:'7',message_id:1,time:Date.now()/1000,message:[{type:'text',data:{text:'hello'}}]});
 const leave=(groupId:string,user='99')=>({post_type:'notice',notice_type:'group_decrease',sub_type:'leave',self_id:'99',group_id:groupId,user_id:user,time:Date.now()/1000});
 const join=(groupId:string)=>({...leave(groupId),notice_type:'group_increase',sub_type:'approve'});

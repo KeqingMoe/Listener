@@ -96,7 +96,7 @@ enabled = true
 [groups."${B}"]
 enabled = true
 `);
-  child=spawn(process.execPath,['--import',import.meta.resolve('tsx'),fileURLToPath(new URL('../src/index.ts',import.meta.url))],{
+  child=spawn(process.execPath,['--import',import.meta.resolve('tsx'),fileURLToPath(new URL('../src/app/bot.ts',import.meta.url))],{
    cwd:dir,env:{PATH:process.env.PATH??'',HOME:dir,NODE_NO_WARNINGS:'1',FIXTURE_ONEBOT_TOKEN:'fixture-onebot-token',FIXTURE_MODEL_KEY:'fixture-model-key'},stdio:['ignore','pipe','pipe'],
   });
   childExited=new Promise((resolve,reject)=>{child!.once('error',error=>{fail(error);reject(error);});child!.once('close',(code,signal)=>{resolve({code,signal});notify();});});

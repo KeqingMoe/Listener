@@ -79,7 +79,7 @@ test('inspection identifies all-group policy but does not assert membership or c
 
 test('CLI supports explicit group inspection, ordinary checking, and rejects malformed arguments safely', t => {
   const { directory } = fixture(t, '[bot]\nowner_id="100000001"\n[groups."22"]\nenabled=true\n');
-  const run = (...args: string[]) => spawnSync(process.execPath, [resolve('node_modules/tsx/dist/cli.mjs'), resolve('src/config-check.ts'), ...args], {
+  const run = (...args: string[]) => spawnSync(process.execPath, [resolve('node_modules/tsx/dist/cli.mjs'), resolve('src/cli/config-check.ts'), ...args], {
     cwd: directory, encoding: 'utf8', env: { ...process.env, ONEBOT_ACCESS_TOKEN: 'PRIVATE_ENV_TOKEN', OPENAI_API_KEY: 'PRIVATE_ENV_MODEL_KEY' },
   });
   const normal = run();

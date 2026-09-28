@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import test from 'node:test';
-import { LogReader, parseLogArgs } from '../src/logs.js';
+import { LogReader, parseLogArgs } from '../src/cli/logs.js';
 import { managedLogFilename } from '../src/observability/logger.js';
 
 const turn = 't_0123456789abcdef';
@@ -128,7 +128,7 @@ test('viewer exits on SIGTERM with actual unread stdout pipe', async t => {
   for (let file = 0; file < 4; file++) {
     await writeFile(join(root, name(file)), Array.from({ length: 250 }, (_, index) => row(file * 250 + index, { tools: Array(32).fill('get_group_members') })).join(''));
   }
-  const child = spawn(process.execPath, ['--import', import.meta.resolve('tsx'), resolve('src/logs.ts'), '--directory', root, '--follow', '--lines', '1000'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, ['--import', import.meta.resolve('tsx'), resolve('src/cli/logs.ts'), '--directory', root, '--follow', '--lines', '1000'], { stdio: ['ignore', 'pipe', 'pipe'] });
   child.stderr.resume();
   // 'readable' observes availability without consuming any bytes from stdout.
   let signalTimer: ReturnType<typeof setTimeout> | undefined;
@@ -143,7 +143,7 @@ test('viewer exits on SIGTERM with actual unread stdout pipe', async t => {
 
 test('CLI help works without loading a config or printing raw paths', async t => {
   const root = await fixture(t);
-  const executable = resolve('src/logs.ts');
+  const executable = resolve('src/cli/logs.ts');
   const tsxLoader = import.meta.resolve('tsx');
   const { stdout, stderr } = await promisify(execFile)(process.execPath, ['--import', tsxLoader, executable, '--help'], { cwd: root, timeout: 5000 });
   assert.match(stdout, /--follow/);

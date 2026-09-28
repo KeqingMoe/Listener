@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {setTimeout as delay,setImmediate as flush} from 'node:timers/promises';
 import {Listener} from '../src/agent/listener.js';
-import {GroupRouter} from '../src/group-router.js';
+import {GroupRouter} from '../src/app/group-router.js';
 import {OWNER_ID,type Api,type ChatMessage,type Completion,type JsonObject,type Memory,type Model,type TimelineEntry,type ToolDefinition} from '../src/contracts/index.js';
 import type {ListenerConfig} from '../src/config/listener.js';
 

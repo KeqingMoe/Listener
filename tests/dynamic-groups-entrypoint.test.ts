@@ -150,7 +150,7 @@ file = false
 `);
     watcher = watch(dir, { recursive: true }, notify);
     watcher.on('error', fail);
-    child = spawn(process.execPath, ['--import', import.meta.resolve('tsx'), fileURLToPath(new URL('../src/index.ts', import.meta.url))], {
+    child = spawn(process.execPath, ['--import', import.meta.resolve('tsx'), fileURLToPath(new URL('../src/app/bot.ts', import.meta.url))], {
       cwd: dir, env: { PATH: process.env.PATH ?? '', HOME: dir, NODE_NO_WARNINGS: '1' }, stdio: ['ignore', 'pipe', 'pipe'],
     });
     exit = new Promise((resolve, reject) => {

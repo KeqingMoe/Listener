@@ -46,7 +46,7 @@ test('model settings are mandatory before connecting; maintenance commands do no
   });
   const start = () => {
     output = '';
-    child = spawn(process.execPath, ['--import', import.meta.resolve('tsx'), fileURLToPath(new URL('../src/index.ts', import.meta.url))], {
+    child = spawn(process.execPath, ['--import', import.meta.resolve('tsx'), fileURLToPath(new URL('../src/app/bot.ts', import.meta.url))], {
       cwd: dir, env: { PATH: process.env.PATH ?? '', HOME: dir, NODE_NO_WARNINGS: '1' }, stdio: ['ignore', 'pipe', 'pipe'],
     });
     exit = new Promise<number | null>((resolve, reject) => { child!.once('error', reject); child!.once('close', code => { resolve(code); notify(); }); });
