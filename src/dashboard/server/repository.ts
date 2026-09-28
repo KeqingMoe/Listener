@@ -147,6 +147,31 @@ export class Repository {
       return null;
     }
   }
+  private readonly syncConnections = new WeakMap<DatabaseSync, number>();
+  private syncConnectionSequence = 0;
+  /** Cheap resource invalidation, NOT a SQL row change feed. Versions are meaningful
+   * only on the same live SQLite connection; file/WAL identities cover replacement.
+   * World DBs are read only by health, which resource sync always recomputes. */
+  resourceVersion(): string | null {
+    const files = (path: string) => [path, `${path}-wal`, `${path}-shm`, `${path}-journal`].map(file => {
+      try { const s = lstatSync(file, { bigint: true }); return [String(s.dev), String(s.ino), String(s.size), String(s.mtimeNs), String(s.ctimeNs), s.isFile()]; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
+    });
+    try {
+      const sources = [{ path: this.sources.telemetryPath, db: this.telemetry() }, ...this.groups.map(g => ({ path: g.sessionPath, db: this.session(g.groupId) }))];
+      return JSON.stringify(sources.map(({ path, db }) => {
+        const identities = files(path);
+        if (!db) {
+          // A truly absent file is observable on every poll; schema/permission/
+          // transient failures of an existing file cannot be proven unchanged.
+          if (identities[0] !== null) throw new Error('unavailable_source');
+          return [path, 'missing', identities];
+        }
+        if (!this.syncConnections.has(db)) this.syncConnections.set(db, ++this.syncConnectionSequence);
+        return [path, this.syncConnections.get(db), db.prepare('PRAGMA data_version').get()?.data_version, identities];
+      }));
+    } catch { return null; }
+  }
   telemetry(): DatabaseSync | null { return this.open(this.sources.telemetryPath); }
   session(groupId: string) {
     const source = this.groups.find((g) => g.groupId === groupId);

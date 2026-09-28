@@ -1,6 +1,6 @@
 import type { Availability, Range } from '../contracts/contracts.js';
 import type { ReviewRequest } from '../contracts/review.js';
-import type { RequestTrendBucket, RequestTrendsResponse } from '../contracts/request-trends.js';
+import type { RequestTrendBucket, RequestTrendPoint, RequestTrendsResponse } from '../contracts/request-trends.js';
 import { ResourceLimit } from './repository.js';
 
 /** Same hard ceiling as ReviewRepository: never return a silently sampled scatter plot. */
@@ -15,7 +15,6 @@ export function requestTrendBucketMs(range: Range): number {
 /** Pure projection of already authorized, bounded ReviewRepository rows. */
 export function buildRequestTrends(range: Range, availability: Availability, requests: readonly ReviewRequest[]): RequestTrendsResponse {
   if (requests.length > MAX_REQUEST_TREND_POINTS) throw new ResourceLimit();
-  const bucketMs = requestTrendBucketMs(range);
   const points = requests.map(r => ({
     startedAt: r.startedAt, outcome: r.outcome,
     // A display fallback duration must not imply a known request interval.
@@ -23,6 +22,12 @@ export function buildRequestTrends(range: Range, availability: Availability, req
     inputTokens: r.inputTokens, totalInputTokens: r.totalInputTokens,
     cachedInputTokens: r.cachedInputTokens, outputTokens: r.outputTokens, tps: r.tps, cacheHitRate: r.cacheHitRate,
   }));
+  return buildRequestTrendBuckets(range, availability, points);
+}
+/** Rebuild exact buckets from a bounded metadata-only cached point set. */
+export function buildRequestTrendBuckets(range: Range, availability: Availability, points: RequestTrendPoint[]): RequestTrendsResponse {
+  if (points.length > MAX_REQUEST_TREND_POINTS) throw new ResourceLimit();
+  const bucketMs = requestTrendBucketMs(range);
   const buckets: RequestTrendBucket[] = [];
   if (availability.telemetry) {
     const first = Math.floor(range.since / bucketMs) * bucketMs;

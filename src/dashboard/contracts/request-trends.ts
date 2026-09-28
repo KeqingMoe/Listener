@@ -14,6 +14,15 @@ export interface RequestTrendBucket {
   total: number;
 }
 /** GET /api/request-trends?since&until&groupId; authenticated, range <=31 days. */
+/** Stable, collision-free JSON tuple of authorized group id and request id. */
+export type RequestTrendSyncPoint = RequestTrendPoint & { key: string };
+export interface RequestTrendsSyncResponse extends Omit<RequestTrendsResponse, 'points'> {
+  mode: 'snapshot' | 'delta';
+  cursor: string;
+  /** Snapshot: complete point set. Delta: replace these keys. */
+  upserts: RequestTrendSyncPoint[];
+  removals: string[];
+}
 export interface RequestTrendsResponse {
   range: Range;
   availability: Availability;

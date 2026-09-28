@@ -38,14 +38,24 @@ export class ReviewRepository {
   constructor(readonly base: Repository) {}
   private clean(value: unknown) { return sanitizeInspectionValue(value, this.base.sources.inspectionSecrets ?? []); }
   private text(value: unknown): string | null { const c = this.clean(value).value; return typeof c === 'string' && c.trim() ? c : c && typeof c === 'object' ? JSON.stringify(c) : null; }
-  private rows(table: string, groupId: string, range?: Range, id?: string, scope?: Scope): Row[] {
-    const db = this.base.telemetry(); if (!db) return [];
+  private rows(table: string, groupId: string, range?: Range, id?: string, scope?: Scope, trendOnly = false, telemetry?: DatabaseSync | null): Row[] {
+    const db = telemetry === undefined ? this.base.telemetry() : telemetry; if (!db) return [];
     const cols = columns(db, table); if (!cols.has('group_id') || !cols.has('request_id')) return [];
-    const selection = fields.map(f => cols.has(f) ? f : `NULL AS ${f}`).join(',');
+    const trendFields = new Set(['request_id','group_id','started_at','ended_at','duration_ms','status','error_code','input_tokens','cached_input_tokens','output_tokens']);
+    const selection = fields.map(f => cols.has(f) && (!trendOnly || trendFields.has(f)) ? f : `NULL AS ${f}`).join(',');
     const clauses:string[]=[],params:string[]=[];
     if(scope)for(const [key,values] of [['request_id',scope.requestIds],['turn_id',scope.turnIds],['wake_id',scope.wakeIds]] as const)if(cols.has(key)&&values?.length){clauses.push(`${key} IN (${values.map(()=>'?').join(',')})`);params.push(...values);}
     if(scope&&!clauses.length)return [];
-    return cap(db.prepare(`SELECT ${selection} FROM ${table} WHERE group_id=?${range ? ' AND started_at BETWEEN ? AND ?' : ''}${id ? ' AND request_id=?' : ''}${scope?` AND (${clauses.join(' OR ')})`:''} LIMIT 10001`).all(groupId, ...(range ? [range.since, range.until] : []), ...(id ? [id] : []),...params) as Row[]);
+    // Key-only trend refreshes must seek by request identity, not scan a time-range index.
+    let indexed = '';
+    if (trendOnly && scope?.requestIds?.length) {
+      const index = db.prepare(`PRAGMA index_list(${table})`).all().find(i => {
+        const keys = db.prepare(`PRAGMA index_info(${JSON.stringify(String(i.name))})`).all().map(c=>c.name);
+        return keys[0] === 'request_id' || (keys[0] === 'group_id' && keys[1] === 'request_id');
+      });
+      if (index) indexed = ` INDEXED BY ${JSON.stringify(String(index.name))}`;
+    }
+    return cap(db.prepare(`SELECT ${selection} FROM ${table}${indexed} WHERE group_id=?${range ? ' AND started_at BETWEEN ? AND ?' : ''}${id ? ' AND request_id=?' : ''}${scope?` AND (${clauses.join(' OR ')})`:''} LIMIT 10001`).all(groupId, ...(range ? [range.since, range.until] : []), ...(id ? [id] : []),...params) as Row[]);
   }
   private messages(groupId: string, scope: Scope, content=false, budget=newBudget()): Row[] {
     const db = this.base.session(groupId); if (!db) return [];
@@ -67,17 +77,17 @@ export class ReviewRepository {
     }
     return { messages, byRequest, byTurn };
   }
-  requests(range?: Range, groupId?: string, id?: string, scope?: Scope): ReviewRequest[] {
+  requests(range?: Range, groupId?: string, id?: string, scope?: Scope, options?: { skipAssociations?: boolean; telemetry?: DatabaseSync | null }): ReviewRequest[] {
     const result: ReviewRequest[] = [];
     for (const g of this.base.groups.filter(g => !groupId || g.groupId === groupId)) {
-      const telemetry = this.rows('model_requests',g.groupId,range,id,scope), inspection = this.rows('model_request_inspections',g.groupId,range,id,scope);
+      const telemetry = this.rows('model_requests',g.groupId,range,id,scope,options?.skipAssociations,options?.telemetry), inspection = this.rows('model_request_inspections',g.groupId,range,id,scope,options?.skipAssociations,options?.telemetry);
       const primaryById = new Map(telemetry.map(row=>[row.request_id,row]));
       const merged = new Map<string,Row>();
       for (const row of inspection) merged.set(row.request_id,{...row,hasInspection:true});
       for (const row of telemetry) { const old = merged.get(row.request_id); merged.set(row.request_id,{...old,...Object.fromEntries(Object.entries(row).filter(([,v])=>v!==null)),hasInspection:!!old}); }
       if (!merged.size) continue;
       const legacy = [...merged.values()].filter(row=>!s(row.wake_id));
-      const a = legacy.length ? this.associations(g.groupId,{requestIds:legacy.map(row=>String(row.request_id)),turnIds:[...new Set(legacy.map(row=>s(row.turn_id)).filter((v):v is string=>v!==null))]}) : {byRequest:new Map<string,string>(),byTurn:new Map<string,Set<string>>()};
+      const a = legacy.length && !options?.skipAssociations ? this.associations(g.groupId,{requestIds:legacy.map(row=>String(row.request_id)),turnIds:[...new Set(legacy.map(row=>s(row.turn_id)).filter((v):v is string=>v!==null))]}) : {byRequest:new Map<string,string>(),byTurn:new Map<string,Set<string>>()};
       for (const row of merged.values()) {
         // Inspection recovery writes ended_at=restart time, NOT the HTTP end.
         // Only an actual primary measurement can establish interrupted request timing.

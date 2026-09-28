@@ -12,6 +12,8 @@ import type { Range } from "../contracts/contracts.js";
 import { registerReviewRoutes } from './review-routes.js';
 import { ReviewRepository } from './review-repository.js';
 import { buildRequestTrends } from './request-trends.js';
+import { RequestTrendsSync } from './request-trends-sync.js';
+import { registerResourceSync } from './resource-sync.js';
 import { isIP } from "node:net";
 import { AuthStore, sessionToken } from "./auth.js";
 import { authWrites, registerAuthRoutes } from "./auth-routes.js";
@@ -174,6 +176,12 @@ export function buildApp(options: AppOptions) {
       availability: repository.availability(),
     };
   });
+  const trendsSync = new RequestTrendsSync(reviewRepository, now);
+  app.get('/api/request-trends/sync', async (req) => {
+    const { range, groupId, q } = parse(req.query, ['cursor']);
+    const fingerprint = createHash('sha256').update(sessionToken(req.headers.cookie) ?? '').digest('hex');
+    return trendsSync.sync(range, groupId, q.cursor, fingerprint);
+  });
   app.get("/api/request-trends", async (req) => {
     const { range, groupId } = parse(req.query);
     const requests = reviewRepository.requests(range, groupId);
@@ -290,6 +298,7 @@ export function buildApp(options: AppOptions) {
     };
   });
   registerReviewRoutes(app, repository, now);
+  registerResourceSync(app, repository, now);
   if (options.webRoot && existsSync(options.webRoot)) {
     app.register(fastifyStatic, {
       root: options.webRoot,
