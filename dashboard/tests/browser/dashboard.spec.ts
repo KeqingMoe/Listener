@@ -1,5 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
 import type { UsageSummary, WakeItem } from "../../shared/contracts.js";
+import { performanceMetrics } from '../../shared/metrics.js';
+import { buildApp } from '../../server/app.js';
+import { AuthStore } from '../../server/auth.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 const now = Date.now();
 const availability = {
   telemetry: true,
@@ -17,13 +23,17 @@ const usage: UsageSummary = {
   cachedInputTokens: 1500,
   uncachedInputTokens: 500,
   cacheHitRate: 0.75,
-  cacheCoverage: 2 / 3,
-  knownInputRequests: 3,
-  knownCacheRequests: 2,
+  running: 0,
+  interrupted: 0,
+  tps: null,
+  performance: performanceMetrics([]),
   durationP50Ms: 120,
   durationP95Ms: 900,
 };
 const wake: WakeItem = {
+  cacheHitRate: 0.75,
+  tps: null,
+  performance: performanceMetrics([], { attribution: 'wake' }),
   wakeId: "synthetic-wake",
   groupId: "10001",
   sessionId: "synthetic-session",
@@ -47,6 +57,8 @@ async function mock(
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
     if (!url.pathname.startsWith("/api/")) return route.continue();
+    if (url.pathname === '/api/auth/session')
+      return route.fulfill({ json: { authenticated: true, configured: true } });
     requests.push(url.toString());
     if (options.fail && url.pathname === "/api/overview")
       return route.fulfill({
@@ -156,6 +168,81 @@ async function mock(
   });
   return requests;
 }
+// Exercise real Fastify authentication with synthetic private storage, without a network API server.
+async function withAuthBackend(page: Page, password: string | undefined, run: (business: string[]) => Promise<void>) {
+  const dir = mkdtempSync(join(tmpdir(), 'dashboard-browser-auth-'));
+  const authStore = new AuthStore({ path: join(dir, 'auth.sqlite'), password });
+  const app = buildApp({ auth: authStore, telemetryPath: join(dir, 'missing.sqlite'), groups: [] });
+  const business: string[] = [];
+  await page.route('**/api/**', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (!url.pathname.startsWith('/api/')) return route.continue();
+    if (!url.pathname.startsWith('/api/auth/')) business.push(url.pathname);
+    const headers = await request.allHeaders();
+    headers.host = url.host;
+    const result = await app.inject({
+      method: request.method() as 'GET' | 'POST', url: url.pathname + url.search,
+      headers, ...(request.postData() !== null ? { payload: request.postData()! } : {}),
+    });
+    const responseHeaders: Record<string, string> = { 'content-type': 'application/json' };
+    const cookie = result.headers['set-cookie'];
+    if (typeof cookie === 'string') responseHeaders['set-cookie'] = cookie;
+    await route.fulfill({ status: result.statusCode, headers: responseHeaders, body: result.body });
+  });
+  try { await run(business); }
+  finally {
+    await page.unrouteAll({ behavior: 'wait' });
+    await app.close();
+    authStore.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('真实密码登录、刷新恢复、退出与过期门禁', async ({ page }) => {
+  await withAuthBackend(page, 'synthetic-browser-password', async business => {
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: '登录', exact: true })).toBeVisible();
+    expect(business).toEqual([]);
+    await expect(page.locator('main')).toHaveCount(0);
+    await page.getByLabel('密码', { exact: true }).fill('wrong-password');
+    await page.getByRole('button', { name: '登录', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('密码不正确');
+    await page.getByLabel('密码', { exact: true }).fill('synthetic-browser-password');
+    await page.getByRole('button', { name: '登录', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '总览', exact: true })).toBeVisible();
+    await expect.poll(() => business.includes('/api/meta')).toBe(true);
+    const cookies = await page.context().cookies();
+    expect(cookies.some(cookie => cookie.httpOnly && cookie.sameSite === 'Strict')).toBe(true);
+    await page.reload();
+    await expect(page.getByRole('heading', { name: '总览', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '退出', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '登录', exact: true })).toBeVisible();
+    await expect(page.locator('main')).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByRole('heading', { name: '登录', exact: true })).toBeVisible();
+    await page.getByLabel('密码', { exact: true }).fill('synthetic-browser-password');
+    await page.getByRole('button', { name: '登录', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '总览', exact: true })).toBeVisible();
+    await page.context().clearCookies();
+    await page.getByRole('button', { name: '刷新数据' }).click();
+    await expect(page.getByRole('heading', { name: '登录', exact: true })).toBeVisible();
+    await expect(page.locator('main')).toHaveCount(0);
+  });
+});
+for (const password of [undefined, 'short']) {
+  test(`密码${password === undefined ? '未配置' : '配置无效'}时拒绝访问`, async ({ page }) => {
+    await withAuthBackend(page, password, async business => {
+      await page.goto('/');
+      await expect(page.getByRole('heading', { name: '拒绝访问' })).toBeVisible();
+      await expect(page.getByRole('alert')).toContainText('DASHBOARD_PASSWORD');
+      await expect(page.getByLabel('密码', { exact: true })).toHaveCount(0);
+      await expect(page.locator('main')).toHaveCount(0);
+      expect(business).toEqual([]);
+    });
+  });
+}
+
 test("总览、筛选和刷新可用，不产生浏览器错误", async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));

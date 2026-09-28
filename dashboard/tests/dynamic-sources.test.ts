@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, renameSync, writeFileSync, readFileSync, mkdirSync
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { buildApp } from '../server/app.js';
+import { buildAuthenticatedApp as buildApp } from './auth-fixture.js';
 import { Repository, type GroupSource } from '../server/repository.js';
 import { loadAppConfig } from '../../src/config-loader.js';
 import { GroupRegistry } from '../../src/group-registry.js';

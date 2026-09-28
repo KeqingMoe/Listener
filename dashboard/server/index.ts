@@ -1,8 +1,9 @@
 import { resolve } from "node:path";
-import { loadAppConfig } from "../../src/config-loader.js";
+import { dashboardPassword, loadAppConfig } from "../../src/config-loader.js";
 import { dashboardGroupSources } from "./sources.js";
 import { buildApp } from "./app.js";
 import { parseListenOptions } from "./cli.js";
+import { AuthStore } from "./auth.js";
 const { host, port, help } = parseListenOptions(process.argv.slice(2));
 if (help) {
   console.log(
@@ -11,7 +12,16 @@ if (help) {
   process.exit(0);
 }
 const config = loadAppConfig();
+const authDirectory = resolve(config.storage.directory, "dashboard-auth");
+const password = dashboardPassword(config);
+const auth = new AuthStore({
+  path: resolve(authDirectory, "auth.sqlite"),
+  password,
+  secureCookie: process.env.DASHBOARD_COOKIE_SECURE === "1",
+});
 const app = buildApp({
+  auth,
+  inspectionSecrets: [config.onebot.token, config.model.apiKey, ...(password ? [password] : [])],
   // Historical read authorization is separate from live bot membership/routing.
   getGroups: () => dashboardGroupSources(config),
   telemetryPath: config.storage.telemetryPath,
@@ -23,6 +33,7 @@ const stop = async () => {
   if (stopping) return;
   stopping = true;
   await app.close();
+  auth.close();
 };
 process.once("SIGTERM", () => {
   void stop();

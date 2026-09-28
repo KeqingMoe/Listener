@@ -47,11 +47,6 @@ const cards = computed(() => {
           number(s.uncachedInputTokens),
           "仅统计缓存字段已知的请求",
         ],
-        [
-          "缓存数据覆盖率",
-          percent(s.cacheCoverage),
-          `缓存已知 ${number(s.knownCacheRequests)} 次 · 输入已知 ${number(s.knownInputRequests)} 次`,
-        ],
       ]
     : [];
 });
@@ -97,7 +92,7 @@ const rank = computed(() =>
     <div class="page-heading">
       <div class="eyebrow">运行概况</div>
       <h1>总览</h1>
-      <p>理解模型用量、缓存覆盖与各群运行情况。</p>
+      <p>理解模型用量、缓存命中与各群运行情况。</p>
     </div>
     <DataState :loading="loading" :error="error" @retry="retry"
       ><template v-if="data"
@@ -211,7 +206,6 @@ const rank = computed(() =>
                     <th>输入 tokens</th>
                     <th>输出 tokens</th>
                     <th>缓存命中率</th>
-                    <th>数据覆盖率</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -221,7 +215,6 @@ const rank = computed(() =>
                     <td>{{ number(g.inputTokens) }}</td>
                     <td>{{ number(g.outputTokens) }}</td>
                     <td>{{ percent(g.cacheHitRate) }}</td>
-                    <td>{{ percent(g.cacheCoverage) }}</td>
                   </tr>
                 </tbody>
               </table>

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildApp } from "../server/app.js";
+import { buildAuthenticatedApp as buildApp } from "./auth-fixture.js";
 import { parseListenOptions } from "../server/cli.js";
 const options = {
   groups: [],

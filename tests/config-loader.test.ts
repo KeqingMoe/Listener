@@ -5,7 +5,7 @@ import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,existsSync} from
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {spawnSync} from 'node:child_process';
-import {ConfigError,loadAppConfig} from '../src/config-loader.js';
+import {ConfigError,loadAppConfig,dashboardPassword} from '../src/config-loader.js';
 import {OWNER_ID} from '../src/contracts.js';
 function fixture(t:{after(fn:()=>void):void},source=''){
  const dir=mkdtempSync(join(tmpdir(),'config-schema-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'默认人设');
@@ -75,6 +75,28 @@ test('model credentials and name are required even with no enabled groups; no AI
   f.config(`[runtime]\nai_enabled=${value}`);
   assert.throws(()=>f.load(),e=>e instanceof ConfigError&&e.message.includes('runtime')&&e.message.includes('未知字段'));
  }
+});
+test('dashboard dotenv credential is a private startup snapshot with explicit environment precedence',t=>{
+ const f=fixture(t),value='synthetic-dashboard-secret';
+ assert.equal(dashboardPassword(f.load()),undefined);
+ f.dotenv(`DASHBOARD_PASSWORD=" ${value} "`);
+ const loaded=f.load();assert.equal(dashboardPassword(loaded),` ${value} `);
+ assert.equal(JSON.stringify(loaded).includes(value),false);
+ assert.equal(JSON.stringify(loaded.resolveGroup('22')).includes(value),false);
+ const env={ONEBOT_ACCESS_TOKEN:'token',OPENAI_API_KEY:'key',DASHBOARD_PASSWORD:'environment-secret'};
+ assert.equal(dashboardPassword(f.load(env)),'environment-secret');
+ assert.equal(dashboardPassword(f.load({...env,DASHBOARD_PASSWORD:''})), '');
+ assert.equal(env.DASHBOARD_PASSWORD,'environment-secret');
+ f.dotenv('DASHBOARD_PASSWORD=changed-file-secret');
+ assert.equal(dashboardPassword(loaded),` ${value} `);
+ for(const invalid of ['','short','line\\nbreak']){
+   f.dotenv(`DASHBOARD_PASSWORD="${invalid}"`);
+   assert.equal(typeof dashboardPassword(f.load()),'string');
+ }
+ writeFileSync(join(f.dir,'alternate.env'),'DASHBOARD_PASSWORD=alternate-secret');
+ assert.equal(dashboardPassword(f.load({ONEBOT_ACCESS_TOKEN:'token',OPENAI_API_KEY:'key'},'alternate.env')),'alternate-secret');
+ f.dotenv(`DASHBOARD_PASSWORD=${value}\nUNRELATED=PRIVATE_SENTINEL`);
+ assert.throws(()=>f.load(),e=>e instanceof ConfigError&&!e.message.includes(value)&&!e.message.includes('PRIVATE_SENTINEL'));
 });
 test('dotenv rejects behavioral and unrelated entries; process variables cannot supply policy',t=>{
  const f=fixture(t);for(const key of ['AI_ENABLED','OPENAI_MODEL','ONEBOT_WS_URL','UNRELATED','OPENAI_API_KEY_OLD']){f.dotenv(`ONEBOT_ACCESS_TOKEN=token\n${key}=SENSITIVE_VALUE`);assert.throws(()=>f.load(),e=>e instanceof ConfigError&&!e.message.includes('SENSITIVE_VALUE')&&!e.message.includes(key));}

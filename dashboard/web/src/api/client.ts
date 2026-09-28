@@ -1,10 +1,20 @@
+import { rejectConfiguration } from '../composables/useAuth';
+
 export async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`/api/${path}`, {
     signal,
     headers: { Accept: "application/json" },
     credentials: "same-origin",
   });
+  if (response.status === 401) window.dispatchEvent(new Event('dashboard:unauthorized'));
   if (!response.ok) {
+    if (response.status === 503) {
+      const body = await response.clone().json().catch(() => ({}));
+      if (body.error === 'password_not_configured' || body.error === 'password_invalid_configuration') {
+        rejectConfiguration(body.error);
+        throw new Error('拒绝访问：面板密码配置不可用。');
+      }
+    }
     const messages: Record<number, string> = {
       400: "筛选参数无效，请重新选择。",
       403: "当前访问未获授权。",
@@ -19,18 +29,18 @@ export async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   return response.json() as Promise<T>;
 }
 export const number = (value: number | null | undefined) =>
-  value == null ? "未知" : new Intl.NumberFormat("zh-CN").format(value);
+  value == null ? "—" : new Intl.NumberFormat("zh-CN").format(value);
 export const percent = (value: number | null | undefined) =>
-  value == null ? "未知" : `${(value * 100).toFixed(1)}%`;
+  value == null ? "—" : `${(value * 100).toFixed(1)}%`;
 export const duration = (value: number | null | undefined) =>
   value == null
-    ? "未知"
+    ? "—"
     : value < 1000
       ? `${Math.round(value)} ms`
       : `${(value / 1000).toFixed(2)} s`;
 export const time = (value: number | null | undefined) =>
   value == null
-    ? "未知"
+    ? "—"
     : new Date(value).toLocaleString("zh-CN", { hour12: false });
 const diagnosticKeys = {
   request: ["abortSource", "providerCategory", "providerParameter", "failureStage", "requestMode", "requestTimeoutMs"],
@@ -49,10 +59,12 @@ export function diagnosticRows(value: unknown, kind: keyof typeof diagnosticKeys
 }
 export const status = (value: string | null) =>
   value === null
-    ? "未知"
+    ? "—"
     : ((
         {
           success: "成功",
+          running: "执行中",
+          interrupted: "已中断",
           error: "失败",
           unknown: "结果不明",
           finished: "已完成",

@@ -13,6 +13,11 @@ export class ConfigError extends Error { constructor(message:string){super(messa
 const fail=(path:string,reason='值无效'):never=>{throw new ConfigError(`配置错误：${path}：${reason}`);};
 // Keep only a fingerprint, not private source text, outside the resolved model.
 const configSources = new WeakMap<AppConfig, { path: string; digest: string }>();
+// Dashboard-only startup secret: deliberately absent from serializable AppConfig.
+const dashboardPasswords = new WeakMap<AppConfig, string | undefined>();
+export function dashboardPassword(config: AppConfig): string | undefined {
+  return dashboardPasswords.get(config);
+}
 const sourceDigest = (text: string): string => createHash('sha256').update(text).digest('hex');
 export function matchesConfigSource(app: AppConfig, text: string): boolean {
   const source = configSources.get(app);
@@ -185,7 +190,7 @@ export function loadAppConfig(options:{configPath?:string;envPath?:string;env?:N
   const tokenEnv=text(one,'token_env','onebot','ONEBOT_ACCESS_TOKEN'),keyEnv=text(model,'api_key_env','model','OPENAI_API_KEY');
   for(const [name,field]of [[tokenEnv,'onebot.token_env'],[keyEnv,'model.api_key_env']] as const)if(!/^[A-Z_][A-Z0-9_]*$/.test(name))fail(field,'必须是大写环境变量名称');
   let secrets:Record<string,string>={};try{secrets=parseDotenv(readFileSync(resolve(base,options.envPath??'.env')));}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')fail('.env','无法读取密钥文件');}
-  if(Object.keys(secrets).some(key=>key!==tokenEnv&&key!==keyEnv))fail('.env','只允许所选的密钥变量');
+  if(Object.keys(secrets).some(key=>key!==tokenEnv&&key!==keyEnv&&key!=='DASHBOARD_PASSWORD'))fail('.env','只允许所选的密钥变量');
   const env=options.env??process.env;
   function secret(name:string,field:string,required:boolean):string {for(const value of [secrets[name],env[name]])if(value!==undefined&&(typeof value!=='string'||/[\r\n]/.test(value)||!value.trim()))fail(field,'密钥必须是非空单行文本');const value=(env[name]??secrets[name]??'').trim();if(required&&!value)fail(field,'缺少所选密钥');return value;}
   const onebot={url:url(text(one,'url','onebot','ws://127.0.0.1:3001'),'onebot.url'),token:secret(tokenEnv,'onebot.token_env',true),allowedGroups:new Set(enabled.map(group=>group.groupId)),allowedUsers:new Set<string>(),adminUsers:new Set([ownerId]),allowPrivate:false,apiTimeoutMs:num(one,'api_timeout_ms','onebot',10000,1,2147483647),reconnectBaseMs:num(one,'reconnect_base_ms','onebot',1000,1,2147483647),reconnectMaxMs:num(one,'reconnect_max_ms','onebot',30000,1,2147483647),heartbeatMs:num(one,'heartbeat_ms','onebot',30000,1,2147483647),rateLimitMs:2000,dedupTtlMs:300000,dedupMax:10000,conversationMax:10000};
@@ -199,5 +204,8 @@ export function loadAppConfig(options:{configPath?:string;envPath?:string;env?:N
   if(defaultDatabaseExplicit)assertStoragePaths(storage,[defaultPolicy]);
   const app:AppConfig={configPath,identity:{name:text(bot,'name','bot','Listener'),ownerId,ownerName:text(bot,'owner_name','bot','主人')},onebot,model:{baseUrl:url(text(model,'base_url','model','https://api.openai.com/v1'),'model.base_url',true),apiKey:secret(keyEnv,'model.api_key_env',true),model:text(model,'model','model',''),timeoutMs:num(model,'timeout_ms','model',45000,1000,120000),maxTokens:num(model,'max_output_tokens','model',8192,1,Number.MAX_SAFE_INTEGER)},runtime:{maxConcurrentTurns:num(runtime,'max_concurrent_turns','runtime',2,1,8)},storage,logging,defaultsEnabled:defaultPolicy.enabled,configuredGroupIds:Object.freeze([...configuredGroupIds]),resolveGroup(groupId:string){id(groupId,'groups');const group=structuredClone(resolved.get(groupId)??resolvePolicy(groupId));assertStoragePaths(storage,[...resolved.values()].filter(other=>other.groupId!==groupId).concat(group));return group;}};
   configSources.set(app, { path: configPath, digest: sourceDigest(source) });
+  // Empty process values intentionally override a file credential to disable login.
+  // Password policy belongs to AuthStore so invalid/missing values still serve the UI.
+  dashboardPasswords.set(app, env.DASHBOARD_PASSWORD ?? secrets.DASHBOARD_PASSWORD);
   return app;
 }

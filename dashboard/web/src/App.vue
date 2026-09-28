@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
+import { auth, authenticated, configured, configurationError } from './composables/useAuth';
+import { get } from './api/client';
 import { useRoute, useRouter } from "vue-router";
 import type { MetaResponse } from "../../shared/contracts";
 import {
-  useResource,
+  refreshVersion,
   useFilters,
   refresh,
   activeRequests,
@@ -11,14 +13,62 @@ import {
 const route = useRoute(),
   router = useRouter(),
   { groupId, range } = useFilters();
-const meta = useResource<MetaResponse>(computed(() => "meta"));
+const password = ref(''), authError = ref(''), busy = ref(false);
+async function submit(action: 'login' | 'logout') {
+  busy.value = true;
+  authError.value = '';
+  try {
+    await auth(action, action === 'login' ? { password: password.value } : undefined);
+    password.value = '';
+  } catch (error) {
+    authError.value = error instanceof Error ? error.message : '操作失败，请重试。';
+  } finally {
+    busy.value = false;
+  }
+}
+function unauthorized() {
+  authenticated.value = false;
+  password.value = '';
+}
+onMounted(() => {
+  window.addEventListener('dashboard:unauthorized', unauthorized);
+  auth().catch(error => {
+    authError.value = error.message;
+    authenticated.value = false;
+  });
+});
+const meta = { data: ref<MetaResponse | null>(null), error: ref(''), retry: loadMeta };
+let metaSequence = 0;
+let metaController: AbortController | undefined;
+async function loadMeta() {
+  const sequence = ++metaSequence;
+  metaController?.abort();
+  meta.data.value = null;
+  meta.error.value = '';
+  if (!authenticated.value) return;
+  const controller = new AbortController();
+  metaController = controller;
+  try {
+    const result = await get<MetaResponse>('meta', controller.signal);
+    if (sequence === metaSequence && authenticated.value) meta.data.value = result;
+  } catch (error) {
+    if (sequence === metaSequence && !controller.signal.aborted && authenticated.value)
+      meta.error.value = error instanceof Error ? error.message : '加载失败，请重试。';
+  }
+}
+watch([authenticated, refreshVersion], loadMeta, { immediate: true });
+onUnmounted(() => {
+  window.removeEventListener('dashboard:unauthorized', unauthorized);
+  metaSequence++;
+  metaController?.abort();
+});
 const auto = ref(false);
 let timer: ReturnType<typeof setInterval> | undefined;
 watch(auto, (v) => {
   if (timer) clearInterval(timer);
   if (v)
     timer = setInterval(() => {
-      if (!document.hidden && activeRequests.value === 0) refresh();
+      if (authenticated.value && !document.hidden && activeRequests.value === 0) refresh();
     }, 30000);
 });
 onUnmounted(() => {
@@ -96,8 +146,21 @@ const nav = [
 ];
 </script>
 <template>
-  <a href="#main" class="skip-link">跳至主要内容</a>
-  <div class="shell">
+  <div v-if="authenticated === null" class="auth-shell"><p>正在检查会话…</p></div>
+  <div v-else-if="configured === false" class="auth-shell">
+    <section class="card login-panel"><h1>拒绝访问</h1><p role="alert">{{ configurationError }}</p></section>
+  </div>
+  <div v-else-if="!authenticated" class="auth-shell">
+    <form class="card login-panel" @submit.prevent="submit('login')">
+      <h1>登录</h1>
+      <label>密码<input v-model="password" type="password" autocomplete="current-password" required autofocus /></label>
+      <p class="muted">在此浏览器保持登录7天</p>
+      <p v-if="authError" class="notice" role="alert">{{ authError }}</p>
+      <button class="button" type="submit" :disabled="busy">{{ busy ? '正在登录…' : '登录' }}</button>
+    </form>
+  </div>
+  <div v-else class="shell">
+    <a href="#main" class="skip-link">跳至主要内容</a>
     <aside class="sidebar">
       <div class="brand">
         <span class="brand-mark">L</span>
@@ -175,6 +238,7 @@ const nav = [
           <label class="check"
             ><input v-model="auto" type="checkbox" />每30秒刷新</label
           ><button class="button" @click="refresh">刷新数据</button>
+          <button class="button" :disabled="busy" @click="submit('logout')">退出</button>
         </div>
       </header>
       <form
@@ -203,6 +267,7 @@ const nav = [
           {{ customError }}
         </p>
       </form>
+      <p v-if="authError" class="notice" role="alert">{{ authError }}</p>
       <div v-if="meta.error.value" class="notice" role="alert">
         群组信息加载失败。<button class="text-button" @click="meta.retry">
           重试
@@ -213,3 +278,9 @@ const nav = [
     </div>
   </div>
 </template>
+<style scoped>
+.auth-shell { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+.login-panel { width: min(100%, 400px); display: grid; gap: 16px; }
+.login-panel label { display: grid; gap: 8px; }
+.login-panel input { width: 100%; padding: 10px; }
+</style>

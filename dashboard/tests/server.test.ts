@@ -11,11 +11,22 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { buildApp } from "../server/app.js";
+import { buildApp as rawBuildApp } from "../server/app.js";
+import { AuthStore } from '../server/auth.js';
+function buildApp(options: Parameters<typeof rawBuildApp>[0]) {
+  const app = rawBuildApp(options);
+  const login = options.auth!.login('test-password-long', '127.0.0.1');
+  assert.equal(login.status, 'ok');
+  const token = login.status === 'ok' ? login.token : '';
+  const inject = app.inject.bind(app);
+  app.inject = ((value: any) => inject(typeof value === 'string' ? {url:value,headers:{cookie:`dashboard_session=${token}`}} : {...value,headers:{cookie:`dashboard_session=${token}`,...value.headers}})) as typeof app.inject;
+  return app;
+}
 import { status as statusLabel } from "../web/src/api/client.js";
 const sentinel = "PRIVATE_ARGUMENT_RESULT_MESSAGE_CHECKPOINT_PATH";
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), "dashboard-"));
+  const auth = new AuthStore({path:join(dir,'auth.sqlite'),password:'test-password-long'});
   const telemetryPath = join(dir, "telemetry.sqlite"),
     sessionPath = join(dir, "session.sqlite");
   const t = new DatabaseSync(telemetryPath);
@@ -25,10 +36,12 @@ function fixture() {
   const insert = t.prepare(
     "INSERT INTO model_requests VALUES(?,?,?,?,?,?,?,?,?,?,?)",
   );
+  // Separate physical turns; none equals the persisted session wake ID.
+  // Shared turn IDs now intentionally correlate retries/session rotations.
   insert.run(
     "request-one",
     "11",
-    "NOT_WAKE_ID",
+    "NOT_WAKE_ID-one",
     100,
     120,
     20,
@@ -41,7 +54,7 @@ function fixture() {
   insert.run(
     "request-two",
     "11",
-    "NOT_WAKE_ID",
+    "NOT_WAKE_ID-two",
     200,
     240,
     40,
@@ -54,7 +67,7 @@ function fixture() {
   insert.run(
     "request-three",
     "11",
-    "NOT_WAKE_ID",
+    "NOT_WAKE_ID-three",
     250,
     300,
     50,
@@ -132,11 +145,12 @@ function fixture() {
     sessionPath,
     telemetryPath,
     options: {
+      auth,
       groups: [{ groupId: "11", sessionPath }],
       telemetryPath,
       now: () => 300,
     },
-    cleanup: () => rmSync(dir, { recursive: true, force: true }),
+    cleanup: () => { auth.close(); rmSync(dir, { recursive: true, force: true }); },
   };
 }
 for (const [outcome, label] of [["operation_submitted", "操作已提交"], ["message_submitted", "消息已提交"], ["reaction_submitted", "回应已提交"]]) {
@@ -156,7 +170,7 @@ for (const [outcome, label] of [["operation_submitted", "操作已提交"], ["me
   });
 }
 
-test("safe metadata, weighted usage, missing coverage, and enabled-group isolation", async () => {
+test("safe metadata, weighted usage, missing usage, and enabled-group isolation", async () => {
   const f = fixture(),
     app = buildApp(f.options);
   try {
@@ -166,8 +180,9 @@ test("safe metadata, weighted usage, missing coverage, and enabled-group isolati
     assert.equal(b.summary.requests, 3);
     assert.equal(b.summary.inputTokens, 1100);
     assert.equal(b.summary.cacheHitRate, 0.86);
-    assert.equal(b.summary.cacheCoverage, 2 / 3);
+    assert.equal(b.summary.cachedInputTokens, 860);
     assert.equal(b.summary.uncachedInputTokens, 140);
+    assert.equal(b.summary.tps, 500); // Only completed success with known output contributes.
     assert.equal(b.groups.length, 1);
     assert.doesNotMatch(r.body, new RegExp(sentinel + "|NOT_WAKE_ID|foreign"));
     assert.equal(
@@ -535,7 +550,8 @@ test("unavailable telemetry and wrong group identity remain honest", async () =>
     const summary = (await app.inject("/api/overview")).json().summary;
     assert.equal(summary.inputTokens, null);
     assert.equal(summary.cacheHitRate, null);
-    assert.equal(summary.cacheCoverage, null);
+    assert.equal(summary.cachedInputTokens, null);
+    assert.equal(summary.uncachedInputTokens, null);
     assert.equal(existsSync(join(f.dir, "absent")), false);
   } finally {
     await app.close();

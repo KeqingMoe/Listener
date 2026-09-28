@@ -48,7 +48,7 @@ npm run config:check -- --group 123456789
 | | `max_file_mb` | 20，范围1..100 MiB |
 | | `max_total_mb` | 200，范围1..1000 MiB，且不得小于单文件上限 |
 
-OneBot毫秒参数的范围为1..2147483647。密钥变量名须为大写字母／数字／下划线组成的合法环境变量名称。`.env` 只接受选定的两个密钥名；同名进程环境变量优先。不要把凭证写进URL或TOML。
+OneBot毫秒参数的范围为1..2147483647。密钥变量名须为大写字母／数字／下划线组成的合法环境变量名称。`.env` 只接受选定的两个密钥名及面板访问凭证 `DASHBOARD_PASSWORD`；同名进程环境变量优先，包括显式空值。面板密码留空时拒绝访问，至少12字符、最多256字节，不含控制字符；修改后重启面板，详见 [Dashboard说明](../dashboard/README.md)。不要把凭证写进URL或TOML。
 
 文件日志关闭写 `logging.file = false`；只改目录写 `logging.file.directory = "data/logs"`。关闭值不能与文件日志参数同时使用。多个选项可以组合为：
 

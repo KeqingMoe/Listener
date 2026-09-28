@@ -20,6 +20,7 @@ export function dashboardGroupSources(app: AppConfig): GroupSource[] {
     return groups.map(group => ({
       groupId: group.groupId,
       sessionPath: `${group.storage.databasePath}.session.sqlite`,
+      worldPath: `${group.storage.databasePath}.events.sqlite`,
     }));
   } catch {
     // Invalid policy/path combinations never fall back to an unchecked subset.

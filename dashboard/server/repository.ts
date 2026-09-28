@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { performanceMetrics, intervalDuration, requestDuration, type MetricTool } from '../shared/metrics.js';
 import { lstatSync } from "node:fs";
 import { normalizeModelRequestDiagnostics } from "../../src/model-diagnostics.js";
 import { normalizeWakeDiagnostics } from "../../src/wake-diagnostics.js";
@@ -17,6 +18,7 @@ import type {
 export interface GroupSource {
   groupId: string;
   sessionPath: string;
+  worldPath?: string;
 }
 export interface Sources {
   /** Static sources for embedded callers/tests; production uses getGroups exclusively. */
@@ -24,6 +26,7 @@ export interface Sources {
   /** Returns current, policy-filtered and membership-proven sources. Failure closes access. */
   getGroups?: () => GroupSource[];
   telemetryPath: string;
+  inspectionSecrets?: readonly string[];
 }
 type Row = Record<string, any>;
 const num = (v: unknown): number | null =>
@@ -37,7 +40,8 @@ const percentile = (a: number[], p: number) =>
     ? a.sort((a, b) => a - b)[Math.max(0, Math.ceil(a.length * p) - 1)]!
     : null;
 export class ResourceLimit extends Error {}
-export function summarize(rows: Row[]): UsageSummary {
+export function summarize(rows: Row[], tools?: MetricTool[]): UsageSummary {
+  const performance = performanceMetrics(rows, {tools});
   const sum = (key: string) => {
     const values = rows
       .map((r) => num(r[key]))
@@ -53,7 +57,7 @@ export function summarize(rows: Row[]): UsageSummary {
   const denominator = cached.reduce((n, r) => n + r.input_tokens, 0),
     numerator = cached.reduce((n, r) => n + r.cached_input_tokens, 0),
     durations = rows
-      .map((r) => num(r.duration_ms))
+      .map((r) => requestDuration(r))
       .filter((n): n is number => n !== null);
   return {
     requests: rows.length,
@@ -61,17 +65,18 @@ export function summarize(rows: Row[]): UsageSummary {
     errors: rows.filter((r) => requestOutcome(r.status, r.error_code) === "failed").length,
     timeouts: rows.filter((r) => requestOutcome(r.status, r.error_code) === "timeout").length,
     cancelled: rows.filter((r) => requestOutcome(r.status, r.error_code) === "cancelled").length,
-    unknown: rows.filter((r) => requestOutcome(r.status, r.error_code) === "unknown").length,
+    running: rows.filter(r=>r.status==='running').length,
+    interrupted: rows.filter(r=>r.status==='interrupted').length,
+    unknown: rows.filter((r) => r.status!=='running' && r.status!=='interrupted' && requestOutcome(r.status, r.error_code) === "unknown").length,
     inputTokens: sum("input_tokens"),
     outputTokens: sum("output_tokens"),
     cachedInputTokens: cached.length ? numerator : null,
     uncachedInputTokens: cached.length ? denominator - numerator : null,
     cacheHitRate: denominator ? numerator / denominator : null,
-    cacheCoverage: known.length ? cached.length / known.length : null,
-    knownInputRequests: known.length,
-    knownCacheRequests: cached.length,
     durationP50Ms: percentile([...durations], 0.5),
     durationP95Ms: percentile([...durations], 0.95),
+    tps: performance.modelTps,
+    performance,
   };
 }
 export class Repository {
@@ -90,7 +95,7 @@ export class Repository {
         if (!source || typeof source.groupId !== 'string' || !/^[1-9]\d{0,31}$/.test(source.groupId) ||
             typeof source.sessionPath !== 'string' || !source.sessionPath || source.sessionPath.includes('\0') || ids.has(source.groupId)) throw new Error('invalid_sources');
         ids.add(source.groupId);
-        return { groupId: source.groupId, sessionPath: source.sessionPath };
+        return { groupId: source.groupId, sessionPath: source.sessionPath, ...(typeof source.worldPath === 'string' && source.worldPath && !source.worldPath.includes('\0') ? { worldPath: source.worldPath } : {}) };
       });
     } catch { groups = []; }
     this.currentGroups = groups;
@@ -142,6 +147,7 @@ export class Repository {
       return null;
     }
   }
+  telemetry(): DatabaseSync | null { return this.open(this.sources.telemetryPath); }
   session(groupId: string) {
     const source = this.groups.find((g) => g.groupId === groupId);
     return source ? this.open(source.sessionPath, groupId) : null;
@@ -247,10 +253,9 @@ export class Repository {
       sessionId: row.session_id,
       startedAt: row.created_at,
       ...finish,
-      durationMs:
-        finish.finishedAt !== null
-          ? Math.max(0, finish.finishedAt - row.created_at)
-          : null,
+      durationMs: intervalDuration(row.created_at, finish.finishedAt),
+      tps: usage.tps, cacheHitRate: usage.cacheHitRate,
+      performance: performanceMetrics(requests.filter(r=>r.group_id===groupId && ids.has(r.request_id)), {attribution:'wake',startedAt:row.created_at,finishedAt:finish.finishedAt,tools:this.toolTimings(undefined,groupId,row.wake_id),sourceComplete:false}),
       trigger: null,
       modelRequests: usage.requests,
       toolCalls: Number(
@@ -259,6 +264,8 @@ export class Repository {
           .get(row.wake_id)!.n,
       ),
       inputTokens: usage.inputTokens,
+      uncachedInputTokens: usage.uncachedInputTokens,
+      cachedInputTokens: usage.cachedInputTokens,
       outputTokens: usage.outputTokens,
     };
   }
@@ -294,6 +301,7 @@ export class Repository {
     groupId: string | undefined,
     offset: number,
     limit: number,
+    filters: { q?: string; outcome?: string } = {},
   ) {
     const result: Array<{ groupId: string; row: Row; db: DatabaseSync }> = [];
     for (const g of this.groups.filter(
@@ -305,7 +313,7 @@ export class Repository {
         .prepare(
           "SELECT seq,wake_id,session_id,created_at FROM model_session_journal WHERE kind='wake_begin' AND created_at>=? AND created_at<=? ORDER BY created_at DESC,wake_id ASC LIMIT ?",
         )
-        .all(range.since, range.until, offset + limit + 1) as Row[];
+        .all(range.since, range.until, filters.q || filters.outcome ? 10001 : offset + limit + 1) as Row[];
       for (const row of rows) result.push({ groupId: g.groupId, row, db });
       if (result.length > 10000) throw new ResourceLimit();
     }
@@ -315,8 +323,19 @@ export class Repository {
         a.groupId.localeCompare(b.groupId) ||
         a.row.wake_id.localeCompare(b.row.wake_id),
     );
+    const filtered = result.filter(({groupId,row,db}) => {
+      if (!filters.q && !filters.outcome) return true;
+      const finish = this.finish(db,row.wake_id);
+      const search = filters.q?.toLowerCase();
+      if (search && ![groupId,row.wake_id,row.session_id,finish.outcome,finish.reasonCode].some(v=>typeof v==='string'&&v.toLowerCase().includes(search))) return false;
+      if (!filters.outcome) return true;
+      if (filters.outcome === 'running') return finish.finishedAt === null;
+      if (filters.outcome === 'failed') return ['model_failed','failed','error','delivery_unknown','reaction_failed'].includes(finish.outcome ?? '');
+      if (filters.outcome === 'cancelled') return ['cancelled','partial_reply_cancelled','partial_reaction_cancelled','partial_management_cancelled'].includes(finish.outcome ?? '');
+      return finish.outcome === filters.outcome;
+    });
     return {
-      items: result
+      items: filtered
         .slice(offset, offset + limit)
         .map(({ groupId, row, db }) =>
           this.wake(
@@ -326,7 +345,7 @@ export class Repository {
             this.wakeRequests(db, groupId, row.wake_id),
           ),
         ),
-      hasMore: result.length > offset + limit,
+      hasMore: filtered.length > offset + limit,
     };
   }
   detail(groupId: string, wakeId: string) {
@@ -352,6 +371,7 @@ export class Repository {
     const requests: RequestItem[] = allRequests
       .slice(0, 500)
       .map((r) => ({
+        ...(() => { const u=summarize([r]); return {tps:u.tps,cacheHitRate:u.cacheHitRate,performance:performanceMetrics([r],{attribution:'request'})}; })(),
         requestId: r.request_id,
         startedAt: r.started_at,
         endedAt: r.ended_at,
@@ -393,7 +413,7 @@ export class Repository {
         finishedAt: num(r.finished_at),
         durationMs:
           num(r.started_at) !== null && num(r.finished_at) !== null
-            ? Math.max(0, r.finished_at - r.started_at)
+            ? intervalDuration(r.started_at, r.finished_at)
             : null,
         status: allowed(r.status, [
           "ok",
@@ -417,6 +437,17 @@ export class Repository {
       truncated: rows.length > 500 || allRequests.length > 500,
       availability: this.availability(),
     };
+  }
+  /** Bounded scalar metadata only: never arguments/results or historical bodies. */
+  toolTimings(range?: Range, groupId?: string, wakeId?: string): Row[] {
+    if (!range && !wakeId) throw new ResourceLimit('Tool timing scope required');
+    const result: Row[]=[];
+    for(const g of this.groups.filter(g=>!groupId || g.groupId===groupId)) {
+      const db=this.session(g.groupId); if(!db) continue;
+      result.push(...db.prepare(`SELECT ordinal,wake_id,proposed_at,started_at,finished_at FROM model_tool_ledger WHERE ${wakeId?'wake_id=?':'proposed_at BETWEEN ? AND ?'} LIMIT 10001`).all(...(wakeId?[wakeId]:[range!.since,range!.until])).map(r=>({...r,group_id:g.groupId})));
+      this.bounded(result);
+    }
+    return result;
   }
   tools(range: Range, groupId?: string): ToolSummary[] {
     const byName = new Map<string, Row[]>();
@@ -445,10 +476,8 @@ export class Repository {
     return [...byName]
       .map(([name, rows]) => {
         const durations = rows
-          .filter(
-            (r) => num(r.started_at) !== null && num(r.finished_at) !== null,
-          )
-          .map((r) => Math.max(0, r.finished_at - r.started_at));
+          .map((r) => intervalDuration(r.started_at, r.finished_at))
+          .filter((duration): duration is number => duration !== null);
         const n = (state: string) =>
           rows.filter((r) => r.state === state).length;
         return {

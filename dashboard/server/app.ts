@@ -9,8 +9,14 @@ import {
   type Sources,
 } from "./repository.js";
 import type { Range } from "../shared/contracts.js";
+import { registerReviewRoutes } from './review-routes.js';
+import { ReviewRepository } from './review-repository.js';
 import { isIP } from "node:net";
+import { AuthStore, sessionToken } from "./auth.js";
+import { authWrites, registerAuthRoutes } from "./auth-routes.js";
 export interface AppOptions extends Sources {
+  /** Required at runtime: absent stores fail closed. Caller owns store lifetime. */
+  auth?: AuthStore;
   webRoot?: string;
   now?: () => number;
   /** Bind hostname used for Host validation; defaults to loopback only. */
@@ -44,12 +50,15 @@ function allowedHost(host: string, listenHost = "127.0.0.1") {
   }
 }
 export function buildApp(options: AppOptions) {
+  const auth = options.auth;
+  if (!auth) throw new Error("Dashboard authentication store required");
   const app = Fastify({
     logger: false,
     bodyLimit: 1024,
     requestTimeout: 10000,
   });
   const repository = new Repository(options);
+  const reviewRepository = new ReviewRepository(repository);
   const now = options.now ?? Date.now;
   app.addHook("onClose", async () => repository.close());
   app.addHook("onRequest", async (req, reply) => {
@@ -62,10 +71,11 @@ export function buildApp(options: AppOptions) {
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'",
       );
     const host = req.headers.host;
+    const authWrite = req.method === "POST" && authWrites.has(req.url);
     if (
       !host ||
       !allowedHost(host, options.listenHost) ||
-      !["GET", "HEAD"].includes(req.method)
+      (!["GET", "HEAD"].includes(req.method) && !authWrite)
     )
       return reply.code(403).send({
         error: "forbidden",
@@ -75,6 +85,8 @@ export function buildApp(options: AppOptions) {
       return reply
         .code(403)
         .send({ error: "forbidden", message: "Cross-site access denied" });
+    if (authWrite && !req.headers.origin)
+      return reply.code(403).send({ error: "forbidden", message: "Same-origin access required" });
     if (req.headers.origin) {
       let origin: URL;
       try {
@@ -85,14 +97,25 @@ export function buildApp(options: AppOptions) {
           .send({ error: "forbidden", message: "Invalid origin" });
       }
       if (
-        origin.origin !== `http://${host}` &&
-        origin.origin !== `https://${host}`
+        origin.origin !== `${auth.secureCookie ? "https" : "http"}://${host}` ||
+        req.headers.origin !== origin.origin
       )
         return reply
           .code(403)
           .send({ error: "forbidden", message: "Same-origin access required" });
     }
+    const path = req.url.split("?")[0]!;
+    const publicAuth = (req.method === "GET" || req.method === "HEAD") && path === "/api/auth/session" ||
+      authWrite && (req.url === "/api/auth/login" || req.url === "/api/auth/logout");
+    // Gate all API-shaped paths before routing, including encoded/case variants.
+    let decoded: string;
+    try { decoded = decodeURIComponent(path).toLowerCase(); } catch { decoded = "/api/"; }
+    if ((decoded === "/api" || decoded.startsWith("/api/")) && !publicAuth) {
+      if (!auth.configured) return reply.code(503).send({ error: auth.configurationError, message: "Set DASHBOARD_PASSWORD in .env and restart the dashboard" });
+      if (!auth.authenticated(sessionToken(req.headers.cookie))) return reply.code(401).send({ error: "unauthorized", message: "Sign in required" });
+    }
   });
+  registerAuthRoutes(app, auth);
   app.setErrorHandler((error, _req, reply) => {
     if (
       error instanceof InvalidQuery ||
@@ -152,7 +175,8 @@ export function buildApp(options: AppOptions) {
   });
   app.get("/api/overview", async (req) => {
     const { range, groupId } = parse(req.query),
-      rows = repository.requests(range, groupId),
+      rows = reviewRepository.requests(range, groupId).map(r=>({interval_known:r.performance.coverage.modelIntervalRequests===1,request_id:r.requestId,group_id:r.groupId,started_at:r.startedAt,ended_at:r.endedAt,duration_ms:r.durationMs,status:r.status,error_code:r.errorCode,input_tokens:r.totalInputTokens,cached_input_tokens:r.cachedInputTokens,output_tokens:r.outputTokens})),
+      toolRows = repository.toolTimings(range, groupId),
       bucket = range.until - range.since <= 2 * DAY ? 3600000 : DAY;
     const series = [];
     for (
@@ -165,28 +189,30 @@ export function buildApp(options: AppOptions) {
         ...summarize(
           rows.filter(
             (r) => r.started_at >= start && r.started_at < start + bucket,
-          ),
+          ), toolRows.filter(t=>t.proposed_at>=start && t.proposed_at<start+bucket),
         ),
       });
     return {
       range,
       availability: repository.availability(),
-      summary: summarize(rows),
+      summary: summarize(rows, toolRows),
       series,
       groups: repository.groups
         .filter((g) => !groupId || g.groupId === groupId)
         .map((g) => ({
           groupId: g.groupId,
-          ...summarize(rows.filter((r) => r.group_id === g.groupId)),
+          ...summarize(rows.filter((r) => r.group_id === g.groupId), toolRows.filter(t=>t.group_id===g.groupId)),
         })),
     };
   });
   app.get("/api/wakes", async (req) => {
-    const { range, groupId, q } = parse(req.query, ["limit", "cursor"]),
+    const { range, groupId, q } = parse(req.query, ["limit", "cursor", "q", "outcome"]),
       limit = integer(q.limit, 30);
     if (limit < 1 || limit > 100) throw new InvalidQuery();
+    if (q.q !== undefined && (typeof q.q !== 'string' || q.q.length > 200)) throw new InvalidQuery();
+    if (q.outcome !== undefined && (typeof q.outcome !== 'string' || !/^[a-z][a-z_]{0,63}$/.test(q.outcome))) throw new InvalidQuery();
     const binding = createHash("sha256")
-      .update(JSON.stringify({ range, groupId, groups: repository.groups.filter(g => !groupId || g.groupId === groupId).map(g => g.groupId).sort() }))
+      .update(JSON.stringify({ range, groupId, q: q.q, outcome: q.outcome, groups: repository.groups.filter(g => !groupId || g.groupId === groupId).map(g => g.groupId).sort() }))
       .digest("hex");
     let offset = 0;
     if (q.cursor !== undefined) {
@@ -212,12 +238,12 @@ export function buildApp(options: AppOptions) {
         throw new InvalidQuery();
       }
     }
-    const { items, hasMore } = repository.wakes(range, groupId, offset, limit);
+    const { items, hasMore } = repository.wakes(range, groupId, offset, limit, { q: q.q as string | undefined, outcome: q.outcome as string | undefined });
     if (hasMore && offset + limit > 10000) throw new ResourceLimit();
     return {
       range,
       availability: repository.availability(),
-      items,
+      items: items.map(item => reviewRepository.wakeSummary(item)),
       nextCursor: hasMore
         ? Buffer.from(
             JSON.stringify({ binding, offset: offset + limit }),
@@ -243,6 +269,7 @@ export function buildApp(options: AppOptions) {
         .code(503)
         .send({ error: "unavailable", message: "Session data unavailable" });
     const detail = repository.detail(q.groupId, id);
+    if (detail) detail.wake = reviewRepository.wakeSummary(detail.wake);
     return (
       detail ??
       reply.code(404).send({ error: "not_found", message: "Wake not found" })
@@ -256,6 +283,7 @@ export function buildApp(options: AppOptions) {
       items: repository.tools(range, groupId),
     };
   });
+  registerReviewRoutes(app, repository, now);
   if (options.webRoot && existsSync(options.webRoot)) {
     app.register(fastifyStatic, {
       root: options.webRoot,
