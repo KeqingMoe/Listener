@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
-import { extractMessageContent } from '../world/message-content.js';
-import { imageReferences } from '../tools/images/tools.js';
-import { forwardReferences } from './forward-references.js';
+import { extractMessageContent } from './message-content.js';
+import { imageReferences } from '../onebot/image-references.js';
+import { forwardReferences } from '../onebot/forward-references.js';
 import type { TimelineEntry } from '../contracts/messages.js';
-import type { EventSource, WorldEventInput, WorldEventStore } from '../world/events.js';
+import type { EventSource, WorldEventInput, WorldEventStore } from './events.js';
 
 const now = () => Date.now() / 1000;
 function object(value: unknown): value is Record<string, unknown> {

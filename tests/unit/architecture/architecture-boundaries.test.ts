@@ -16,6 +16,22 @@ function fixture(t: TestContext, files: Record<string, string>) {
   return root;
 }
 
+for (const [layer, forbidden] of [
+  ['onebot', ['agent', 'tools', 'world', 'model', 'dashboard']],
+  ['world', ['tools', 'agent', 'app', 'cli']],
+] as const) test(`${layer} cannot import higher-layer runtime implementations but may use foundation modules and types`, async t => {
+  const files: Record<string, string> = {
+    'src/config/settings.ts': '', 'src/observability/log.ts': '',
+    [`src/${layer}/entry.ts`]: 'import "../config/settings.js"; import "../observability/log.js";' +
+      forbidden.map(target => `import "../${target}/target.js"; import type { T } from "../${target}/target.js";`).join(''),
+  };
+  for (const target of forbidden) files[`src/${target}/target.ts`] = 'export type T = string;';
+  const result = await analyzeBoundaries(fixture(t, files));
+  assert.equal(result.issues.length, forbidden.length);
+  assert.ok(result.issues.every(issue => issue.kind === 'runtime-boundary'));
+  assert.deepEqual(result.issues.map(issue => issue.to).sort(), forbidden.map(target => `src/${target}/target.ts`).sort());
+});
+
 test('foundation contracts allow leaf types but reject reverse business, entrypoint, Node and package dependencies', async t => {
   const root = fixture(t, {
     'src/contracts/messages.ts': 'import type { Json } from "./json.js"; import type { State } from "../agent/state.js"; import type { App } from "../app/index.js"; import type { Stats } from "node:fs"; import type { External } from "external-package"; import "node:path";',

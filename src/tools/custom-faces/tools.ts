@@ -9,7 +9,8 @@ import { type ToolDefinition, type TurnContext } from '../../contracts/tools.js'
 import { type CustomFaceStore, type CustomFaceRecord, type CustomFaceInput } from './store.js';
 import { CustomFaceCoordinator, CustomFaceCoordinationError } from './coordinator.js';
 import { downloadOriginalImage, validateOriginalImage, prepareImage, type OriginalImageDownloader } from '../images/download.js';
-import { imageReferences, type ImageTurnState } from '../images/tools.js';
+import type { ImageTurnState } from '../images/tools.js';
+import { imageReferences } from '../../onebot/image-references.js';
 import { extractMessageContent } from '../../world/message-content.js';
 import type { GroupMediaOptions } from '../media/tools.js';
 import { afterDispatch, submittedResult, writeFailure, DuplicateMessageAckError, UnverifiedMessageAckError } from '../../onebot/operation-result.js';

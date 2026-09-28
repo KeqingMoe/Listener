@@ -1,10 +1,6 @@
 import type { Config } from '../config/onebot.js';
 
-export function id(value: unknown): string | undefined {
-  if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) return String(value);
-  if (typeof value === 'string' && /^[1-9]\d*$/.test(value)) return value;
-  return undefined;
-}
+import { id } from './identity.js';
 
 export function parseCommand(message: unknown, selfId: string): '/ping' | '/help' | undefined {
   if (!Array.isArray(message) || message.length > 64) return undefined;

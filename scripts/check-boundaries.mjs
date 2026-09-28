@@ -49,6 +49,9 @@ export async function analyzeBoundaries(root) {
     }
     if (runtime && under(from, 'src') && !under(from, 'src/app') && !under(from, 'src/cli') &&
       (under(to, 'src/app') || under(to, 'src/cli'))) boundary('library cannot depend on an application or CLI entrypoint');
+    if (runtime && under(from, 'src/onebot') && ['src/agent', 'src/tools', 'src/world', 'src/model', 'src/dashboard'].some(dir => under(to, dir))) boundary('OneBot cannot depend on application-layer runtime implementations');
+    // The library-entrypoint rule above already rejects world -> app/cli.
+    if (runtime && under(from, 'src/world') && ['src/tools', 'src/agent'].some(dir => under(to, dir))) boundary('world cannot depend on tool or agent runtime implementations');
     if (runtime && under(from, 'src/tools') && under(to, 'src/agent')) boundary('tools cannot depend on agent implementation');
     if (runtime && under(from, 'src/model') && ['src/agent', 'src/tools', 'src/onebot'].some(dir => under(to, dir))) boundary('model cannot depend on agent, tools or OneBot implementation');
     if (under(from, 'src/dashboard/web/src')) {

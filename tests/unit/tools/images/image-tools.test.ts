@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ImageTools, VIEW_IMAGES_TOOL, imageReferences, imageMarker } from '../../../../src/tools/images/tools.js';
+import { ImageTools, VIEW_IMAGES_TOOL } from '../../../../src/tools/images/tools.js';
+import { imageReferences, imageMarker } from '../../../../src/onebot/image-references.js';
 import { LISTENER_GROUP } from '../../../../src/contracts/identity.js';
 import { type Api } from '../../../../src/contracts/onebot.js';
 import { type Memory, type TimelineEntry } from '../../../../src/contracts/messages.js';

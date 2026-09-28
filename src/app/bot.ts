@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { loadAppConfig, ConfigError, assertStoragePaths } from '../config/loader.js';
 import { toListenerConfig } from '../config/runtime.js';
 import { OneBotClient } from '../onebot/client.js';
-import { id } from '../onebot/command-bot.js';
+import { id } from '../onebot/identity.js';
 import { Listener } from '../agent/listener.js';
 import { OpenAIModel } from '../model/chat.js';
 import { SQLiteMemory } from '../agent/memory.js';

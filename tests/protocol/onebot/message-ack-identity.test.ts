@@ -11,7 +11,7 @@ import { OneBotClient } from "../../../src/onebot/client.js";
 import { Listener } from "../../../src/agent/listener.js";
 import { ModelSession } from "../../../src/agent/session/store.js";
 import { WorldEventStore } from "../../../src/world/events.js";
-import { recordToolMessage } from "../../../src/onebot/ingest.js";
+import { recordToolMessage } from "../../../src/world/ingest.js";
 import { GroupMediaTools, type SendReceiptSnapshot } from "../../../src/tools/media/tools.js";
 import { DuplicateMessageAckError } from "../../../src/onebot/operation-result.js";
 import { configureLogging } from "../../../src/observability/logger.js";

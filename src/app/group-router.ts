@@ -1,7 +1,7 @@
-import { id } from '../onebot/command-bot.js';
+import { id } from '../onebot/identity.js';
 import { resolveGroupId } from '../contracts/identity.js';
 import { withLogContext } from '../observability/logger.js';
-import { normalizeOneBotEvent } from '../onebot/ingest.js';
+import { normalizeOneBotEvent } from '../world/ingest.js';
 import { types } from 'node:util';
 
 export interface GroupHandler {

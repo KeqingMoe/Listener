@@ -4,7 +4,7 @@ import { type Memory, type TimelineEntry } from '../../contracts/messages.js';
 import { type JsonObject } from '../../contracts/json.js';
 import { type ToolDefinition, type TurnContext } from '../../contracts/tools.js';
 
-import { imageReferences } from '../images/tools.js';
+import { imageReferences } from '../../onebot/image-references.js';
 import { forwardReferences } from '../../onebot/forward-references.js';
 import { FACE_ID_SCHEMA, FACE_LAYOUT_GUIDANCE, faceMarker, isKnownFaceId } from '../faces/tools.js';
 import { extractMessageContent, projectMessage } from '../../world/message-content.js';
