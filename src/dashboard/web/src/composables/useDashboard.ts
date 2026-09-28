@@ -13,13 +13,12 @@ export function useFilters() {
   const groupId = computed(() =>
     typeof route.query.group === "string" ? route.query.group : "",
   );
-  const range = computed(() =>
-    route.query.range === "custom"
-      ? "custom"
-      : route.query.range === "7d"
-        ? "7d"
-        : "24h",
-  );
+  const range = computed(() => {
+    const value = route.query.range;
+    return value === "custom" || value === "5m" || value === "15m" || value === "1h" || value === "3h" || value === "6h" || value === "3d" || value === "30d" || value === "7d" || value === "24h"
+      ? value
+      : "24h";
+  });
   const query = computed(() => {
     const p = new URLSearchParams(
       range.value === "custom"
@@ -30,9 +29,7 @@ export function useFilters() {
               typeof route.query.until === "string" ? route.query.until : "",
           }
         : {
-            since: String(
-              rangeEnd.value - (range.value === "7d" ? 7 : 1) * 86400000,
-            ),
+            since: String(rangeEnd.value - ({"5m": 5 * 60000, "15m": 15 * 60000, "1h": 3600000, "3h": 3 * 3600000, "6h": 6 * 3600000, "24h": 86400000, "3d": 3 * 86400000, "7d": 7 * 86400000, "30d": 30 * 86400000}[range.value] ?? 86400000)),
             until: String(rangeEnd.value),
           },
     );
