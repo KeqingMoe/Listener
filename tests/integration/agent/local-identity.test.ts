@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
-import {Listener,buildSystemPrompt} from '../../../src/agent/listener.js';
+import { Listener } from '../../../src/agent/listener.js';
+import { buildSystemPrompt } from '../../../src/agent/prompts.js';
 import {Moderation} from '../../../src/tools/management/moderation.js';
 import {ReplyBatch,type BatchItem} from '../../../src/agent/reply-batch.js';
 import { OWNER_ID } from '../../../src/contracts/identity.js';

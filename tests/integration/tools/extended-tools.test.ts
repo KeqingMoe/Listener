@@ -18,7 +18,8 @@ import {
 } from "../../../src/config/extended-tools.js";
 import { GROUP_ACTION_TOOL_NAMES } from "../../../src/tools/actions/tools.js";
 import { GROUP_OBSERVATION_TOOL_NAMES } from "../../../src/tools/observation/tools.js";
-import { Listener, buildToolDefinitions } from "../../../src/agent/listener.js";
+import { Listener } from "../../../src/agent/listener.js";
+import { buildToolDefinitions } from "../../../src/agent/tool-definitions.js";
 import { ModelSession } from "../../../src/agent/session/store.js";
 import { WorldEventStore } from "../../../src/world/events.js";
 import type { ListenerConfig } from "../../../src/config/listener.js";

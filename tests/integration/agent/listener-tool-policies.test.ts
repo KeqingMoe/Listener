@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
-import {Listener,buildToolDefinitions,buildSystemPrompt} from '../../../src/agent/listener.js';
+import { Listener } from '../../../src/agent/listener.js';
+import { buildToolDefinitions } from '../../../src/agent/tool-definitions.js';
+import { buildSystemPrompt } from '../../../src/agent/prompts.js';
 import {toListenerConfig} from '../../../src/config/runtime.js';
 import {TOOL_NAMES,TOOL_CAPABILITIES,type ResolvedToolPolicies,type ToolName,type ToolPolicy} from '../../../src/config/tool-policy.js';
 import type {AppConfig,ResolvedGroupConfig} from '../../../src/config/app.js';

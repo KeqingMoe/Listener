@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
-import {Listener,buildToolDefinitions} from '../../../src/agent/listener.js';
+import { Listener } from '../../../src/agent/listener.js';
+import { buildToolDefinitions } from '../../../src/agent/tool-definitions.js';
 import {GroupTools} from '../../../src/tools/messaging/tools.js';
 import {Moderation} from '../../../src/tools/management/moderation.js';
 import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.js';

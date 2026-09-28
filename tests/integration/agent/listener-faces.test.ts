@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { Listener, normalizeEvent, buildToolDefinitions, buildSystemPrompt } from '../../../src/agent/listener.js';
+import { Listener, normalizeEvent } from '../../../src/agent/listener.js';
+import { buildToolDefinitions } from '../../../src/agent/tool-definitions.js';
+import { buildSystemPrompt } from '../../../src/agent/prompts.js';
 import { faceMarker, FACE_LAYOUT_GUIDANCE } from '../../../src/tools/faces/tools.js';
 import type { ListenerConfig } from '../../../src/config/listener.js';
 import { LISTENER_GROUP } from '../../../src/contracts/identity.js';
