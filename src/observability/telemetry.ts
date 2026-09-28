@@ -4,6 +4,7 @@ import { types } from 'node:util';
 import { normalizeModelRequestDiagnostics } from './model-diagnostics.js';
 import { REQUEST_ERRORS, normalizeUsage, type ModelRequestRecord, type ModelRequestStart, type ModelRequestInspection } from './model-usage.js';
 import { sanitizeInspection } from './request-inspection.js';
+import { installRequestChangeLog } from './request-change-log.js';
 
 export interface TelemetryContext {
   groupId?: string | null;
@@ -85,6 +86,8 @@ export class TelemetryStore {
       CREATE INDEX IF NOT EXISTS model_request_inspections_group_turn ON model_request_inspections(group_id,turn_id);
       CREATE INDEX IF NOT EXISTS model_request_inspections_group_wake ON model_request_inspections(group_id,wake_id);`);
     } catch { /* No request contents or database errors escape inspection persistence. */ }
+    // Install before beginRequest can recover running rows (and before any other writes).
+    installRequestChangeLog(this.db);
   }
   beginRequest(value:ModelRequestStart & TelemetryContext):void {
     try {
