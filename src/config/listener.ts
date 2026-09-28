@@ -1,3 +1,4 @@
+import type { ModelTransport } from './app.js';
 import type { ResolvedToolPolicies } from './tool-policy.js';
 import type { ForwardConfig } from '../tools/forwards/tools.js';
 import type { ExtendedToolsConfig } from './extended-tools.js';
@@ -26,7 +27,7 @@ export interface ListenerConfig {
   enabled: boolean; baseUrl: string; apiKey: string; model: string;
   timeoutMs: number; maxTokens: number; debounceMs: number; cooldownMs: number;
   maxToolCallsPerWake?: number; wakeTimeoutMs?: number;
-  transport?: 'chat' | 'responses'; sessionMaxContextBytes?: number;
+  transport?: ModelTransport; sessionMaxContextBytes?: number;
   serverCompaction?: 'off' | 'auto'; compactThreshold?: number;
   memoryPath: string; maxContextChars: number; retentionDays: number;
   randomReplyProbability?: number; randomCooldownMs?: number; randomMaxPerMinute?: number; delayMaxMs?: number;

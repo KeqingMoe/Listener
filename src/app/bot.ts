@@ -91,7 +91,8 @@ async function main(): Promise<void> {
         lastRequestId=record.requestId;const scope=contexts.get(record.requestId)??context();contexts.delete(record.requestId);
         try{telemetry?.record({...record,...scope});}catch{log('warn','model.telemetry_failed',{reason:'storage_failed'});}
       }};
-      const model=policy.session.transport==='responses'?new ResponsesModel({...scoped,sessionId:`group:${groupId}`}):new OpenAIModel(scoped);
+      const transport=app.model.transport;
+      const model=transport==='chat'?new OpenAIModel(scoped):new ResponsesModel({...scoped,sessionId:`group:${groupId}`,...(typeof transport==='object'?{incremental:transport.incremental}:{})});
       try{
         mkdirSync(dirname(policy.storage.databasePath),{recursive:true,mode:0o700});
         memory=new SQLiteMemory({path:policy.storage.databasePath,maxContextChars:group.maxContextChars,retentionDays:policy.history.retentionDays,groupId});

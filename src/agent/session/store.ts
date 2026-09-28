@@ -239,7 +239,10 @@ export class ModelSession {
   this.check();const value=this.db.prepare('SELECT checkpoint FROM model_session_meta WHERE singleton=1').get()!.checkpoint;return typeof value==='string'?JSON.parse(value) as JsonObject:undefined;
  }
  setTransportCheckpoint(value:JsonObject|undefined):void {
-  this.check();if(value!==undefined&&!object(value))throw new Error('invalid_transport_checkpoint');const text=value===undefined?null:encode(value,CHECKPOINT_MAX);
+  this.check();if(value!==undefined&&!object(value))throw new Error('invalid_transport_checkpoint');
+  let text:string|null;
+  try{text=value===undefined?null:encode(value,Array.isArray(value.outputHistory)?16*1024*1024:CHECKPOINT_MAX);}
+  catch(error){this.reset('transport_checkpoint_limit');throw error;}
   this.transaction(()=>{this.db.prepare('UPDATE model_session_meta SET checkpoint=? WHERE singleton=1').run(text);this.audit('transport_checkpoint',{present:value!==undefined});});
  }
  /** Completion is terminal ledger state, not necessarily a successful external write.

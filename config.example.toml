@@ -12,6 +12,10 @@ owner_name = "主人"
 url = "ws://127.0.0.1:3001"
 
 [model]
+transport = {
+  type = "responses",
+  incremental = false,
+}
 base_url = "https://api.openai.com/v1"
 model = "" # 必填：填写服务商提供的、支持工具调用的模型名称；看图另需图片输入能力。
 
@@ -26,7 +30,6 @@ model = "" # 必填：填写服务商提供的、支持工具调用的模型名�
 enabled = false
 persona = "prompts/listener.md"
 reply.random = false
-session.transport = "chat" # chat 或 responses，须与模型服务匹配。
 
 # 后台 reaction 观察默认开启，与添加回应和查询回应者的工具权限独立。
 

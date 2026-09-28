@@ -37,7 +37,7 @@ export function toListenerConfig(app:AppConfig,group:ResolvedGroupConfig):Resolv
     persona:group.persona,debounceMs:group.reply.delayMs[0],delayMaxMs:group.reply.delayMs[1],cooldownMs:group.reply.cooldownMs,
     mentionEnabled:group.reply.mention,quoteBotEnabled:group.reply.quoteBot,
     randomReplyProbability:random?random.probability:0,randomCooldownMs:random?random.cooldownMs:60000,randomMaxPerMinute:random?random.maxPerMinute:2,
-    transport:group.session.transport,sessionMaxContextBytes:group.session.maxTranscriptBytes,
+    sessionMaxContextBytes:group.session.maxTranscriptBytes,
     serverCompaction:group.session.compaction?'auto':'off',...(group.session.compaction?{compactThreshold:group.session.compaction.thresholdTokens}:{}),
     maxToolCallsPerWake:group.execution.maxToolCallsPerWake,wakeTimeoutMs:group.execution.wakeTimeoutMs,
     memoryPath:group.storage.databasePath,retentionDays:group.history.retentionDays,

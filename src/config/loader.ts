@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { parse as parseToml } from 'smol-toml';
 import { parse as parseDotenv } from 'dotenv';
-import type { AppConfig, ResolvedGroupConfig } from './app.js';
+import type { AppConfig, ResolvedGroupConfig, ModelTransport } from './app.js';
 import type { LoggingConfig, LogLevel } from '../observability/logger.js';
 import { OWNER_ID } from '../contracts/identity.js';
 import { TOOL_NAMES, TOOL_CAPABILITIES, type ResolvedToolPolicies, type ToolMode, type ToolName, type ToolPolicy } from './tool-policy.js';
@@ -80,11 +80,18 @@ function tools(value:unknown,path:string,defaults?:ResolvedToolPolicies):Resolve
   }
   return result as ResolvedToolPolicies;
 }
+function modelTransport(value:unknown):ModelTransport {
+  if(value==='chat'||value==='responses')return value;
+  const options=table(value,'model.transport',['type','incremental']);
+  if(options.type!=='responses')return fail('model.transport.type','必须是responses');
+  if(!own(options,'incremental'))return fail('model.transport.incremental','必须显式指定布尔值');
+  return {type:'responses',incremental:bool(options,'incremental','model.transport',false)};
+}
 const POLICY_KEYS=['enabled','persona','reply','session','execution','messages','observation','confirmation','history','storage','tools'] as const;
-function policy(rawValue:unknown,path:string,base:string,directory:string,groupId:string,defaults?:ResolvedGroupConfig):ResolvedGroupConfig {
+function policy(rawValue:unknown,path:string,base:string,directory:string,groupId:string,transport:ModelTransport,defaults?:ResolvedGroupConfig):ResolvedGroupConfig {
   const raw=table(rawValue,path,POLICY_KEYS);
   const reply=table(raw.reply,`${path}.reply`,['mention','quote_bot','delay_ms','cooldown_ms','random']);
-  const session=table(raw.session,`${path}.session`,['transport','max_transcript_bytes','compaction']);
+  const session=table(raw.session,`${path}.session`,['max_transcript_bytes','compaction']);
   const execution=table(raw.execution,`${path}.execution`,['max_tool_calls_per_wake','wake_timeout_ms']);
   const messages=table(raw.messages,`${path}.messages`,['mentions']);
   const observation=table(raw.observation,`${path}.observation`,['reactions']);
@@ -96,14 +103,12 @@ function policy(rawValue:unknown,path:string,base:string,directory:string,groupI
     if(reply.random===false)random=false;
     else{const r=table(reply.random,`${path}.reply.random`,['probability','cooldown_ms','max_per_minute']);random={probability:num(r,'probability',`${path}.reply.random`,0.03,0,1,false),cooldownMs:num(r,'cooldown_ms',`${path}.reply.random`,60000,1000,3600000),maxPerMinute:num(r,'max_per_minute',`${path}.reply.random`,2,1,10)};}
   }
-  const transport=own(session,'transport')?session.transport:defaults?.session.transport??'chat';
-  if(transport!=='chat'&&transport!=='responses')return fail(`${path}.session.transport`,'必须是chat或responses');
   let compaction:ResolvedGroupConfig['session']['compaction']=defaults?.session.compaction===undefined?false:structuredClone(defaults.session.compaction);
   if(own(session,'compaction')){
     if(session.compaction===false)compaction=false;
     else {const c=table(session.compaction,`${path}.session.compaction`,['threshold_tokens']);if(!own(c,'threshold_tokens'))fail(`${path}.session.compaction.threshold_tokens`,'必须显式指定阈值');compaction={thresholdTokens:num(c,'threshold_tokens',`${path}.session.compaction`,1,1,Number.MAX_SAFE_INTEGER)};}
   }
-  if(compaction!==false&&transport!=='responses')fail(`${path}.session.compaction`,'需要responses传输');
+  if(compaction!==false&&transport==='chat')fail(`${path}.session.compaction`,'需要responses传输');
   const delay=own(reply,'delay_ms')?reply.delay_ms:defaults?.reply.delayMs??[1200,3000];
   if(!Array.isArray(delay)||delay.length!==2)fail(`${path}.reply.delay_ms`,'必须是两个整数的数组');
   const pair=delay as unknown[],min=num({min:pair[0]},'min',`${path}.reply.delay_ms`,1200,0,5000),max=num({max:pair[1]},'max',`${path}.reply.delay_ms`,3000,0,10000);
@@ -114,7 +119,7 @@ function policy(rawValue:unknown,path:string,base:string,directory:string,groupI
   const databasePath=own(storage,'database')?filePath(text(storage,'database',`${path}.storage`,''),base,`${path}.storage.database`):defaults?.storage.databasePath??resolve(directory,'groups',groupId,'listener.sqlite');
   return {groupId,enabled:bool(raw,'enabled',path,defaults?.enabled??false),personaPath,persona:own(raw,'persona')||!defaults?persona(personaPath,`${path}.persona`):defaults.persona,
     reply:{mention:bool(reply,'mention',`${path}.reply`,defaults?.reply.mention??true),quoteBot:bool(reply,'quote_bot',`${path}.reply`,defaults?.reply.quoteBot??true),delayMs:[min,max],cooldownMs:num(reply,'cooldown_ms',`${path}.reply`,defaults?.reply.cooldownMs??5000,1000,60000),random},
-    session:{transport,maxTranscriptBytes:num(session,'max_transcript_bytes',`${path}.session`,defaults?.session.maxTranscriptBytes??524288,65536,8388608),compaction},
+    session:{maxTranscriptBytes:num(session,'max_transcript_bytes',`${path}.session`,defaults?.session.maxTranscriptBytes??524288,65536,8388608),compaction},
     execution:{maxToolCallsPerWake:num(execution,'max_tool_calls_per_wake',`${path}.execution`,defaults?.execution.maxToolCallsPerWake??96,1,4096),wakeTimeoutMs:num(execution,'wake_timeout_ms',`${path}.execution`,defaults?.execution.wakeTimeoutMs??90000,1000,600000)},
     messages:{mentions:bool(messages,'mentions',`${path}.messages`,defaults?.messages.mentions??true)},observation:{reactions:bool(observation,'reactions',`${path}.observation`,defaults?.observation.reactions??true)},confirmation:{ttlSeconds:num(confirmation,'ttl_seconds',`${path}.confirmation`,defaults?.confirmation.ttlSeconds??60,1,60)},history:{retentionDays:num(history,'retention_days',`${path}.history`,defaults?.history.retentionDays??7,1,30)},storage:{databasePath},tools:tools(raw.tools,`${path}.tools`,defaults?.tools)};
 }
@@ -167,13 +172,14 @@ export function loadAppConfig(options:{configPath?:string;envPath?:string;env?:N
   const configPath=resolve(options.configPath??'config.toml'),base=dirname(configPath);let parsed:unknown,source='';
   try{source=readFileSync(configPath,'utf8');parsed=parseToml(source);}catch{return fail('config.toml','无法读取或TOML格式无效');}
   const root=table(parsed,'config',['bot','onebot','model','runtime','storage','logging','defaults','groups']);
-  const bot=table(root.bot,'bot',['name','owner_id','owner_name']),one=table(root.onebot,'onebot',['url','token_env','api_timeout_ms','reconnect_base_ms','reconnect_max_ms','heartbeat_ms']),model=table(root.model,'model',['base_url','model','api_key_env','timeout_ms','max_output_tokens','opencode_headers']),runtime=table(root.runtime,'runtime',['max_concurrent_turns']),rawStorage=table(root.storage,'storage',['directory','telemetry_path','registry_path','custom_face_directory','napcat_custom_face_directory']),logs=table(root.logging,'logging',['level','console','file']);
+  const bot=table(root.bot,'bot',['name','owner_id','owner_name']),one=table(root.onebot,'onebot',['url','token_env','api_timeout_ms','reconnect_base_ms','reconnect_max_ms','heartbeat_ms']),model=table(root.model,'model',['base_url','model','api_key_env','timeout_ms','max_output_tokens','opencode_headers','transport']),runtime=table(root.runtime,'runtime',['max_concurrent_turns']),rawStorage=table(root.storage,'storage',['directory','telemetry_path','registry_path','custom_face_directory','napcat_custom_face_directory']),logs=table(root.logging,'logging',['level','console','file']);
   const directory=filePath(text(rawStorage,'directory','storage','data'),base,'storage.directory');
   const customFaceDirectory=filePath(text(rawStorage,'custom_face_directory','storage',resolve(directory,'custom-face-originals')),base,'storage.custom_face_directory');
   const napcatCustomFaceDirectory=text(rawStorage,'napcat_custom_face_directory','storage',customFaceDirectory);
   if(!napcatCustomFaceDirectory.startsWith('/')||napcatCustomFaceDirectory.includes('\\')||napcatCustomFaceDirectory.split('/').some(part=>part==='.'||part==='..')||napcatCustomFaceDirectory==='/')fail('storage.napcat_custom_face_directory','必须是专用的绝对POSIX目录，不得含路径跳转');
   const storage={directory,telemetryPath:filePath(text(rawStorage,'telemetry_path','storage',resolve(directory,'telemetry.sqlite')),base,'storage.telemetry_path'),registryPath:filePath(text(rawStorage,'registry_path','storage',resolve(directory,'group-registry.json')),base,'storage.registry_path'),customFaceDirectory,napcatCustomFaceDirectory};
-  const defaultsRaw=table(root.defaults,'defaults',POLICY_KEYS),defaultPolicy=policy(defaultsRaw,'defaults',base,directory,'1');
+  const transport=modelTransport(own(model,'transport')?model.transport:'chat');
+  const defaultsRaw=table(root.defaults,'defaults',POLICY_KEYS),defaultPolicy=policy(defaultsRaw,'defaults',base,directory,'1',transport);
   const defaultDatabaseExplicit=own(table(defaultsRaw.storage,'defaults.storage',['database']),'database');
   const configured=table(root.groups,'groups',root.groups&&typeof root.groups==='object'&&!Array.isArray(root.groups)?Object.keys(root.groups):[]);
   const configuredGroupIds=Object.keys(configured);for(const groupId of configuredGroupIds)id(groupId,'groups');
@@ -181,7 +187,7 @@ export function loadAppConfig(options:{configPath?:string;envPath?:string;env?:N
   function resolvePolicy(groupId:string):ResolvedGroupConfig {
     const inherited=structuredClone(defaultPolicy);
     if(!defaultDatabaseExplicit)inherited.storage.databasePath=resolve(directory,'groups',groupId,'listener.sqlite');
-    return policy(configured[groupId],own(configured,groupId)?`groups.${groupId}`:'groups',base,directory,groupId,inherited);
+    return policy(configured[groupId],own(configured,groupId)?`groups.${groupId}`:'groups',base,directory,groupId,transport,inherited);
   }
   for(const groupId of configuredGroupIds)resolved.set(groupId,resolvePolicy(groupId));
   const enabled=[...resolved.values()].filter(group=>group.enabled),ownerConfigured=own(bot,'owner_id');
@@ -202,7 +208,7 @@ export function loadAppConfig(options:{configPath?:string;envPath?:string;env?:N
   assertStoragePaths(storage,[...resolved.values()]);
   // Validate a literal defaults database even when no explicit group exists.
   if(defaultDatabaseExplicit)assertStoragePaths(storage,[defaultPolicy]);
-  const app:AppConfig={configPath,identity:{name:text(bot,'name','bot','Listener'),ownerId,ownerName:text(bot,'owner_name','bot','主人')},onebot,model:{baseUrl:url(text(model,'base_url','model','https://api.openai.com/v1'),'model.base_url',true),apiKey:secret(keyEnv,'model.api_key_env',true),model:text(model,'model','model',''),timeoutMs:num(model,'timeout_ms','model',45000,1000,120000),maxTokens:num(model,'max_output_tokens','model',8192,1,Number.MAX_SAFE_INTEGER),opencodeHeaders:bool(model,'opencode_headers','model',false)},runtime:{maxConcurrentTurns:num(runtime,'max_concurrent_turns','runtime',2,1,8)},storage,logging,defaultsEnabled:defaultPolicy.enabled,configuredGroupIds:Object.freeze([...configuredGroupIds]),resolveGroup(groupId:string){id(groupId,'groups');const group=structuredClone(resolved.get(groupId)??resolvePolicy(groupId));assertStoragePaths(storage,[...resolved.values()].filter(other=>other.groupId!==groupId).concat(group));return group;}};
+  const app:AppConfig={configPath,identity:{name:text(bot,'name','bot','Listener'),ownerId,ownerName:text(bot,'owner_name','bot','主人')},onebot,model:{transport,baseUrl:url(text(model,'base_url','model','https://api.openai.com/v1'),'model.base_url',true),apiKey:secret(keyEnv,'model.api_key_env',true),model:text(model,'model','model',''),timeoutMs:num(model,'timeout_ms','model',45000,1000,120000),maxTokens:num(model,'max_output_tokens','model',8192,1,Number.MAX_SAFE_INTEGER),opencodeHeaders:bool(model,'opencode_headers','model',false)},runtime:{maxConcurrentTurns:num(runtime,'max_concurrent_turns','runtime',2,1,8)},storage,logging,defaultsEnabled:defaultPolicy.enabled,configuredGroupIds:Object.freeze([...configuredGroupIds]),resolveGroup(groupId:string){id(groupId,'groups');const group=structuredClone(resolved.get(groupId)??resolvePolicy(groupId));assertStoragePaths(storage,[...resolved.values()].filter(other=>other.groupId!==groupId).concat(group));return group;}};
   configSources.set(app, { path: configPath, digest: sourceDigest(source) });
   // Empty process values intentionally override a file credential to disable login.
   // Password policy belongs to AuthStore so invalid/missing values still serve the UI.

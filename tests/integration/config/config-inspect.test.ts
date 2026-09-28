@@ -21,12 +21,13 @@ function fixture(t: { after(fn: () => void): void }, text: string) {
 
 test('inspection explains field inheritance and atomic branch defaults without credentials or persona text', t => {
   const { directory, app } = fixture(t, `
+[model]
+transport = "responses"
 [bot]
 owner_id = "100000001"
 [defaults]
 enabled = false
 reply = { cooldown_ms = 9000, random = { probability = 0.2, cooldown_ms = 15000, max_per_minute = 6 } }
-session.transport = "responses"
 session.compaction.threshold_tokens = 65536
 [defaults.tools]
 mute_member = { mode = "direct", max_seconds = 120 }

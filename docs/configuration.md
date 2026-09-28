@@ -35,6 +35,7 @@ npm run config:check -- --group 123456789
 | | `timeout_ms` | 45000，范围1000..120000 |
 | | `max_output_tokens` | 8192，安全正整数；单次模型输出预算，仍受服务商限制 |
 | | `opencode_headers` | false；请求添加每群持久 `x-opencode-session` |
+| | `transport` | 默认`"chat"`；`"chat"`、`"responses"`，或`{type = "responses", incremental = false}` |
 | `runtime` | `max_concurrent_turns` | 2，范围1..8；全局同时运行的唤醒数，同一群不会并行唤醒 |
 | `storage` | `directory` | `data`，分群及全局数据文件的基准目录 |
 | | `telemetry_path` | `<directory>/telemetry.sqlite`，模型用量库 |
@@ -66,6 +67,20 @@ file = {
 
 文件日志关闭后，可用 `npm run logs -- --directory 路径` 查看指定目录中已存在的日志。
 
+### 模型传输
+
+`model.transport` 是全局设置，所有群共用；仅接受 `"chat"`、`"responses"` 或 `{type = "responses", incremental = true/false}`（最后一项为布尔值二选一）。`"responses"` 默认启用 `previous_response_id` 增量续接；`incremental = false` 发送完整上下文，`true` 启用增量续接。
+
+```toml
+[model]
+transport = {
+  type = "responses",
+  incremental = false,
+}
+```
+
+对象必须同时提供 `type = "responses"` 和布尔值 `incremental`，不接受chat对象、缺少incremental的对象或未知字段。旧的 `defaults.session.transport` / `groups."群号".session.transport` 不再支持，必须删除并改用全局字段；不能按群选择传输。此迁移不改变人设、缓存键或OpenCode请求头设置。
+
 ## 群策略与继承
 
 `defaults` 定义各群共用的策略，`groups."群号"` 覆盖某个群；没写的配置使用下表中的程序默认值。
@@ -79,7 +94,6 @@ file = {
 | `reply.delay_ms` | [1200, 3000] | 合批等待区间；两个整数，下界0..5000，上界0..10000，上界不得小于下界；[0,0]不额外等待 |
 | `reply.cooldown_ms` | 5000 | 范围1000..60000 |
 | `reply.random` | false | 随机参与关闭；开启用参数对象，不能写true |
-| `session.transport` | chat | chat或responses，须与模型服务匹配 |
 | `session.max_transcript_bytes` | 524288 | 范围65536..8388608；本地模型会话容量，不是服务商的token窗口 |
 | `session.compaction` | false | 服务端压缩关闭；参数形式为`{threshold_tokens}`，当前运行入口不支持启用，保持false |
 | `execution.max_tool_calls_per_wake` | 96 | 范围1..4096；一次唤醒全部工具共享 |

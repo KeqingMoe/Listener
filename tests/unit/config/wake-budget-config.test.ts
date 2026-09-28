@@ -17,10 +17,10 @@ test('execution defaults are 96 calls and 90 seconds for configured and dynamic 
   assert.equal(app.model.maxTokens,8192);assert.equal(app.runtime.maxConcurrentTurns,2);
 });
 test('execution inherits ordinary fields independently and contains no model credentials',t=>{
-  const app=fixture(t)('[model]\nmodel="synthetic-model"\nmax_output_tokens=16384\n[runtime]\nmax_concurrent_turns=3\n[defaults.execution]\nmax_tool_calls_per_wake=128\nwake_timeout_ms=100000\n[defaults.session]\ntransport="responses"\n[groups."11".execution]\nmax_tool_calls_per_wake=64\n[groups."22".execution]\nwake_timeout_ms=120000');
+  const app=fixture(t)('[model]\nmodel="synthetic-model"\nmax_output_tokens=16384\ntransport="responses"\n[runtime]\nmax_concurrent_turns=3\n[defaults.execution]\nmax_tool_calls_per_wake=128\nwake_timeout_ms=100000\n[groups."11".execution]\nmax_tool_calls_per_wake=64\n[groups."22".execution]\nwake_timeout_ms=120000');
   assert.deepEqual(app.resolveGroup('11').execution,{maxToolCallsPerWake:64,wakeTimeoutMs:100000});assert.deepEqual(app.resolveGroup('22').execution,{maxToolCallsPerWake:128,wakeTimeoutMs:120000});assert.deepEqual(app.resolveGroup('99').execution,{maxToolCallsPerWake:128,wakeTimeoutMs:100000});
   assert.equal(app.model.model,'synthetic-model');assert.equal(app.model.apiKey,'fixture-model-key');assert.equal(app.model.maxTokens,16384);assert.equal(app.runtime.maxConcurrentTurns,3);
-  for(const id of ['11','22','99']){const g=app.resolveGroup(id);assert.equal(g.session.transport,'responses');for(const key of ['model','apiKey','baseUrl','ownerId','onebot','runtime'])assert.equal(Object.hasOwn(g,key),false);}
+  for(const id of ['11','22','99']){const g=app.resolveGroup(id);assert.equal(app.model.transport,'responses');assert.equal(Object.hasOwn(g.session,'transport'),false);for(const key of ['model','apiKey','baseUrl','ownerId','onebot','runtime'])assert.equal(Object.hasOwn(g,key),false);}
   const snapshot=app.resolveGroup('11');snapshot.execution.maxToolCallsPerWake=7;assert.equal(app.resolveGroup('11').execution.maxToolCallsPerWake,64);assert.equal(app.resolveGroup('99').execution.maxToolCallsPerWake,128);
 });
 test('execution endpoints are accepted at defaults and disabled group scope',t=>{
