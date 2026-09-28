@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Api, JsonObject, TurnContext, TimelineEntry } from '../src/contracts/index.js';
-import { GroupActionTools, GROUP_ACTION_TOOL_NAMES } from '../src/group-action-tools.js';
+import { GroupActionTools, GROUP_ACTION_TOOL_NAMES } from '../src/tools/actions/tools.js';
 const ctx: TurnContext={groupId:'123',selfId:'456',actorId:'789',messageId:'1'};
 function fixture() {
   const calls: {action:string;params?:JsonObject}[]=[];

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Moderation, buildModerationTools, MODERATION_TOOLS, HELP } from '../src/moderation.js';
+import { Moderation, buildModerationTools, MODERATION_TOOLS, HELP } from '../src/tools/management/moderation.js';
 import type { ModerationPolicy, ModerationMode } from '../src/config/listener.js';
 import { LISTENER_GROUP, OWNER_ID, type Api, type JsonObject, type TurnContext } from '../src/contracts/index.js';
 

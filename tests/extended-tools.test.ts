@@ -4,22 +4,22 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { ToolRegistry } from "../src/tool-registry.js";
+import { ToolRegistry } from "../src/tools/registry.js";
 import { loadAppConfig } from "../src/config/loader.js";
 import { toListenerConfig } from "../src/config/runtime.js";
 import {
   createExtendedTools,
   buildExtendedToolDefinitions,
-} from "../src/extended-tools.js";
+} from "../src/tools/extended.js";
 import {
   EXTENDED_TOOL_NAMES,
   enabledExtendedTools,
   type ExtendedToolsConfig,
 } from "../src/config/extended-tools.js";
-import { GROUP_ACTION_TOOL_NAMES } from "../src/group-action-tools.js";
-import { GROUP_OBSERVATION_TOOL_NAMES } from "../src/group-observation-tools.js";
-import { Listener, buildToolDefinitions } from "../src/listener.js";
-import { ModelSession } from "../src/model-session.js";
+import { GROUP_ACTION_TOOL_NAMES } from "../src/tools/actions/tools.js";
+import { GROUP_OBSERVATION_TOOL_NAMES } from "../src/tools/observation/tools.js";
+import { Listener, buildToolDefinitions } from "../src/agent/listener.js";
+import { ModelSession } from "../src/agent/session/store.js";
 import { WorldEventStore } from "../src/world/events.js";
 import type { ListenerConfig } from "../src/config/listener.js";
 import {

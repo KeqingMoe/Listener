@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { ModelSession } from '../src/model-session.js';
-import { SESSION_INSPECTION_INDEXES, SESSION_PHYSICAL_TURN } from '../src/session-inspection-indexes.js';
+import { ModelSession } from '../src/agent/session/store.js';
+import { SESSION_INSPECTION_INDEXES, SESSION_PHYSICAL_TURN } from '../src/agent/session/indexes.js';
 
 test('diagnostic metadata indexes target requests, wakes and physical turns without scanning history bodies',()=>{
  const db=new DatabaseSync(':memory:');

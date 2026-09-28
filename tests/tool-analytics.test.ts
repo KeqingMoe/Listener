@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {ModelSession} from '../src/model-session.js';
+import {ModelSession} from '../src/agent/session/store.js';
 import type {Completion,ToolDefinition} from '../src/contracts/index.js';
 const tools:ToolDefinition[]=[{type:'function',function:{name:'send_message',description:'send',parameters:{type:'object'}}},{type:'function',function:{name:'finish',description:'finish',parameters:{type:'object'}}}];
 const call=(id:string,name='send_message')=>({id,type:'function' as const,function:{name,arguments:'{}'}});

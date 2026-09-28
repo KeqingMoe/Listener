@@ -7,7 +7,7 @@ import { PassThrough } from 'node:stream';
 import { test } from 'node:test';
 import sharp from 'sharp';
 import { createOriginalImageDownloader, downloadOriginalImage, prepareImage, validateCustomFaceImageUrl,
-  validateImageUrl, validateOriginalImage, type ImageDownloadDependencies } from '../src/image-download.js';
+  validateImageUrl, validateOriginalImage, type ImageDownloadDependencies } from '../src/tools/images/download.js';
 
 const URL = 'https://gchat.qpic.cn/image?token=SECRET';
 const png = () => sharp({ create: { width: 8, height: 4, channels: 4, background: '#ff000080' } }).png().toBuffer();

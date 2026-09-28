@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { Listener } from '../src/listener.js';
+import { Listener } from '../src/agent/listener.js';
 import type { ListenerConfig } from '../src/config/listener.js';
 import { LISTENER_GROUP, OWNER_ID, type Api, type ChatMessage, type Completion, type JsonObject, type Memory, type Model, type TimelineEntry } from '../src/contracts/index.js';
 

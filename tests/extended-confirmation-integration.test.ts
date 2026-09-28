@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as delay } from "node:timers/promises";
-import { Listener, buildToolDefinitions } from "../src/listener.js";
+import { Listener, buildToolDefinitions } from "../src/agent/listener.js";
 import {
   OWNER_ID,
   type Api,

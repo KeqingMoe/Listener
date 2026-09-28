@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ForwardTools, READ_FORWARD_TOOL, type ForwardConfig } from '../src/forward-tools.js';
+import { ForwardTools, READ_FORWARD_TOOL, type ForwardConfig } from '../src/tools/forwards/tools.js';
 import { extractForward, forwardMarker, forwardReferences, sanitizeForwardReferences } from '../src/onebot/forward-references.js';
 import { LISTENER_GROUP, type Api, type Memory, type TimelineEntry, type TurnContext } from '../src/contracts/index.js';
 

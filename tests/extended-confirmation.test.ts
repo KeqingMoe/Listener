@@ -6,28 +6,28 @@ import type {
   JsonObject,
   ToolDefinition,
 } from "../src/contracts/index.js";
-import { prepareExtendedConfirmation as prepare } from "../src/extended-confirmation.js";
+import { prepareExtendedConfirmation as prepare } from "../src/tools/confirmation.js";
 import {
   GroupActionTools,
   GROUP_ACTION_TOOL_NAMES,
-} from "../src/group-action-tools.js";
-import { GroupObservationTools } from "../src/group-observation-tools.js";
+} from "../src/tools/actions/tools.js";
+import { GroupObservationTools } from "../src/tools/observation/tools.js";
 import {
   buildGroupFileTools,
   GROUP_FILE_TOOL_NAMES,
-} from "../src/group-file-tools.js";
+} from "../src/tools/files/tools.js";
 import {
   GroupMediaTools,
   GROUP_MEDIA_TOOL_NAMES,
-} from "../src/group-media-tools.js";
+} from "../src/tools/media/tools.js";
 import {
   GroupVoiceTools,
   GROUP_VOICE_TOOL_NAMES,
-} from "../src/group-voice-tools.js";
+} from "../src/tools/voice/tools.js";
 import {
   GroupRequestTools,
   GROUP_REQUEST_TOOL_NAMES,
-} from "../src/group-request-tools.js";
+} from "../src/tools/requests/tools.js";
 const api: Api = {
   async call() {
     throw new Error("No API is allowed during a proposal");

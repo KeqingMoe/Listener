@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
-import {Listener,buildToolDefinitions} from '../src/listener.js';
-import {GroupTools} from '../src/group-tools.js';
-import {Moderation} from '../src/moderation.js';
+import {Listener,buildToolDefinitions} from '../src/agent/listener.js';
+import {GroupTools} from '../src/tools/messaging/tools.js';
+import {Moderation} from '../src/tools/management/moderation.js';
 import {LISTENER_GROUP,OWNER_ID,type Api,type Memory,type TimelineEntry,type ChatMessage,type Completion,type Model} from '../src/contracts/index.js';
 import type {ListenerConfig} from '../src/config/listener.js';
 const self='999',actor='123';

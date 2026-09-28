@@ -6,8 +6,8 @@ import { tmpdir } from 'node:os';
 import { loadAppConfig } from '../src/config/loader.js';
 import { toListenerConfig } from '../src/config/runtime.js';
 import { inspectGroupConfig } from '../src/config/inspect.js';
-import { buildToolDefinitions } from '../src/listener.js';
-import { buildCustomFaceToolDefinitions } from '../src/custom-face-tools.js';
+import { buildToolDefinitions } from '../src/agent/listener.js';
+import { buildCustomFaceToolDefinitions } from '../src/tools/custom-faces/tools.js';
 import { TOOL_CAPABILITIES, TOOL_NAMES } from '../src/config/tool-policy.js';
 import { enabledExtendedTools } from '../src/config/extended-tools.js';
 

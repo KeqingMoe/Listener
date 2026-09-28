@@ -11,7 +11,7 @@ import type {AddressInfo,Socket} from 'node:net';
 import {DatabaseSync} from 'node:sqlite';
 import {WebSocketServer,type WebSocket} from 'ws';
 import {LISTENER_GROUP,OWNER_ID} from '../src/contracts/index.js';
-import {SQLiteMemory} from '../src/memory.js';
+import {SQLiteMemory} from '../src/agent/memory.js';
 import {FACE_CATALOG} from '../src/onebot/catalog/faces.js';
 
 const GROUP=LISTENER_GROUP,SELF='99999';

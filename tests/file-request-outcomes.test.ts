@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import {
   GroupFileTools,
   GROUP_FILE_TOOL_NAMES,
-} from "../src/group-file-tools.js";
-import { GroupRequestTools } from "../src/group-request-tools.js";
+} from "../src/tools/files/tools.js";
+import { GroupRequestTools } from "../src/tools/requests/tools.js";
 import { OneBotError } from "../src/onebot/client.js";
 import type { Api, JsonObject, TurnContext } from "../src/contracts/index.js";
 

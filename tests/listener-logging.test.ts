@@ -4,7 +4,7 @@ import {mkdtempSync,readFileSync,readdirSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
-import {Listener} from '../src/listener.js';
+import {Listener} from '../src/agent/listener.js';
 import {ModelError} from '../src/model/chat.js';
 import {OneBotError} from '../src/onebot/client.js';
 import {configureLogging,managedLogFilename} from '../src/observability/logger.js';

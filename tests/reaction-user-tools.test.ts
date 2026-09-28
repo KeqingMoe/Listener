@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ReactionUserTools,GET_REACTION_USERS_TOOL,type ReactionUserTurn} from '../src/reaction-user-tools.js';
+import {ReactionUserTools,GET_REACTION_USERS_TOOL,type ReactionUserTurn} from '../src/tools/reactions/users.js';
 import type {Api,JsonObject,Memory,TimelineEntry} from '../src/contracts/index.js';
 const ctx={groupId:'22',actorId:'111',messageId:'1',selfId:'999'};
 const q={message_id:'1',emoji_id:'476',emoji_type:'1',limit:20};

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   GroupMediaTools,
   GROUP_MEDIA_TOOL_NAMES,
-} from "../src/group-media-tools.js";
+} from "../src/tools/media/tools.js";
 import type {
   Api,
   JsonObject,
@@ -11,7 +11,7 @@ import type {
   TimelineEntry,
   TurnContext,
 } from "../src/contracts/index.js";
-import type { ImageDownloader } from "../src/image-download.js";
+import type { ImageDownloader } from "../src/tools/images/download.js";
 
 const GROUP = "12345",
   SELF = "99999",

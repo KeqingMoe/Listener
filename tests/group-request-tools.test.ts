@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   GroupRequestTools,
   GROUP_REQUEST_TOOL_NAMES,
-} from "../src/group-request-tools.js";
+} from "../src/tools/requests/tools.js";
 import type { Api, JsonObject, TurnContext } from "../src/contracts/index.js";
 const group = "12345",
   self = "333",

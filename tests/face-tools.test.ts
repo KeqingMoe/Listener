@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { FACE_CATALOG, FACE_CATALOG_VERSION, FACE_CATALOG_SOURCE, EXAMPLE_FACE_CATALOG, loadFaceCatalog, validateFaceCatalog } from '../src/onebot/catalog/faces.js';
 import { extractFaceCatalog, FACE_DATA_LIMIT } from '../src/sync-faces.js';
-import { faceMarker, isKnownFaceId, FACE_ID_SCHEMA } from '../src/face-tools.js';
+import { faceMarker, isKnownFaceId, FACE_ID_SCHEMA } from '../src/tools/faces/tools.js';
 
 const face = (id = '14', name = '微笑', animated = false) => ({ id, name, animated });
 const data = (faces: unknown = [face()]) => ({ version: FACE_CATALOG_VERSION, faces });

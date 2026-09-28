@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { extractMessageContent } from '../world/message-content.js';
-import { imageReferences } from '../image-tools.js';
+import { imageReferences } from '../tools/images/tools.js';
 import { forwardReferences } from './forward-references.js';
 import type { TimelineEntry } from '../contracts/index.js';
 import type { EventSource, WorldEventInput, WorldEventStore } from '../world/events.js';

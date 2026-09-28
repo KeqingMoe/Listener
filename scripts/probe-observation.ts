@@ -3,9 +3,9 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {loadAppConfig} from '../src/config/loader.js';
 import {ResponsesModel} from '../src/model/responses.js';
-import {ModelSession} from '../src/model-session.js';
+import {ModelSession} from '../src/agent/session/store.js';
 import {WorldEventStore} from '../src/world/events.js';
-import {WorldTools,buildWorldTools} from '../src/world-tools.js';
+import {WorldTools,buildWorldTools} from '../src/tools/world/tools.js';
 import type {JsonObject,ToolDefinition} from '../src/contracts/index.js';
 import type {ModelRequestRecord} from '../src/observability/model-usage.js';
 

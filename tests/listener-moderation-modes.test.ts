@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
-import {Listener} from '../src/listener.js';
+import {Listener} from '../src/agent/listener.js';
 import {LISTENER_GROUP,OWNER_ID,type Api,type Memory,type TimelineEntry,type ChatMessage,type Completion,type Model} from '../src/contracts/index.js';
 import type {ListenerConfig,ModerationPolicy} from '../src/config/listener.js';
 const self='999',actor='123',target='456';

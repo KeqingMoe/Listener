@@ -8,7 +8,7 @@ import { loadAppConfig } from '../src/config/loader.js';
 import { inspectGroupConfig } from '../src/config/inspect.js';
 import { toListenerConfig } from '../src/config/runtime.js';
 import { TOOL_NAMES, TOOL_CAPABILITIES } from '../src/config/tool-policy.js';
-import { Listener, buildToolDefinitions, buildSystemPrompt } from '../src/listener.js';
+import { Listener, buildToolDefinitions, buildSystemPrompt } from '../src/agent/listener.js';
 import type { Api, JsonObject, Memory, Model, TimelineEntry } from '../src/contracts/index.js';
 
 const GROUP = '123456789', OWNER = '100000001', SELF = '100000002', MEMBER = '100000003';

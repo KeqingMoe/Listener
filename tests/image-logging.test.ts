@@ -8,8 +8,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import sharp from 'sharp';
 import { configureLogging, withLogContext } from '../src/observability/logger.js';
-import { createImageDownloader, prepareImage, type ImageDownloadDependencies } from '../src/image-download.js';
-import { ImageTools } from '../src/image-tools.js';
+import { createImageDownloader, prepareImage, type ImageDownloadDependencies } from '../src/tools/images/download.js';
+import { ImageTools } from '../src/tools/images/tools.js';
 import { LISTENER_GROUP, type Memory } from '../src/contracts/index.js';
 
 const secret = 'PRIVATE_IMAGE_HEADER_BODY_TOKEN';

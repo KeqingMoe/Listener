@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
-import { SQLiteMemory } from '../src/memory.js';
+import { SQLiteMemory } from '../src/agent/memory.js';
 import { LISTENER_GROUP, type ChatMessage, type Completion, type Model, type TimelineEntry } from '../src/contracts/index.js';
 
 const entry = (n: number, text = 'hello'): TimelineEntry => ({ messageId: String(n), userId: '42', nickname: 'Alice', text, time: Math.floor(Date.now() / 1000) });

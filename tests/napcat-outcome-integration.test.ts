@@ -8,8 +8,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { AddressInfo } from "node:net";
 import { WebSocketServer, type WebSocket } from "ws";
 import { OneBotClient } from "../src/onebot/client.js";
-import { Listener } from "../src/listener.js";
-import { ModelSession } from "../src/model-session.js";
+import { Listener } from "../src/agent/listener.js";
+import { ModelSession } from "../src/agent/session/store.js";
 import { WorldEventStore } from "../src/world/events.js";
 import { configureLogging } from "../src/observability/logger.js";
 import {

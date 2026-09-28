@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {annotateReactionBatch,annotateReactionContext,annotateReactionReadResult,type ReactionLookup} from '../src/reaction-presentation.js';
+import {annotateReactionBatch,annotateReactionContext,annotateReactionReadResult,type ReactionLookup} from '../src/agent/reaction-presentation.js';
 import type {JsonObject,Memory,TimelineEntry} from '../src/contracts/index.js';
 
 const row=(messageId:string):TimelineEntry=>({messageId,userId:'111',nickname:'fixture',time:42,text:`body-${messageId}`});

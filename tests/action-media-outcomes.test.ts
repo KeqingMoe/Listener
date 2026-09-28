@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GroupActionTools, GROUP_ACTION_TOOL_NAMES } from '../src/group-action-tools.js';
-import { GroupMediaTools } from '../src/group-media-tools.js';
-import { GroupVoiceTools } from '../src/group-voice-tools.js';
+import { GroupActionTools, GROUP_ACTION_TOOL_NAMES } from '../src/tools/actions/tools.js';
+import { GroupMediaTools } from '../src/tools/media/tools.js';
+import { GroupVoiceTools } from '../src/tools/voice/tools.js';
 import { OneBotError } from '../src/onebot/client.js';
 import { DuplicateMessageAckError } from '../src/onebot/operation-result.js';
 import type { Api, JsonObject, Memory, TimelineEntry, TurnContext } from '../src/contracts/index.js';

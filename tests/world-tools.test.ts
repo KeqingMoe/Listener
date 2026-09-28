@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { WorldEventStore } from '../src/world/events.js';
-import { WorldTools, buildWorldTools } from '../src/world-tools.js';
+import { WorldTools, buildWorldTools } from '../src/tools/world/tools.js';
 import type { JsonObject, TimelineEntry } from '../src/contracts/index.js';
 
 test('runtime metadata is queried only on wake state and strips private fields',async()=>{

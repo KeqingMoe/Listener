@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {TurnScheduler} from '../src/turn-scheduler.js';
+import {TurnScheduler} from '../src/agent/scheduler.js';
 
 const tick=async()=>{await Promise.resolve();await Promise.resolve();};
 test('global permits bound whole turns and waiting groups are admitted FIFO',async()=>{

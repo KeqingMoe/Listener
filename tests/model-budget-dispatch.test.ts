@@ -4,7 +4,7 @@ import {createServer} from 'node:http';
 import {once} from 'node:events';
 import {setTimeout as delay} from 'node:timers/promises';
 import {OpenAIModel} from '../src/model/chat.js';
-import {Listener} from '../src/listener.js';
+import {Listener} from '../src/agent/listener.js';
 import {LISTENER_GROUP,type Memory,type TimelineEntry} from '../src/contracts/index.js';
 import type {ListenerConfig} from '../src/config/listener.js';
 const self='999',actor='123';

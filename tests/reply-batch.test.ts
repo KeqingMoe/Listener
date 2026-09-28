@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { OWNER_ID, type Memory, type Model, type TimelineEntry } from '../src/contracts/index.js';
-import { ReplyBatch, snapshotMemory, type BatchItem } from '../src/reply-batch.js';
+import { ReplyBatch, snapshotMemory, type BatchItem } from '../src/agent/reply-batch.js';
 
 function item(sequence: number, trigger?: 'mention' | 'quote', received = sequence * 10): BatchItem {
   const id = String(sequence);

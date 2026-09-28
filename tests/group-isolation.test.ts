@@ -4,11 +4,11 @@ import { mkdtempSync, rmSync, readFileSync, chmodSync, statSync, existsSync } fr
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { GroupTools } from '../src/group-tools.js';
-import { ImageTools } from '../src/image-tools.js';
-import { ForwardTools } from '../src/forward-tools.js';
-import { Moderation } from '../src/moderation.js';
-import { SQLiteMemory } from '../src/memory.js';
+import { GroupTools } from '../src/tools/messaging/tools.js';
+import { ImageTools } from '../src/tools/images/tools.js';
+import { ForwardTools } from '../src/tools/forwards/tools.js';
+import { Moderation } from '../src/tools/management/moderation.js';
+import { SQLiteMemory } from '../src/agent/memory.js';
 import { LISTENER_GROUP, OWNER_ID, type Api, type Memory, type TimelineEntry, type TurnContext } from '../src/contracts/index.js';
 
 const A='111111', B='222222', self='999', user='123';

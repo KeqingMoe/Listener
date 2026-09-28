@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { performanceMetrics, intervalDuration, requestDuration } from '../shared/metrics.js';
 import { lstatSync } from 'node:fs';
 import { sanitizeInspectionValue } from '../../src/observability/request-inspection.js';
-import { SESSION_PHYSICAL_TURN } from '../../src/session-inspection-indexes.js';
+import { SESSION_PHYSICAL_TURN } from '../../src/agent/session/indexes.js';
 import { normalizeModelRequestDiagnostics } from '../../src/observability/model-diagnostics.js';
 import { Repository, ResourceLimit, summarize } from './repository.js';
 import { requestOutcome, toolOutcome, toolReason } from '../shared/outcomes.js';

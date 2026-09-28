@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Moderation } from '../src/moderation.js';
-import { ReactionTools, createReactionTool } from '../src/reaction-tools.js';
+import { Moderation } from '../src/tools/management/moderation.js';
+import { ReactionTools, createReactionTool } from '../src/tools/reactions/tools.js';
 import { OneBotError } from '../src/onebot/client.js';
 import { submittedResult, writeFailure } from '../src/onebot/operation-result.js';
 import { LISTENER_GROUP, OWNER_ID, type Api, type JsonObject, type Memory, type TurnContext } from '../src/contracts/index.js';

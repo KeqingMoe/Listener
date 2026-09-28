@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   GROUP_ACTION_TOOL_NAMES,
   GroupActionTools,
-} from "../src/group-action-tools.js";
+} from "../src/tools/actions/tools.js";
 import type {
   Api,
   JsonObject,

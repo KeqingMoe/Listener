@@ -4,7 +4,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {test} from 'node:test';
-import {SQLiteMemory} from '../src/memory.js';
+import {SQLiteMemory} from '../src/agent/memory.js';
 import {LISTENER_GROUP,type Completion,type TimelineEntry} from '../src/contracts/index.js';
 
 const row=(id:number,text='INTERNAL_ONLY_FACE_MARKER'):TimelineEntry=>({messageId:String(id),userId:'42',nickname:'Alice',time:Math.floor(Date.now()/1000),text});

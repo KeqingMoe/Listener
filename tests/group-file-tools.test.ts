@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { GroupFileTools, GROUP_FILE_TOOL_NAMES, buildGroupFileTools } from '../src/group-file-tools.js';
+import { GroupFileTools, GROUP_FILE_TOOL_NAMES, buildGroupFileTools } from '../src/tools/files/tools.js';
 import type { Api, JsonObject, TurnContext } from '../src/contracts/index.js';
-import type { GroupTextDownloader } from '../src/group-file-download.js';
+import type { GroupTextDownloader } from '../src/tools/files/download.js';
 const ctx: TurnContext = { groupId: '123', selfId: '456', actorId: '789', messageId: '1' };
 const file = (n = 1, extra: JsonObject = {}) => ({ group_id: 123, file_id: `provider-encoded-${n}`, file_name: `文档${n}.txt`, file_size: 100, uploader: 456, upload_time: 10, ...extra });
 const folder = (extra: JsonObject = {}) => ({ group_id: 123, folder_id: 'provider-folder-1', folder_name: '文档', creator: 456, total_file_count: 1, ...extra });

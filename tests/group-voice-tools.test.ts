@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   GroupVoiceTools,
   GROUP_VOICE_TOOL_NAMES,
-} from "../src/group-voice-tools.js";
+} from "../src/tools/voice/tools.js";
 import type { Api, JsonObject, TurnContext } from "../src/contracts/index.js";
 const GROUP = "12345",
   SELF = "99999",

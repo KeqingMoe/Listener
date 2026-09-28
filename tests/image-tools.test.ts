@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ImageTools, VIEW_IMAGES_TOOL, imageReferences, imageMarker } from '../src/image-tools.js';
+import { ImageTools, VIEW_IMAGES_TOOL, imageReferences, imageMarker } from '../src/tools/images/tools.js';
 import { LISTENER_GROUP, type Api, type Memory, type TimelineEntry, type TurnContext } from '../src/contracts/index.js';
 import type { ImagesConfig } from '../src/config/listener.js';
-import type { ImageDownloader } from '../src/image-download.js';
+import type { ImageDownloader } from '../src/tools/images/download.js';
 
 const context: TurnContext = { groupId: LISTENER_GROUP, actorId: '123', messageId: '1', selfId: '999' };
 const options: ImagesConfig = { enabled: true, maxPerTurn: 3, maxDownloadMb: 10 };

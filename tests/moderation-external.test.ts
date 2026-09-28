@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { configureLogging } from '../src/observability/logger.js';
 import { submittedResult } from '../src/onebot/operation-result.js';
-import { Moderation, type ExternalModerationProposal } from '../src/moderation.js';
+import { Moderation, type ExternalModerationProposal } from '../src/tools/management/moderation.js';
 import { LISTENER_GROUP, OWNER_ID, type Api, type JsonObject, type TurnContext } from '../src/contracts/index.js';
 
 const selfId = '999', actorId = '123', targetId = '456';

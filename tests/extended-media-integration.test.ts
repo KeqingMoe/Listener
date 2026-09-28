@@ -5,10 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
-import { Listener } from "../src/listener.js";
-import { ModelSession } from "../src/model-session.js";
+import { Listener } from "../src/agent/listener.js";
+import { ModelSession } from "../src/agent/session/store.js";
 import { WorldEventStore } from "../src/world/events.js";
-import { SQLiteMemory } from "../src/memory.js";
+import { SQLiteMemory } from "../src/agent/memory.js";
 import {
   LISTENER_GROUP,
   type Api,

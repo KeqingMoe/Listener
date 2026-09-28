@@ -4,8 +4,8 @@ import { mkdtemp, mkdir, readFile, readdir, rm, stat, chmod, writeFile, symlink,
 import { createHash, randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { SharedCustomFaceStaging } from '../src/custom-face-staging.js';
-import type { CustomFaceImageFormat, SharedCustomFaceStagingOptions } from '../src/custom-face-staging.js';
+import { SharedCustomFaceStaging } from '../src/tools/custom-faces/staging.js';
+import type { CustomFaceImageFormat, SharedCustomFaceStagingOptions } from '../src/tools/custom-faces/staging.js';
 
 const MARKER = '.qqbot-custom-face-cache.json';
 const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');

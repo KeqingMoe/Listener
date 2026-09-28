@@ -5,9 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { configureLogging, withLogContext } from '../src/observability/logger.js';
 import { OpenAIModel, ModelError } from '../src/model/chat.js';
-import { SQLiteMemory } from '../src/memory.js';
-import { Moderation } from '../src/moderation.js';
-import { ImageTools } from '../src/image-tools.js';
+import { SQLiteMemory } from '../src/agent/memory.js';
+import { Moderation } from '../src/tools/management/moderation.js';
+import { ImageTools } from '../src/tools/images/tools.js';
 import { LISTENER_GROUP, OWNER_ID, type Api, type Memory, type TurnContext } from '../src/contracts/index.js';
 
 const secret = 'private-body-header-key-card';
