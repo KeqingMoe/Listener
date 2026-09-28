@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Listener, normalizeEvent, buildSystemPrompt, buildToolDefinitions } from '../src/listener.js';
-import type { ListenerConfig } from '../src/listener-config.js';
-import { LISTENER_GROUP, OWNER_ID, type Memory, type TimelineEntry, type Model, type Completion, type Api, type ChatMessage } from '../src/contracts.js';
+import type { ListenerConfig } from '../src/config/listener.js';
+import { LISTENER_GROUP, OWNER_ID, type Memory, type TimelineEntry, type Model, type Completion, type Api, type ChatMessage } from '../src/contracts/index.js';
 const self='900000001';
 class MockMemory implements Memory {
   entries:TimelineEntry[]=[]; closed=false;

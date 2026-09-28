@@ -1,4 +1,4 @@
-import { resolveGroupId } from './contracts.js';
+import { resolveGroupId } from './contracts/index.js';
 
 export interface TurnAdmission { acquire(groupId: string, signal?: AbortSignal): Promise<() => void> }
 interface Waiting {

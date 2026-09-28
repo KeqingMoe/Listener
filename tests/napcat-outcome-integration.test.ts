@@ -19,9 +19,9 @@ import {
   type JsonObject,
   type Memory,
   type TimelineEntry,
-} from "../src/contracts.js";
-import type { ListenerConfig } from "../src/listener-config.js";
-import type { ExtendedToolsConfig } from "../src/extended-tool-config.js";
+} from "../src/contracts/index.js";
+import type { ListenerConfig } from "../src/config/listener.js";
+import type { ExtendedToolsConfig } from "../src/config/extended-tools.js";
 
 const GROUP = "123456",
   SELF = "999",

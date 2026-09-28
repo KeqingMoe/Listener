@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Moderation, buildModerationTools, MODERATION_TOOLS, HELP } from '../src/moderation.js';
-import type { ModerationPolicy, ModerationMode } from '../src/listener-config.js';
-import { LISTENER_GROUP, OWNER_ID, type Api, type JsonObject, type TurnContext } from '../src/contracts.js';
+import type { ModerationPolicy, ModerationMode } from '../src/config/listener.js';
+import { LISTENER_GROUP, OWNER_ID, type Api, type JsonObject, type TurnContext } from '../src/contracts/index.js';
 
 const self = '303', target = '202';
 const ctx: TurnContext = { groupId: LISTENER_GROUP, selfId: self, actorId: '101', messageId: '5' };

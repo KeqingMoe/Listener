@@ -5,7 +5,7 @@ import { GroupMediaTools } from '../src/group-media-tools.js';
 import { GroupVoiceTools } from '../src/group-voice-tools.js';
 import { OneBotError } from '../src/client.js';
 import { DuplicateMessageAckError } from '../src/operation-result.js';
-import type { Api, JsonObject, Memory, TimelineEntry, TurnContext } from '../src/contracts.js';
+import type { Api, JsonObject, Memory, TimelineEntry, TurnContext } from '../src/contracts/index.js';
 const groupId='123',selfId='456',target='789';
 const ctx:TurnContext={groupId,selfId,actorId:'234',messageId:'1'};
 class Mem implements Memory {

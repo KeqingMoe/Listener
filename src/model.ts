@@ -1,6 +1,6 @@
-import type { ChatMessage, Completion, Model, ToolCall, ToolDefinition } from './contracts.js';
+import type { ChatMessage, Completion, Model, ToolCall, ToolDefinition } from './contracts/index.js';
 import { log } from './logger.js';
-import { EXTENDED_TOOL_NAMES } from './extended-tool-config.js';
+import { EXTENDED_TOOL_NAMES } from './config/extended-tools.js';
 import { randomUUID } from 'node:crypto';
 import { providerRequestId, readErrorInspection, responseInspection } from './request-inspection.js';
 import { parseChatUsage, type ModelRequestInspection, type ModelRequestStart, type ModelRequestRecord, type ModelUsage } from './model-usage.js';

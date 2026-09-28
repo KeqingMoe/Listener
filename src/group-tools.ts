@@ -1,4 +1,4 @@
-import { resolveGroupId, type Api, type Memory, type JsonObject, type ToolDefinition, type TurnContext, type TimelineEntry } from './contracts.js';
+import { resolveGroupId, type Api, type Memory, type JsonObject, type ToolDefinition, type TurnContext, type TimelineEntry } from './contracts/index.js';
 
 import { imageReferences } from './image-tools.js';
 import { forwardReferences } from './forward-references.js';

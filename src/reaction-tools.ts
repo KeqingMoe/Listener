@@ -1,4 +1,4 @@
-import { LISTENER_GROUP, resolveGroupId, type Api, type Memory, type JsonObject, type TimelineEntry, type TurnContext } from './contracts.js';
+import { LISTENER_GROUP, resolveGroupId, type Api, type Memory, type JsonObject, type TimelineEntry, type TurnContext } from './contracts/index.js';
 import { isKnownReactionId, createReactionTool as catalogReactionTool } from './reaction-catalog.js';
 import { submittedResult, writeFailure, afterDispatch } from './operation-result.js';
 export function createReactionTool() {

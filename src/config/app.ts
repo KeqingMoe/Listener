@@ -1,5 +1,5 @@
-import type { Config } from './config.js';
-import type { LoggingConfig } from './logger.js';
+import type { Config } from './onebot.js';
+import type { LoggingConfig } from '../logger.js';
 import type { ResolvedToolPolicies } from './tool-policy.js';
 export interface ResolvedGroupConfig {
   groupId:string; enabled:boolean; personaPath:string; persona:string;

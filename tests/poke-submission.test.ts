@@ -4,7 +4,7 @@ import {
   GroupActionTools,
   GROUP_ACTION_TOOL_NAMES,
 } from "../src/group-action-tools.js";
-import type { Api, JsonObject, TurnContext } from "../src/contracts.js";
+import type { Api, JsonObject, TurnContext } from "../src/contracts/index.js";
 
 const groupId = "123456",
   selfId = "333",

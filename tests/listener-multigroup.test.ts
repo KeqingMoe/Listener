@@ -4,8 +4,8 @@ import { setTimeout as delay, setImmediate as flush } from 'node:timers/promises
 import { Listener } from '../src/listener.js';
 import { GroupRouter } from '../src/group-router.js';
 import { TurnScheduler } from '../src/turn-scheduler.js';
-import { OWNER_ID, type Api, type ChatMessage, type Completion, type Memory, type Model, type TimelineEntry, type ToolDefinition } from '../src/contracts.js';
-import type { ListenerConfig } from '../src/listener-config.js';
+import { OWNER_ID, type Api, type ChatMessage, type Completion, type Memory, type Model, type TimelineEntry, type ToolDefinition } from '../src/contracts/index.js';
+import type { ListenerConfig } from '../src/config/listener.js';
 
 const SELF='99999';
 const A='22',B='33',C='44';

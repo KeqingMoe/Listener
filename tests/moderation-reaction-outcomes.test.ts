@@ -4,7 +4,7 @@ import { Moderation } from '../src/moderation.js';
 import { ReactionTools, createReactionTool } from '../src/reaction-tools.js';
 import { OneBotError } from '../src/client.js';
 import { submittedResult, writeFailure } from '../src/operation-result.js';
-import { LISTENER_GROUP, OWNER_ID, type Api, type JsonObject, type Memory, type TurnContext } from '../src/contracts.js';
+import { LISTENER_GROUP, OWNER_ID, type Api, type JsonObject, type Memory, type TurnContext } from '../src/contracts/index.js';
 
 const ctx:TurnContext={groupId:LISTENER_GROUP,actorId:'123',selfId:'999',messageId:'11'};
 const owner={...ctx,actorId:OWNER_ID,messageId:'12'};

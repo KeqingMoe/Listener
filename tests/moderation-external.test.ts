@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { configureLogging } from '../src/logger.js';
 import { submittedResult } from '../src/operation-result.js';
 import { Moderation, type ExternalModerationProposal } from '../src/moderation.js';
-import { LISTENER_GROUP, OWNER_ID, type Api, type JsonObject, type TurnContext } from '../src/contracts.js';
+import { LISTENER_GROUP, OWNER_ID, type Api, type JsonObject, type TurnContext } from '../src/contracts/index.js';
 
 const selfId = '999', actorId = '123', targetId = '456';
 const original: TurnContext = {groupId:LISTENER_GROUP,actorId,selfId,messageId:'11'};

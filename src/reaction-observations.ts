@@ -1,4 +1,4 @@
-import { resolveGroupId, type Api, type JsonObject, type Memory } from './contracts.js';
+import { resolveGroupId, type Api, type JsonObject, type Memory } from './contracts/index.js';
 import { getReactionCatalog, type ReactionEntry } from './reaction-catalog.js';
 
 const CAPACITY = 512, ITEM_LIMIT = 8, SCAN_LIMIT = 128, FRESH_MS = 15_000, FAILURE_MS = 5_000, DEADLINE_MS = 1_500;

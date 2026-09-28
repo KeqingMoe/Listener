@@ -5,7 +5,7 @@ import {
   type JsonObject,
   type ToolDefinition,
   type TurnContext,
-} from "./contracts.js";
+} from "./contracts/index.js";
 import { submittedResult, writeFailure, afterDispatch } from './operation-result.js';
 
 export const GROUP_VOICE_TOOL_NAMES = [

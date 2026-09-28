@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WorldEventStore, type WorldEventInput } from '../src/world-events.js';
-import type { TimelineEntry } from '../src/contracts.js';
+import type { TimelineEntry } from '../src/contracts/index.js';
 
 const dir = () => mkdtempSync(join(tmpdir(), 'qqbot-world-events-'));
 const entry = (id: string, time = Date.now() / 1000): TimelineEntry => ({ messageId: id, userId: '100', nickname: 'user', text: `message ${id}`, time, segments: [{ type: 'text', text: `message ${id}` }] });

@@ -15,8 +15,8 @@ import { recordToolMessage } from "../src/world-event-ingest.js";
 import { GroupMediaTools, type SendReceiptSnapshot } from "../src/group-media-tools.js";
 import { DuplicateMessageAckError } from "../src/operation-result.js";
 import { configureLogging } from "../src/logger.js";
-import { OWNER_ID, type Memory, type TimelineEntry, type TurnContext, type JsonObject } from "../src/contracts.js";
-import type { ListenerConfig } from "../src/listener-config.js";
+import { OWNER_ID, type Memory, type TimelineEntry, type TurnContext, type JsonObject } from "../src/contracts/index.js";
+import type { ListenerConfig } from "../src/config/listener.js";
 
 const GROUP = "123456", SELF = "999", OTHER = "111";
 const context: TurnContext = { groupId: GROUP, selfId: SELF, actorId: OTHER, messageId: "1" };

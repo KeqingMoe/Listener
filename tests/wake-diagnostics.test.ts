@@ -6,8 +6,8 @@ import { ModelSession } from '../src/model-session.js';
 import { WorldEventStore } from '../src/world-events.js';
 import { Listener } from '../src/listener.js';
 import { ModelError } from '../src/model.js';
-import { LISTENER_GROUP, type Memory, type TimelineEntry, type Completion } from '../src/contracts.js';
-import type { ListenerConfig } from '../src/listener-config.js';
+import { LISTENER_GROUP, type Memory, type TimelineEntry, type Completion } from '../src/contracts/index.js';
+import type { ListenerConfig } from '../src/config/listener.js';
 
 const call=(id:string,name:string,args:unknown={})=>({id,type:'function' as const,function:{name,arguments:JSON.stringify(args)}});
 const result=(...tool_calls:Completion['tool_calls']):Completion=>({content:null,tool_calls});

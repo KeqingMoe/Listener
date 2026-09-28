@@ -1,12 +1,12 @@
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {loadAppConfig} from '../src/config-loader.js';
+import {loadAppConfig} from '../src/config/loader.js';
 import {ResponsesModel} from '../src/responses-model.js';
 import {ModelSession} from '../src/model-session.js';
 import {WorldEventStore} from '../src/world-events.js';
 import {WorldTools,buildWorldTools} from '../src/world-tools.js';
-import type {JsonObject,ToolDefinition} from '../src/contracts.js';
+import type {JsonObject,ToolDefinition} from '../src/contracts/index.js';
 import type {ModelRequestRecord} from '../src/model-usage.js';
 
 // Deliberately opt-in: this spends model tokens, never connects to OneBot/QQ,

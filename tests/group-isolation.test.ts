@@ -9,7 +9,7 @@ import { ImageTools } from '../src/image-tools.js';
 import { ForwardTools } from '../src/forward-tools.js';
 import { Moderation } from '../src/moderation.js';
 import { SQLiteMemory } from '../src/memory.js';
-import { LISTENER_GROUP, OWNER_ID, type Api, type Memory, type TimelineEntry, type TurnContext } from '../src/contracts.js';
+import { LISTENER_GROUP, OWNER_ID, type Api, type Memory, type TimelineEntry, type TurnContext } from '../src/contracts/index.js';
 
 const A='111111', B='222222', self='999', user='123';
 const ctx=(groupId:string,actorId=user):TurnContext=>({groupId,actorId,selfId:self,messageId:'1'});

@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { loadAppConfig } from '../src/config-loader.js';
-import { toListenerConfig } from '../src/config-runtime.js';
-import { inspectGroupConfig } from '../src/config-inspect.js';
+import { loadAppConfig } from '../src/config/loader.js';
+import { toListenerConfig } from '../src/config/runtime.js';
+import { inspectGroupConfig } from '../src/config/inspect.js';
 import { buildToolDefinitions } from '../src/listener.js';
 import { buildCustomFaceToolDefinitions } from '../src/custom-face-tools.js';
-import { TOOL_CAPABILITIES, TOOL_NAMES } from '../src/tool-policy.js';
-import { enabledExtendedTools } from '../src/extended-tool-config.js';
+import { TOOL_CAPABILITIES, TOOL_NAMES } from '../src/config/tool-policy.js';
+import { enabledExtendedTools } from '../src/config/extended-tools.js';
 
 const GROUP = '100000002', OTHER_GROUP = '100000003';
 const ALL = ['list_custom_faces', 'view_custom_face', 'send_custom_face', 'add_custom_face', 'delete_custom_face', 'set_custom_face_description'] as const;

@@ -10,7 +10,7 @@ import type {
   Memory,
   TimelineEntry,
   TurnContext,
-} from "../src/contracts.js";
+} from "../src/contracts/index.js";
 import type { ImageDownloader } from "../src/image-download.js";
 
 const GROUP = "12345",

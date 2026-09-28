@@ -1,4 +1,4 @@
-import type { ImageReference, JsonObject, MessageSegment, TimelineEntry } from './contracts.js';
+import type { ImageReference, JsonObject, MessageSegment, TimelineEntry } from './contracts/index.js';
 import type { ForwardReference } from './forward-references.js';
 import { FACE_CATALOG } from './face-catalog.js';
 

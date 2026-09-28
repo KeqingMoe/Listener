@@ -8,8 +8,8 @@ import { Listener } from '../src/listener.js';
 import { ModelSession } from '../src/model-session.js';
 import { WorldEventStore } from '../src/world-events.js';
 import { ResponseStateExpiredError } from '../src/responses-model.js';
-import { LISTENER_GROUP, type ChatMessage, type Completion, type Memory, type Model, type TimelineEntry } from '../src/contracts.js';
-import type { ListenerConfig } from '../src/listener-config.js';
+import { LISTENER_GROUP, type ChatMessage, type Completion, type Memory, type Model, type TimelineEntry } from '../src/contracts/index.js';
+import type { ListenerConfig } from '../src/config/listener.js';
 
 const self='900000001';
 const config:ListenerConfig={enabled:true,baseUrl:'https://example.com/v1',apiKey:'test',model:'test',timeoutMs:1000,maxTokens:128,debounceMs:1,cooldownMs:1,memoryPath:':memory:',maxContextChars:8000,retentionDays:7,randomReplyProbability:0};

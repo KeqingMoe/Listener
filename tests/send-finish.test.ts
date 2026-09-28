@@ -4,8 +4,8 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {Listener,buildToolDefinitions} from '../src/listener.js';
 import {GroupTools} from '../src/group-tools.js';
 import {Moderation} from '../src/moderation.js';
-import {LISTENER_GROUP,OWNER_ID,type Api,type Memory,type TimelineEntry,type ChatMessage,type Completion,type Model} from '../src/contracts.js';
-import type {ListenerConfig} from '../src/listener-config.js';
+import {LISTENER_GROUP,OWNER_ID,type Api,type Memory,type TimelineEntry,type ChatMessage,type Completion,type Model} from '../src/contracts/index.js';
+import type {ListenerConfig} from '../src/config/listener.js';
 const self='999',actor='123';
 const cfg:ListenerConfig={enabled:true,baseUrl:'https://example.invalid/v1',apiKey:'test',model:'test',timeoutMs:2000,maxTokens:128,debounceMs:1,cooldownMs:0,memoryPath:':memory:',maxContextChars:8000,retentionDays:7,randomReplyProbability:0,maxToolCallsPerWake:12,wakeTimeoutMs:90000};
 class Mem implements Memory{rows:TimelineEntry[]=[];append(e:TimelineEntry){if(this.find(e.messageId))return false;this.rows.push(structuredClone(e));return true;}recent(){return this.rows;}find(id:string){return this.rows.find(e=>e.messageId===id);}context(){return JSON.stringify({summary:null,messages:this.rows});}async compact(){}clear(){this.rows=[];}close(){}}

@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { parse } from 'smol-toml';
-import type { AppConfig } from './app-config.js';
+import type { AppConfig } from './app.js';
 import { TOOL_NAMES } from './tool-policy.js';
-import { ConfigError, matchesConfigSource } from './config-loader.js';
+import { ConfigError, matchesConfigSource } from './loader.js';
 
 type RecordValue = Record<string, unknown>;
 type Origin = 'program_default' | 'defaults' | 'group';

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import type { JsonObject, ToolDefinition } from './contracts.js';
+import type { JsonObject, ToolDefinition } from './contracts/index.js';
 
 export interface AttentionConfig { enabled: boolean; maxPlans: number }
 export interface AttentionHit { plan_id: string; reason: 'next_message'|'member_message'|'after'|'activity'; purpose?: string }

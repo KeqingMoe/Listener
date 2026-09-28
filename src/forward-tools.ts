@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { LISTENER_GROUP, resolveGroupId, type Api, type JsonObject, type Memory, type MessageSegment, type ToolDefinition, type TurnContext } from './contracts.js';
+import { LISTENER_GROUP, resolveGroupId, type Api, type JsonObject, type Memory, type MessageSegment, type ToolDefinition, type TurnContext } from './contracts/index.js';
 import { extractForward, type ExtractedForward, type ForwardReference } from './forward-references.js';
 import { log } from './logger.js';
 import { extractMessageContent } from './message-content.js';

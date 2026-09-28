@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {loadAppConfig,ConfigError} from '../src/config-loader.js';
-import type {AppConfig} from '../src/app-config.js';
+import {loadAppConfig,ConfigError} from '../src/config/loader.js';
+import type {AppConfig} from '../src/config/app.js';
 function fixture(t:{after(fn:()=>void):void}){
   const dir=mkdtempSync(join(tmpdir(),'attention-policy-config-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
   mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'persona');

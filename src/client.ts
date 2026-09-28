@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
-import type { Config } from './config.js';
+import type { Config } from './config/onebot.js';
 import { log } from './logger.js';
 
 const ERROR_MESSAGES = {

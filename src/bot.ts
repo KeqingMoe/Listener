@@ -1,4 +1,4 @@
-import type { Config } from './config.js';
+import type { Config } from './config/onebot.js';
 
 export function id(value: unknown): string | undefined {
   if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) return String(value);

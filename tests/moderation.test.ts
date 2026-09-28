@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Moderation, MODERATION_TOOLS, buildModerationTools } from '../src/moderation.js';
-import type { ModerationPolicy } from '../src/listener-config.js';
+import type { ModerationPolicy } from '../src/config/listener.js';
 import { configureLogging } from '../src/logger.js';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { LISTENER_GROUP, OWNER_ID, type Api, type JsonObject, type TurnContext } from '../src/contracts.js';
+import { LISTENER_GROUP, OWNER_ID, type Api, type JsonObject, type TurnContext } from '../src/contracts/index.js';
 
 const context: TurnContext = { actorId: OWNER_ID, groupId: LISTENER_GROUP, selfId: '900000001', messageId: '100' };
 const target = '123456';

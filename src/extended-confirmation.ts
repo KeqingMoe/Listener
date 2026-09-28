@@ -1,4 +1,4 @@
-import type { JsonObject, ToolDefinition } from "./contracts.js";
+import type { JsonObject, ToolDefinition } from "./contracts/index.js";
 import { types } from "node:util";
 
 const MAX_DEPTH = 8,

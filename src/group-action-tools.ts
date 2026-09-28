@@ -7,7 +7,7 @@ import {
   type Memory,
   type ToolDefinition,
   type TurnContext,
-} from "./contracts.js";
+} from "./contracts/index.js";
 import { submittedResult, writeFailure, afterDispatch } from './operation-result.js';
 
 /** NapCat v4.18.28: set_group_leave ignores is_dismiss; no dismiss tool is offered. */

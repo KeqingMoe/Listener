@@ -1,4 +1,4 @@
-import { EXTENDED_TOOL_NAMES, EXTENDED_READ_ONLY_TOOLS } from './extended-tool-config.js';
+import { EXTENDED_TOOL_NAMES, EXTENDED_READ_ONLY_TOOLS } from './extended-tools.js';
 
 export const TOOL_NAMES = [...EXTENDED_TOOL_NAMES, 'mute_member', 'unmute_member', 'recall_message', 'set_member_card', 'get_group_members', 'get_member_info', 'react_message', 'get_reaction_users', 'view_images', 'read_forward', 'manage_attention'] as const;
 export type ToolName = typeof TOOL_NAMES[number];

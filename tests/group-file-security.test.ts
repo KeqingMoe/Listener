@@ -4,7 +4,7 @@ import {
   GroupFileTools,
   GROUP_FILE_TOOL_NAMES,
 } from "../src/group-file-tools.js";
-import type { Api, JsonObject, TurnContext } from "../src/contracts.js";
+import type { Api, JsonObject, TurnContext } from "../src/contracts/index.js";
 const ctx: TurnContext = {
   groupId: "123",
   selfId: "456",

@@ -2,14 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
 import {Listener,buildToolDefinitions,buildSystemPrompt} from '../src/listener.js';
-import {toListenerConfig} from '../src/config-runtime.js';
-import {TOOL_NAMES,TOOL_CAPABILITIES,type ResolvedToolPolicies,type ToolName,type ToolPolicy} from '../src/tool-policy.js';
-import type {AppConfig,ResolvedGroupConfig} from '../src/app-config.js';
+import {toListenerConfig} from '../src/config/runtime.js';
+import {TOOL_NAMES,TOOL_CAPABILITIES,type ResolvedToolPolicies,type ToolName,type ToolPolicy} from '../src/config/tool-policy.js';
+import type {AppConfig,ResolvedGroupConfig} from '../src/config/app.js';
 import {GroupTools} from '../src/group-tools.js';
 import {ImageTools} from '../src/image-tools.js';
 import {WorldEventStore} from '../src/world-events.js';
 import {ModelSession} from '../src/model-session.js';
-import type {Api,Memory,TimelineEntry,Model,ChatMessage,JsonObject} from '../src/contracts.js';
+import type {Api,Memory,TimelineEntry,Model,ChatMessage,JsonObject} from '../src/contracts/index.js';
 const GROUP='334455',OWNER='778899',SELF='990011',MEMBER='123456';
 function policies(overrides:Partial<ResolvedToolPolicies>={}):ResolvedToolPolicies {
  return Object.fromEntries(TOOL_NAMES.map(name=>[name,{mode:'off',...Object.fromEntries(Object.values(TOOL_CAPABILITIES[name].options).map(o=>[o.field,o.default])),...overrides[name]}])) as ResolvedToolPolicies;

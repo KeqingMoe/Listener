@@ -11,14 +11,14 @@ import { OneBotClient } from "../src/client.js";
 import { Listener } from "../src/listener.js";
 import { ModelSession } from "../src/model-session.js";
 import { WorldEventStore } from "../src/world-events.js";
-import type { ListenerConfig } from "../src/listener-config.js";
+import type { ListenerConfig } from "../src/config/listener.js";
 import type {
   ChatMessage,
   Completion,
   JsonObject,
   Memory,
   TimelineEntry,
-} from "../src/contracts.js";
+} from "../src/contracts/index.js";
 
 const GROUP = "123456",
   SELF = "999",

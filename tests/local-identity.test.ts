@@ -4,8 +4,8 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {Listener,buildSystemPrompt} from '../src/listener.js';
 import {Moderation} from '../src/moderation.js';
 import {ReplyBatch,type BatchItem} from '../src/reply-batch.js';
-import {OWNER_ID,type Api,type Memory,type TimelineEntry,type Model,type Completion,type JsonObject} from '../src/contracts.js';
-import type {ListenerConfig} from '../src/listener-config.js';
+import {OWNER_ID,type Api,type Memory,type TimelineEntry,type Model,type Completion,type JsonObject} from '../src/contracts/index.js';
+import type {ListenerConfig} from '../src/config/listener.js';
 
 const OWNER_A='778899',OWNER_B='889900',GROUP='334455',SELF='990011',TARGET='123456';
 const config:ListenerConfig={enabled:true,groupId:GROUP,baseUrl:'https://example.invalid/v1',apiKey:'fixture',model:'fixture',timeoutMs:1000,maxTokens:128,debounceMs:0,delayMaxMs:0,cooldownMs:0,memoryPath:':memory:',maxContextChars:8000,retentionDays:7,randomReplyProbability:0,tools:{members:false,mention:false,moderation:{mute:'confirm',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600}}};

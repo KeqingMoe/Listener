@@ -1,6 +1,6 @@
 import type { ResolvedToolPolicies } from './tool-policy.js';
-import type { ForwardConfig } from './forward-tools.js';
-import type { ExtendedToolsConfig } from './extended-tool-config.js';
+import type { ForwardConfig } from '../forward-tools.js';
+import type { ExtendedToolsConfig } from './extended-tools.js';
 export interface ImagesConfig { enabled: boolean; maxPerTurn: number; maxDownloadMb: number }
 export type ModerationMode = 'off' | 'confirm' | 'direct';
 export interface ModerationPolicy {

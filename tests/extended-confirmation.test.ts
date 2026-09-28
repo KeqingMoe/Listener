@@ -5,7 +5,7 @@ import type {
   Memory,
   JsonObject,
   ToolDefinition,
-} from "../src/contracts.js";
+} from "../src/contracts/index.js";
 import { prepareExtendedConfirmation as prepare } from "../src/extended-confirmation.js";
 import {
   GroupActionTools,

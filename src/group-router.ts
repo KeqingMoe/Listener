@@ -1,5 +1,5 @@
 import { id } from './bot.js';
-import { resolveGroupId } from './contracts.js';
+import { resolveGroupId } from './contracts/index.js';
 import { withLogContext } from './logger.js';
 import { normalizeOneBotEvent } from './world-event-ingest.js';
 import { types } from 'node:util';

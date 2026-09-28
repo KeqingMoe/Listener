@@ -4,7 +4,7 @@ import type {
   ToolDefinition,
   JsonObject,
   TurnContext,
-} from "./contracts.js";
+} from "./contracts/index.js";
 import type { ImageDownloader } from "./image-download.js";
 import {
   GroupMediaTools,
@@ -24,7 +24,7 @@ import {
   enabledExtendedTools,
   type ExtendedToolsConfig,
   type ExtendedToolName,
-} from "./extended-tool-config.js";
+} from "./config/extended-tools.js";
 import { GroupObservationTools } from "./group-observation-tools.js";
 import {
   GroupActionTools,

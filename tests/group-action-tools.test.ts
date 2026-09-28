@@ -10,7 +10,7 @@ import type {
   Memory,
   TimelineEntry,
   TurnContext,
-} from "../src/contracts.js";
+} from "../src/contracts/index.js";
 const groupId = "123456",
   selfId = "333",
   actorId = "444",

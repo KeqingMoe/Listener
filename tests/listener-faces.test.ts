@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Listener, normalizeEvent, buildToolDefinitions, buildSystemPrompt } from '../src/listener.js';
 import { faceMarker, FACE_LAYOUT_GUIDANCE } from '../src/face-tools.js';
-import type { ListenerConfig } from '../src/listener-config.js';
-import { LISTENER_GROUP, type Memory, type TimelineEntry, type Api, type Model, type Completion, type ChatMessage } from '../src/contracts.js';
+import type { ListenerConfig } from '../src/config/listener.js';
+import { LISTENER_GROUP, type Memory, type TimelineEntry, type Api, type Model, type Completion, type ChatMessage } from '../src/contracts/index.js';
 
 const self = '900000001';
 const config: ListenerConfig = { enabled: true, baseUrl: 'https://example.invalid/v1', apiKey: 'test', model: 'test', timeoutMs: 2000,

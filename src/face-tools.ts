@@ -1,4 +1,4 @@
-import type { JsonObject } from './contracts.js';
+import type { JsonObject } from './contracts/index.js';
 import { FACE_CATALOG } from './face-catalog.js';
 import { canonicalFaceId } from './sync-faces.js';
 

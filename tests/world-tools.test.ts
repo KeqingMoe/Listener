@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { WorldEventStore } from '../src/world-events.js';
 import { WorldTools, buildWorldTools } from '../src/world-tools.js';
-import type { JsonObject, TimelineEntry } from '../src/contracts.js';
+import type { JsonObject, TimelineEntry } from '../src/contracts/index.js';
 
 test('runtime metadata is queried only on wake state and strips private fields',async()=>{
  const store=new WorldEventStore({path:':memory:',groupId:'22'});let reads=0;

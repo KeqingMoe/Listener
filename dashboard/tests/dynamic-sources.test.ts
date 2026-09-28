@@ -6,8 +6,8 @@ import { join, dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { buildAuthenticatedApp as buildApp } from './auth-fixture.js';
 import { Repository, type GroupSource } from '../server/repository.js';
-import { loadAppConfig } from '../../src/config-loader.js';
-import { GroupRegistry } from '../../src/group-registry.js';
+import { loadAppConfig } from '../../src/config/loader.js';
+import { GroupRegistry } from '../../src/config/group-registry.js';
 import { dashboardGroupSources } from '../server/sources.js';
 
 const privateText = 'PRIVATE_CHAT_ARGUMENT_CHECKPOINT';

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { LISTENER_GROUP, resolveGroupId, type Api, type JsonObject, type Memory, type ToolDefinition, type TurnContext } from './contracts.js';
+import { LISTENER_GROUP, resolveGroupId, type Api, type JsonObject, type Memory, type ToolDefinition, type TurnContext } from './contracts/index.js';
 
 export const GET_REACTION_USERS_TOOL:ToolDefinition={type:'function',function:{
  name:'get_reaction_users',

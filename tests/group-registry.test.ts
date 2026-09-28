@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,writeFileSync,rmSync,readFileSync,statSync,chmodSync,unlinkSync,symlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {loadAppConfig} from '../src/config-loader.js';
-import {GroupRegistry,readGroupRegistry} from '../src/group-registry.js';
+import {loadAppConfig} from '../src/config/loader.js';
+import {GroupRegistry,readGroupRegistry} from '../src/config/group-registry.js';
 function fixture(t:{after(fn:()=>void):void}){
  const dir=mkdtempSync(join(tmpdir(),'group-registry-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
  writeFileSync(join(dir,'persona.md'),'test persona');writeFileSync(join(dir,'config.toml'),'[bot]\nowner_id="7001"\n[model]\nmodel="fixture-model"\n[storage]\ndirectory="data"\n[defaults]\nenabled=true\npersona="persona.md"\n[groups."2"]\nenabled=false\n');

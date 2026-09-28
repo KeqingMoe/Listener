@@ -10,7 +10,7 @@ import {createServer} from 'node:http';
 import type {AddressInfo,Socket} from 'node:net';
 import {DatabaseSync} from 'node:sqlite';
 import {WebSocketServer,type WebSocket} from 'ws';
-import {LISTENER_GROUP,OWNER_ID} from '../src/contracts.js';
+import {LISTENER_GROUP,OWNER_ID} from '../src/contracts/index.js';
 import {SQLiteMemory} from '../src/memory.js';
 import {FACE_CATALOG} from '../src/face-catalog.js';
 

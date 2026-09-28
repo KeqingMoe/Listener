@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { Api, JsonObject, Memory, ToolDefinition, TurnContext } from '../src/contracts.js';
-import { LISTENER_GROUP } from '../src/contracts.js';
+import type { Api, JsonObject, Memory, ToolDefinition, TurnContext } from '../src/contracts/index.js';
+import { LISTENER_GROUP } from '../src/contracts/index.js';
 import { createExtendedTools, buildExtendedToolDefinitions } from '../src/extended-tools.js';
-import { EXTENDED_TOOL_NAMES, EXTENDED_READ_ONLY_TOOLS, type ExtendedToolsConfig } from '../src/extended-tool-config.js';
+import { EXTENDED_TOOL_NAMES, EXTENDED_READ_ONLY_TOOLS, type ExtendedToolsConfig } from '../src/config/extended-tools.js';
 import { GroupFileTools, GROUP_FILE_TOOL_NAMES } from '../src/group-file-tools.js';
 import { GroupRequestTools, GROUP_REQUEST_TOOL_NAMES } from '../src/group-request-tools.js';
 

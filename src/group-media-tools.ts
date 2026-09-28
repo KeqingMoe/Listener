@@ -7,7 +7,7 @@ import {
   type TimelineEntry,
   type ToolDefinition,
   type TurnContext,
-} from "./contracts.js";
+} from "./contracts/index.js";
 import { ImageTools, imageReferences } from "./image-tools.js";
 import type { ImageDownloader } from "./image-download.js";
 import { extractMessageContent } from "./message-content.js";

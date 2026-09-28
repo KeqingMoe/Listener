@@ -4,7 +4,7 @@ import {
   type JsonObject,
   type ToolDefinition,
   type TurnContext,
-} from "./contracts.js";
+} from "./contracts/index.js";
 
 // Contract sources pinned to NapCat v4.18.28:
 // https://github.com/NapNeko/NapCatQQ/tree/v4.18.28/packages/napcat-onebot/action/group

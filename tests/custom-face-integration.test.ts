@@ -18,9 +18,9 @@ import { CustomFaceCoordinator } from '../src/custom-face-coordinator.js';
 import { CUSTOM_FACE_TOOL_NAMES } from '../src/custom-face-tools.js';
 import { buildExtendedToolDefinitions, createExtendedTools } from '../src/extended-tools.js';
 import { prepareImage, validateOriginalImage, type OriginalImageDownloader } from '../src/image-download.js';
-import type { ListenerConfig } from '../src/listener-config.js';
-import type { ExtendedToolsConfig } from '../src/extended-tool-config.js';
-import type { Api, ChatMessage, Completion, JsonObject, Memory, Model, ToolCall, ToolDefinition } from '../src/contracts.js';
+import type { ListenerConfig } from '../src/config/listener.js';
+import type { ExtendedToolsConfig } from '../src/config/extended-tools.js';
+import type { Api, ChatMessage, Completion, JsonObject, Memory, Model, ToolCall, ToolDefinition } from '../src/contracts/index.js';
 
 const SELF = '100000001', OWNER = '100000002', ACTOR = '100000003', GROUP = '123456789', OTHER_GROUP = '123456788';
 const SECRET = 'SYNTHETIC_NATIVE_MEDIA_SECRET';

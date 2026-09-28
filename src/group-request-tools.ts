@@ -5,7 +5,7 @@ import {
   type JsonObject,
   type ToolDefinition,
   type TurnContext,
-} from "./contracts.js";
+} from "./contracts/index.js";
 import { afterDispatch, submittedResult, writeFailure } from './operation-result.js';
 
 // Pinned NapCat v4.18.28 contracts:

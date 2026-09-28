@@ -1,4 +1,4 @@
-import { OWNER_ID, resolveOwnerId, type JsonObject, type Memory, type TimelineEntry, type TurnContext } from './contracts.js';
+import { OWNER_ID, resolveOwnerId, type JsonObject, type Memory, type TimelineEntry, type TurnContext } from './contracts/index.js';
 import { newTraceId } from './logger.js';
 import type { AttentionHit } from './attention.js';
 import { projectMessage } from './message-content.js';

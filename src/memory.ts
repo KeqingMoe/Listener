@@ -2,7 +2,7 @@ import { chmodSync, closeSync, openSync, existsSync, statSync } from 'node:fs';
 import { log } from './logger.js';
 import { sanitizeForwardReferences } from './forward-references.js';
 import { DatabaseSync } from 'node:sqlite';
-import { resolveGroupId, type JsonObject, type Memory, type Model, type TimelineEntry } from './contracts.js';
+import { resolveGroupId, type JsonObject, type Memory, type Model, type TimelineEntry } from './contracts/index.js';
 import { projectMessage, sanitizeMessageContent } from './message-content.js';
 
 export interface SQLiteMemoryOptions { path: string; maxContextChars: number; retentionDays: number; groupId?: string }

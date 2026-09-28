@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { extractMessageContent, sanitizeMessageContent, projectMessage, projectMessageContext } from '../src/message-content.js';
 import { FACE_CATALOG } from '../src/face-catalog.js';
-import type { TimelineEntry, MessageSegment } from '../src/contracts.js';
+import type { TimelineEntry, MessageSegment } from '../src/contracts/index.js';
 
 const text=(value:string)=>({type:'text',data:{text:value}});
 const row=(extra:Partial<TimelineEntry>={}):TimelineEntry=>({messageId:'12',userId:'34',nickname:'fixture',time:123,text:'compatibility text [QQ表情：吃瓜 id=271]',...extra});

@@ -1,9 +1,9 @@
 import { constants, openSync, closeSync, fstatSync, readFileSync, writeFileSync, fsyncSync, renameSync, unlinkSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { AppConfig, ResolvedGroupConfig } from './app-config.js';
-import { assertStoragePaths } from './config-loader.js';
-import { resolveGroupId } from './contracts.js';
+import type { AppConfig, ResolvedGroupConfig } from './app.js';
+import { assertStoragePaths } from './loader.js';
+import { resolveGroupId } from '../contracts/index.js';
 
 export interface RegisteredGroup { groupId:string; databasePath:string }
 const MAX_BYTES=16*1024*1024;

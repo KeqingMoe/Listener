@@ -10,7 +10,7 @@ import {createServer} from 'node:http';
 import type {AddressInfo,Socket} from 'node:net';
 import {DatabaseSync} from 'node:sqlite';
 import {WebSocketServer,type WebSocket} from 'ws';
-import {LISTENER_GROUP} from '../src/contracts.js';
+import {LISTENER_GROUP} from '../src/contracts/index.js';
 
 const GROUP=LISTENER_GROUP,OTHER='22',SELF='99999',BOT_MESSAGE='9001';
 function message(id:string,text:string,user='111'){

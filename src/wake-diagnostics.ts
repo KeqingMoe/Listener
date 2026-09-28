@@ -1,5 +1,5 @@
 import { types } from 'node:util';
-import type { JsonObject } from './contracts.js';
+import type { JsonObject } from './contracts/index.js';
 
 /** Local reason codes only. Never persist arbitrary exception or provider text. */
 export const WAKE_REASON_CODES = [

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { Api, JsonObject, TurnContext, TimelineEntry } from '../src/contracts.js';
+import type { Api, JsonObject, TurnContext, TimelineEntry } from '../src/contracts/index.js';
 import { GroupActionTools, GROUP_ACTION_TOOL_NAMES } from '../src/group-action-tools.js';
 const ctx: TurnContext={groupId:'123',selfId:'456',actorId:'789',messageId:'1'};
 function fixture() {

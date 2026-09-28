@@ -5,8 +5,8 @@ import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,existsSync} from
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {spawnSync} from 'node:child_process';
-import {ConfigError,loadAppConfig,dashboardPassword} from '../src/config-loader.js';
-import {OWNER_ID} from '../src/contracts.js';
+import {ConfigError,loadAppConfig,dashboardPassword} from '../src/config/loader.js';
+import {OWNER_ID} from '../src/contracts/index.js';
 function fixture(t:{after(fn:()=>void):void},source=''){
  const dir=mkdtempSync(join(tmpdir(),'config-schema-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'默认人设');
  const config=(s:string)=>writeFileSync(join(dir,'config.toml'),withFixtureModel(s));config(source);

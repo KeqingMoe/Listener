@@ -5,8 +5,8 @@ import {once} from 'node:events';
 import {setTimeout as delay} from 'node:timers/promises';
 import {OpenAIModel} from '../src/model.js';
 import {Listener} from '../src/listener.js';
-import {LISTENER_GROUP,type Memory,type TimelineEntry} from '../src/contracts.js';
-import type {ListenerConfig} from '../src/listener-config.js';
+import {LISTENER_GROUP,type Memory,type TimelineEntry} from '../src/contracts/index.js';
+import type {ListenerConfig} from '../src/config/listener.js';
 const self='999',actor='123';
 const tool=(id:string,name:string,args:string)=>({id,type:'function',function:{name,arguments:args}});
 class Mem implements Memory{rows:TimelineEntry[]=[];append(row:TimelineEntry){this.rows.push(row);return true;}recent(){return this.rows;}find(id:string){return this.rows.find(row=>row.messageId===id);}context(){return JSON.stringify(this.rows);}async compact(){}clear(){this.rows=[];}close(){}}

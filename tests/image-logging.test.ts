@@ -10,7 +10,7 @@ import sharp from 'sharp';
 import { configureLogging, withLogContext } from '../src/logger.js';
 import { createImageDownloader, prepareImage, type ImageDownloadDependencies } from '../src/image-download.js';
 import { ImageTools } from '../src/image-tools.js';
-import { LISTENER_GROUP, type Memory } from '../src/contracts.js';
+import { LISTENER_GROUP, type Memory } from '../src/contracts/index.js';
 
 const secret = 'PRIVATE_IMAGE_HEADER_BODY_TOKEN';
 const url = `https://gchat.qpic.cn/image?token=${secret}`;

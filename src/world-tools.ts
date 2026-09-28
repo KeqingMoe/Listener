@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { resolveGroupId, type JsonObject, type ToolDefinition, type TurnContext } from './contracts.js';
+import { resolveGroupId, type JsonObject, type ToolDefinition, type TurnContext } from './contracts/index.js';
 import { projectMessage } from './message-content.js';
 import { WorldEventStore, WORLD_EVENT_TYPES, type MessageView, type ProjectedWorldEvent, type ReadEventsInput, type WorldEventType } from './world-events.js';
 

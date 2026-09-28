@@ -7,8 +7,8 @@ import { join } from 'node:path';
 import { Listener } from '../src/listener.js';
 import { SQLiteMemory } from '../src/memory.js';
 import { configureLogging, managedLogFilename } from '../src/logger.js';
-import type { ListenerConfig } from '../src/listener-config.js';
-import { LISTENER_GROUP, OWNER_ID, type Api, type ChatMessage, type Completion, type Memory, type Model, type TimelineEntry, type ToolCall } from '../src/contracts.js';
+import type { ListenerConfig } from '../src/config/listener.js';
+import { LISTENER_GROUP, OWNER_ID, type Api, type ChatMessage, type Completion, type Memory, type Model, type TimelineEntry, type ToolCall } from '../src/contracts/index.js';
 
 const self = '900000001', resource = 'PRIVATE_FORWARD_RESOURCE+/=', hidden = 'PRIVATE_QUOTED_FORWARD_BODY', internal = '9988776655443322110099';
 const cfg: ListenerConfig = { enabled: true, baseUrl: 'https://example.invalid/v1', apiKey: 'test', model: 'model', timeoutMs: 2000, maxTokens: 128, debounceMs: 5, cooldownMs: 0, memoryPath: ':memory:', maxContextChars: 8000, retentionDays: 7, randomReplyProbability: 0, forward: { enabled: true } };

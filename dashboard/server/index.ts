@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { dashboardPassword, loadAppConfig } from "../../src/config-loader.js";
+import { dashboardPassword, loadAppConfig } from "../../src/config/loader.js";
 import { dashboardGroupSources } from "./sources.js";
 import { buildApp } from "./app.js";
 import { parseListenOptions } from "./cli.js";

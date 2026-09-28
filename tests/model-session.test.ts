@@ -5,7 +5,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {ModelSession} from '../src/model-session.js';
-import type {Completion,ToolDefinition} from '../src/contracts.js';
+import type {Completion,ToolDefinition} from '../src/contracts/index.js';
 const tool:ToolDefinition={type:'function',function:{name:'finish',description:'end',parameters:{type:'object',properties:{},required:[]}}};
 const second:ToolDefinition={type:'function',function:{name:'send_message',description:'send',parameters:{type:'object'}}};
 const completion=(...calls:any[]):Completion=>({content:null,tool_calls:calls});

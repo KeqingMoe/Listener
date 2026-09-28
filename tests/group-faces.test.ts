@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { GroupTools, type GroupToolsOptions } from '../src/group-tools.js';
 import { ForwardTools } from '../src/forward-tools.js';
 import { faceMarker } from '../src/face-tools.js';
-import { LISTENER_GROUP, type Api, type Memory, type TimelineEntry, type TurnContext } from '../src/contracts.js';
+import { LISTENER_GROUP, type Api, type Memory, type TimelineEntry, type TurnContext } from '../src/contracts/index.js';
 
 const context: TurnContext = { groupId: LISTENER_GROUP, actorId: '123', selfId: '999', messageId: '1' };
 const entry: TimelineEntry = { messageId: '1', userId: '123', nickname: 'member', text: 'hello', time: 42, replyTo: '2' };

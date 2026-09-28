@@ -5,8 +5,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { loadAppConfig } from '../src/config-loader.js';
-import { inspectGroupConfig } from '../src/config-inspect.js';
+import { loadAppConfig } from '../src/config/loader.js';
+import { inspectGroupConfig } from '../src/config/inspect.js';
 
 function fixture(t: { after(fn: () => void): void }, text: string) {
   const directory = mkdtempSync(join(tmpdir(), 'config-inspect-'));

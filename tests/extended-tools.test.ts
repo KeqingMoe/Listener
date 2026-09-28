@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { ToolRegistry } from "../src/tool-registry.js";
-import { loadAppConfig } from "../src/config-loader.js";
-import { toListenerConfig } from "../src/config-runtime.js";
+import { loadAppConfig } from "../src/config/loader.js";
+import { toListenerConfig } from "../src/config/runtime.js";
 import {
   createExtendedTools,
   buildExtendedToolDefinitions,
@@ -15,13 +15,13 @@ import {
   EXTENDED_TOOL_NAMES,
   enabledExtendedTools,
   type ExtendedToolsConfig,
-} from "../src/extended-tool-config.js";
+} from "../src/config/extended-tools.js";
 import { GROUP_ACTION_TOOL_NAMES } from "../src/group-action-tools.js";
 import { GROUP_OBSERVATION_TOOL_NAMES } from "../src/group-observation-tools.js";
 import { Listener, buildToolDefinitions } from "../src/listener.js";
 import { ModelSession } from "../src/model-session.js";
 import { WorldEventStore } from "../src/world-events.js";
-import type { ListenerConfig } from "../src/listener-config.js";
+import type { ListenerConfig } from "../src/config/listener.js";
 import {
   LISTENER_GROUP,
   type Api,
@@ -32,7 +32,7 @@ import {
   type TimelineEntry,
   type ToolDefinition,
   type TurnContext,
-} from "../src/contracts.js";
+} from "../src/contracts/index.js";
 
 const self = "900000001",
   actor = "12345",

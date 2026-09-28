@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {setTimeout as delay,setImmediate as flush} from 'node:timers/promises';
 import {Listener} from '../src/listener.js';
 import {GroupRouter} from '../src/group-router.js';
-import {OWNER_ID,type Api,type ChatMessage,type Completion,type JsonObject,type Memory,type Model,type TimelineEntry,type ToolDefinition} from '../src/contracts.js';
-import type {ListenerConfig} from '../src/listener-config.js';
+import {OWNER_ID,type Api,type ChatMessage,type Completion,type JsonObject,type Memory,type Model,type TimelineEntry,type ToolDefinition} from '../src/contracts/index.js';
+import type {ListenerConfig} from '../src/config/listener.js';
 
 const GROUP='22',SELF='99999',A='111';
 const tools:NonNullable<ListenerConfig['tools']>={members:true,mention:true,reactions:true,moderation:{mute:'confirm',unmute:'confirm',recall:'confirm',memberCard:'confirm',confirmationTtlSeconds:60,maxMuteSeconds:600}};

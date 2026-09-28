@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Listener } from '../src/listener.js';
-import type { ListenerConfig } from '../src/listener-config.js';
-import { LISTENER_GROUP, OWNER_ID, type Api, type ChatMessage, type Completion, type Memory, type Model, type TimelineEntry } from '../src/contracts.js';
+import type { ListenerConfig } from '../src/config/listener.js';
+import { LISTENER_GROUP, OWNER_ID, type Api, type ChatMessage, type Completion, type Memory, type Model, type TimelineEntry } from '../src/contracts/index.js';
 
 const self = '900000001';
 const cfg: ListenerConfig = {

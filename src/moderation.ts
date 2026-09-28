@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import { writeFailure } from './operation-result.js';
 import { log } from './logger.js';
-import type { ModerationPolicy } from './listener-config.js';
-import { LISTENER_GROUP, resolveGroupId, OWNER_ID, resolveOwnerId, type Api, type JsonObject, type ToolDefinition, type TurnContext } from './contracts.js';
+import type { ModerationPolicy } from './config/listener.js';
+import { LISTENER_GROUP, resolveGroupId, OWNER_ID, resolveOwnerId, type Api, type JsonObject, type ToolDefinition, type TurnContext } from './contracts/index.js';
 
 type Mode = 'off' | 'confirm' | 'direct';
 const userIdSchema = { type: 'string', maxLength: 32, pattern: '^[1-9][0-9]*$', description: 'Target QQ user ID in this group; actual QQ permissions apply. Nicknames are not identity proof.' };

@@ -1,6 +1,6 @@
-import type { AppConfig, ResolvedGroupConfig } from './app-config.js';
-import type { ListenerConfig, ResolvedListenerConfig } from './listener-config.js';
-import { EXTENDED_TOOL_NAMES, type ExtendedToolsConfig } from './extended-tool-config.js';
+import type { AppConfig, ResolvedGroupConfig } from './app.js';
+import type { ListenerConfig, ResolvedListenerConfig } from './listener.js';
+import { EXTENDED_TOOL_NAMES, type ExtendedToolsConfig } from './extended-tools.js';
 import { TOOL_CAPABILITIES, type ToolName } from './tool-policy.js';
 
 /** One-way projection into module options; the resolved policy remains authoritative. */

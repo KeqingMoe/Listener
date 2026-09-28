@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {setTimeout as delay,setImmediate as flush} from 'node:timers/promises';
 import {Listener} from '../src/listener.js';
 import {TurnScheduler} from '../src/turn-scheduler.js';
-import {OWNER_ID,type Api,type ChatMessage,type Completion,type Memory,type Model,type TimelineEntry,type ToolDefinition} from '../src/contracts.js';
-import type {ListenerConfig} from '../src/listener-config.js';
+import {OWNER_ID,type Api,type ChatMessage,type Completion,type Memory,type Model,type TimelineEntry,type ToolDefinition} from '../src/contracts/index.js';
+import type {ListenerConfig} from '../src/config/listener.js';
 
 const GROUP='22',SELF='99999',A='111',B='222';
 const base:ListenerConfig={groupId:GROUP,enabled:true,baseUrl:'https://example.invalid/v1',apiKey:'fixture',model:'fixture',timeoutMs:2000,maxTokens:128,debounceMs:3,delayMaxMs:3,cooldownMs:0,memoryPath:':memory:',maxContextChars:8000,retentionDays:7,randomReplyProbability:0,randomCooldownMs:0,randomMaxPerMinute:10,attention:{enabled:true,maxPlans:16}};

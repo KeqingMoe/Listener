@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GroupTools, GROUP_TOOLS, SEND_MESSAGE_TOOL, type GroupToolsOptions } from '../src/group-tools.js';
-import { LISTENER_GROUP, type Api, type JsonObject, type Memory, type TimelineEntry, type TurnContext } from '../src/contracts.js';
+import { LISTENER_GROUP, type Api, type JsonObject, type Memory, type TimelineEntry, type TurnContext } from '../src/contracts/index.js';
 
 const context: TurnContext = { groupId: LISTENER_GROUP, actorId: '123', selfId: '999', messageId: '1' };
 const record = (user_id = '123', extra = {}) => ({ group_id: LISTENER_GROUP, user_id, nickname: 'Alice', card: 'team', role: 'member', ...extra });

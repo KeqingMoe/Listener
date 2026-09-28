@@ -8,7 +8,7 @@ import { OpenAIModel, ModelError } from '../src/model.js';
 import { SQLiteMemory } from '../src/memory.js';
 import { Moderation } from '../src/moderation.js';
 import { ImageTools } from '../src/image-tools.js';
-import { LISTENER_GROUP, OWNER_ID, type Api, type Memory, type TurnContext } from '../src/contracts.js';
+import { LISTENER_GROUP, OWNER_ID, type Api, type Memory, type TurnContext } from '../src/contracts/index.js';
 
 const secret = 'private-body-header-key-card';
 async function capture(work: () => Promise<void>) {

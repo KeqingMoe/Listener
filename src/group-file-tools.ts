@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { resolveGroupId, type Api, type JsonObject, type ToolDefinition, type TurnContext } from './contracts.js';
+import { resolveGroupId, type Api, type JsonObject, type ToolDefinition, type TurnContext } from './contracts/index.js';
 import { downloadGroupText, type GroupTextDownloader } from './group-file-download.js';
 import { afterDispatch, submittedResult, writeFailure } from './operation-result.js';
 

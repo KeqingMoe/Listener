@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http';
 import { once } from 'node:events';
 import { test } from 'node:test';
 import { OpenAIModel } from '../src/model.js';
-import type { ToolDefinition } from '../src/contracts.js';
+import type { ToolDefinition } from '../src/contracts/index.js';
 
 test('request observer sees charged truncated usage once and cannot mask model errors',async()=>{
   const fixture=await server((_req,res)=>res.end(JSON.stringify({...reply({role:'assistant',content:'secret-body'},'length'),usage:{prompt_tokens:100,completion_tokens:20,total_tokens:120,prompt_cache_hit_tokens:60}})));

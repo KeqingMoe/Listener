@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { types } from 'node:util';
-import { resolveGroupId, type Api, type ChatContentPart, type JsonObject, type Memory, type ToolDefinition, type TurnContext, type TimelineEntry } from './contracts.js';
+import { resolveGroupId, type Api, type ChatContentPart, type JsonObject, type Memory, type ToolDefinition, type TurnContext, type TimelineEntry } from './contracts/index.js';
 import { type CustomFaceStore, type CustomFaceRecord, type CustomFaceInput } from './custom-face-store.js';
 import { CustomFaceCoordinator, CustomFaceCoordinationError } from './custom-face-coordinator.js';
 import { downloadOriginalImage, validateOriginalImage, prepareImage, type OriginalImageDownloader } from './image-download.js';

@@ -1,5 +1,5 @@
-import { LISTENER_GROUP, resolveGroupId, type Api, type ChatContentPart, type ImageReference, type JsonObject, type Memory, type ToolDefinition, type TurnContext } from './contracts.js';
-import type { ImagesConfig } from './listener-config.js';
+import { LISTENER_GROUP, resolveGroupId, type Api, type ChatContentPart, type ImageReference, type JsonObject, type Memory, type ToolDefinition, type TurnContext } from './contracts/index.js';
+import type { ImagesConfig } from './config/listener.js';
 import { downloadImage, type ImageDownloader } from './image-download.js';
 import { log, withLogContext } from './logger.js';
 
