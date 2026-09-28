@@ -26,7 +26,7 @@ const timeline = computed(() => data.value ? [
 ].sort((a, b) => (a.at ?? Infinity) - (b.at ?? Infinity) || a.key.localeCompare(b.key)) : []);
 </script>
 <template>
-  <section class="wake-detail" :aria-busy="loading"><DataState :loading="loading" :error="error" @retry="retry"><template v-if="data">
+  <section class="wake-detail" :aria-busy="loading"><DataState :loading="loading" :error="error" :stale="!!data" @retry="retry"><template v-if="data">
     <header class="detail-heading"><div><h2>唤醒详情</h2><CopyId :value="data.wake.wakeId" /></div><span class="badge">{{ data.wake.finishedAt == null ? '执行中' : status(data.wake.outcome) }}</span></header>
     <div class="request-tokens" title="未缓存输入 / 命中缓存 / 输出（含推理）；未记录显示 —"><span>输入 <b>{{ number(data.wake.uncachedInputTokens) }}</b></span><span>缓存 <b>{{ number(data.wake.cachedInputTokens) }}</b></span><span>输出 <b>{{ number(data.wake.outputTokens) }}</b></span></div>
     <PerformanceFacts :performance="data.wake.performance" :cache="data.wake" />

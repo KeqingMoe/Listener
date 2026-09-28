@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
 import JsonNode from './JsonNode.vue';
 import CopyText from './CopyText.vue';
 const props = defineProps<{ value: unknown; label?: string }>();
@@ -10,7 +10,8 @@ const text = computed(() => {
 });
 const structured = computed(() => props.value !== null && typeof props.value === 'object');
 const lines = computed(() => text.value.split('\n').map((text, index) => ({ text, index: index + 1 })).filter(line => !query.value || line.text.toLocaleLowerCase().includes(query.value.toLocaleLowerCase())));
-watch(() => props.value, () => { query.value = ''; });
+// Keep the reader's search while a resource patch updates its content.
+// A real detail identity change clears data and remounts this viewer.
 </script>
 <template>
   <section class="content-viewer" :aria-label="label || '内容'">

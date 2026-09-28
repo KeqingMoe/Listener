@@ -58,7 +58,6 @@ summary { cursor: pointer; overflow-wrap: anywhere; padding: var(--space-2) 0; }
 .filterbar select { max-width: 180px; }
 .search-form { display: flex; gap: var(--space-2); min-width: 0; }
 .search-form input { width: 220px; min-width: 0; }
-.filterbar .refresh { margin-left: auto; }
 main { flex: 1; min-height: 0; min-width: 0; overflow: auto; padding: var(--space-4) var(--page-inset); }
 main:has(.review-list) { padding: 0; overflow: hidden; }
 .page-heading, .section-title, .section-heading, .detail-heading, .detail-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2) var(--space-3); }
@@ -161,7 +160,6 @@ td small { display: block; color: var(--muted); margin-top: var(--space-1); font
   .filterbar select { flex: 1; min-width: 0; max-width: 100%; }
   .search-form { flex: 1 1 calc(100% - 56px); min-width: 0; }
   .search-form input { width: 100%; }
-  .filterbar .refresh { margin-left: 0; }
   .metric-strip { gap: var(--space-2) var(--space-4); padding: var(--space-3); }
   .metric-strip strong { font-size: 16px; }
   .review-list.has-detail .list-pane, .resize-handle, .unknown-key { display: none; }

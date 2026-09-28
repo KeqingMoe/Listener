@@ -1,5 +1,7 @@
 import { ref } from 'vue';
 export const authenticated = ref<boolean | null>(null);
+// Invalidate private caches even when a successful login replaces a live session.
+export const authVersion = ref(0);
 export const configured = ref<boolean | null>(null);
 export const configurationError = ref('');
 export function rejectConfiguration(error: string) {
@@ -23,5 +25,6 @@ export async function auth(action: 'session' | 'login' | 'logout' = 'session', b
   }
   configurationError.value = '';
   authenticated.value = result.authenticated === true;
+  if (action === 'login' || action === 'logout') authVersion.value++;
   return result;
 }

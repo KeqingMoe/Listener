@@ -8,9 +8,9 @@ import DataState from "../components/ui/DataState.vue";
 import AvailabilityNote from "../components/ui/AvailabilityNote.vue";
 
 const route = useRoute();
-const { query } = useFilters();
+const { query, identity } = useFilters();
 const { data, loading, error, retry } = useResource<ToolsResponse>(
-  computed(() => `tools?${query.value}`),
+  computed(() => `tools?${query.value}`), identity,
 );
 const missing = "未记录或不可用，不能视为 0。";
 const search = computed(() => typeof route.query.q === "string" ? route.query.q.trim().toLowerCase() : "");
@@ -26,7 +26,7 @@ const unknown = computed(() => items.value.reduce((sum, row) => sum + row.unknow
 <template>
   <section :aria-busy="loading">
     <header class="page-heading"><h1>工具统计</h1></header>
-    <DataState :loading="loading" :error="error" @retry="retry">
+    <DataState :loading="loading" :error="error" :stale="!!data" @retry="retry">
       <template v-if="data">
         <AvailabilityNote :value="data.availability" />
         <div class="metric-strip">

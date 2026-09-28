@@ -1,5 +1,9 @@
 import { rejectConfiguration } from '../composables/useAuth';
 
+export class ApiError extends Error {
+  constructor(public readonly status: number, message: string) { super(message); }
+}
+
 export async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`/api/${path}`, {
     signal,
@@ -12,7 +16,7 @@ export async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
       const body = await response.clone().json().catch(() => ({}));
       if (body.error === 'password_not_configured' || body.error === 'password_invalid_configuration') {
         rejectConfiguration(body.error);
-        throw new Error('拒绝访问：面板密码配置不可用。');
+        throw new ApiError(response.status, '拒绝访问：面板密码配置不可用。');
       }
     }
     const messages: Record<number, string> = {
@@ -21,7 +25,8 @@ export async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
       404: "记录不存在或已超出保留期限。",
       503: "数据源暂不可用或查询范围过大，请缩小时间范围或稍后重试。",
     };
-    throw new Error(
+    throw new ApiError(
+      response.status,
       messages[response.status] ??
         `请求失败（${response.status}），请稍后重试。`,
     );

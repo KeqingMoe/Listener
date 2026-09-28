@@ -100,6 +100,16 @@ const denseRequests: ReviewRequest[] = Array.from({ length: 13 }, (_, index) => 
   endedAt: now - (index + 4) * 12000 + 2000,
 }));
 interface MockState { authenticated?: boolean; configured?: boolean; invalidConfig?: boolean; businessConfigError?: 'password_not_configured' | 'password_invalid_configuration'; expired?: boolean; fail?: boolean; empty?: boolean; password?: string; dense?: boolean; continuation?: boolean; wakeVariant?: 'running' | 'missing' }
+function effectiveApiUrl(input: string | URL): URL {
+  const url = new URL(input);
+  return url.pathname === '/api/resource-sync' ? new URL(url.searchParams.get('resource')!, url.origin) : url;
+}
+function snapshot(data: unknown) { return { mode: 'snapshot', cursor: 'opaque-fixture-cursor', data }; }
+async function refreshImmediately(page: Page) {
+  const automatic = page.getByRole('checkbox', { name: '自动刷新', exact: true });
+  await automatic.uncheck();
+  await automatic.check();
+}
 async function mock(page: Page, state: MockState = {}) {
   state.configured ??= true;
   state.authenticated ??= state.configured;
@@ -107,7 +117,8 @@ async function mock(page: Page, state: MockState = {}) {
   const requests: URL[] = [];
   const posts: { path: string; body: unknown }[] = [];
   await page.route('**/api/**', async route => {
-    const url = new URL(route.request().url());
+    const transportUrl = new URL(route.request().url());
+    const url = effectiveApiUrl(transportUrl);
     // Vite also serves /src/api/client.ts: preserve earlier asset-proxy handlers.
     if (!url.pathname.startsWith('/api/')) return route.fallback();
     requests.push(url);
@@ -128,6 +139,8 @@ async function mock(page: Page, state: MockState = {}) {
       } else if (action === 'logout') state.authenticated = false;
       return route.fulfill({ json: { authenticated: state.authenticated, configured: state.configured, ...(!state.configured ? { error: state.invalidConfig ? 'password_invalid_configuration' : 'password_not_configured' } : {}) } });
     }
+    expect(route.request().method()).toBe('GET');
+    if (path !== '/api/request-trends/sync') expect(transportUrl.pathname).toBe('/api/resource-sync');
     if (state.businessConfigError) return route.fulfill({ status: 503, json: { error: state.businessConfigError } });
     if (state.expired || !state.authenticated) return route.fulfill({ status: 401, json: { error: 'unauthorized' } });
     if (state.fail && path === '/api/requests') return route.fulfill({ status: 503, json: { error: 'unavailable' } });
@@ -139,12 +152,13 @@ async function mock(page: Page, state: MockState = {}) {
       } : usage;
       body = { ...overview, summary, groups: [{ ...summary, groupId: '10001' }] } satisfies OverviewResponse;
     }
-    else if (path === '/api/request-trends') {
+    else if (path === '/api/request-trends/sync') {
       const selectedRange = { since: Number(url.searchParams.get('since')), until: Number(url.searchParams.get('until')) };
       const items = state.empty ? [] : [request, failed, previous].map((item, i) => ({
         ...item, startedAt: selectedRange.since + (selectedRange.until - selectedRange.since) * (i + 1) / 4,
       }));
-      body = buildRequestTrends(selectedRange, availability, items);
+      const snapshot = buildRequestTrends(selectedRange, availability, items);
+      body = { ...snapshot, mode: 'snapshot', cursor: 'fixture-cursor', removals: [], upserts: snapshot.points.map((point, i) => ({ ...point, key: String(i) })) };
     }
     else if (path === '/api/health') body = health;
     else if (path === '/api/tools') body = tools;
@@ -172,7 +186,7 @@ async function mock(page: Page, state: MockState = {}) {
       }
       body = response;
     } else return route.fulfill({ status: 404, json: { error: 'not_found' } });
-    return route.fulfill({ json: body });
+    return route.fulfill({ json: transportUrl.pathname === '/api/resource-sync' ? snapshot(body) : body });
   });
   return { requests, posts };
 }
@@ -206,8 +220,8 @@ test('overview charts preserve raw metrics, free coordinates, filters and mobile
   await expect(page.getByTestId('chart-crosshair')).toHaveCount(0);
   await page.getByLabel('群组', { exact: true }).selectOption('10001');
   await page.getByLabel('时间范围').selectOption('3h');
-  await expect.poll(() => requests.some(u => u.pathname === '/api/request-trends' && u.searchParams.get('groupId') === '10001' && Number(u.searchParams.get('until')) - Number(u.searchParams.get('since')) === 3 * 3600000)).toBe(true);
-  expect(requests.filter(u => u.pathname === '/api/request-trends').every(u => !u.searchParams.has('chartMetric'))).toBe(true);
+  await expect.poll(() => requests.some(u => u.pathname === '/api/request-trends/sync' && u.searchParams.get('groupId') === '10001' && Number(u.searchParams.get('until')) - Number(u.searchParams.get('since')) === 3 * 3600000)).toBe(true);
+  expect(requests.filter(u => u.pathname === '/api/request-trends/sync').every(u => !u.searchParams.has('chartMetric'))).toBe(true);
   await metric.selectOption('output');
   await page.getByLabel('散点显示范围').selectOption('p95');
   await expect(page).toHaveURL(/chartRange=p95/);
@@ -215,7 +229,7 @@ test('overview charts preserve raw metrics, free coordinates, filters and mobile
   await page.reload();
   await expect(metric).toHaveValue('output');
   await expect(page.getByLabel('散点显示范围')).toHaveValue('p95');
-  expect(requests.filter(u => u.pathname === '/api/request-trends').every(u => !u.searchParams.has('chartRange'))).toBe(true);
+  expect(requests.filter(u => u.pathname === '/api/request-trends/sync').every(u => !u.searchParams.has('chartRange'))).toBe(true);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(scatter).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
@@ -224,13 +238,146 @@ test('overview charts preserve raw metrics, free coordinates, filters and mobile
   expect(errors).toEqual([]);
 });
 
+test('trend refresh merges delta updates and removals, retries stale data and resets on filters', async ({ page }) => {
+  await mock(page);
+  const calls: URL[] = [];
+  let version = 0;
+  let fail = false;
+  await page.route('**/api/request-trends/sync?*', async route => {
+    const url = new URL(route.request().url()); calls.push(url);
+    if (fail) return route.fulfill({ status: 503, json: { error: 'unavailable' } });
+    const range = { since: Number(url.searchParams.get('since')), until: Number(url.searchParams.get('until')) };
+    const snapshot = buildRequestTrends(range, availability, [{ ...request, startedAt: range.until - 1000, durationMs: version ? 9000 : 1000 }]);
+    const hasCursor = url.searchParams.has('cursor');
+    await route.fulfill({ json: { ...snapshot, cursor: `version-${++version}`, mode: hasCursor ? 'delta' : 'snapshot', upserts: snapshot.points.map(point => ({ ...point, key: 'same-request' })), removals: hasCursor ? ['old-request'] : [], ...(!hasCursor ? { upserts: [...snapshot.points.map(point => ({ ...point, key: 'same-request' })), { ...snapshot.points[0], key: 'old-request' }] } : {}) } });
+  });
+  await page.goto('/?range=5m');
+  const summary = page.getByTestId('request-scatter-summary');
+  await expect(summary).toContainText('总数 2');
+  await refreshImmediately(page);
+  await expect(summary).toContainText('总数 1');
+  expect(calls.at(-1)!.searchParams.get('cursor')).toBe('version-1');
+  fail = true;
+  await refreshImmediately(page);
+  await expect(page.getByLabel('请求趋势图表', { exact: true }).getByRole('alert')).toBeVisible();
+  await expect(summary).toContainText('总数 1');
+  fail = false;
+  await page.getByRole('button', { name: '重试图表', exact: true }).click();
+  await expect(page.getByLabel('请求趋势图表', { exact: true }).getByRole('alert')).toHaveCount(0);
+  await page.getByLabel('时间范围').selectOption('3h');
+  await expect(summary).toContainText('总数 2');
+  expect(calls.at(-1)!.searchParams.has('cursor')).toBe(false);
+});
+
+test('global refresh counts down each second and shows pending until the refresh completes', async ({ page }) => {
+  await page.clock.install({ time: now });
+  await page.clock.pauseAt(now + 1000);
+  await mock(page);
+  let calls = 0;
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route(url => effectiveApiUrl(url).pathname === '/api/tools', async route => {
+    calls++;
+    if (calls === 2) await pending;
+    await route.fulfill({ json: snapshot(tools) });
+  });
+  await page.goto('/tools');
+  await expect(page.locator('main tbody tr')).toHaveCount(1);
+  const status = page.getByTestId('dashboard-refresh-status');
+  await expect(page.getByRole('checkbox', { name: '自动刷新', exact: true })).toBeChecked();
+  await expect(page.getByRole('button', { name: /^(刷新|暂停自动刷新|恢复自动刷新)$/ })).toHaveCount(0);
+  await expect(status).toHaveText('5秒');
+  expect(calls).toBe(1);
+  for (const seconds of [4, 3, 2, 1]) {
+    await page.clock.runFor(1000);
+    await expect(status).toHaveText(`${seconds}秒`);
+    expect(calls).toBe(1);
+  }
+  await page.clock.runFor(999);
+  await expect(status).toHaveText('1秒');
+  expect(calls).toBe(1);
+  await page.clock.runFor(1);
+  await expect.poll(() => calls).toBe(2);
+  await expect(status).toContainText('刷新中');
+  // A slow response must not overlap another cycle or display a false countdown.
+  await page.clock.runFor(15000);
+  expect(calls).toBe(2);
+  await expect(status).toContainText('刷新中');
+  release();
+  await expect(status).toHaveText('5秒');
+  await page.clock.runFor(1000);
+  await expect(status).toHaveText('4秒');
+});
+
+test('global refresh defaults to five seconds, polls overview and charts, and pauses when hidden or disabled', async ({ page }) => {
+  await page.clock.install();
+  const { requests } = await mock(page);
+  // The removed chart-only preference must not disable global refresh.
+  await page.goto('/?range=5m&chartRefresh=0');
+  await expect(page.getByTestId('request-scatter-summary')).toBeVisible();
+  await expect(page.getByTestId('dashboard-refresh-status')).toHaveText('5秒');
+  await expect(page.getByRole('checkbox', { name: '自动刷新', exact: true })).toBeChecked();
+  await expect(page.getByLabel('图表自动刷新')).toHaveCount(0);
+  const paths = ['/api/meta', '/api/health', '/api/overview', '/api/request-trends/sync'];
+  const count = (path: string) => requests.filter(u => u.pathname === path).length;
+  const initial = paths.map(count);
+  await page.clock.runFor(5100);
+  for (const [i, path] of paths.entries()) await expect.poll(() => count(path)).toBe(initial[i] + 1);
+  expect(requests.filter(u => u.pathname === '/api/request-trends/sync').at(-1)!.searchParams.has('cursor')).toBe(true);
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); document.dispatchEvent(new Event('visibilitychange')); });
+  await expect(page.getByTestId('dashboard-refresh-status')).toHaveText('页面隐藏，已暂停');
+  await expect(page.getByRole('checkbox', { name: '自动刷新', exact: true })).toBeChecked();
+  const hiddenCounts = paths.map(count);
+  await page.clock.runFor(60000);
+  expect(paths.map(count)).toEqual(hiddenCounts);
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); document.dispatchEvent(new Event('visibilitychange')); });
+  await page.clock.runFor(5100);
+  for (const [i, path] of paths.entries()) await expect.poll(() => count(path)).toBeGreaterThan(hiddenCounts[i]);
+  await page.getByRole('checkbox', { name: '自动刷新', exact: true }).uncheck();
+  await expect(page.getByTestId('dashboard-refresh-status')).toHaveText('已暂停');
+  await expect(page.getByRole('checkbox', { name: '自动刷新', exact: true })).not.toBeChecked();
+  const pausedCounts = paths.map(count);
+  const pausedRequestCount = requests.length;
+  await page.clock.runFor(60000);
+  expect(paths.map(count)).toEqual(pausedCounts);
+  expect(requests).toHaveLength(pausedRequestCount);
+  await expect(page.getByTestId('dashboard-refresh-status')).toHaveText('已暂停');
+  // Becoming visible must not override the user's unchecked preference.
+  for (const hidden of [true, false]) {
+    await page.evaluate(hidden => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden }); document.dispatchEvent(new Event('visibilitychange')); }, hidden);
+    await page.clock.runFor(10000);
+    expect(requests).toHaveLength(pausedRequestCount);
+  }
+  await page.getByRole('checkbox', { name: '自动刷新', exact: true }).check();
+  for (const [i, path] of paths.entries()) await expect.poll(() => count(path)).toBeGreaterThan(pausedCounts[i]);
+});
+
+for (const [url, paths] of [
+  ['/requests?selected=req-synthetic-2&detailGroup=10001', ['/api/requests', '/api/requests/req-synthetic-2']],
+  ['/wakes?selected=wake-synthetic&detailGroup=10001', ['/api/wakes', '/api/wakes/wake-synthetic/review']],
+  ['/tools', ['/api/tools']], ['/events', ['/api/events']],
+] as const) {
+  test(`global refresh polls the active list and detail on ${url}`, async ({ page }) => {
+    await page.clock.install();
+    const { requests } = await mock(page);
+    await page.goto(url);
+    const count = (path: string) => requests.filter(u => u.pathname === path).length;
+    for (const path of paths) await expect.poll(() => count(path)).toBeGreaterThan(0);
+    await expect(page.getByTestId('dashboard-refresh-status')).toHaveText('5秒');
+    const initial = paths.map(count);
+    await page.clock.runFor(5100);
+    for (const [i, path] of paths.entries()) await expect.poll(() => count(path)).toBe(initial[i] + 1);
+  });
+}
+
 test('scatter percentile controls clip the display without changing request totals', async ({ page }) => {
   await mock(page);
-  await page.route('**/api/request-trends?*', async route => {
+  await page.route('**/api/request-trends/sync?*', async route => {
     const url = new URL(route.request().url());
     const range = { since: Number(url.searchParams.get('since')), until: Number(url.searchParams.get('until')) };
     const rows = Array.from({ length: 100 }, (_, i) => ({ ...request, startedAt: range.since + i, durationMs: i * 1000 }));
-    await route.fulfill({ json: buildRequestTrends(range, availability, rows) });
+    const snapshot = buildRequestTrends(range, availability, rows);
+    await route.fulfill({ json: { ...snapshot, mode: 'snapshot', cursor: 'fixture-cursor', removals: [], upserts: snapshot.points.map((point, i) => ({ ...point, key: String(i) })) } });
   });
   await page.goto('/?chartRange=invalid');
   const summary = page.getByTestId('request-scatter-summary');
@@ -254,12 +401,13 @@ test('scatter percentile controls clip the display without changing request tota
 test('chart empty, unavailable, failed and missing metric states stay distinct', async ({ page }) => {
   await mock(page);
   let mode = 'error';
-  await page.route('**/api/request-trends?*', async route => {
+  await page.route('**/api/request-trends/sync?*', async route => {
     if (mode === 'error') return route.fulfill({ status: 503, json: { error: 'unavailable', message: 'Select a narrower time range' } });
     const url = new URL(route.request().url());
     const r = { since: Number(url.searchParams.get('since')), until: Number(url.searchParams.get('until')) };
     const rows = mode === 'missing' ? [{ ...request, startedAt: r.since, durationMs: null, inputTokens: null, totalInputTokens: null, cachedInputTokens: null, outputTokens: 0, tps: null }] : [];
-    return route.fulfill({ json: buildRequestTrends(r, { ...availability, telemetry: mode !== 'unavailable' }, rows) });
+    const snapshot = buildRequestTrends(r, { ...availability, telemetry: mode !== 'unavailable' }, rows);
+    return route.fulfill({ json: { ...snapshot, mode: 'snapshot', cursor: 'fixture-cursor', removals: [], upserts: snapshot.points.map((point, i) => ({ ...point, key: String(i) })) } });
   });
   await page.goto('/?range=15m&chartMetric=invalid');
   const charts = page.getByLabel('请求趋势图表', { exact: true });
@@ -272,9 +420,9 @@ test('chart empty, unavailable, failed and missing metric states stay distinct',
   await expect(page.getByTestId('request-scatter-summary')).toContainText('缺失 1');
   await page.getByLabel('散点纵轴指标').selectOption('output');
   await expect(page.getByTestId('request-scatter-summary')).toContainText('可绘制 1');
-  mode = 'empty'; await page.getByRole('button', { name: '刷新', exact: true }).click();
+  mode = 'empty'; await refreshImmediately(page);
   await expect(page.getByTestId('request-scatter-summary')).toContainText('总数 0');
-  mode = 'unavailable'; await page.getByRole('button', { name: '刷新', exact: true }).click();
+  mode = 'unavailable'; await refreshImmediately(page);
   await expect(charts).toContainText('不可用');
 });
 
@@ -282,8 +430,9 @@ const requestUrl = `/requests?selected=${request.requestId}&detailGroup=10001`;
 const wakeUrl = `/wakes?selected=${wake.wakeId}&detailGroup=10001`;
 
 test('password login, session restore, no password-change UI, logout and API 401', async ({ page }) => {
+  await page.clock.install();
   const state: MockState = { authenticated: false };
-  const { posts } = await mock(page, state);
+  const { posts, requests } = await mock(page, state);
   await page.goto('/requests');
   await expect(page.getByRole('heading', { name: '登录', exact: true })).toBeVisible();
   await expect(page.getByText('在此浏览器保持登录7天', { exact: false })).toBeVisible();
@@ -300,16 +449,20 @@ test('password login, session restore, no password-change UI, logout and API 401
   await page.getByRole('button', { name: '退出', exact: true }).click();
   await expect(page.getByRole('heading', { name: '登录', exact: true })).toBeVisible();
   expect(posts.find(p => p.path.endsWith('/logout'))?.body).toEqual({});
+  const loggedOutCount = requests.length;
+  await page.clock.runFor(15000);
+  expect(requests.length).toBe(loggedOutCount);
   await page.getByLabel('密码', { exact: true }).fill('synthetic-password');
   await page.getByRole('button', { name: '登录', exact: true }).click();
   await expect(page.getByRole('heading', { name: '模型请求', exact: true })).toBeVisible();
   state.expired = true;
-  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await page.clock.runFor(5100);
   await expect(page.getByRole('heading', { name: '登录', exact: true })).toBeVisible();
 });
 
 for (const invalidConfig of [false, true]) {
   test(`unconfigured authentication denies access without a form (${invalidConfig ? 'invalid' : 'missing'} password)`, async ({ page }) => {
+    await page.clock.install();
     const { requests } = await mock(page, { configured: false, invalidConfig });
     await page.goto('/');
     await expect(page.getByRole('heading', { name: '拒绝访问', exact: true })).toBeVisible();
@@ -320,18 +473,20 @@ for (const invalidConfig of [false, true]) {
     await expect(page.locator('form')).toHaveCount(0);
     await expect(page.getByLabel('密码', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /登录|改密码|修改密码/ })).toHaveCount(0);
+    await page.clock.runFor(15000);
     expect(requests.every(url => url.pathname.startsWith('/api/auth/'))).toBe(true);
   });
 }
 
 for (const error of ['password_not_configured', 'password_invalid_configuration'] as const) {
   test(`business API ${error} clears authenticated content and denies access`, async ({ page }) => {
+    await page.clock.install();
     const state: MockState = {};
     await mock(page, state);
     await page.goto(requestUrl);
     await expect(page.locator('.request-detail')).toContainText('Synthetic Responses readable answer');
     state.businessConfigError = error;
-    await page.getByRole('button', { name: '刷新', exact: true }).click();
+    await page.clock.runFor(5100);
     await expect(page.getByRole('heading', { name: '拒绝访问', exact: true })).toBeVisible();
     await expect(page.getByRole('alert')).toContainText('DASHBOARD_PASSWORD');
     if (error === 'password_invalid_configuration') await expect(page.getByRole('alert')).toContainText('至少12字符');
@@ -390,10 +545,10 @@ test('request rows show uncached/cache/output and end-to-end TPS without adding 
 
 test('cancellation diagnostics stay collapsed and expose only recorded Chinese facts', async ({ page }) => {
   await mock(page);
-  await page.route('**/api/requests/req-synthetic-2?*', async route => {
+  await page.route(url => effectiveApiUrl(url).pathname === '/api/requests/req-synthetic-2', async route => {
     const record = detail(request.requestId);
     record.request = { ...record.request, outcome: 'cancelled', status: 'cancelled', diagnostics: { abortSource: 'turn_timeout', failureStage: 'response_body', requestTimeoutMs: 12000, providerCategory: 'previous_response_missing', providerParameter: 'previous_response_id' } };
-    await route.fulfill({ json: record });
+    await route.fulfill({ json: snapshot(record) });
   });
   await page.goto(requestUrl);
   const pane = page.locator('.request-detail');
@@ -515,11 +670,11 @@ test('continued request shows only actual incremental input rather than fabricat
 
 test('historical session fallback is not described as an actual request snapshot', async ({ page }) => {
   await mock(page);
-  await page.route('**/api/requests/req-synthetic-2?*', async route => {
+  await page.route(url => effectiveApiUrl(url).pathname === '/api/requests/req-synthetic-2', async route => {
     const record = detail(request.requestId);
     record.request = { ...record.request, requestMode: 'continue_restored' };
     record.requestBody = { source: 'persisted_session_context', messages: [{ role: 'user', content: 'Synthetic historical session message' }] };
-    await route.fulfill({ json: record });
+    await route.fulfill({ json: snapshot(record) });
   });
   await page.goto(requestUrl);
   await page.getByRole('tab', { name: '请求正文', exact: true }).click();
@@ -605,9 +760,96 @@ test('global search, group, outcome, cursor and refresh retain server filters', 
   await expect(page.locator('.list-pane tbody tr')).toHaveCount(1);
   await expect.poll(() => requests.some(u => u.pathname === '/api/requests' && u.searchParams.get('groupId') === '10001' && u.searchParams.get('outcome') === 'failed' && u.searchParams.get('q') === failed.requestId && !u.searchParams.has('cursor'))).toBe(true);
   const count = requests.length;
-  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await refreshImmediately(page);
   await expect.poll(() => requests.length).toBeGreaterThan(count);
 });
+
+test('automatic polling and re-enabling refresh retain the current pagination cursor', async ({ page }) => {
+  await page.clock.install();
+  const { requests } = await mock(page);
+  await page.goto('/requests');
+  await page.getByRole('button', { name: '下一页', exact: true }).click();
+  await expect.poll(() => requests.filter(u => u.pathname === '/api/requests').at(-1)?.searchParams.get('cursor')).toBe('synthetic-next');
+  await expect(page.getByRole('button', { name: '下一页', exact: true })).toBeDisabled();
+  const count = () => requests.filter(u => u.pathname === '/api/requests').length;
+  const initial = count();
+  await page.clock.runFor(5100);
+  await expect.poll(count).toBe(initial + 1);
+  await refreshImmediately(page);
+  await expect.poll(count).toBe(initial + 2);
+  await expect.poll(() => requests.filter(u => u.pathname === '/api/requests').at(-1)?.searchParams.get('cursor')).toBe('synthetic-next');
+  expect(requests.filter(u => u.pathname === '/api/requests').slice(-2).every(u => u.searchParams.get('cursor') === 'synthetic-next')).toBe(true);
+});
+
+test('resource patches and unchanged preserve selected detail, tab, search and scroll', async ({ page }) => {
+  await page.clock.install();
+  await mock(page);
+  const calls: URL[] = [];
+  const text = Array.from({ length: 150 }, (_, i) => `needle reasoning line ${i}`).join('\n');
+  await page.route(url => effectiveApiUrl(url).pathname === '/api/requests/req-synthetic-2', async route => {
+    calls.push(new URL(route.request().url()));
+    const index = calls.length;
+    await route.fulfill({ json: index === 1
+      ? { ...snapshot({ ...detail(request.requestId), reasoningText: text }), cursor: 'detail-v1' }
+      : index === 2 ? { mode: 'patch', cursor: 'detail-v2', patch: [{ op: 'replace', path: '/reasoningText', value: `${text}\nneedle patched final line` }] }
+      : { mode: 'unchanged', cursor: 'detail-v2' } });
+  });
+  await page.goto(requestUrl);
+  await page.getByRole('tab', { name: '思考', exact: true }).click();
+  const region = page.getByRole('region', { name: '思考', exact: true });
+  await region.getByLabel('搜索思考', { exact: true }).fill('needle');
+  const scroll = page.locator('.detail-scroll');
+  await scroll.evaluate(element => { element.scrollTop = 180; });
+  const top = await scroll.evaluate(element => element.scrollTop);
+  expect(top).toBeGreaterThan(0);
+  await page.clock.runFor(5100);
+  await expect(region).toContainText('needle patched final line');
+  expect(calls[1].searchParams.get('cursor')).toBe('detail-v1');
+  await page.clock.runFor(5100);
+  await expect.poll(() => calls.length).toBe(3);
+  expect(calls[2].searchParams.get('cursor')).toBe('detail-v2');
+  await expect(page).toHaveURL(/selected=req-synthetic-2/);
+  await expect(page.getByRole('tab', { name: '思考', exact: true })).toHaveAttribute('aria-selected', 'true');
+  expect(await scroll.evaluate(element => element.scrollTop)).toBe(top);
+  await expect(region.getByLabel('搜索思考', { exact: true })).toHaveValue('needle');
+  await expect(region).toContainText('needle patched final line');
+});
+
+test('transient polling errors retain the last list and recover automatically', async ({ page }) => {
+  await page.clock.install();
+  const state: MockState = {};
+  await mock(page, state);
+  await page.goto('/requests');
+  await expect(page.locator('.list-pane tbody tr')).toHaveCount(3);
+  state.fail = true;
+  await page.clock.runFor(5100);
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.locator('.list-pane tbody tr')).toHaveCount(3);
+  state.fail = false;
+  // Failed cycles back off before attempting the next automatic refresh.
+  await page.clock.runFor(10100);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.locator('.list-pane tbody tr')).toHaveCount(3);
+});
+
+for (const status of [401, 404]) {
+  test(`automatic detail refresh clears cached sensitive content on ${status}`, async ({ page }) => {
+    await page.clock.install();
+    await mock(page);
+    let expired = false;
+    await page.route(url => effectiveApiUrl(url).pathname === '/api/requests/req-synthetic-2', route => route.fulfill(expired
+      ? { status, json: { error: status === 401 ? 'unauthorized' : 'not_found' } }
+      : { json: snapshot(detail(request.requestId)) }));
+    await page.goto(requestUrl);
+    await page.getByRole('tab', { name: '思考', exact: true }).click();
+    await expect(page.getByText('Synthetic reasoning first line', { exact: false })).toBeVisible();
+    expired = true;
+    await page.clock.runFor(5100);
+    await expect(page.getByText('Synthetic reasoning first line', { exact: false })).toHaveCount(0);
+    if (status === 401) await expect(page.getByLabel('密码', { exact: true })).toBeVisible();
+    else await expect(page.getByRole('alert')).toBeVisible();
+  });
+}
 
 test('failed loading can retry and empty lists have no fabricated records', async ({ page }) => {
   const state: MockState = { fail: true, empty: true };
@@ -667,7 +909,7 @@ async function insecureDashboard(page: Page) {
     await route.fulfill({ response });
   });
   await mock(page);
-  await page.route('http://dashboard.example/api/requests/req-synthetic-2?*', route => route.fulfill({ json: { ...detail(request.requestId), reasoningText: largeCopyText } }));
+  await page.route(url => url.origin === 'http://dashboard.example' && effectiveApiUrl(url).pathname === '/api/requests/req-synthetic-2', route => route.fulfill({ json: snapshot({ ...detail(request.requestId), reasoningText: largeCopyText }) }));
   await page.goto(`http://dashboard.example${requestUrl}`);
   expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
   expect(await page.evaluate(() => typeof navigator.clipboard)).toBe('undefined');
@@ -769,7 +1011,7 @@ test('mobile multi-day lists distinguish identical clock times and retain visibl
   await mock(page);
   for (const kind of ['requests', 'wakes'] as const) {
     const first = kind === 'requests' ? request : wake;
-    await page.route(`**/api/${kind}?*`, route => route.fulfill({ json: { range, availability, nextCursor: null, items: [first, { ...first, requestId: 'req-other-day', wakeId: 'wake-other-day', startedAt: first.startedAt - 86400000 }] } }));
+    await page.route(url => effectiveApiUrl(url).pathname === `/api/${kind}`, route => route.fulfill({ json: snapshot({ range, availability, nextCursor: null, items: [first, { ...first, requestId: 'req-other-day', wakeId: 'wake-other-day', startedAt: first.startedAt - 86400000 }] }) }));
     await page.goto(`/${kind}?range=7d`);
     const times = page.locator('.list-pane .row-link .mobile-label');
     await expect(times).toHaveCount(2);

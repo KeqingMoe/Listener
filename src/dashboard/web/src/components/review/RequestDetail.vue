@@ -37,7 +37,7 @@ const diagnosticFacts = computed(() => {
 </script>
 <template>
   <section class="request-detail" :aria-busy="loading">
-    <DataState :loading="loading" :error="error" @retry="retry"><template v-if="data">
+    <DataState :loading="loading" :error="error" :stale="!!data" @retry="retry"><template v-if="data">
       <header class="request-head"><span class="badge">{{status(data.request.outcome)}}</span><strong>{{data.request.model || '模型请求'}}</strong><span>{{duration(data.request.durationMs)}}</span></header>
       <div class="request-tokens" title="未记录或不可用显示 —，不能视为 0。"><span title="未缓存输入">输入 <b>{{count(data.request.inputTokens)}}</b></span><span title="已命中缓存">缓存 <b>{{count(data.request.cachedInputTokens)}}</b></span><span title="含服务商报告推理，不重复相加">输出 <b>{{count(data.request.outputTokens)}}</b></span><small v-if="data.request.reasoningTokens!=null" class="muted">其中推理 {{count(data.request.reasoningTokens)}}</small></div>
       <PerformanceFacts :performance="data.request.performance" :cache="data.request" />

@@ -11,9 +11,9 @@ import PerformanceFacts from "../components/ui/PerformanceFacts.vue";
 import OverviewCharts from "../components/overview/OverviewCharts.vue";
 
 const route = useRoute();
-const { query, groupId } = useFilters();
+const { query, groupId, identity } = useFilters();
 const { data, loading, error, retry } = useResource<OverviewResponse>(
-  computed(() => `overview?${query.value}`),
+  computed(() => `overview?${query.value}`), identity,
 );
 const health = useResource<HealthResponse>(computed(() => "health"));
 const connectivityLabel: Record<HealthResponse['connectivity'], string> = {
@@ -43,7 +43,7 @@ const metrics = computed(() => {
 <template>
   <section :aria-busy="loading">
     <header class="page-heading"><h1>总览</h1></header>
-    <DataState :loading="loading" :error="error" @retry="retry">
+    <DataState :loading="loading" :error="error" :stale="!!data" @retry="retry">
       <template v-if="data">
         <AvailabilityNote :value="data.availability" />
         <div class="metric-strip" aria-label="总览汇总">
@@ -53,7 +53,10 @@ const metrics = computed(() => {
           </div>
         </div>
         <PerformanceFacts :performance="data.summary.performance" :cache="data.summary" />
-        <OverviewCharts />
+      </template>
+    </DataState>
+    <OverviewCharts />
+    <template v-if="data && !loading && !error">
         <section class="panel">
           <div class="section-title">
             <h2>群组汇总</h2>
@@ -82,14 +85,13 @@ const metrics = computed(() => {
             </table>
           </div>
         </section>
-      </template>
-    </DataState>
+    </template>
     <section class="panel" :aria-busy="health.loading.value">
       <div class="section-title">
         <h2>最近运行事实</h2>
         <span v-if="health.data.value" class="muted">观测时间 {{ time(health.data.value.now) }}</span>
       </div>
-      <DataState :loading="health.loading.value" :error="health.error.value" @retry="health.retry">
+      <DataState :loading="health.loading.value" :error="health.error.value" :stale="!!health.data.value" @retry="health.retry">
         <template v-if="health.data.value">
           <div class="section-title health-facts">
             <span class="badge">遥测{{ health.data.value.availability.telemetry ? '可读取' : '不可读取' }}</span>

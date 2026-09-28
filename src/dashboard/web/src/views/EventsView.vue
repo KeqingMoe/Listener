@@ -4,12 +4,13 @@ import { useRoute, useRouter } from 'vue-router';
 import { EVENT_CATEGORIES, type ReviewEventsResponse } from '../../../contracts/review';
 import type { Range } from '../../../contracts/contracts';
 import { time } from '../api/client';
-import { refreshVersion, useFilters, useResource } from '../composables/useDashboard';
+import { useFilters, useResource } from '../composables/useDashboard';
 import DataState from '../components/ui/DataState.vue';
 import ContentViewer from '../components/review/ContentViewer.vue';
 import CopyId from '../components/review/CopyId.vue';
 const route = useRoute(), router = useRouter();
-const { query } = useFilters();
+const { query, identity } = useFilters();
+const filterIdentity = computed(() => JSON.stringify([identity.value, route.query.category, route.query.q]));
 const categories: Record<string, string> = { app: '应用', onebot: '接入', message: '消息', trigger: '触发', turn: '轮次', model: '模型', tool: '工具', image: '图片', forward: '转发', memory: '记忆', moderation: '群管理', command: '命令', send: '发送', attention: '关注', session: '会话' };
 const category = computed(() => typeof route.query.category === 'string' ? route.query.category : '');
 const filters = computed(() => {
@@ -20,7 +21,7 @@ const filters = computed(() => {
 });
 const cursors = ref<string[]>([]);
 const boundRange = ref<Range | null>(null);
-watch([filters, refreshVersion], () => { cursors.value = []; boundRange.value = null; }, { flush: 'sync' });
+watch(filterIdentity, () => { cursors.value = []; boundRange.value = null; }, { flush: 'sync' });
 const path = computed(() => {
   const params = new URLSearchParams(filters.value);
   params.set('limit', '30');
@@ -30,7 +31,7 @@ const path = computed(() => {
   }
   return `events?${params}`;
 });
-const { data, loading, error, retry } = useResource<ReviewEventsResponse>(path);
+const { data, loading, error, retry } = useResource<ReviewEventsResponse>(path, computed(() => JSON.stringify([filterIdentity.value, cursors.value.at(-1) || ''])));
 function next() {
   if (!data.value?.nextCursor || loading.value) return;
   boundRange.value = data.value.range;
@@ -49,7 +50,7 @@ const levelLabel = (level: string) => ({ trace: '跟踪', debug: '调试', info:
       <div class="section-title">
         <label class="category-filter">事件分类 <select :value="category" aria-label="事件分类" @change="setCategory"><option value="">全部分类</option><option v-for="key in EVENT_CATEGORIES" :key="key" :value="key">{{ categories[key] }}</option></select></label>
       </div>
-      <DataState :loading="loading" :error="error" @retry="retry">
+      <DataState :loading="loading" :error="error" :stale="!!data" @retry="retry">
         <p v-if="!data?.items.length" class="muted">此范围没有事件</p>
         <div v-else class="table-wrap"><table class="compact-table events-table">
           <thead><tr><th>时间</th><th>分类</th><th>事件 / 详情</th><th>群组</th><th>轮次</th></tr></thead>
