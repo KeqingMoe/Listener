@@ -1,140 +1,42 @@
-# 仓库组织与分阶段重构方案
+# 代码结构
 
-状态：目标组织方案已确定，尚未执行源码迁移。本文不改变运行方式、配置或部署。
+## 源码
 
-## 1. 决定与范围
-
-采用单包、多入口、按职责分组的源码树。保留一个 package.json、一个 package-lock.json 和现有 npm 命令名，不引入 workspace、多包发布或额外构建编排框架。
-
-先明确模块边界，再分批迁移；目录移动、格式化、行为重构分别提交。目标是降低修改时需要理解的范围，不以文件数量、目录数量或行数作为成功指标。
-
-本轮不改变：
-
-- 群与身份隔离、工具授权和确认机制。
-- 唤醒调度、预算、取消、轮换及迟到回执语义。
-- 已提交、效果已确认与未知结果的区别；不增加重试或重放。
-- 模型提示词、工具定义、消息与响应的实际内容和顺序。
-- 数据库格式、配置格式、数据保留和凭据处理策略。
-- Dashboard业务数据只读边界、接口含义和当前界面。
-
-具体类的拆分仍须经过依赖及状态归属审计，不能根据文件名机械分类。
-
-## 2. 目标目录
-
-以下是归属约定，不提前创建空目录；有实际代码再落地。
-
-```text
-src/
-  app/                   # Bot入口、依赖装配、资源创建和关闭
-  config/                # 配置解析、校验、运行时配置投影
-  contracts/             # 小而明确的跨模块基础契约
-  agent/                 # 接入调度、唤醒执行、提示词、会话、关注计划
-  onebot/                # OneBot连接和协议层
-  model/                 # Chat / Responses客户端及协议、用量解析
-  world/                 # 群事实、事件摄取、消息表示和本地查询
-  tools/                 # 按业务能力分组的工具实现
-  observability/         # 日志、遥测、私有请求诊断与运行事件
-  cli/                   # 配置检查、日志查看、公开资源同步入口
-  dashboard/
-    server/              # 鉴权、只读查询、审阅关联与HTTP路由
-    contracts/           # 仅Dashboard前后端共用的纯数据契约
-    web/                 # Vue应用、Vite配置与前端类型检查
-
-tests/
-  unit/                  # 内部按对应业务模块分组
-  integration/           # 跨模块状态与生命周期
-  protocol/              # 实际HTTP / WebSocket协议，使用本地替身
-  browser/               # Dashboard浏览器验收
-  fixtures/              # 可公开、确定性的合成数据
-  support/               # 测试工厂、临时存储、受控时钟等
-
-docs/
-  architecture/          # 当前结构和依赖边界
-  decisions/             # 确有必要保留的设计取舍
-  configuration.md       # 用户配置说明
-  operations.md          # 不含机器专用信息的运维说明
-
-scripts/                 # 仅开发、构建、测试辅助脚本
-prompts/                 # 受版本控制的默认提示词资源
-
-dist/                    # 构建产物，Git忽略
-artifacts/               # 截图、报告等生成产物，Git忽略
-data/                    # 私有运行数据与本地资源，Git忽略
-```
-
-根目录保留 README.md、package.json、package-lock.json、TypeScript配置及配置示例；真实 config.toml 与 .env 的位置和忽略规则保持不变。
-
-### 细化原则
-
-- tools 按消息、管理、reaction、文件、媒体、群务、收藏表情等实际能力分组；不把所有文件简单搬到另一个扁平目录。
-- 会话存储与账本归 agent/session；群事实存储归 world；收藏表情存储归对应工具能力；遥测存储归 observability。
-- 不把所有SQLite实现汇成一个泛化的顶层 storage 模块。只有确实相同的数据库安全基础设施，才在后续审计中提取。
-- contracts 拆分身份、模型调用、消息、工具结果等明确契约，不把原 contracts.ts 扩成万能类型仓库；基础契约不能反向导入业务实现。
-- 不新增无限扩张的 common、utils 或 shared。Dashboard专用DTO不是全项目公共契约。
-- config.ts、bot.ts、memory.ts、extended-* 等含义宽泛或涉及兼容分支的文件，先核对消费者，再确定命名和归属，不凭名称删除或合并。
-
-## 3. 依赖边界
-
-1. app 与各CLI入口负责装配；业务模块不能导入入口，普通模块导入不能启动服务、连接网络或执行恢复。
-2. agent 承担编排，明确持有每群、每轮、每请求状态；工具实现不得反向依赖 Listener 这一具体类。
-3. onebot 负责连接和协议，不认识模型循环或Dashboard；model负责模型协议，不认识具体QQ群管理能力。
-4. 工具可使用明确的协议、事实查询和存储能力，但不得跨群共享私有上下文，也不通过巨大的可变上下文对象相互联动。
-5. Dashboard前端只依赖前端代码及浏览器安全的纯契约，不能导入Node侧实现。
-6. Dashboard服务端可使用已审查的只读查询、纯计算、脱敏和存储布局契约；不得构造运行时写入／恢复对象。共享表结构不意味着共享写入生命周期。
-7. 不为压缩重复代码统一不同QQ接口的效果确认、未知状态、去重和重试语义。
-
-迁移前列出当前导入关系、运行时副作用和允许的跨模块依赖。先禁止新增违规依赖，再逐步消除旧耦合；类型导入与运行时依赖区别处理，不用路径别名掩盖环依赖。
-
-## 4. 构建与路径约定
-
-Node源码统一以 src 为源码根、dist 为输出根，Dashboard前端从Node编译中排除，单独使用Vite和前端类型检查。
-
-目标入口与输出：
-
-| 源入口 | 目标产物 |
+| 目录 | 内容 |
 | --- | --- |
-| src/app/bot.ts | dist/app/bot.js |
-| src/dashboard/server/index.ts | dist/dashboard/server/index.js |
-| src/cli/config-check.ts | dist/cli/config-check.js |
-| src/cli/logs.ts | dist/cli/logs.js |
-| src/cli/sync-faces.ts | dist/cli/sync-faces.js |
-| src/dashboard/web/ | dist/dashboard/web/ |
+| `src/app` | Bot入口、每群实例装配与资源关闭 |
+| `src/config` | 配置解析、校验、策略及群注册信息 |
+| `src/contracts` | 身份、JSON、OneBot、消息、模型与工具接口 |
+| `src/agent` | 唤醒编排、调度、合批、关注计划与消息缓存 |
+| `src/agent/session` | 模型会话、唤醒记录与工具账本 |
+| `src/onebot` | OneBot连接、身份与引用解析、表情目录 |
+| `src/model` | Chat Completions与Responses客户端 |
+| `src/world` | 群事实存储、事件摄取、消息表示与反应观察 |
+| `src/tools` | 按能力分组的工具实现 |
+| `src/observability` | 日志、遥测、请求诊断与运行事件 |
+| `src/cli` | 配置检查、日志查询、表情同步命令 |
+| `src/dashboard/server` | 面板认证、只读查询与HTTP路由 |
+| `src/dashboard/contracts` | 面板前后端共用的数据类型和计算 |
+| `src/dashboard/web` | Vue页面与Vite配置 |
 
-现有 npm 命令名保持稳定，内部实现随迁移调整；测试发现改为显式递归发现并核对用例数量，不能因为文件搬入子目录漏跑。Node与Vite输出清理不得相互删除产物，构建先写隔离暂存目录，不直接清空运行中的发布目录。
+`agent/listener.ts` 负责每群唤醒编排；提示词在 `agent/prompts.ts`，工具定义组合在 `agent/tool-definitions.ts`。`agent/memory.ts` 管理消息缓存和摘要，与 `world` 的事实库、`agent/session` 的会话账本是不同存储。
 
-统一 dist 是最终构建布局，不是立即切换生产 ExecStart 的指令。实际服务路径只在对应构建验收完成后单独迁移；迁移期间不能留下已经失效的文档或命令。
+## 构建
 
-特别检查依赖 import.meta.url、__dirname、process.cwd() 的资源定位。配置与数据路径以明确的配置根／运行根解析，不随模块目录深度变化。保留既有 config.toml、.env、data、数据库、认证目录和提示词配置路径；不与本轮代码组织重构一起搬运行数据。
+`npm run build` 先检查依赖关系，再将Node源码从 `src` 编译到 `dist`，不包含前端。`npm run dashboard:build` 还会检查并构建Vue页面。Vite输出到 `dist/dashboard/web`，只清理该子目录。
 
-## 5. 文档与运行环境边界
+| 入口 | 编译文件 |
+| --- | --- |
+| Bot | `dist/app/bot.js` |
+| Dashboard | `dist/dashboard/server/index.js` |
+| 配置检查 | `dist/cli/config-check.js` |
+| 日志查询 | `dist/cli/logs.js` |
+| 表情同步 | `dist/cli/sync-faces.js` |
 
-版本库只保存经过审核的架构说明、通用运行约束和可公开的示例，不包含机器专用服务配置、凭据或现场记录。运维说明保持与已验证的入口、停止策略和最小写权限一致。
+## 测试
 
-## 6. 迁移顺序与验收
+`tests/unit` 放单组件测试，`tests/integration` 放跨组件测试，`tests/protocol` 使用本地HTTP／WebSocket服务，`tests/browser` 放浏览器测试。合成数据在 `tests/fixtures`，测试工厂在 `tests/support`。
 
-### 阶段一：建立可复现基线与边界清单
+`scripts/test.mjs` 递归发现 `*.test.ts`，排除夹具、支持代码和浏览器目录。`npm test` 运行核心用例，`npm run dashboard:test` 运行Dashboard用例，`npm run test:all` 运行两组Node用例。浏览器测试使用 `npm run dashboard:test:browser`。
 
-- 记录现有测试数、入口、导入关系、动态资源路径及部署约束。
-- 明确每群／每轮／每请求状态的所有者，标出读写与恢复副作用。
-- 测试显式使用合成资源或明确声明的公开离线依赖，不依赖某台机器已安装的忽略目录内容；不读取生产配置、聊天数据库或调用真实QQ服务。
-
-### 阶段二：按依赖顺序逐块迁移
-
-- 优先整理基础契约、配置与可独立迁移的边缘模块。
-- 每批只迁移一个明确模块及对应测试，调整真实消费者和资源定位；不同时改行为。
-- 每批构建与对应测试通过，导入边界检查通过；需要暂时转发入口时明确消费者和删除时点，最终无旧路径转发层或复制实现。
-- Dashboard后端与前端整体路径迁移单独完成，不与界面重设计混合。
-
-### 阶段三：拆分职责过重的实现
-
-- 先从Listener抽离提示词和工具定义构造，比较相同输入下字符串逐字一致、工具定义及顺序深度一致。
-- 再处理启动装配、调度、发送回执、工具分发，最后进入核心执行循环。
-- 不用多个类共享一个大可变对象的方式伪装解耦。
-
-### 阶段四：收口入口与部署说明
-
-- 完成最终构建路径、稳定npm命令、测试发现规则和文档。
-- 核验旧路径引用与未用转发层已清理。
-- 完整回归后才安排对应服务的构建发布；格式化、目录迁移、职责重构分提交，数据库／配置协议变更不混入本轮。
-
-验收以职责和依赖变清楚、行为保持、全套测试可复现为准，不以行数减少为准。
+`scripts/check-boundaries.mjs` 检查TS与Vue脚本的依赖方向、相对导入和运行时环，区分类型导入与运行时导入。单独运行命令为 `npm run check:boundaries`。

@@ -115,6 +115,24 @@ npm run dashboard:start
 
 面板从 `.env` 的 `DASHBOARD_PASSWORD` 接受访问密码；未设置则拒绝访问，没有初始密码或在线改密功能。可审阅唤醒、模型内容、工具参数结果、响应链和运行事件；总览、唤醒、请求统一缓存命中率与模型TPS，并区分模型、工具和整轮耗时。业务数据只读，不调用模型、不连接 OneBot、不发送消息。访问应限制到受信任网络或HTTPS入口。使用与统计口径见[面板说明](docs/dashboard.md)，接入异常与恢复验收见[运行排障](docs/operations.md)。
 
+## 开发与验证
+
+源码目录和构建入口见[代码结构](docs/architecture/repository-layout.md)。Bot与面板共享Node模块，页面单独构建。
+
+```sh
+npm ci
+npm run check:boundaries
+npm test                    # 核心回归
+npm run dashboard:test      # 面板接口与计算
+npm run test:all            # 上述两组全部Node用例
+npm run dashboard:build     # 类型检查、Node及页面构建
+# 浏览器环境准备（仅首次或Playwright升级后；需要下载）
+npx playwright install chromium
+npm run dashboard:test:browser
+```
+
+测试不需要真实配置、聊天数据库、模型密钥或预装表情目录；HTTP／WebSocket用例只使用本地替身。浏览器测试还需要匹配的Chromium及系统依赖。
+
 ## 隐私
 
 `config.toml`、`.env` 和数据目录均为私有文件，不应提交或公开。控制台与结构化运行日志虽不记录聊天正文和密钥，仍可能包含 QQ／消息ID；模型会话、工具账本和私有请求快照则包含正文等敏感内容。
