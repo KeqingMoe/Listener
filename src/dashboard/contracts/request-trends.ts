@@ -6,7 +6,7 @@ export const REQUEST_TREND_OUTCOMES = ['running', 'interrupted', 'success', 'fai
 /** One unsampled request; no identifiers, models, diagnostics or content. Unknown is null, not zero. */
 export type RequestTrendPoint = Pick<ReviewRequest,
   'startedAt' | 'outcome' | 'durationMs' | 'inputTokens' | 'totalInputTokens' |
-  'cachedInputTokens' | 'outputTokens' | 'tps'>;
+  'cachedInputTokens' | 'outputTokens' | 'tps' | 'cacheHitRate'>;
 export interface RequestTrendBucket {
   bucketStart: number;
   bucketEnd: number;

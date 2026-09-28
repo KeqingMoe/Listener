@@ -8,6 +8,7 @@ import { useFilters, useResource } from "../composables/useDashboard";
 import DataState from "../components/ui/DataState.vue";
 import AvailabilityNote from "../components/ui/AvailabilityNote.vue";
 import PerformanceFacts from "../components/ui/PerformanceFacts.vue";
+import OverviewCharts from "../components/overview/OverviewCharts.vue";
 
 const route = useRoute();
 const { query, groupId } = useFilters();
@@ -52,6 +53,7 @@ const metrics = computed(() => {
           </div>
         </div>
         <PerformanceFacts :performance="data.summary.performance" :cache="data.summary" />
+        <OverviewCharts />
         <section class="panel">
           <div class="section-title">
             <h2>群组汇总</h2>

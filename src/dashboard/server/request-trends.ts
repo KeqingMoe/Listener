@@ -21,7 +21,7 @@ export function buildRequestTrends(range: Range, availability: Availability, req
     // A display fallback duration must not imply a known request interval.
     durationMs: r.performance.coverage.modelIntervalRequests === 1 ? r.durationMs : null,
     inputTokens: r.inputTokens, totalInputTokens: r.totalInputTokens,
-    cachedInputTokens: r.cachedInputTokens, outputTokens: r.outputTokens, tps: r.tps,
+    cachedInputTokens: r.cachedInputTokens, outputTokens: r.outputTokens, tps: r.tps, cacheHitRate: r.cacheHitRate,
   }));
   const buckets: RequestTrendBucket[] = [];
   if (availability.telemetry) {

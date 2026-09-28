@@ -5,6 +5,7 @@ import type { OverviewResponse, ToolsResponse, UsageSummary, WakeItem, WakesResp
 import type { HealthResponse, ReviewEventsResponse, ReviewRequest, ReviewRequestsResponse, ReviewTool, RequestReviewDetail, WakeReviewDetail } from '../../src/dashboard/contracts/review.js';
 
 import type { PerformanceMetrics } from '../../src/dashboard/contracts/metrics.js';
+import { buildRequestTrends } from '../../src/dashboard/server/request-trends.js';
 
 // Entirely synthetic data: screenshots and clipboard tests never use production logs.
 function performance(attribution: PerformanceMetrics['attribution']): PerformanceMetrics {
@@ -138,6 +139,13 @@ async function mock(page: Page, state: MockState = {}) {
       } : usage;
       body = { ...overview, summary, groups: [{ ...summary, groupId: '10001' }] } satisfies OverviewResponse;
     }
+    else if (path === '/api/request-trends') {
+      const selectedRange = { since: Number(url.searchParams.get('since')), until: Number(url.searchParams.get('until')) };
+      const items = state.empty ? [] : [request, failed, previous].map((item, i) => ({
+        ...item, startedAt: selectedRange.since + (selectedRange.until - selectedRange.since) * (i + 1) / 4,
+      }));
+      body = buildRequestTrends(selectedRange, availability, items);
+    }
     else if (path === '/api/health') body = health;
     else if (path === '/api/tools') body = tools;
     else if (path === '/api/requests') {
@@ -168,6 +176,108 @@ async function mock(page: Page, state: MockState = {}) {
   });
   return { requests, posts };
 }
+test('overview charts preserve raw metrics, free coordinates, filters and mobile layout', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', e => errors.push(e.message));
+  const { requests } = await mock(page);
+  await page.goto('/?range=5m&chartMetric=duration');
+  const scatter = page.getByRole('img', { name: '每请求原始散点图', exact: true });
+  await expect(scatter).toBeVisible();
+  await expect(scatter.locator('canvas').first()).toBeVisible();
+  await expect(page.getByTestId('request-trends-summary')).toContainText('3');
+  const metric = page.getByLabel('散点纵轴指标');
+  await expect(metric.locator('option')).toHaveCount(7);
+  for (const key of ['input', 'totalInput', 'cachedInput', 'output', 'tps', 'cacheHitRate', 'duration']) {
+    await metric.selectOption(key);
+    await expect(page).toHaveURL(new RegExp(`chartMetric=${key}`));
+    await expect(page.getByTestId('request-scatter-summary')).toContainText('总数 3');
+  }
+  const box = (await scatter.boundingBox())!;
+  await page.mouse.move(box.x + box.width * .5, box.y + box.height * .5);
+  await expect(page.getByTestId('chart-crosshair')).toBeVisible();
+  const firstX = await page.getByTestId('crosshair-x').textContent();
+  const firstY = await page.getByTestId('crosshair-y').textContent();
+  await page.mouse.move(box.x + box.width * .55, box.y + box.height * .45);
+  await expect(page.getByTestId('crosshair-x')).not.toHaveText(firstX!);
+  await expect(page.getByTestId('crosshair-y')).not.toHaveText(firstY!);
+  await page.mouse.click(box.x + box.width * .55, box.y + box.height * .45);
+  await expect(page).not.toHaveURL(/selected=/);
+  await page.mouse.move(0, 0);
+  await expect(page.getByTestId('chart-crosshair')).toHaveCount(0);
+  await page.getByLabel('群组', { exact: true }).selectOption('10001');
+  await page.getByLabel('时间范围').selectOption('3h');
+  await expect.poll(() => requests.some(u => u.pathname === '/api/request-trends' && u.searchParams.get('groupId') === '10001' && Number(u.searchParams.get('until')) - Number(u.searchParams.get('since')) === 3 * 3600000)).toBe(true);
+  expect(requests.filter(u => u.pathname === '/api/request-trends').every(u => !u.searchParams.has('chartMetric'))).toBe(true);
+  await metric.selectOption('output');
+  await page.getByLabel('散点显示范围').selectOption('p95');
+  await expect(page).toHaveURL(/chartRange=p95/);
+  await expect(page.getByLabel('请求趋势图表', { exact: true })).toContainText('有效点少于20条');
+  await page.reload();
+  await expect(metric).toHaveValue('output');
+  await expect(page.getByLabel('散点显示范围')).toHaveValue('p95');
+  expect(requests.filter(u => u.pathname === '/api/request-trends').every(u => !u.searchParams.has('chartRange'))).toBe(true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(scatter).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await mkdir(resolve('artifacts'), { recursive: true });
+  await page.screenshot({ path: resolve('artifacts/dashboard-charts-mobile.png'), fullPage: true });
+  expect(errors).toEqual([]);
+});
+
+test('scatter percentile controls clip the display without changing request totals', async ({ page }) => {
+  await mock(page);
+  await page.route('**/api/request-trends?*', async route => {
+    const url = new URL(route.request().url());
+    const range = { since: Number(url.searchParams.get('since')), until: Number(url.searchParams.get('until')) };
+    const rows = Array.from({ length: 100 }, (_, i) => ({ ...request, startedAt: range.since + i, durationMs: i * 1000 }));
+    await route.fulfill({ json: buildRequestTrends(range, availability, rows) });
+  });
+  await page.goto('/?chartRange=invalid');
+  const summary = page.getByTestId('request-scatter-summary');
+  const control = page.getByLabel('散点显示范围');
+  await expect(control).toHaveValue('all');
+  await expect(summary).toContainText('可绘制 100');
+  await control.selectOption('p95');
+  await expect(summary).toContainText('可绘制 95');
+  await expect(summary).toContainText('超出显示范围 5');
+  await expect(summary).toContainText('上限 94 秒');
+  await expect(page.getByTestId('request-trends-summary')).toContainText('总数 100');
+  await control.selectOption('p99');
+  await expect(summary).toContainText('可绘制 99');
+  await expect(summary).toContainText('上限 98 秒');
+  await control.selectOption('all');
+  await expect(page).not.toHaveURL(/chartRange=/);
+  await expect(summary).toContainText('可绘制 100');
+  await expect(summary).not.toContainText('上限');
+});
+
+test('chart empty, unavailable, failed and missing metric states stay distinct', async ({ page }) => {
+  await mock(page);
+  let mode = 'error';
+  await page.route('**/api/request-trends?*', async route => {
+    if (mode === 'error') return route.fulfill({ status: 503, json: { error: 'unavailable', message: 'Select a narrower time range' } });
+    const url = new URL(route.request().url());
+    const r = { since: Number(url.searchParams.get('since')), until: Number(url.searchParams.get('until')) };
+    const rows = mode === 'missing' ? [{ ...request, startedAt: r.since, durationMs: null, inputTokens: null, totalInputTokens: null, cachedInputTokens: null, outputTokens: 0, tps: null }] : [];
+    return route.fulfill({ json: buildRequestTrends(r, { ...availability, telemetry: mode !== 'unavailable' }, rows) });
+  });
+  await page.goto('/?range=15m&chartMetric=invalid');
+  const charts = page.getByLabel('请求趋势图表', { exact: true });
+  await expect(charts).toContainText('失败');
+  await expect(page.getByRole('heading', { name: '群组汇总' })).toBeVisible();
+  mode = 'missing';
+  await charts.getByRole('button', { name: '重试图表', exact: true }).click();
+  await expect(page.getByLabel('散点纵轴指标')).toHaveValue('duration');
+  await expect(page.getByTestId('request-scatter-summary')).toContainText('可绘制 0');
+  await expect(page.getByTestId('request-scatter-summary')).toContainText('缺失 1');
+  await page.getByLabel('散点纵轴指标').selectOption('output');
+  await expect(page.getByTestId('request-scatter-summary')).toContainText('可绘制 1');
+  mode = 'empty'; await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await expect(page.getByTestId('request-scatter-summary')).toContainText('总数 0');
+  mode = 'unavailable'; await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await expect(charts).toContainText('不可用');
+});
+
 const requestUrl = `/requests?selected=${request.requestId}&detailGroup=10001`;
 const wakeUrl = `/wakes?selected=${wake.wakeId}&detailGroup=10001`;
 
@@ -252,7 +362,8 @@ test('compact overview has trifold token counts and factual health, never offlin
   await expect(page.getByRole('heading', { name: '最近运行事实' })).toBeVisible();
   await expect(page.locator('main')).toContainText('无近期活动不代表离线');
   await expect(page.locator('td[title="未记录或不可用，不能视为 0。"]')).toContainText('—');
-  await expect(page.locator('canvas')).toHaveCount(0);
+  await expect(page.getByRole('img', { name: '每请求原始散点图', exact: true })).toBeVisible();
+  await expect(page.getByRole('img', { name: '按时间桶的请求数量堆叠柱状图', exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 });
 
