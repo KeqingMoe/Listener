@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { performanceMetrics, intervalUnion, intervalDuration } from '../shared/metrics.js';
-import { summarize } from '../server/repository.js';
+import { performanceMetrics, intervalUnion, intervalDuration } from '../../src/dashboard/contracts/metrics.js';
+import { summarize } from '../../src/dashboard/server/repository.js';
 const request=(start:number,end:number,output:number|null,status='success')=>({started_at:start,ended_at:end,duration_ms:end-start,output_tokens:output,status});
 test('cache ratios use the same valid paired samples, retaining zero and unknown usage',()=>{
  const u=summarize([{input_tokens:100,cached_input_tokens:50},{input_tokens:900,cached_input_tokens:null},{input_tokens:200,cached_input_tokens:0},{input_tokens:10,cached_input_tokens:11},{input_tokens:null,cached_input_tokens:20}]);

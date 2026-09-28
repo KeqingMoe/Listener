@@ -5,10 +5,10 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { buildAuthenticatedApp as buildApp } from './auth-fixture.js';
-import { Repository, type GroupSource } from '../server/repository.js';
+import { Repository, type GroupSource } from '../../src/dashboard/server/repository.js';
 import { loadAppConfig } from '../../src/config/loader.js';
 import { GroupRegistry } from '../../src/config/group-registry.js';
-import { dashboardGroupSources } from '../server/sources.js';
+import { dashboardGroupSources } from '../../src/dashboard/server/sources.js';
 
 const privateText = 'PRIVATE_CHAT_ARGUMENT_CHECKPOINT';
 function session(path: string, groupId: string, wakeId = 'wake') {

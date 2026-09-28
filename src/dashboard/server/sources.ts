@@ -1,6 +1,6 @@
-import type { AppConfig, ResolvedGroupConfig } from '../../src/config/app.js';
-import { assertStoragePaths } from '../../src/config/loader.js';
-import { readGroupRegistry } from '../../src/config/group-registry.js';
+import type { AppConfig, ResolvedGroupConfig } from '../../config/app.js';
+import { assertStoragePaths } from '../../config/loader.js';
+import { readGroupRegistry } from '../../config/group-registry.js';
 import type { GroupSource } from './repository.js';
 
 /** Dashboard historical-read scope, deliberately NOT the bot's routing authority.

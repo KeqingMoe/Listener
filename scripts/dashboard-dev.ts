@@ -16,8 +16,8 @@ function stop(code: number): void {
   timer.unref();
 }
 for (const args of [
-  ["node_modules/tsx/dist/cli.mjs", "dashboard/server/index.ts"],
-  ["node_modules/vite/bin/vite.js", "--config", "dashboard/web/vite.config.ts"],
+  ["node_modules/tsx/dist/cli.mjs", "src/dashboard/server/index.ts"],
+  ["node_modules/vite/bin/vite.js", "--config", "src/dashboard/web/vite.config.ts"],
 ]) {
   const child = spawn(process.execPath, args, {
     stdio: "inherit",

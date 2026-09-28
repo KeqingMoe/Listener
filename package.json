@@ -12,11 +12,11 @@
     "logs": "tsx src/cli/logs.ts",
     "faces:sync": "tsx src/cli/sync-faces.ts",
     "dashboard:dev": "tsx scripts/dashboard-dev.ts",
-    "dashboard:typecheck": "vue-tsc --noEmit -p dashboard/web/tsconfig.json && tsc --noEmit -p dashboard/tsconfig.server.json",
-    "dashboard:build": "npm run dashboard:typecheck && tsc -p dashboard/tsconfig.server.json && vite build --config dashboard/web/vite.config.ts",
-    "dashboard:start": "node dist-dashboard/server/dashboard/server/index.js",
+    "dashboard:typecheck": "vue-tsc --noEmit -p src/dashboard/web/tsconfig.json && tsc --noEmit -p tsconfig.json",
+    "dashboard:build": "npm run dashboard:typecheck && npm run build && vite build --config src/dashboard/web/vite.config.ts",
+    "dashboard:start": "node dist/dashboard/server/index.js",
     "dashboard:test": "tsx --test dashboard/tests/*.test.ts",
-    "dashboard:test:browser": "playwright test --config dashboard/playwright.config.ts"
+    "dashboard:test:browser": "playwright test --config playwright.config.ts"
   },
   "dependencies": {
     "@fastify/static": "^10.1.5",

@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildApp } from '../server/app.js';
-import { AuthStore } from '../server/auth.js';
-import { auth, authenticated } from '../web/src/composables/useAuth.js';
+import { buildApp } from '../../src/dashboard/server/app.js';
+import { AuthStore } from '../../src/dashboard/server/auth.js';
+import { auth, authenticated } from '../../src/dashboard/web/src/composables/useAuth.js';
 
 test('real frontend auth requests pass actual Fastify parsing, retain login and revoke logout',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'auth-client-')),password='synthetic-long-password';

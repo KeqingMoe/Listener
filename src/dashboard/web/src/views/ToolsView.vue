@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRoute } from "vue-router";
-import type { ToolsResponse } from "../../../shared/contracts";
+import type { ToolsResponse } from "../../../contracts/contracts";
 import { useResource, useFilters } from "../composables/useDashboard";
 import { number, duration } from "../api/client";
 import DataState from "../components/ui/DataState.vue";

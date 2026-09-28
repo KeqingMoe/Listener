@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRoute } from "vue-router";
-import type { OverviewResponse } from "../../../shared/contracts";
-import type { HealthResponse } from "../../../shared/review";
+import type { OverviewResponse } from "../../../contracts/contracts";
+import type { HealthResponse } from "../../../contracts/review";
 import { number, percent, duration, time } from "../api/client";
 import { useFilters, useResource } from "../composables/useDashboard";
 import DataState from "../components/ui/DataState.vue";

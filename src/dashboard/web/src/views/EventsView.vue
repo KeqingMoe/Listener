@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { EVENT_CATEGORIES, type ReviewEventsResponse } from '../../../shared/review';
-import type { Range } from '../../../shared/contracts';
+import { EVENT_CATEGORIES, type ReviewEventsResponse } from '../../../contracts/review';
+import type { Range } from '../../../contracts/contracts';
 import { time } from '../api/client';
 import { refreshVersion, useFilters, useResource } from '../composables/useDashboard';
 import DataState from '../components/ui/DataState.vue';

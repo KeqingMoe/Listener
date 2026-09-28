@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { createHash } from 'node:crypto';
 import { Repository, ResourceLimit } from './repository.js';
 import { ReviewRepository } from './review-repository.js';
-import { EVENT_CATEGORIES } from '../shared/review.js';
+import { EVENT_CATEGORIES } from '../contracts/review.js';
 const DAY=86400000;
 class BadQuery extends Error {}
 const integer=(v:unknown,fallback:number)=>{if(v===undefined)return fallback;if(typeof v!=='string'||!/^\d{1,16}$/.test(v)||!Number.isSafeInteger(Number(v)))throw new BadQuery();return Number(v);};

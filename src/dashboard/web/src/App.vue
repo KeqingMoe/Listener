@@ -3,7 +3,7 @@ import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { authenticated, configured, configurationError, auth } from './composables/useAuth';
 import { refresh, refreshVersion, useFilters } from './composables/useDashboard';
-import type { MetaResponse } from '../../shared/contracts';
+import type { MetaResponse } from '../../contracts/contracts';
 const route=useRoute(), router=useRouter();
 const password=ref(''), authError=ref(''), busy=ref(false);
 async function submit(action: 'login'|'logout') { busy.value=true; authError.value=''; try { await auth(action, action==='login'?{password:password.value}:undefined); password.value=''; } catch(e) { authError.value=(e as Error).message; } finally {busy.value=false;} }

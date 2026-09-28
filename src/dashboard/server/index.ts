@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { dashboardPassword, loadAppConfig } from "../../src/config/loader.js";
+import { dashboardPassword, loadAppConfig } from "../../config/loader.js";
 import { dashboardGroupSources } from "./sources.js";
 import { buildApp } from "./app.js";
 import { parseListenOptions } from "./cli.js";
@@ -25,7 +25,7 @@ const app = buildApp({
   // Historical read authorization is separate from live bot membership/routing.
   getGroups: () => dashboardGroupSources(config),
   telemetryPath: config.storage.telemetryPath,
-  webRoot: resolve("dist-dashboard/web"),
+  webRoot: resolve("dist/dashboard/web"),
   listenHost: host,
 });
 let stopping = false;

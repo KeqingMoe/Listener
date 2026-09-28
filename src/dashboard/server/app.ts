@@ -8,7 +8,7 @@ import {
   summarize,
   type Sources,
 } from "./repository.js";
-import type { Range } from "../shared/contracts.js";
+import type { Range } from "../contracts/contracts.js";
 import { registerReviewRoutes } from './review-routes.js';
 import { ReviewRepository } from './review-repository.js';
 import { isIP } from "node:net";

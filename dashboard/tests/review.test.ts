@@ -4,11 +4,11 @@ import { mkdtempSync,rmSync,readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
-import { buildApp } from '../server/app.js';
-import { AuthStore } from '../server/auth.js';
-import { eventTitle } from '../shared/event-labels.js';
-import { Repository } from '../server/repository.js';
-import { ReviewRepository } from '../server/review-repository.js';
+import { buildApp } from '../../src/dashboard/server/app.js';
+import { AuthStore } from '../../src/dashboard/server/auth.js';
+import { eventTitle } from '../../src/dashboard/contracts/event-labels.js';
+import { Repository } from '../../src/dashboard/server/repository.js';
+import { ReviewRepository } from '../../src/dashboard/server/review-repository.js';
 import { TelemetryStore } from '../../src/observability/telemetry.js';
 function fixture(old=false){
  const dir=mkdtempSync(join(tmpdir(),'review-')),telemetryPath=join(dir,'t.sqlite'),sessionPath=join(dir,'s.sqlite');

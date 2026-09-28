@@ -14,7 +14,7 @@
   "include": [
     "src/**/*.ts",
     "src/**/*.vue",
-    "../shared/**/*.ts",
+    "../contracts/**/*.ts",
     "vite.config.ts"
   ]
 }

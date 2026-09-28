@@ -57,7 +57,7 @@ npm run dashboard:start
 
 范围最多31天。列表有分页与扫描上限；正文只在详情加载，并限制单个审阅响应的总量。没有新表／列的旧数据库可读取已有数据。面板只读连接不会执行会话恢复或修改bot数据库。
 
-部署前应备份私有数据库。回退程序时不要为了回退界面而覆盖部署后新生成的群消息或请求记录。接入异常和恢复验收见 [运行排障](../docs/operations.md)。
+部署前应备份私有数据库。回退程序时不要为了回退界面而覆盖部署后新生成的群消息或请求记录。接入异常和恢复验收见 [运行排障](operations.md)。
 
 ## 开发和部署
 
@@ -68,6 +68,6 @@ npm run dashboard:test:browser
 npm run dashboard:build
 ```
 
-生产构建位于 `dist-dashboard/`。只更新面板时，重新构建后单独重启 `qqbot-dashboard.service`；涉及请求采集器的更新还需构建并安全重启bot。不要另起一个服务冒充更新了原地址。
+服务端入口为 `dist/dashboard/server/index.js`，页面产物位于 `dist/dashboard/web/`；Node模块与Bot共用 `dist/` 下的模块树。只更新面板时，重新构建后单独重启 `qqbot-dashboard.service`；涉及请求采集器的更新还需构建并安全重启bot。不要另起一个服务冒充更新了原地址。
 
 systemd服务需能读取bot数据，只允许写入自己的 `storage.directory/dashboard-auth/` 认证子目录（SQLite需要创建journal文件）；部署时预先创建该目录，权限0700、属主为服务用户。将 `ReadWritePaths` 限定到此子目录，而不是整个bot数据目录，保留群事实、会话和遥测的文件系统只读边界。不要给予任意QQ管理或日志执行接口。

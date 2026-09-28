@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import type { RequestReviewDetail } from '../../../../shared/review';
+import type { RequestReviewDetail } from '../../../../contracts/review';
 import { duration, number, status, time } from '../../api/client';
 import { useResource } from '../../composables/useDashboard';
 import DataState from '../ui/DataState.vue';

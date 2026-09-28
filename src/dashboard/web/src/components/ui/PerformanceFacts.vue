@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { CacheMetrics, PerformanceMetrics } from '../../../../shared/metrics';
+import type { CacheMetrics, PerformanceMetrics } from '../../../../contracts/metrics';
 import { duration, number, percent } from '../../api/client';
 defineProps<{ performance?: PerformanceMetrics; cache: CacheMetrics }>();
 </script>

@@ -1,4 +1,4 @@
-import type { ModelRequestDiagnostics } from "../../src/observability/model-diagnostics.js";
+import type { ModelRequestDiagnostics } from "../../observability/model-diagnostics.js";
 import type { RequestOutcome, ToolOutcome } from "./outcomes.js";
 import type { CacheMetrics } from './metrics.js';
 export interface Range {

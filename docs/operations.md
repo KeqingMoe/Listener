@@ -1,6 +1,6 @@
 # 运行排障与恢复验收
 
-面板使用与登录见 [Dashboard](../dashboard/README.md)。配置项仍以 [配置说明](configuration.md) 为准；本页只说明运行问题。
+面板使用与登录见 [Dashboard](dashboard.md)。配置项仍以 [配置说明](configuration.md) 为准；本页只说明运行问题。
 
 ## 群内提及后没有唤醒
 

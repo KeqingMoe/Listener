@@ -1,10 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import type { OverviewResponse, ToolsResponse, UsageSummary, WakeItem, WakesResponse } from '../../shared/contracts.js';
-import type { HealthResponse, ReviewEventsResponse, ReviewRequest, ReviewRequestsResponse, ReviewTool, RequestReviewDetail, WakeReviewDetail } from '../../shared/review.js';
+import type { OverviewResponse, ToolsResponse, UsageSummary, WakeItem, WakesResponse } from '../../../src/dashboard/contracts/contracts.js';
+import type { HealthResponse, ReviewEventsResponse, ReviewRequest, ReviewRequestsResponse, ReviewTool, RequestReviewDetail, WakeReviewDetail } from '../../../src/dashboard/contracts/review.js';
 
-import type { PerformanceMetrics } from '../../shared/metrics.js';
+import type { PerformanceMetrics } from '../../../src/dashboard/contracts/metrics.js';
 
 // Entirely synthetic data: screenshots and clipboard tests never use production logs.
 function performance(attribution: PerformanceMetrics['attribution']): PerformanceMetrics {

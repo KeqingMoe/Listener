@@ -27,7 +27,7 @@ npm start
 
 - [首次运行示例](config.example.toml)
 - [完整配置参考](docs/configuration.md)：全部字段、默认权限、继承与运行限制
-- [只读面板说明](dashboard/README.md)
+- [只读面板说明](docs/dashboard.md)
 
 配置、人设修改后先检查再重启；不支持热重载。不要让多个 Bot 进程同时使用同一数据库。
 
@@ -113,7 +113,7 @@ npm run dashboard:start
 # http://127.0.0.1:3210
 ```
 
-面板从 `.env` 的 `DASHBOARD_PASSWORD` 接受访问密码；未设置则拒绝访问，没有初始密码或在线改密功能。可审阅唤醒、模型内容、工具参数结果、响应链和运行事件；总览、唤醒、请求统一缓存命中率与模型TPS，并区分模型、工具和整轮耗时。业务数据只读，不调用模型、不连接 OneBot、不发送消息。访问应限制到受信任网络或HTTPS入口。使用与统计口径见[面板说明](dashboard/README.md)，接入异常与恢复验收见[运行排障](docs/operations.md)。
+面板从 `.env` 的 `DASHBOARD_PASSWORD` 接受访问密码；未设置则拒绝访问，没有初始密码或在线改密功能。可审阅唤醒、模型内容、工具参数结果、响应链和运行事件；总览、唤醒、请求统一缓存命中率与模型TPS，并区分模型、工具和整轮耗时。业务数据只读，不调用模型、不连接 OneBot、不发送消息。访问应限制到受信任网络或HTTPS入口。使用与统计口径见[面板说明](docs/dashboard.md)，接入异常与恢复验收见[运行排障](docs/operations.md)。
 
 ## 隐私
 

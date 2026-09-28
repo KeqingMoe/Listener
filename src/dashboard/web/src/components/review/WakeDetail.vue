@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 const route = useRoute();
-import type { WakeReviewDetail } from '../../../../shared/review';
+import type { WakeReviewDetail } from '../../../../contracts/review';
 import { duration, number, status, time } from '../../api/client';
 import { useResource } from '../../composables/useDashboard';
 import DataState from '../ui/DataState.vue';

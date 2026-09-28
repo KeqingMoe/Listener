@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildAuthenticatedApp as buildApp } from "./auth-fixture.js";
-import { parseListenOptions } from "../server/cli.js";
+import { parseListenOptions } from "../../src/dashboard/server/cli.js";
 const options = {
   groups: [],
   telemetryPath: "/nonexistent-dashboard-test.sqlite",

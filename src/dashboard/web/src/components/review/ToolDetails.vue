@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRoute } from 'vue-router';
-import type { ReviewTool } from '../../../../shared/review';
+import type { ReviewTool } from '../../../../contracts/review';
 import { duration,status,time } from '../../api/client';
 import ContentViewer from './ContentViewer.vue';
 import CopyId from './CopyId.vue';
