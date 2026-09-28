@@ -32,7 +32,8 @@ for(const transport of ['chat','responses'] as const){
     for(const body of ['secret non-json',JSON.stringify({error:{code:'secret-code',type:'secret-type',param:'secret-param',message:'previous_response_not_found secret',headers:'secret',cause:'secret'}}),JSON.stringify({error:{code:'context_length_exceeded',param:'input',message:'secret'}}),'x'.repeat(2200000)]){
       const records:ModelRequestRecord[]=[];t.mock.method(globalThis,'fetch',async()=>new Response(body,{status:400}));
       await assert.rejects(make(records).complete([]),(e:any)=>e.code==='http_error'&&e.httpStatus===400&&e.diagnostics.failureStage==='http_status'&&!JSON.stringify(e).includes('secret'));
-      assert.equal(records.length,1);assert.equal(records[0].errorCode,'http_error');assert.ok(!JSON.stringify(records).includes('secret'));assert.equal(records[0].diagnostics?.requestMode,'fresh');
+      assert.equal(records.length,1);assert.equal(records[0].errorCode,'http_error');assert.ok(!JSON.stringify(records.map(({inspection,...publicRecord})=>publicRecord)).includes('secret'));assert.ok(!JSON.stringify(records).includes(options.apiKey));assert.equal(records[0].diagnostics?.requestMode,'fresh');
+      if(body.startsWith('secret'))assert.ok(records[0].inspection?.errorText?.includes('secret non-json'));
       if(transport==='chat'){assert.equal(records[0].diagnostics?.providerCategory,'unknown');assert.equal(records[0].diagnostics?.providerParameter,undefined);}
       t.mock.restoreAll();
     }
@@ -46,7 +47,7 @@ for(const transport of ['chat','responses'] as const){
         assert.equal(e.code,first==='timer'?'timeout':'cancelled');
         assert.equal(e.diagnostics.abortSource,first==='timer'?'request_timeout':typeof first==='string'&&['turn_timeout','disconnected','reset','shutdown'].includes(first)?first:'external_unknown');return true;
       });
-      assert.equal(records.length,1);assert.equal(records[0].diagnostics?.requestTimeoutMs,5);assert.ok(!JSON.stringify(records).includes('secret'));
+      assert.equal(records.length,1);assert.equal(records[0].diagnostics?.requestTimeoutMs,5);assert.ok(!JSON.stringify(records.map(({inspection,...publicRecord})=>publicRecord)).includes('secret'));assert.ok(!JSON.stringify(records).includes(options.apiKey));
       t.mock.restoreAll();
     }
   });
@@ -103,7 +104,7 @@ test('Responses records fresh/live/restored requests and preserves expiry marker
   assert.deepEqual(records.map(r=>r.diagnostics?.requestMode),['fresh','continue_live','continue_restored']);
   t.mock.restoreAll();t.mock.method(globalThis,'fetch',async()=>{requests++;return new Response(JSON.stringify({error:{code:'previous_response_not_found',param:'previous_response_id',message:'secret'}}),{status:400});});
   await assert.rejects(restored.complete([...continuation,{role:'assistant',content:'ok'},{role:'user',content:'last'}]),(e:any)=>e instanceof ResponseStateExpiredError&&e.code==='invalid_response'&&e.diagnostics?.providerCategory==='previous_response_missing');
-  assert.equal(requests,4);assert.equal(records[3].errorCode,'invalid_response');assert.ok(!JSON.stringify(records).includes('secret'));
+  assert.equal(requests,4);assert.equal(records[3].errorCode,'invalid_response');assert.ok(!JSON.stringify(records.map(({inspection,...publicRecord})=>publicRecord)).includes('secret'));assert.ok(!JSON.stringify(records).includes(options.apiKey));
 });
 
 test('Responses generation mismatch diagnoses cancellation without overwriting upstream reason',async t=>{

@@ -2,7 +2,8 @@ import type { ChatMessage, Completion, Model, ToolCall, ToolDefinition } from '.
 import { log } from './logger.js';
 import { EXTENDED_TOOL_NAMES } from './extended-tool-config.js';
 import { randomUUID } from 'node:crypto';
-import { parseChatUsage, type ModelRequestRecord, type ModelUsage } from './model-usage.js';
+import { providerRequestId, readErrorInspection, responseInspection } from './request-inspection.js';
+import { parseChatUsage, type ModelRequestInspection, type ModelRequestStart, type ModelRequestRecord, type ModelUsage } from './model-usage.js';
 export type { ModelRequestRecord, ModelUsage, ModelRequestDiagnostics } from './model-usage.js';
 import { normalizeModelRequestDiagnostics, providerDiagnostics, upstreamAbortSource, type ModelRequestDiagnostics } from './model-diagnostics.js';
 
@@ -24,6 +25,7 @@ function usageLogFields(u: ModelUsage): Record<string,number> {
 }
 export interface OpenAIModelOptions {
   baseUrl: string; apiKey: string; model: string; timeoutMs: number; maxTokens: number;
+  onRequestStart?: (record: ModelRequestStart) => void;
   onRequest?: (record: ModelRequestRecord) => void;
 }
 const MAX_RESPONSE_BYTES = 256 * 1024;
@@ -94,34 +96,42 @@ export class OpenAIModel implements Model {
     const timer = setTimeout(() => { if (!abortReason) { abortReason = 'timeout'; diagnostics.abortSource = 'request_timeout'; } controller.abort(); }, this.options.timeoutMs);
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) abort();
+    let inspection: ModelRequestInspection = { requestMode: 'fresh' };
+    const chunks: Uint8Array[] = []; let bodyComplete = false;
     try {
+      const requestJson = JSON.stringify({ model: this.options.model, messages, max_tokens: this.options.maxTokens,
+        stream: false, ...(tools.length ? { tools, tool_choice: 'auto' } : {}) });
+      inspection.requestJson = requestJson;
+      try { this.options.onRequestStart?.(Object.freeze({requestId, startedAt, transport:'chat', model:this.options.model, requestJson, requestMode:'fresh'})); } catch {}
       const response = await fetch(this.endpoint, {
         method: 'POST', redirect: 'error', signal: controller.signal,
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.options.apiKey}` },
-        body: JSON.stringify({ model: this.options.model, messages, max_tokens: this.options.maxTokens,
-          stream: false, ...(tools.length ? { tools, tool_choice: 'auto' } : {}) }),
+        body: requestJson,
       });
+      inspection.providerRequestId = providerRequestId(response.headers);
       if (!response.ok) {
         failure = 'http_error'; httpStatus = response.status; stage = 'http_status'; diagnostics.providerCategory = 'unknown';
-        // Preserve fail-fast HTTP handling: diagnostics must not wait for an error body.
-        await response.body?.cancel(); throw Error();
+        // An observed HTTP failure wins over timeout/cancellation during diagnostic collection.
+        clearTimeout(timer); signal?.removeEventListener('abort', abort); abortReason = undefined;
+        inspection = { ...inspection, ...await readErrorInspection(response) }; throw Error();
       }
       stage = 'response_body';
       if (!response.body) { failure = 'invalid_response'; throw Error(); }
       const length = response.headers.get('content-length');
       if (length && Number(length) > MAX_RESPONSE_BYTES) { failure = 'response_too_large'; await response.body.cancel(); throw Error(); }
       const reader = response.body.getReader();
-      const chunks: Uint8Array[] = [];
       let size = 0;
       try {
         while (true) {
           const chunk = await reader.read();
           if (chunk.done) break;
           size += chunk.value.byteLength;
-          if (size > MAX_RESPONSE_BYTES) { failure = 'response_too_large'; await reader.cancel(); throw Error(); }
+          if (size > MAX_RESPONSE_BYTES) { chunks.push(chunk.value.subarray(0, Math.max(0, MAX_RESPONSE_BYTES - (size - chunk.value.byteLength)))); failure = 'response_too_large'; await reader.cancel(); throw Error(); }
           chunks.push(chunk.value);
         }
       } finally { reader.releaseLock(); }
+      bodyComplete = true;
+      inspection = { ...inspection, ...responseInspection(Buffer.concat(chunks).toString('utf8')) };
       failure = 'invalid_response'; stage = 'response_parse';
       const value: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)));
       stage = 'response_validate';
@@ -136,7 +146,8 @@ export class OpenAIModel implements Model {
       requestStatus = 'success';
       log('info', 'model.complete', { duration_ms: performance.now() - started, tools: toolNames, outcome: 'success', ...usageLogFields(requestUsage) });
       return result;
-    } catch {
+    } catch (error) {
+      if (!inspection.errorText && error instanceof Error && error.message) inspection.errorText = error.message;
       const code = abortReason ?? failure;
       log(code === 'cancelled' ? 'info' : 'warn', 'model.failed', { duration_ms: performance.now() - started, tools: toolNames, reason: code, ...usageLogFields(requestUsage), ...(httpStatus === undefined ? {} : { http_status: httpStatus }) });
       diagnostics.failureStage = stage;
@@ -145,7 +156,10 @@ export class OpenAIModel implements Model {
       clearTimeout(timer);
       signal?.removeEventListener('abort', abort);
       const code = requestStatus === 'error' ? (abortReason ?? failure) : undefined;
+      if (!bodyComplete && chunks.length) inspection = { ...inspection, ...responseInspection(Buffer.concat(chunks).toString('utf8'), true) };
+      if (code && !inspection.errorText) inspection.errorText = code;
       const record: ModelRequestRecord = {
+        inspection,
         requestId, startedAt, endedAt: Date.now(), durationMs: Math.max(0, performance.now() - started),
         transport: 'chat', model: this.options.model, status: requestStatus,
         ...(code ? { errorCode: code } : {}), ...(httpStatus === undefined ? {} : { httpStatus }), usage: requestUsage,

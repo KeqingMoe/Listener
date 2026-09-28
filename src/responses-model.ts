@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { ChatContentPart, ChatMessage, Completion, Model, ToolCall, ToolDefinition } from './contracts.js';
 import { ModelError, type ModelErrorCode, type OpenAIModelOptions } from './model.js';
-import { parseResponsesUsage, type ModelRequestRecord, type ModelUsage } from './model-usage.js';
+import { providerRequestId, responseInspection } from './request-inspection.js';
+import { parseResponsesUsage, type ModelRequestInspection, type ModelRequestRecord, type ModelUsage } from './model-usage.js';
 import { normalizeModelRequestDiagnostics, providerDiagnostics, upstreamAbortSource, type ModelRequestDiagnostics } from './model-diagnostics.js';
 
 const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
@@ -66,13 +67,13 @@ function completion(raw:Record<string,unknown>):Completion {
   if(calls.length>8)throw new ModelError('invalid_response');
   return {content:texts.length?texts.join('\n'):null,tool_calls:calls};
 }
-async function readBody(response:Response,stage:(value:ModelRequestDiagnostics['failureStage'])=>void):Promise<unknown>{
+async function readBody(response:Response,stage:(value:ModelRequestDiagnostics['failureStage'])=>void,capture:(text:string,partial:boolean)=>void):Promise<unknown>{
   stage('response_body');
   if(!response.body)throw new ModelError('invalid_response');
   const length=response.headers.get('content-length');
   if(length&&Number(length)>MAX_BYTES){await response.body.cancel();throw new ModelError('response_too_large');}
-  const reader=response.body.getReader(),chunks:Uint8Array[]=[];let size=0;
-  try{while(true){const x=await reader.read();if(x.done)break;size+=x.value.byteLength;if(size>MAX_BYTES){await reader.cancel();throw new ModelError('response_too_large');}chunks.push(x.value);}}finally{reader.releaseLock();}
+  const reader=response.body.getReader(),chunks:Uint8Array[]=[];let size=0,complete=false;
+  try{while(true){const x=await reader.read();if(x.done){complete=true;break;}size+=x.value.byteLength;if(size>MAX_BYTES){chunks.push(x.value.subarray(0,Math.max(0,MAX_BYTES-(size-x.value.byteLength))));await reader.cancel();throw new ModelError('response_too_large');}chunks.push(x.value);}}finally{reader.releaseLock();capture(Buffer.concat(chunks).toString('utf8'),!complete);}
   stage('response_parse');
   try{return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(chunks)));}catch{throw new ModelError('invalid_response');}
 }
@@ -139,6 +140,8 @@ export class ResponsesModel implements Model {
     const responseId=liveMatch?this.state!.responseId:restored?.responseId;
     const input=(reuse?snapshot.slice(baselineLength):snapshot).flatMap(inputItem);
     const diagnostics:ModelRequestDiagnostics={requestMode:liveMatch?'continue_live':restoredMatch?'continue_restored':'fresh',requestTimeoutMs:this.options.timeoutMs};
+    let inspection:ModelRequestInspection={requestMode:diagnostics.requestMode,...(reuse?{previousResponseId:responseId}:{})};
+    const capture=(text:string,partial:boolean)=>{inspection={...inspection,...responseInspection(text,partial)};if(httpStatus)inspection.errorText=`${partial?'[partial HTTP error body; incomplete]\\n':''}${text}`;};
     let stage:ModelRequestDiagnostics['failureStage']='request';
     const controller=new AbortController();let aborted:'cancelled'|'timeout'|undefined;
     const stop=()=>{if(!aborted){aborted='cancelled';diagnostics.abortSource=upstreamAbortSource(signal?.reason);}controller.abort();};signal?.addEventListener('abort',stop,{once:true});if(signal?.aborted)stop();
@@ -147,15 +150,18 @@ export class ResponsesModel implements Model {
       const body:Record<string,unknown>={model:this.options.model,input,instructions,store:true,stream:false,max_output_tokens:this.options.maxTokens,prompt_cache_key:this.cacheKey,
         ...(functions.length?{tools:functions,tool_choice:'auto'}:{}),...(reuse?{previous_response_id:responseId}:{})};
       if(this.options.serverCompactionVerified&&this.options.compactionThreshold!==undefined)body.context_management=[{type:'compaction',compact_threshold:this.options.compactionThreshold}];
-      const response=await fetch(this.endpoint,{method:'POST',redirect:'error',signal:controller.signal,headers:{'content-type':'application/json',authorization:`Bearer ${this.options.apiKey}`},body:JSON.stringify(body)});
+      const requestJson=JSON.stringify(body);inspection.requestJson=requestJson;
+      try{this.options.onRequestStart?.(Object.freeze({requestId,startedAt,transport:'responses',model:this.options.model,requestJson,requestMode:diagnostics.requestMode??'fresh',...(reuse?{previousResponseId:responseId}:{})}));}catch{}
+      const response=await fetch(this.endpoint,{method:'POST',redirect:'error',signal:controller.signal,headers:{'content-type':'application/json',authorization:`Bearer ${this.options.apiKey}`},body:requestJson});
+      inspection.providerRequestId=providerRequestId(response.headers);
       if(!response.ok){
         httpStatus=response.status;failure='http_error';stage='http_status';
-        let raw:unknown;try{raw=await readBody(response,()=>{});}catch{/* Keep HTTP status/code even for non-JSON or oversized error bodies. */}
+        let raw:unknown;try{raw=await readBody(response,()=>{},capture);}catch{/* Keep HTTP status/code even for non-JSON or oversized error bodies. */}
         Object.assign(diagnostics,providerDiagnostics(raw));
         if(reuse&&expired(raw))throw new ResponseStateExpiredError(httpStatus);
         throw new ModelError('http_error',httpStatus);
       }
-      failure='invalid_response';const raw=await readBody(response,value=>{stage=value;});
+      failure='invalid_response';const raw=await readBody(response,value=>{stage=value;},capture);
       stage='response_validate';
       if(!object(raw))throw new ModelError('invalid_response');
       usage=parseResponsesUsage(raw.usage);
@@ -173,6 +179,7 @@ export class ResponsesModel implements Model {
       this.restored=undefined;
       status='success';return result;
     }catch(error){
+      if(!inspection.errorText&&error instanceof Error&&!(error instanceof ModelError)&&error.message)inspection.errorText=error.message;
       this.state=undefined;this.baselineWithoutContent=undefined;this.restored=undefined;
       const code=aborted??(error instanceof ModelError?error.code:failure);failure=code;
       diagnostics.failureStage=stage;
@@ -180,7 +187,8 @@ export class ResponsesModel implements Model {
       throw new ModelError(code,httpStatus,diagnostics);
     }finally{
       clearTimeout(timer);signal?.removeEventListener('abort',stop);this.busy=false;
-      try{this.options.onRequest?.({requestId,startedAt,endedAt:Date.now(),durationMs:Math.max(0,performance.now()-started),transport:'responses',model:this.options.model,status,
+      if(status==='error'&&!inspection.errorText)inspection.errorText=failure;
+      try{this.options.onRequest?.({inspection,requestId,startedAt,endedAt:Date.now(),durationMs:Math.max(0,performance.now()-started),transport:'responses',model:this.options.model,status,
         ...(status==='error'?{errorCode:failure}:{}),...(httpStatus===undefined?{}:{httpStatus}),usage,diagnostics:normalizeModelRequestDiagnostics(diagnostics)});}catch{/* Observers never change transport results. */}
     }
   }

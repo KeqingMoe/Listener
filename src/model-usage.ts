@@ -9,7 +9,16 @@ export interface ModelUsage {
 }
 export type RequestErrorCode = 'cancelled' | 'timeout' | 'http_error' | 'network_error' | 'response_too_large' | 'invalid_response' | 'truncated_response';
 export const REQUEST_ERRORS: readonly RequestErrorCode[] = ['cancelled','timeout','http_error','network_error','response_too_large','invalid_response','truncated_response'];
+export interface ModelRequestInspection {
+  requestJson?: string; responseJson?: string; reasoningText?: string; errorText?: string;
+  responseId?: string; previousResponseId?: string; providerRequestId?: string; requestMode?: string; contentTruncated?: boolean;
+}
+export interface ModelRequestStart {
+  readonly requestId: string; readonly startedAt: number; readonly transport: 'chat' | 'responses'; readonly model: string;
+  readonly requestJson: string; readonly requestMode: string; readonly previousResponseId?: string;
+}
 export interface ModelRequestRecord {
+  inspection?: ModelRequestInspection;
   requestId: string;
   startedAt: number;
   endedAt: number;

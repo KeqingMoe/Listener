@@ -9,13 +9,14 @@ import { OpenAIModel } from './model.js';
 import { SQLiteMemory } from './memory.js';
 import { WorldEventStore } from './world-events.js';
 import { ResponsesModel } from './responses-model.js';
-import type { ModelRequestRecord } from './model-usage.js';
+import type { ModelRequestRecord, ModelRequestStart } from './model-usage.js';
 import { ModelSession } from './model-session.js';
 import { resolveOwnerId } from './contracts.js';
 import { GroupRouter } from './group-router.js';
 import { GroupRegistry } from './group-registry.js';
 import { TurnScheduler } from './turn-scheduler.js';
-import { configureLogging, getLogContext, log } from './logger.js';
+import { configureLogging, getLogContext, log, observeLogs } from './logger.js';
+import { RuntimeEventStore } from './runtime-events.js';
 import { TelemetryStore } from './telemetry.js';
 import { FACE_CATALOG, EXAMPLE_FACE_CATALOG } from './face-catalog.js';
 import { getReactionCatalog } from './reaction-catalog.js';
@@ -24,6 +25,8 @@ import { CustomFaceCoordinator } from './custom-face-coordinator.js';
 import { SharedCustomFaceStaging } from './custom-face-staging.js';
 let logger: ReturnType<typeof configureLogging> | undefined;
 let telemetry: TelemetryStore | undefined;
+let runtimeEvents:RuntimeEventStore|undefined,stopObserving:(()=>void)|undefined;
+let heartbeat:ReturnType<typeof setInterval>|undefined;
 let registry: GroupRegistry | undefined;
 let customFaceStore: CustomFaceStore | undefined;
 let customFaceCoordinator: CustomFaceCoordinator | undefined;
@@ -40,7 +43,9 @@ async function main(): Promise<void> {
   const scheduler=new TurnScheduler(runtime.maxConcurrentTurns);
   process.umask(0o077);
   mkdirSync(dirname(app.storage.telemetryPath),{recursive:true,mode:0o700});
-  telemetry=new TelemetryStore(app.storage.telemetryPath);
+  telemetry=new TelemetryStore(app.storage.telemetryPath,{secrets:[config.token,modelConfig.apiKey]});
+  try{runtimeEvents=new RuntimeEventStore(app.storage.telemetryPath);stopObserving=observeLogs(record=>runtimeEvents?.record(record));}
+  catch{log('warn','app.diagnostics_unavailable',{reason:'storage_failed'});}
   // Reject unsupported compaction before contacting the provider, including the
   // unlisted-group default branch of all-groups mode.
   const declared=app.configuredGroupIds.map(groupId=>app.resolveGroup(groupId));
@@ -51,11 +56,7 @@ async function main(): Promise<void> {
   customFaceStore=new CustomFaceStore({path:resolve(app.storage.directory,'custom-faces.sqlite')});
   customFaceCoordinator=new CustomFaceCoordinator({path:resolve(app.storage.directory,'custom-face-operations.sqlite')});
   const customFaces={store:customFaceStore,coordinator:customFaceCoordinator,staging:new SharedCustomFaceStaging({directory:app.storage.customFaceDirectory,providerDirectory:app.storage.napcatCustomFaceDirectory})};
-  const modelOptions={...modelConfig,onRequest:(record:ModelRequestRecord)=>{
-    const trace=getLogContext();
-    try{telemetry?.record({...record,...(typeof trace.group_id==='string'?{groupId:trace.group_id}:{}),...(typeof trace.turn_id==='string'?{turnId:trace.turn_id}:{}),...(typeof trace.phase==='string'?{phase:trace.phase}:{})});}
-    catch{log('warn','model.telemetry_failed',{reason:'storage_failed'});}
-  }};
+  const modelOptions={...modelConfig};
   let router:GroupRouter;
   router=new GroupRouter({
     enabled:groupId=>enabledGroups.get(groupId)??app.defaultsEnabled,
@@ -77,9 +78,17 @@ async function main(): Promise<void> {
       assertStoragePaths(app.storage,router.groupIds.map(value=>app.resolveGroup(value)));
       const group=toListenerConfig(app,policy);
       let lastRequestId:string|undefined;
-      const scoped={...modelOptions,onRequest:(record:ModelRequestRecord)=>{lastRequestId=record.requestId;modelOptions.onRequest(record);}};
-      const model=policy.session.transport==='responses'?new ResponsesModel({...scoped,sessionId:`group:${groupId}`}):new OpenAIModel(scoped);
       let memory:SQLiteMemory|undefined,world:WorldEventStore|undefined,session:ModelSession|undefined;
+      const contexts=new Map<string,{groupId:string;turnId?:string;phase?:string;wakeId?:string}>();
+      const context=()=>{const trace=getLogContext();return {groupId,...(typeof trace.turn_id==='string'?{turnId:trace.turn_id}:{}),...(typeof trace.phase==='string'?{phase:trace.phase}:{}),...(session?.state().wakeId?{wakeId:session.state().wakeId!}:{})};};
+      const scoped={...modelOptions,onRequestStart:(record:ModelRequestStart)=>{
+        const scope=context();contexts.set(record.requestId,scope);lastRequestId=record.requestId;
+        try{telemetry?.beginRequest({...record,...scope});}catch{log('warn','model.telemetry_failed',{reason:'storage_failed'});}
+      },onRequest:(record:ModelRequestRecord)=>{
+        lastRequestId=record.requestId;const scope=contexts.get(record.requestId)??context();contexts.delete(record.requestId);
+        try{telemetry?.record({...record,...scope});}catch{log('warn','model.telemetry_failed',{reason:'storage_failed'});}
+      }};
+      const model=policy.session.transport==='responses'?new ResponsesModel({...scoped,sessionId:`group:${groupId}`}):new OpenAIModel(scoped);
       try{
         mkdirSync(dirname(policy.storage.databasePath),{recursive:true,mode:0o700});
         memory=new SQLiteMemory({path:policy.storage.databasePath,maxContextChars:group.maxContextChars,retentionDays:policy.history.retentionDays,groupId});
@@ -99,6 +108,8 @@ async function main(): Promise<void> {
     },
   });
   let selfId:string|undefined,stopping=false;
+  const pulse=()=>log('debug','app.heartbeat',{status:selfId?'connected':'disconnected'});
+  pulse();heartbeat=setInterval(pulse,15000);heartbeat.unref();
   client.on('ready',(data:unknown)=>{
     selfId=data&&typeof data==='object'&&'user_id' in data?id(data.user_id):undefined;
     if(!selfId){router.setConnected(false);log('warn','onebot.identity_failed');return;}
@@ -106,10 +117,19 @@ async function main(): Promise<void> {
     void router.connect(identity).then(()=>{if(selfId===identity&&!stopping)log('info','onebot.ready',{count:router.size});}).catch(()=>log('warn','app.group_discovery_failed',{reason:'group_initialization_failed'}));
   });
   client.on('disconnected',()=>{selfId=undefined;router.setConnected(false);if(!stopping)log('warn','onebot.disconnected');});
-  const receive=(event:unknown)=>{if(selfId&&!stopping)void router.receive(event,selfId).catch(()=>log('warn','message.failed',{reason:'event_handler_failed'}));};
+  const receive=(event:unknown)=>{
+    if(!selfId||stopping)return;
+    // Index arrival metadata, not message content. Only enabled groups of this authenticated account.
+    if(event&&typeof event==='object'){
+      const raw=event as Record<string,unknown>,groupId=id(raw.group_id);
+      if(raw.post_type==='message'&&raw.message_type==='group'&&id(raw.self_id)===selfId&&groupId&&(enabledGroups.get(groupId)??app.defaultsEnabled)&&id(raw.user_id)!==selfId)
+        log('debug','onebot.message_received',{group_id:groupId,message_id:raw.message_id});
+    }
+    void router.receive(event,selfId).catch(()=>log('warn','message.failed',{reason:'event_handler_failed'}));
+  };
   client.on('message',receive);client.on('notice',receive);
   const stop=()=>{
-    if(stopping)return;stopping=true;log('info','app.stopping');
+    if(stopping)return;stopping=true;clearInterval(heartbeat);log('info','app.stopping');
     const groupsStopping=router.stop();scheduler.close();
     void Promise.allSettled([groupsStopping,client.stop()]).then(results=>{
       if(results.some(result=>result.status==='rejected')){log('error','app.shutdown_failed',{reason:'operation_failed'});process.exitCode=1;}
@@ -119,6 +139,7 @@ async function main(): Promise<void> {
        try{customFaceStore?.close();}catch{log('warn','app.custom_faces_close_failed',{reason:'close_failed'});}
        try{registry?.close();}catch{log('warn','app.registry_failed',{reason:'close_failed'});}
       try{telemetry?.close();}catch{log('warn','model.telemetry_failed',{reason:'close_failed'});}
+      stopObserving?.();try{runtimeEvents?.close();}catch{}
       await logger?.close();process.exit(process.exitCode??0);
     });
   };
@@ -129,7 +150,8 @@ void main().catch(async(error:unknown)=>{
   try{customFaceStore?.close();}catch{}
   try{registry?.close();}catch{}
   try{telemetry?.close();}catch{}
-  if(logger){log('error','app.startup_failed',{reason:'startup_failed'});await logger.close();}
+  clearInterval(heartbeat);
+  if(logger){log('error','app.startup_failed',{reason:'startup_failed'});stopObserving?.();try{runtimeEvents?.close();}catch{}await logger.close();}
   else console.error(error instanceof ConfigError?error.message:'Listener startup failed; details suppressed to protect secrets');
   process.exitCode=1;process.exit(1);
 });

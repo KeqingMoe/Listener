@@ -10,7 +10,7 @@ test('request observer sees charged truncated usage once and cannot mask model e
   const records:import('../src/model-usage.js').ModelRequestRecord[]=[];
   try {const model=new OpenAIModel({baseUrl:fixture.url,apiKey:secret,model:'test-model',timeoutMs:1000,maxTokens:100,onRequest:r=>{records.push(r);throw Error('observer secret');}});
     await assert.rejects(model.complete([{role:'user',content:'secret-prompt'}]),(e:unknown)=>(e as any).code==='truncated_response');
-    assert.equal(records.length,1);assert.equal(records[0]!.usage.cachedInputTokens,60);assert.equal(records[0]!.errorCode,'truncated_response');assert.ok(!JSON.stringify(records).includes('secret'));
+    assert.equal(records.length,1);assert.equal(records[0]!.usage.cachedInputTokens,60);assert.equal(records[0]!.errorCode,'truncated_response');assert.ok(!JSON.stringify(records.map(({inspection,...publicRecord})=>publicRecord)).includes('secret'));assert.ok(records[0]!.inspection?.requestJson?.includes('secret-prompt'));assert.ok(records[0]!.inspection?.responseJson?.includes('secret-body'));assert.ok(!JSON.stringify(records).includes(secret));
   }finally{stop(fixture.server);}
 });
 test('observer throwing does not alter successful completion',async()=>{

@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import { normalizeWakeDiagnostics } from './wake-diagnostics.js';
+import { SESSION_INSPECTION_INDEXES } from './session-inspection-indexes.js';
 import { resolveGroupId, type ChatContentPart, type ChatMessage, type Completion, type JsonObject, type ToolDefinition } from './contracts.js';
 
 export interface ModelSessionOptions { path:string; groupId?:string; maxTranscriptBytes?:number }
@@ -90,6 +91,7 @@ export class ModelSession {
     CREATE INDEX IF NOT EXISTS model_session_messages_session ON model_session_messages(session_id,seq);
     CREATE TABLE IF NOT EXISTS model_tool_ledger(ordinal INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,wake_id TEXT,assistant_seq INTEGER NOT NULL,call_id TEXT NOT NULL,name TEXT NOT NULL,arguments TEXT NOT NULL,state TEXT NOT NULL,result TEXT,proposed_at INTEGER NOT NULL,started_at INTEGER,finished_at INTEGER,UNIQUE(assistant_seq,call_id));
     CREATE INDEX IF NOT EXISTS model_tool_ledger_session ON model_tool_ledger(session_id,ordinal);`);
+   try{this.db.exec(SESSION_INSPECTION_INDEXES);}catch{/* Optional readonly lookup acceleration must not disable the bot. */}
    const meta=this.db.prepare('SELECT * FROM model_session_meta WHERE singleton=1').get();
    if(meta&&meta.group_id!==this.groupId)throw new Error('session_group_mismatch');
    if(meta)this.stateValue={sessionId:String(meta.session_id),generation:Number(meta.generation),...(typeof meta.wake_id==='string'?{wakeId:meta.wake_id}:{}),...(typeof meta.reset_reason==='string'?{resetReason:meta.reset_reason}:{}),needsRecovery:meta.fingerprint===null&&typeof meta.reset_reason==='string'};

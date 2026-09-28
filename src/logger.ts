@@ -24,6 +24,12 @@ const codes = ['outcome','reason','status','phase','trigger'];
 const context = new AsyncLocalStorage<Record<string, unknown>>();
 let secrets: string[] = [];
 let current: ReturnType<typeof createLogger> | undefined;
+export interface ObservedLog { level:LogLevel; event:string; observedAt:number; fields:Record<string,unknown> }
+const observers=new Set<(record:ObservedLog)=>void>();
+/** Private diagnostic sinks receive sanitized metadata, including console-filtered debug events. */
+export function observeLogs(observer:(record:ObservedLog)=>void):()=>void {
+  observers.add(observer);return()=>{observers.delete(observer);};
+}
 let lastWarning = 0;
 let stderrGuarded = false;
 let stdoutGuarded = false;
@@ -96,7 +102,9 @@ export function formatLogLine(raw: unknown): string | undefined {
 export function log(level: LogLevel, event: string, fields: Record<string, unknown> = {}): void {
   try {
     if (!current || !levels.includes(level) || !validEvent(event)) return;
-    current.emit(level, event, { ...sanitizeLogFields(context.getStore() ?? {}), ...sanitizeLogFields(fields) });
+    const safe={ ...sanitizeLogFields(context.getStore() ?? {}), ...sanitizeLogFields(fields) };
+    for(const observer of observers){try{observer({level,event,observedAt:Date.now(),fields:structuredClone(safe)});}catch{/* A diagnostic sink never interrupts logging or bot work. */}}
+    current.emit(level, event, safe);
   } catch { warn(); }
 }
 
