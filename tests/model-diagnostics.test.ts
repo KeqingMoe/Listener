@@ -4,7 +4,7 @@ import { normalizeModelRequestDiagnostics as normalize, providerDiagnostics } fr
 import { ModelError, OpenAIModel } from '../src/model/chat.js';
 import { ResponsesModel, ResponseStateExpiredError } from '../src/model/responses.js';
 import type { ModelRequestRecord } from '../src/observability/model-usage.js';
-import type { ChatMessage } from '../src/contracts/index.js';
+import type { ChatMessage } from '../src/contracts/model.js';
 
 const options={baseUrl:'https://invalid.example/v1',apiKey:'secret-key',model:'test',timeoutMs:1000,maxTokens:100,sessionId:'test'};
 const chat=()=>new Response(JSON.stringify({choices:[{message:{role:'assistant',content:'ok'},finish_reason:'stop'}]}));

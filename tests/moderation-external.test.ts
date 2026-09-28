@@ -7,7 +7,10 @@ import { join } from 'node:path';
 import { configureLogging } from '../src/observability/logger.js';
 import { submittedResult } from '../src/onebot/operation-result.js';
 import { Moderation, type ExternalModerationProposal } from '../src/tools/management/moderation.js';
-import { LISTENER_GROUP, OWNER_ID, type Api, type JsonObject, type TurnContext } from '../src/contracts/index.js';
+import { LISTENER_GROUP, OWNER_ID } from '../src/contracts/identity.js';
+import { type Api } from '../src/contracts/onebot.js';
+import { type JsonObject } from '../src/contracts/json.js';
+import { type TurnContext } from '../src/contracts/tools.js';
 
 const selfId = '999', actorId = '123', targetId = '456';
 const original: TurnContext = {groupId:LISTENER_GROUP,actorId,selfId,messageId:'11'};

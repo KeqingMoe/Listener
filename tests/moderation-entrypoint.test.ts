@@ -10,7 +10,7 @@ import {createServer} from 'node:http';
 import type {AddressInfo,Socket} from 'node:net';
 import {DatabaseSync} from 'node:sqlite';
 import {WebSocketServer,type WebSocket} from 'ws';
-import {OWNER_ID} from '../src/contracts/index.js';
+import { OWNER_ID } from '../src/contracts/identity.js';
 import {setTimeout as delay} from 'node:timers/promises';
 
 const A='111111',B='222222',SELF='99999',MEMBER='123',TARGET='456',LOCAL_OWNER='778899';

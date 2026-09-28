@@ -4,7 +4,9 @@ import {
   GroupObservationTools,
   GROUP_OBSERVATION_TOOL_NAMES,
 } from "../src/tools/observation/tools.js";
-import type { Api, JsonObject, TurnContext } from "../src/contracts/index.js";
+import type { Api } from "../src/contracts/onebot.js";
+import type { JsonObject } from "../src/contracts/json.js";
+import type { TurnContext } from "../src/contracts/tools.js";
 const GROUP = "12345",
   SELF = "99999";
 const context: TurnContext = {

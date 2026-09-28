@@ -4,7 +4,9 @@ import {
   GroupRequestTools,
   GROUP_REQUEST_TOOL_NAMES,
 } from "../src/tools/requests/tools.js";
-import type { Api, JsonObject, TurnContext } from "../src/contracts/index.js";
+import type { Api } from "../src/contracts/onebot.js";
+import type { JsonObject } from "../src/contracts/json.js";
+import type { TurnContext } from "../src/contracts/tools.js";
 const group = "12345",
   self = "333",
   applicant = "444";

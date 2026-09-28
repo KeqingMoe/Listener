@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { OWNER_ID, type Memory, type Model, type TimelineEntry } from '../src/contracts/index.js';
+import { OWNER_ID } from '../src/contracts/identity.js';
+import { type Memory, type TimelineEntry } from '../src/contracts/messages.js';
+import { type Model } from '../src/contracts/model.js';
 import { ReplyBatch, snapshotMemory, type BatchItem } from '../src/agent/reply-batch.js';
 
 function item(sequence: number, trigger?: 'mention' | 'quote', received = sequence * 10): BatchItem {

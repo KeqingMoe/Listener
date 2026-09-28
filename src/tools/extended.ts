@@ -1,10 +1,7 @@
-import type {
-  Api,
-  Memory,
-  ToolDefinition,
-  JsonObject,
-  TurnContext,
-} from "../contracts/index.js";
+import type { Api } from "../contracts/onebot.js";
+import type { Memory } from "../contracts/messages.js";
+import type { ToolDefinition, TurnContext } from "../contracts/tools.js";
+import type { JsonObject } from "../contracts/json.js";
 import type { ImageDownloader } from "./images/download.js";
 import {
   GroupMediaTools,

@@ -4,7 +4,11 @@ import { setTimeout as delay, setImmediate as flush } from 'node:timers/promises
 import { Listener } from '../src/agent/listener.js';
 import { GroupRouter } from '../src/app/group-router.js';
 import { TurnScheduler } from '../src/agent/scheduler.js';
-import { OWNER_ID, type Api, type ChatMessage, type Completion, type Memory, type Model, type TimelineEntry, type ToolDefinition } from '../src/contracts/index.js';
+import { OWNER_ID } from '../src/contracts/identity.js';
+import { type Api } from '../src/contracts/onebot.js';
+import { type ChatMessage, type Completion, type Model } from '../src/contracts/model.js';
+import { type Memory, type TimelineEntry } from '../src/contracts/messages.js';
+import { type ToolDefinition } from '../src/contracts/tools.js';
 import type { ListenerConfig } from '../src/config/listener.js';
 
 const SELF='99999';

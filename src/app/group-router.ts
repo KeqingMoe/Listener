@@ -1,5 +1,5 @@
 import { id } from '../onebot/command-bot.js';
-import { resolveGroupId } from '../contracts/index.js';
+import { resolveGroupId } from '../contracts/identity.js';
 import { withLogContext } from '../observability/logger.js';
 import { normalizeOneBotEvent } from '../onebot/ingest.js';
 import { types } from 'node:util';

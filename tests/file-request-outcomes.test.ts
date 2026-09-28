@@ -6,7 +6,9 @@ import {
 } from "../src/tools/files/tools.js";
 import { GroupRequestTools } from "../src/tools/requests/tools.js";
 import { OneBotError } from "../src/onebot/client.js";
-import type { Api, JsonObject, TurnContext } from "../src/contracts/index.js";
+import type { Api } from "../src/contracts/onebot.js";
+import type { JsonObject } from "../src/contracts/json.js";
+import type { TurnContext } from "../src/contracts/tools.js";
 
 const ctx: TurnContext = {
   groupId: "123",

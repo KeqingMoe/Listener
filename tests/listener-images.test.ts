@@ -4,7 +4,11 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { Listener } from '../src/agent/listener.js';
 import type { ListenerConfig } from '../src/config/listener.js';
 import type { ImageDownloader } from '../src/tools/images/download.js';
-import { LISTENER_GROUP, OWNER_ID, type Api, type ChatMessage, type Completion, type Memory, type Model, type TimelineEntry, type ToolCall } from '../src/contracts/index.js';
+import { LISTENER_GROUP, OWNER_ID } from '../src/contracts/identity.js';
+import { type Api } from '../src/contracts/onebot.js';
+import { type ChatMessage, type Completion, type Model } from '../src/contracts/model.js';
+import { type Memory, type TimelineEntry } from '../src/contracts/messages.js';
+import { type ToolCall } from '../src/contracts/tools.js';
 
 const self = '900000001';
 const transportUrl = 'https://example.invalid/image?private-key=secret';

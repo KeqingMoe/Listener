@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Listener, normalizeEvent, buildSystemPrompt, buildToolDefinitions } from '../src/agent/listener.js';
 import type { ListenerConfig } from '../src/config/listener.js';
-import { LISTENER_GROUP, OWNER_ID, type Memory, type TimelineEntry, type Model, type Completion, type Api, type ChatMessage } from '../src/contracts/index.js';
+import { LISTENER_GROUP, OWNER_ID } from '../src/contracts/identity.js';
+import { type Memory, type TimelineEntry } from '../src/contracts/messages.js';
+import { type Model, type Completion, type ChatMessage } from '../src/contracts/model.js';
+import { type Api } from '../src/contracts/onebot.js';
 const self='900000001';
 class MockMemory implements Memory {
   entries:TimelineEntry[]=[]; closed=false;

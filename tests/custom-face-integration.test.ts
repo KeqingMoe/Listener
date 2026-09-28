@@ -20,7 +20,11 @@ import { buildExtendedToolDefinitions, createExtendedTools } from '../src/tools/
 import { prepareImage, validateOriginalImage, type OriginalImageDownloader } from '../src/tools/images/download.js';
 import type { ListenerConfig } from '../src/config/listener.js';
 import type { ExtendedToolsConfig } from '../src/config/extended-tools.js';
-import type { Api, ChatMessage, Completion, JsonObject, Memory, Model, ToolCall, ToolDefinition } from '../src/contracts/index.js';
+import type { Api } from '../src/contracts/onebot.js';
+import type { ChatMessage, Completion, Model } from '../src/contracts/model.js';
+import type { JsonObject } from '../src/contracts/json.js';
+import type { Memory } from '../src/contracts/messages.js';
+import type { ToolCall, ToolDefinition } from '../src/contracts/tools.js';
 
 const SELF = '100000001', OWNER = '100000002', ACTOR = '100000003', GROUP = '123456789', OTHER_GROUP = '123456788';
 const SECRET = 'SYNTHETIC_NATIVE_MEDIA_SECRET';

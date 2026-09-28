@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "npm run check:boundaries && tsc -p tsconfig.json",
+    "check:boundaries": "node scripts/check-boundaries.mjs",
     "test": "tsx --test tests/*.test.ts",
     "start": "node dist/app/bot.js",
     "dev": "tsx watch src/app/bot.ts",

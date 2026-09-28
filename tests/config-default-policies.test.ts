@@ -9,7 +9,10 @@ import { inspectGroupConfig } from '../src/config/inspect.js';
 import { toListenerConfig } from '../src/config/runtime.js';
 import { TOOL_NAMES, TOOL_CAPABILITIES } from '../src/config/tool-policy.js';
 import { Listener, buildToolDefinitions, buildSystemPrompt } from '../src/agent/listener.js';
-import type { Api, JsonObject, Memory, Model, TimelineEntry } from '../src/contracts/index.js';
+import type { Api } from '../src/contracts/onebot.js';
+import type { JsonObject } from '../src/contracts/json.js';
+import type { Memory, TimelineEntry } from '../src/contracts/messages.js';
+import type { Model } from '../src/contracts/model.js';
 
 const GROUP = '123456789', OWNER = '100000001', SELF = '100000002', MEMBER = '100000003';
 // Explicit product contract, independent of the implementation's default-mode calculation.

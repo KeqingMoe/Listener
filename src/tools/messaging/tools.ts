@@ -1,4 +1,8 @@
-import { resolveGroupId, type Api, type Memory, type JsonObject, type ToolDefinition, type TurnContext, type TimelineEntry } from '../../contracts/index.js';
+import { resolveGroupId } from '../../contracts/identity.js';
+import { type Api } from '../../contracts/onebot.js';
+import { type Memory, type TimelineEntry } from '../../contracts/messages.js';
+import { type JsonObject } from '../../contracts/json.js';
+import { type ToolDefinition, type TurnContext } from '../../contracts/tools.js';
 
 import { imageReferences } from '../images/tools.js';
 import { forwardReferences } from '../../onebot/forward-references.js';

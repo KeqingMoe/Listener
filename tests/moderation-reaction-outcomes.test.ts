@@ -4,7 +4,11 @@ import { Moderation } from '../src/tools/management/moderation.js';
 import { ReactionTools, createReactionTool } from '../src/tools/reactions/tools.js';
 import { OneBotError } from '../src/onebot/client.js';
 import { submittedResult, writeFailure } from '../src/onebot/operation-result.js';
-import { LISTENER_GROUP, OWNER_ID, type Api, type JsonObject, type Memory, type TurnContext } from '../src/contracts/index.js';
+import { LISTENER_GROUP, OWNER_ID } from '../src/contracts/identity.js';
+import { type Api } from '../src/contracts/onebot.js';
+import { type JsonObject } from '../src/contracts/json.js';
+import { type Memory } from '../src/contracts/messages.js';
+import { type TurnContext } from '../src/contracts/tools.js';
 
 const ctx:TurnContext={groupId:LISTENER_GROUP,actorId:'123',selfId:'999',messageId:'11'};
 const owner={...ctx,actorId:OWNER_ID,messageId:'12'};

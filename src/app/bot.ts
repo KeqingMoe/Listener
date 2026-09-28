@@ -11,7 +11,7 @@ import { WorldEventStore } from '../world/events.js';
 import { ResponsesModel } from '../model/responses.js';
 import type { ModelRequestRecord, ModelRequestStart } from '../observability/model-usage.js';
 import { ModelSession } from '../agent/session/store.js';
-import { resolveOwnerId } from '../contracts/index.js';
+import { resolveOwnerId } from '../contracts/identity.js';
 import { GroupRouter } from './group-router.js';
 import { GroupRegistry } from '../config/group-registry.js';
 import { TurnScheduler } from '../agent/scheduler.js';

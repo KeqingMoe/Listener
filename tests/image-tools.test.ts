@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ImageTools, VIEW_IMAGES_TOOL, imageReferences, imageMarker } from '../src/tools/images/tools.js';
-import { LISTENER_GROUP, type Api, type Memory, type TimelineEntry, type TurnContext } from '../src/contracts/index.js';
+import { LISTENER_GROUP } from '../src/contracts/identity.js';
+import { type Api } from '../src/contracts/onebot.js';
+import { type Memory, type TimelineEntry } from '../src/contracts/messages.js';
+import { type TurnContext } from '../src/contracts/tools.js';
 import type { ImagesConfig } from '../src/config/listener.js';
 import type { ImageDownloader } from '../src/tools/images/download.js';
 

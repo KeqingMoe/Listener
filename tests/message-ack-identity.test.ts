@@ -15,7 +15,10 @@ import { recordToolMessage } from "../src/onebot/ingest.js";
 import { GroupMediaTools, type SendReceiptSnapshot } from "../src/tools/media/tools.js";
 import { DuplicateMessageAckError } from "../src/onebot/operation-result.js";
 import { configureLogging } from "../src/observability/logger.js";
-import { OWNER_ID, type Memory, type TimelineEntry, type TurnContext, type JsonObject } from "../src/contracts/index.js";
+import { OWNER_ID } from "../src/contracts/identity.js";
+import { type Memory, type TimelineEntry } from "../src/contracts/messages.js";
+import { type TurnContext } from "../src/contracts/tools.js";
+import { type JsonObject } from "../src/contracts/json.js";
 import type { ListenerConfig } from "../src/config/listener.js";
 
 const GROUP = "123456", SELF = "999", OTHER = "111";

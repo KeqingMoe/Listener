@@ -10,7 +10,7 @@ import {createServer} from 'node:http';
 import type {AddressInfo,Socket} from 'node:net';
 import {DatabaseSync} from 'node:sqlite';
 import {WebSocketServer,type WebSocket} from 'ws';
-import {LISTENER_GROUP} from '../src/contracts/index.js';
+import { LISTENER_GROUP } from '../src/contracts/identity.js';
 
 const A=LISTENER_GROUP,B='22',SELF='99999';
 function event(group:string,id:string,body:string){return {post_type:'message',message_type:'group',group_id:group,user_id:group===A?'111':'222',self_id:SELF,message_id:id,time:Math.floor(Date.now()/1000),sender:{nickname:group===A?'user-A':'user-B'},message:[{type:'at',data:{qq:SELF}},{type:'text',data:{text:body}}]};}

@@ -9,7 +9,10 @@ import { ImageTools } from '../src/tools/images/tools.js';
 import { ForwardTools } from '../src/tools/forwards/tools.js';
 import { Moderation } from '../src/tools/management/moderation.js';
 import { SQLiteMemory } from '../src/agent/memory.js';
-import { LISTENER_GROUP, OWNER_ID, type Api, type Memory, type TimelineEntry, type TurnContext } from '../src/contracts/index.js';
+import { LISTENER_GROUP, OWNER_ID } from '../src/contracts/identity.js';
+import { type Api } from '../src/contracts/onebot.js';
+import { type Memory, type TimelineEntry } from '../src/contracts/messages.js';
+import { type TurnContext } from '../src/contracts/tools.js';
 
 const A='111111', B='222222', self='999', user='123';
 const ctx=(groupId:string,actorId=user):TurnContext=>({groupId,actorId,selfId:self,messageId:'1'});

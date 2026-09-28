@@ -4,13 +4,10 @@ import {
   GROUP_ACTION_TOOL_NAMES,
   GroupActionTools,
 } from "../src/tools/actions/tools.js";
-import type {
-  Api,
-  JsonObject,
-  Memory,
-  TimelineEntry,
-  TurnContext,
-} from "../src/contracts/index.js";
+import type { Api } from "../src/contracts/onebot.js";
+import type { JsonObject } from "../src/contracts/json.js";
+import type { Memory, TimelineEntry } from "../src/contracts/messages.js";
+import type { TurnContext } from "../src/contracts/tools.js";
 const groupId = "123456",
   selfId = "333",
   actorId = "444",

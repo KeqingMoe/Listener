@@ -1,4 +1,8 @@
-import { LISTENER_GROUP, resolveGroupId, type Api, type Memory, type JsonObject, type TimelineEntry, type TurnContext } from '../../contracts/index.js';
+import { LISTENER_GROUP, resolveGroupId } from '../../contracts/identity.js';
+import { type Api } from '../../contracts/onebot.js';
+import { type Memory, type TimelineEntry } from '../../contracts/messages.js';
+import { type JsonObject } from '../../contracts/json.js';
+import { type TurnContext } from '../../contracts/tools.js';
 import { isKnownReactionId, createReactionTool as catalogReactionTool } from '../../onebot/catalog/reactions.js';
 import { submittedResult, writeFailure, afterDispatch } from '../../onebot/operation-result.js';
 export function createReactionTool() {

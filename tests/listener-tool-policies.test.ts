@@ -9,7 +9,10 @@ import {GroupTools} from '../src/tools/messaging/tools.js';
 import {ImageTools} from '../src/tools/images/tools.js';
 import {WorldEventStore} from '../src/world/events.js';
 import {ModelSession} from '../src/agent/session/store.js';
-import type {Api,Memory,TimelineEntry,Model,ChatMessage,JsonObject} from '../src/contracts/index.js';
+import type { Api } from '../src/contracts/onebot.js';
+import type { Memory, TimelineEntry } from '../src/contracts/messages.js';
+import type { Model, ChatMessage } from '../src/contracts/model.js';
+import type { JsonObject } from '../src/contracts/json.js';
 const GROUP='334455',OWNER='778899',SELF='990011',MEMBER='123456';
 function policies(overrides:Partial<ResolvedToolPolicies>={}):ResolvedToolPolicies {
  return Object.fromEntries(TOOL_NAMES.map(name=>[name,{mode:'off',...Object.fromEntries(Object.values(TOOL_CAPABILITIES[name].options).map(o=>[o.field,o.default])),...overrides[name]}])) as ResolvedToolPolicies;

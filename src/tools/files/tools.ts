@@ -1,5 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { resolveGroupId, type Api, type JsonObject, type ToolDefinition, type TurnContext } from '../../contracts/index.js';
+import { resolveGroupId } from '../../contracts/identity.js';
+import { type Api } from '../../contracts/onebot.js';
+import { type JsonObject } from '../../contracts/json.js';
+import { type ToolDefinition, type TurnContext } from '../../contracts/tools.js';
 import { downloadGroupText, type GroupTextDownloader } from './download.js';
 import { afterDispatch, submittedResult, writeFailure } from '../../onebot/operation-result.js';
 

@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
 import {Listener} from '../src/agent/listener.js';
 import type {ListenerConfig} from '../src/config/listener.js';
-import {LISTENER_GROUP,type Api,type ChatMessage,type Completion,type Memory,type Model,type TimelineEntry} from '../src/contracts/index.js';
+import { LISTENER_GROUP } from '../src/contracts/identity.js';
+import { type Api } from '../src/contracts/onebot.js';
+import { type ChatMessage, type Completion, type Model } from '../src/contracts/model.js';
+import { type Memory, type TimelineEntry } from '../src/contracts/messages.js';
 const self='900000001';
 const config:ListenerConfig={enabled:true,baseUrl:'https://example.invalid',apiKey:'x',model:'x',timeoutMs:3000,maxTokens:64,debounceMs:1,delayMaxMs:1,cooldownMs:0,memoryPath:':memory:',maxContextChars:8000,retentionDays:7,randomReplyProbability:1,randomCooldownMs:0,randomMaxPerMinute:10,maxToolCallsPerWake:4,wakeTimeoutMs:90000};
 class Mem implements Memory{rows:TimelineEntry[]=[];append(e:TimelineEntry){this.rows.push(e);return true;}recent(){return this.rows;}find(id:string){return this.rows.find(x=>x.messageId===id);}context(){return JSON.stringify(this.rows);}async compact(){}clear(){this.rows=[];}close(){}}

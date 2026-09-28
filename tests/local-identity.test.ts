@@ -4,7 +4,11 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {Listener,buildSystemPrompt} from '../src/agent/listener.js';
 import {Moderation} from '../src/tools/management/moderation.js';
 import {ReplyBatch,type BatchItem} from '../src/agent/reply-batch.js';
-import {OWNER_ID,type Api,type Memory,type TimelineEntry,type Model,type Completion,type JsonObject} from '../src/contracts/index.js';
+import { OWNER_ID } from '../src/contracts/identity.js';
+import { type Api } from '../src/contracts/onebot.js';
+import { type Memory, type TimelineEntry } from '../src/contracts/messages.js';
+import { type Model, type Completion } from '../src/contracts/model.js';
+import { type JsonObject } from '../src/contracts/json.js';
 import type {ListenerConfig} from '../src/config/listener.js';
 
 const OWNER_A='778899',OWNER_B='889900',GROUP='334455',SELF='990011',TARGET='123456';

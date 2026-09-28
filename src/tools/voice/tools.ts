@@ -1,11 +1,8 @@
 import { createHash } from "node:crypto";
-import {
-  resolveGroupId,
-  type Api,
-  type JsonObject,
-  type ToolDefinition,
-  type TurnContext,
-} from "../../contracts/index.js";
+import { resolveGroupId } from "../../contracts/identity.js";
+import { type Api } from "../../contracts/onebot.js";
+import { type JsonObject } from "../../contracts/json.js";
+import { type ToolDefinition, type TurnContext } from "../../contracts/tools.js";
 import { submittedResult, writeFailure, afterDispatch } from '../../onebot/operation-result.js';
 
 export const GROUP_VOICE_TOOL_NAMES = [

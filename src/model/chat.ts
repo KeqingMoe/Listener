@@ -1,4 +1,5 @@
-import type { ChatMessage, Completion, Model, ToolCall, ToolDefinition } from '../contracts/index.js';
+import type { ChatMessage, Completion, Model } from '../contracts/model.js';
+import type { ToolCall, ToolDefinition } from '../contracts/tools.js';
 import { log } from '../observability/logger.js';
 import { EXTENDED_TOOL_NAMES } from '../config/extended-tools.js';
 import { randomUUID } from 'node:crypto';

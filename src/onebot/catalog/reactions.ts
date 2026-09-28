@@ -1,6 +1,6 @@
 import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
-import { FACE_CATALOG_VERSION, FACE_DATA_LIMIT, extractFaceCatalog } from '../../cli/sync-faces.js';
-import type { ToolDefinition } from '../../contracts/index.js';
+import { FACE_CATALOG_VERSION, FACE_DATA_LIMIT, extractFaceCatalog } from './schema.js';
+import type { ToolDefinition } from '../../contracts/tools.js';
 
 export interface ReactionEntry { readonly id: string; readonly name: string; readonly kind: 'face'|'emoji'; readonly emoji?: string }
 const defaultPath = new URL(`../../../data/napcat-face-config-v${FACE_CATALOG_VERSION}.json`, import.meta.url);

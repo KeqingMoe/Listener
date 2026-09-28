@@ -2,7 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
 import {Listener} from '../src/agent/listener.js';
-import {OWNER_ID,type Api,type ChatMessage,type Completion,type JsonObject,type Memory,type Model,type TimelineEntry,type ToolDefinition} from '../src/contracts/index.js';
+import { OWNER_ID } from '../src/contracts/identity.js';
+import { type Api } from '../src/contracts/onebot.js';
+import { type ChatMessage, type Completion, type Model } from '../src/contracts/model.js';
+import { type JsonObject } from '../src/contracts/json.js';
+import { type Memory, type TimelineEntry } from '../src/contracts/messages.js';
+import { type ToolDefinition } from '../src/contracts/tools.js';
 import type {ListenerConfig} from '../src/config/listener.js';
 
 const GROUP='22',SELF='99999',A='111',B='222';

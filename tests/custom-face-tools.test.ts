@@ -8,7 +8,11 @@ import { CustomFaceCoordinator } from '../src/tools/custom-faces/coordinator.js'
 import { validateOriginalImage } from '../src/tools/images/download.js';
 import { OneBotError } from '../src/onebot/client.js';
 import { DuplicateMessageAckError, UnverifiedMessageAckError } from '../src/onebot/operation-result.js';
-import type { Api, ChatContentPart, JsonObject, Memory, TimelineEntry, TurnContext } from '../src/contracts/index.js';
+import type { Api } from '../src/contracts/onebot.js';
+import type { ChatContentPart } from '../src/contracts/model.js';
+import type { JsonObject } from '../src/contracts/json.js';
+import type { Memory, TimelineEntry } from '../src/contracts/messages.js';
+import type { TurnContext } from '../src/contracts/tools.js';
 
 const GROUP = '100000002', SELF = '123456789', USER = '100000001';
 const CTX: TurnContext = { groupId: GROUP, selfId: SELF, actorId: USER, messageId: '11' };

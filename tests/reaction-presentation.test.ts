@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {annotateReactionBatch,annotateReactionContext,annotateReactionReadResult,type ReactionLookup} from '../src/agent/reaction-presentation.js';
-import type {JsonObject,Memory,TimelineEntry} from '../src/contracts/index.js';
+import type { JsonObject } from '../src/contracts/json.js';
+import type { Memory, TimelineEntry } from '../src/contracts/messages.js';
 
 const row=(messageId:string):TimelineEntry=>({messageId,userId:'111',nickname:'fixture',time:42,text:`body-${messageId}`});
 const observed=(extra:JsonObject={}):JsonObject=>({status:'observed',observed_at:123456789,items:[{emoji_id:'76',emoji_type:'1',name:'赞',count:3},{emoji_id:'128077',emoji_type:2,emoji:'👍',count:2}],...extra});

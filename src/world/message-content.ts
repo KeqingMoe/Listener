@@ -1,5 +1,6 @@
-import type { ImageReference, JsonObject, MessageSegment, TimelineEntry } from '../contracts/index.js';
-import type { ForwardReference } from '../onebot/forward-references.js';
+import type { ImageReference, MessageSegment, TimelineEntry } from '../contracts/messages.js';
+import type { JsonObject } from '../contracts/json.js';
+import type { ForwardReference } from '../contracts/messages.js';
 import { FACE_CATALOG } from '../onebot/catalog/faces.js';
 
 export interface MessageContent { segments: MessageSegment[]; segments_omitted?: number; content_truncated?: boolean }

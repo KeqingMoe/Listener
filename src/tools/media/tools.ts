@@ -1,13 +1,9 @@
 import { createHash } from "node:crypto";
-import {
-  resolveGroupId,
-  type Api,
-  type JsonObject,
-  type Memory,
-  type TimelineEntry,
-  type ToolDefinition,
-  type TurnContext,
-} from "../../contracts/index.js";
+import { resolveGroupId } from "../../contracts/identity.js";
+import { type Api } from "../../contracts/onebot.js";
+import { type JsonObject } from "../../contracts/json.js";
+import { type Memory, type TimelineEntry } from "../../contracts/messages.js";
+import { type ToolDefinition, type TurnContext } from "../../contracts/tools.js";
 import { ImageTools, imageReferences } from "../images/tools.js";
 import type { ImageDownloader } from "../images/download.js";
 import { extractMessageContent } from "../../world/message-content.js";

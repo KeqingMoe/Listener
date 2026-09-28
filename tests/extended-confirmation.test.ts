@@ -1,11 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type {
-  Api,
-  Memory,
-  JsonObject,
-  ToolDefinition,
-} from "../src/contracts/index.js";
+import type { Api } from "../src/contracts/onebot.js";
+import type { Memory } from "../src/contracts/messages.js";
+import type { JsonObject } from "../src/contracts/json.js";
+import type { ToolDefinition } from "../src/contracts/tools.js";
 import { prepareExtendedConfirmation as prepare } from "../src/tools/confirmation.js";
 import {
   GroupActionTools,

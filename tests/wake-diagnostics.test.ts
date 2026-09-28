@@ -6,7 +6,9 @@ import { ModelSession } from '../src/agent/session/store.js';
 import { WorldEventStore } from '../src/world/events.js';
 import { Listener } from '../src/agent/listener.js';
 import { ModelError } from '../src/model/chat.js';
-import { LISTENER_GROUP, type Memory, type TimelineEntry, type Completion } from '../src/contracts/index.js';
+import { LISTENER_GROUP } from '../src/contracts/identity.js';
+import { type Memory, type TimelineEntry } from '../src/contracts/messages.js';
+import { type Completion } from '../src/contracts/model.js';
 import type { ListenerConfig } from '../src/config/listener.js';
 
 const call=(id:string,name:string,args:unknown={})=>({id,type:'function' as const,function:{name,arguments:JSON.stringify(args)}});

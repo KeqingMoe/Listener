@@ -1,4 +1,5 @@
-import type { JsonObject, ToolDefinition, TurnContext } from "../contracts/index.js";
+import type { JsonObject } from "../contracts/json.js";
+import type { ToolDefinition, TurnContext } from "../contracts/tools.js";
 
 export interface RegisteredTool {
   definition: ToolDefinition;

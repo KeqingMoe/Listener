@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import { GroupTools, type GroupToolsOptions } from '../src/tools/messaging/tools.js';
 import { ForwardTools } from '../src/tools/forwards/tools.js';
 import { faceMarker } from '../src/tools/faces/tools.js';
-import { LISTENER_GROUP, type Api, type Memory, type TimelineEntry, type TurnContext } from '../src/contracts/index.js';
+import { LISTENER_GROUP } from '../src/contracts/identity.js';
+import { type Api } from '../src/contracts/onebot.js';
+import { type Memory, type TimelineEntry } from '../src/contracts/messages.js';
+import { type TurnContext } from '../src/contracts/tools.js';
 
 const context: TurnContext = { groupId: LISTENER_GROUP, actorId: '123', selfId: '999', messageId: '1' };
 const entry: TimelineEntry = { messageId: '1', userId: '123', nickname: 'member', text: 'hello', time: 42, replyTo: '2' };

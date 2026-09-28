@@ -8,7 +8,10 @@ import { OpenAIModel, ModelError } from '../src/model/chat.js';
 import { SQLiteMemory } from '../src/agent/memory.js';
 import { Moderation } from '../src/tools/management/moderation.js';
 import { ImageTools } from '../src/tools/images/tools.js';
-import { LISTENER_GROUP, OWNER_ID, type Api, type Memory, type TurnContext } from '../src/contracts/index.js';
+import { LISTENER_GROUP, OWNER_ID } from '../src/contracts/identity.js';
+import { type Api } from '../src/contracts/onebot.js';
+import { type Memory } from '../src/contracts/messages.js';
+import { type TurnContext } from '../src/contracts/tools.js';
 
 const secret = 'private-body-header-key-card';
 async function capture(work: () => Promise<void>) {

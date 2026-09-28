@@ -4,7 +4,10 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { Listener, normalizeEvent, buildToolDefinitions, buildSystemPrompt } from '../src/agent/listener.js';
 import { faceMarker, FACE_LAYOUT_GUIDANCE } from '../src/tools/faces/tools.js';
 import type { ListenerConfig } from '../src/config/listener.js';
-import { LISTENER_GROUP, type Memory, type TimelineEntry, type Api, type Model, type Completion, type ChatMessage } from '../src/contracts/index.js';
+import { LISTENER_GROUP } from '../src/contracts/identity.js';
+import { type Memory, type TimelineEntry } from '../src/contracts/messages.js';
+import { type Api } from '../src/contracts/onebot.js';
+import { type Model, type Completion, type ChatMessage } from '../src/contracts/model.js';
 
 const self = '900000001';
 const config: ListenerConfig = { enabled: true, baseUrl: 'https://example.invalid/v1', apiKey: 'test', model: 'test', timeoutMs: 2000,

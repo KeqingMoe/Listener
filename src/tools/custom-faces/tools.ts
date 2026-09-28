@@ -1,6 +1,11 @@
 import { createHash } from 'node:crypto';
 import { types } from 'node:util';
-import { resolveGroupId, type Api, type ChatContentPart, type JsonObject, type Memory, type ToolDefinition, type TurnContext, type TimelineEntry } from '../../contracts/index.js';
+import { resolveGroupId } from '../../contracts/identity.js';
+import { type Api } from '../../contracts/onebot.js';
+import { type ChatContentPart } from '../../contracts/model.js';
+import { type JsonObject } from '../../contracts/json.js';
+import { type Memory, type TimelineEntry } from '../../contracts/messages.js';
+import { type ToolDefinition, type TurnContext } from '../../contracts/tools.js';
 import { type CustomFaceStore, type CustomFaceRecord, type CustomFaceInput } from './store.js';
 import { CustomFaceCoordinator, CustomFaceCoordinationError } from './coordinator.js';
 import { downloadOriginalImage, validateOriginalImage, prepareImage, type OriginalImageDownloader } from '../images/download.js';

@@ -4,7 +4,9 @@ import {
   GroupFileTools,
   GROUP_FILE_TOOL_NAMES,
 } from "../src/tools/files/tools.js";
-import type { Api, JsonObject, TurnContext } from "../src/contracts/index.js";
+import type { Api } from "../src/contracts/onebot.js";
+import type { JsonObject } from "../src/contracts/json.js";
+import type { TurnContext } from "../src/contracts/tools.js";
 const ctx: TurnContext = {
   groupId: "123",
   selfId: "456",

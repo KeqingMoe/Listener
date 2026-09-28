@@ -1,7 +1,9 @@
 import { closeSync, constants, fchmodSync, fstatSync, lstatSync, openSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { resolveGroupId, type JsonObject, type MessageSegment, type TimelineEntry } from '../contracts/index.js';
+import { resolveGroupId } from '../contracts/identity.js';
+import { type JsonObject } from '../contracts/json.js';
+import { type MessageSegment, type TimelineEntry } from '../contracts/messages.js';
 
 export const WORLD_EVENT_TYPES = ['message.created', 'message.recalled', 'reaction.changed', 'poke.created', 'member.joined', 'member.left', 'group.ban_changed', 'file.uploaded', 'group.name_changed'] as const;
 export type WorldEventType = typeof WORLD_EVENT_TYPES[number];

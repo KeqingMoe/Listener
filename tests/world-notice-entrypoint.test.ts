@@ -16,7 +16,7 @@ import { createServer } from "node:http";
 import type { AddressInfo, Socket } from "node:net";
 import { DatabaseSync } from "node:sqlite";
 import { WebSocketServer, type WebSocket } from "ws";
-import { LISTENER_GROUP } from "../src/contracts/index.js";
+import { LISTENER_GROUP } from "../src/contracts/identity.js";
 
 const GROUP = LISTENER_GROUP,
   OTHER = "22",

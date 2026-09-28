@@ -12,13 +12,9 @@ import { Listener } from "../src/agent/listener.js";
 import { ModelSession } from "../src/agent/session/store.js";
 import { WorldEventStore } from "../src/world/events.js";
 import type { ListenerConfig } from "../src/config/listener.js";
-import type {
-  ChatMessage,
-  Completion,
-  JsonObject,
-  Memory,
-  TimelineEntry,
-} from "../src/contracts/index.js";
+import type { ChatMessage, Completion } from "../src/contracts/model.js";
+import type { JsonObject } from "../src/contracts/json.js";
+import type { Memory, TimelineEntry } from "../src/contracts/messages.js";
 
 const GROUP = "123456",
   SELF = "999",

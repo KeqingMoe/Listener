@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { GroupFileTools, GROUP_FILE_TOOL_NAMES, buildGroupFileTools } from '../src/tools/files/tools.js';
-import type { Api, JsonObject, TurnContext } from '../src/contracts/index.js';
+import type { Api } from '../src/contracts/onebot.js';
+import type { JsonObject } from '../src/contracts/json.js';
+import type { TurnContext } from '../src/contracts/tools.js';
 import type { GroupTextDownloader } from '../src/tools/files/download.js';
 const ctx: TurnContext = { groupId: '123', selfId: '456', actorId: '789', messageId: '1' };
 const file = (n = 1, extra: JsonObject = {}) => ({ group_id: 123, file_id: `provider-encoded-${n}`, file_name: `文档${n}.txt`, file_size: 100, uploader: 456, upload_time: 10, ...extra });

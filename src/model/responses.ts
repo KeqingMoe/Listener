@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { ChatContentPart, ChatMessage, Completion, Model, ToolCall, ToolDefinition } from '../contracts/index.js';
+import type { ChatContentPart, ChatMessage, Completion, Model } from '../contracts/model.js';
+import type { ToolCall, ToolDefinition } from '../contracts/tools.js';
 import { ModelError, type ModelErrorCode, type OpenAIModelOptions } from './chat.js';
 import { providerRequestId, responseInspection } from '../observability/request-inspection.js';
 import { parseResponsesUsage, type ModelRequestInspection, type ModelRequestRecord, type ModelUsage } from '../observability/model-usage.js';

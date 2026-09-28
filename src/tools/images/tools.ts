@@ -1,4 +1,9 @@
-import { LISTENER_GROUP, resolveGroupId, type Api, type ChatContentPart, type ImageReference, type JsonObject, type Memory, type ToolDefinition, type TurnContext } from '../../contracts/index.js';
+import { LISTENER_GROUP, resolveGroupId } from '../../contracts/identity.js';
+import { type Api } from '../../contracts/onebot.js';
+import { type ChatContentPart } from '../../contracts/model.js';
+import { type ImageReference, type Memory } from '../../contracts/messages.js';
+import { type JsonObject } from '../../contracts/json.js';
+import { type ToolDefinition, type TurnContext } from '../../contracts/tools.js';
 import type { ImagesConfig } from '../../config/listener.js';
 import { downloadImage, type ImageDownloader } from './download.js';
 import { log, withLogContext } from '../../observability/logger.js';

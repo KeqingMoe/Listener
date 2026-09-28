@@ -6,7 +6,8 @@ import {ResponsesModel} from '../src/model/responses.js';
 import {ModelSession} from '../src/agent/session/store.js';
 import {WorldEventStore} from '../src/world/events.js';
 import {WorldTools,buildWorldTools} from '../src/tools/world/tools.js';
-import type {JsonObject,ToolDefinition} from '../src/contracts/index.js';
+import type { JsonObject } from '../src/contracts/json.js';
+import type { ToolDefinition } from '../src/contracts/tools.js';
 import type {ModelRequestRecord} from '../src/observability/model-usage.js';
 
 // Deliberately opt-in: this spends model tokens, never connects to OneBot/QQ,

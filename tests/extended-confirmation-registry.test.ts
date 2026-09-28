@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { Api, JsonObject, Memory, ToolDefinition, TurnContext } from '../src/contracts/index.js';
-import { LISTENER_GROUP } from '../src/contracts/index.js';
+import type { Api } from '../src/contracts/onebot.js';
+import type { JsonObject } from '../src/contracts/json.js';
+import type { Memory } from '../src/contracts/messages.js';
+import type { ToolDefinition, TurnContext } from '../src/contracts/tools.js';
+import { LISTENER_GROUP } from '../src/contracts/identity.js';
 import { createExtendedTools, buildExtendedToolDefinitions } from '../src/tools/extended.js';
 import { EXTENDED_TOOL_NAMES, EXTENDED_READ_ONLY_TOOLS, type ExtendedToolsConfig } from '../src/config/extended-tools.js';
 import { GroupFileTools, GROUP_FILE_TOOL_NAMES } from '../src/tools/files/tools.js';

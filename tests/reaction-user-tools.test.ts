@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ReactionUserTools,GET_REACTION_USERS_TOOL,type ReactionUserTurn} from '../src/tools/reactions/users.js';
-import type {Api,JsonObject,Memory,TimelineEntry} from '../src/contracts/index.js';
+import type { Api } from '../src/contracts/onebot.js';
+import type { JsonObject } from '../src/contracts/json.js';
+import type { Memory, TimelineEntry } from '../src/contracts/messages.js';
 const ctx={groupId:'22',actorId:'111',messageId:'1',selfId:'999'};
 const q={message_id:'1',emoji_id:'476',emoji_type:'1',limit:20};
 const entry:TimelineEntry={messageId:'1',userId:'111',nickname:'one',text:'private body',time:1};

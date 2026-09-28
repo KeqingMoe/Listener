@@ -12,14 +12,10 @@ import { Listener } from "../src/agent/listener.js";
 import { ModelSession } from "../src/agent/session/store.js";
 import { WorldEventStore } from "../src/world/events.js";
 import { configureLogging } from "../src/observability/logger.js";
-import {
-  OWNER_ID,
-  type ChatMessage,
-  type Completion,
-  type JsonObject,
-  type Memory,
-  type TimelineEntry,
-} from "../src/contracts/index.js";
+import { OWNER_ID } from "../src/contracts/identity.js";
+import { type ChatMessage, type Completion } from "../src/contracts/model.js";
+import { type JsonObject } from "../src/contracts/json.js";
+import { type Memory, type TimelineEntry } from "../src/contracts/messages.js";
 import type { ListenerConfig } from "../src/config/listener.js";
 import type { ExtendedToolsConfig } from "../src/config/extended-tools.js";
 

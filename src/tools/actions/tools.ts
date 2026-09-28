@@ -1,13 +1,10 @@
 import { createHash } from "node:crypto";
 import { types } from 'node:util';
-import {
-  resolveGroupId,
-  type Api,
-  type JsonObject,
-  type Memory,
-  type ToolDefinition,
-  type TurnContext,
-} from "../../contracts/index.js";
+import { resolveGroupId } from "../../contracts/identity.js";
+import { type Api } from "../../contracts/onebot.js";
+import { type JsonObject } from "../../contracts/json.js";
+import { type Memory } from "../../contracts/messages.js";
+import { type ToolDefinition, type TurnContext } from "../../contracts/tools.js";
 import { submittedResult, writeFailure, afterDispatch } from '../../onebot/operation-result.js';
 
 /** NapCat v4.18.28: set_group_leave ignores is_dismiss; no dismiss tool is offered. */

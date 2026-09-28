@@ -9,14 +9,11 @@ import { Listener } from "../src/agent/listener.js";
 import { ModelSession } from "../src/agent/session/store.js";
 import { WorldEventStore } from "../src/world/events.js";
 import { SQLiteMemory } from "../src/agent/memory.js";
-import {
-  LISTENER_GROUP,
-  type Api,
-  type ChatMessage,
-  type Completion,
-  type JsonObject,
-  type TimelineEntry,
-} from "../src/contracts/index.js";
+import { LISTENER_GROUP } from "../src/contracts/identity.js";
+import { type Api } from "../src/contracts/onebot.js";
+import { type ChatMessage, type Completion } from "../src/contracts/model.js";
+import { type JsonObject } from "../src/contracts/json.js";
+import { type TimelineEntry } from "../src/contracts/messages.js";
 import type { ListenerConfig } from "../src/config/listener.js";
 import type { ExtendedToolsConfig } from "../src/config/extended-tools.js";
 

@@ -3,7 +3,7 @@ import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { AppConfig, ResolvedGroupConfig } from './app.js';
 import { assertStoragePaths } from './loader.js';
-import { resolveGroupId } from '../contracts/index.js';
+import { resolveGroupId } from '../contracts/identity.js';
 
 export interface RegisteredGroup { groupId:string; databasePath:string }
 const MAX_BYTES=16*1024*1024;

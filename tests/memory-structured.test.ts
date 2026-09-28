@@ -5,7 +5,9 @@ import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {test} from 'node:test';
 import {SQLiteMemory} from '../src/agent/memory.js';
-import {LISTENER_GROUP,type Completion,type TimelineEntry} from '../src/contracts/index.js';
+import { LISTENER_GROUP } from '../src/contracts/identity.js';
+import { type Completion } from '../src/contracts/model.js';
+import { type TimelineEntry } from '../src/contracts/messages.js';
 
 const row=(id:number,text='INTERNAL_ONLY_FACE_MARKER'):TimelineEntry=>({messageId:String(id),userId:'42',nickname:'Alice',time:Math.floor(Date.now()/1000),text});
 const typed=(id:number,segments:unknown[],extra:Record<string,unknown>={}):TimelineEntry=>({...row(id),segments,...extra} as TimelineEntry);

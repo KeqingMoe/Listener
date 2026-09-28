@@ -4,7 +4,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import { normalizeWakeDiagnostics } from '../../observability/wake-diagnostics.js';
 import { SESSION_INSPECTION_INDEXES } from './indexes.js';
-import { resolveGroupId, type ChatContentPart, type ChatMessage, type Completion, type JsonObject, type ToolDefinition } from '../../contracts/index.js';
+import { resolveGroupId } from '../../contracts/identity.js';
+import { type ChatContentPart, type ChatMessage, type Completion } from '../../contracts/model.js';
+import { type JsonObject } from '../../contracts/json.js';
+import { type ToolDefinition } from '../../contracts/tools.js';
 
 export interface ModelSessionOptions { path:string; groupId?:string; maxTranscriptBytes?:number }
 export interface ModelSessionState { sessionId:string; generation:number; wakeId?:string; resetReason?:string; needsRecovery:boolean }

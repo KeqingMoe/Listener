@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { normalizeOneBotEvent, recordToolMessage } from '../src/onebot/ingest.js';
 import { WorldEventStore } from '../src/world/events.js';
-import type { TimelineEntry } from '../src/contracts/index.js';
+import type { TimelineEntry } from '../src/contracts/messages.js';
 const eventBase = { post_type: 'message', message_type: 'group', group_id: '123', self_id: '999', user_id: '100', message_id: 10, message: [{ type: 'text', data: { text: 'hello' } }], sender: { user_id: '100', nickname: 'Alice' }, time: 1700000000 };
 const root = () => mkdtempSync(join(tmpdir(), 'qqbot-world-ingest-'));
 

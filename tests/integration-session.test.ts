@@ -8,7 +8,9 @@ import { Listener } from '../src/agent/listener.js';
 import { ModelSession } from '../src/agent/session/store.js';
 import { WorldEventStore } from '../src/world/events.js';
 import { ResponseStateExpiredError } from '../src/model/responses.js';
-import { LISTENER_GROUP, type ChatMessage, type Completion, type Memory, type Model, type TimelineEntry } from '../src/contracts/index.js';
+import { LISTENER_GROUP } from '../src/contracts/identity.js';
+import { type ChatMessage, type Completion, type Model } from '../src/contracts/model.js';
+import { type Memory, type TimelineEntry } from '../src/contracts/messages.js';
 import type { ListenerConfig } from '../src/config/listener.js';
 
 const self='900000001';
