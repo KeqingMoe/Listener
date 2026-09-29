@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { sendChatStream } from '../../support/model-sse.js';
 import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -46,7 +47,7 @@ test('real entrypoint uses the configured nondefault owner for confirmation and 
   }else{assert.equal(group,A);assert.equal(toolMessages.length,2);const {wake_budget,...result}=JSON.parse(toolMessages.at(-1).content);assert.deepEqual(result,{status:'executed'});assert.equal(wake_budget.used_tool_calls,2);
    assert.deepEqual(mutations().map(c=>c.params),[{group_id:A,user_id:TARGET,duration:120}]);assert.equal(sends.length,0);next=op('finish',{});
   }
-  res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[next,...(group===B&&next.function.name==='mute_member'?[{...op('finish',{}),id:'finish_B'}]:[])]}}]}));notify();
+  sendChatStream(res,{choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[next,...(group===B&&next.function.name==='mute_member'?[{...op('finish',{}),id:'finish_B'}]:[])]}}]});notify();
  })().catch(error=>{fail(error);if(!res.headersSent)res.writeHead(500);res.end();});});
  http.on('connection',socket=>{sockets.add(socket);socket.once('close',()=>{sockets.delete(socket);notify();});});http.on('error',fail);
  const ws=new WebSocketServer({host:'127.0.0.1',port:0});ws.on('error',fail);ws.on('connection',(socket,req)=>{

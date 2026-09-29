@@ -27,15 +27,19 @@ async function capture(work: () => Promise<void>) {
   } finally { await logger.close(); await rm(directory, { recursive: true, force: true }); }
 }
 const model = (timeoutMs = 1000) => new OpenAIModel({ baseUrl: 'https://example.invalid/v1', apiKey: secret, model: secret, timeoutMs, maxTokens: 10 });
-const reply = (usage: unknown = {}, finish_reason = 'stop') => JSON.stringify({ choices: [{ message: { role: 'assistant', content: secret }, finish_reason }], usage });
+const reply = (usage: unknown = {}, finish_reason = 'stop') => new Response(
+  `data: ${JSON.stringify({ choices: [{ index: 0, delta: { role: 'assistant', content: secret }, finish_reason: null }] })}\n\n` +
+  `data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason }], usage })}\n\ndata: [DONE]\n\n`,
+  { headers: { 'content-type': 'text/event-stream' } },
+);
 
 test('model logs sanitized usage, durations, inherited trace, and stable completion shape', async () => {
   const original = globalThis.fetch;
   try {
     const rows = await capture(async () => {
-      globalThis.fetch = async () => new Response(reply({ prompt_tokens: 12, completion_tokens: -1, total_tokens: secret, detail: secret }));
+      globalThis.fetch = async () => reply({ prompt_tokens: 12, completion_tokens: -1, total_tokens: secret, detail: secret });
       assert.deepEqual(await model().complete([{ role: 'user', content: secret }]), { content: secret, tool_calls: [] });
-      globalThis.fetch = async () => new Response(reply({ prompt_tokens: 1.5, completion_tokens: 4, total_tokens: 16 }));
+      globalThis.fetch = async () => reply({ prompt_tokens: 1.5, completion_tokens: 4, total_tokens: 16 });
       await model().complete([]);
     });
     const completed = rows.filter(row => row.event === 'model.complete');
@@ -58,8 +62,8 @@ test('model failure classification never logs remote errors, headers, bodies or 
         ['http_error', async () => new Response(secret, { status: 429, headers: { 'x-secret': secret } })],
         ['network_error', async () => { throw new Error(secret); }],
         ['invalid_response', async () => new Response(secret)],
-        ['truncated_response', async () => new Response(reply({}, 'length'))],
-        ['response_too_large', async () => new Response(secret, { headers: { 'content-length': '300000' } })],
+        ['truncated_response', async () => new Response(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: secret }, finish_reason: 'length' }] })}\n\ndata: [DONE]\n\n`, { headers: { 'content-type': 'text/event-stream' } })],
+        ['response_too_large', async () => new Response(secret, { headers: { 'content-type':'text/event-stream', 'content-length': '20000000' } })],
       ];
       for (const [code, fetcher] of cases) {
         globalThis.fetch = fetcher;

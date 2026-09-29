@@ -1,4 +1,5 @@
 import test from "node:test";
+import { sendChatStream } from '../../support/model-sse.js';
 import assert from "node:assert/strict";
 import {
   mkdtempSync,
@@ -187,9 +188,7 @@ test(
           modelCalls === 1
             ? { name: "read_events", arguments: '{"limit":100}' }
             : { name: "finish", arguments: "{}" };
-        res.writeHead(200, { "content-type": "application/json" });
-        res.end(
-          JSON.stringify({
+        sendChatStream(res, {
             choices: [
               {
                 finish_reason: "tool_calls",
@@ -206,8 +205,7 @@ test(
                 },
               },
             ],
-          }),
-        );
+          });
         notify();
       })().catch((error) => {
         fail(error);

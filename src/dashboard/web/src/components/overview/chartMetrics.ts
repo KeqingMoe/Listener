@@ -15,6 +15,7 @@ export const chartMetrics = [
   { key: "totalInput", label: "总输入 tokens", field: "totalInputTokens", divisor: 1, unit: "tokens" },
   { key: "cachedInput", label: "缓存输入 tokens", field: "cachedInputTokens", divisor: 1, unit: "tokens" },
   { key: "output", label: "输出 tokens", field: "outputTokens", divisor: 1, unit: "tokens" },
+  { key: "ttft", label: "TTFT（秒）", field: "ttftMs", divisor: 1000, unit: "秒" },
   { key: "tps", label: "TPS（tokens/秒）", field: "tps", divisor: 1, unit: "tokens/秒" },
   { key: "cacheHitRate", label: "缓存命中率（%）", field: "cacheHitRate", divisor: 0.01, unit: "%" },
 ] as const;

@@ -5,7 +5,9 @@ import { ResponsesModel, ResponseStateExpiredError } from '../../../src/model/re
 import { sanitizeInspection, sanitizeInspectionValue } from '../../../src/observability/request-inspection.js';
 import type { ModelRequestRecord, ModelRequestStart } from '../../../src/observability/model-usage.js';
 const options={baseUrl:'http://127.0.0.1:1/v1',apiKey:'fixture-api-key',model:'fixture',timeoutMs:1000,maxTokens:10};
-const reply={id:'chat-business-id',choices:[{finish_reason:'stop',message:{role:'assistant',content:'hello',reasoning_content:'actual provider reasoning'}}]};
+const reply={id:'chat-business-id',choices:[{index:0,finish_reason:'stop',delta:{role:'assistant',content:'hello',reasoning_content:'actual provider reasoning'}}]};
+const chatStream=(raw:unknown,headers:Record<string,string>={})=>new Response(`data: ${JSON.stringify(raw)}\n\ndata: [DONE]\n\n`,{headers:{'content-type':'text/event-stream',...headers}});
+const responseStream=(raw:any,headers:Record<string,string>={})=>new Response(`data: ${JSON.stringify({type:'response.'+raw.status,response:raw})}\n\n`,{headers:{'content-type':'text/event-stream',...headers}});
 
 test('inspection sanitizes only credentials, preserves business data and omits inline images',()=>{
   const code='a'.repeat(32);
@@ -44,12 +46,12 @@ test('structured truncation preserves __proto__ as an own key without modifying 
   assert.equal(JSON.parse(JSON.stringify(value)).message_id,'123');assert.ok(Buffer.byteLength(JSON.stringify(value))<=1024);
 });
 
-test('Chat immutable start and finally end capture actual nonstreaming wire request and response',async t=>{
+test('Chat immutable start and finally end capture streaming request and assembled response',async t=>{
   let wire='';const starts:ModelRequestStart[]=[],ends:ModelRequestRecord[]=[];
-  t.mock.method(globalThis,'fetch',async(_url,init)=>{wire=String(init?.body);return new Response(JSON.stringify(reply),{headers:{'x-request-id':'provider-id','set-cookie':'never-capture'}});});
+  t.mock.method(globalThis,'fetch',async(_url,init)=>{wire=String(init?.body);return chatStream(reply,{'x-request-id':'provider-id','set-cookie':'never-capture'});});
   const model=new OpenAIModel({...options,onRequestStart:r=>{starts.push(r);assert.ok(Object.isFrozen(r));throw Error('observer');},onRequest:r=>{ends.push(r);throw Error('observer');}});
   assert.equal((await model.complete([{role:'user',content:'private prompt'}])).content,'hello');
-  assert.equal(starts.length,1);assert.equal(ends.length,1);assert.equal(starts[0]!.requestJson,wire);assert.equal(JSON.parse(wire).stream,false);
+  assert.equal(starts.length,1);assert.equal(ends.length,1);assert.equal(starts[0]!.requestJson,wire);assert.equal(JSON.parse(wire).stream,true);
   assert.equal(ends[0]!.inspection?.requestJson,wire);assert.equal(ends[0]!.inspection?.reasoningText,'actual provider reasoning');assert.equal(ends[0]!.inspection?.responseId,'chat-business-id');assert.equal(ends[0]!.inspection?.providerRequestId,'provider-id');
   const {inspection,...publicRecord}=ends[0]!;assert.ok(!JSON.stringify(publicRecord).includes('private prompt'));assert.ok(!JSON.stringify(inspection).includes('never-capture'));
 });
@@ -64,14 +66,14 @@ test('Chat stalled HTTP error body is partial and preserves known 400, not timeo
 
 test('Chat cancellation without assistant output still has paired inspection and collected partial body',async t=>{
   const abort=new AbortController();const starts:ModelRequestStart[]=[],ends:ModelRequestRecord[]=[];
-  t.mock.method(globalThis,'fetch',async(_url,init)=>new Response(new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('{"partial":'));init?.signal?.addEventListener('abort',()=>c.error(Error('aborted')));setTimeout(()=>abort.abort(),5);}})));
+  t.mock.method(globalThis,'fetch',async(_url,init)=>new Response(new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('data: {"partial":'));init?.signal?.addEventListener('abort',()=>c.error(Error('aborted')));setTimeout(()=>abort.abort(),5);}}),{headers:{'content-type':'text/event-stream'}}));
   await assert.rejects(new OpenAIModel({...options,onRequestStart:r=>starts.push(r),onRequest:r=>ends.push(r)}).complete([],[],abort.signal),(e:unknown)=>e instanceof ModelError&&e.code==='cancelled');
   assert.equal(starts.length,1);assert.equal(ends.length,1);assert.equal(starts[0]!.requestId,ends[0]!.requestId);assert.equal(ends[0]!.inspection?.contentTruncated,true);assert.match(ends[0]!.inspection!.responseJson!,/partial/);
 });
 
 test('Responses captures reasoning, actual live/restored modes and explicit expired-chain error without replay',async t=>{
   const starts:ModelRequestStart[]=[],ends:ModelRequestRecord[]=[];let calls=0;
-  t.mock.method(globalThis,'fetch',async()=>{calls++;return calls===1?new Response(JSON.stringify({id:'resp-one',status:'completed',output:[{type:'reasoning',summary:[{type:'summary_text',text:'actual summary'}],encrypted_content:'opaque'},{type:'message',role:'assistant',content:[{type:'output_text',text:'answer'}]}]}),{headers:{'x-request-id':'response-provider'}}):new Response(JSON.stringify({error:{code:'previous_response_not_found',message:'full provider error'}}),{status:400});});
+  t.mock.method(globalThis,'fetch',async()=>{calls++;return calls===1?responseStream({id:'resp-one',status:'completed',usage:{input_tokens:1,output_tokens:2},output:[{type:'reasoning',summary:[{type:'summary_text',text:'actual summary'}],encrypted_content:'opaque'},{type:'message',role:'assistant',content:[{type:'output_text',text:'answer'}]}]},{'x-request-id':'response-provider'}):new Response(JSON.stringify({error:{code:'previous_response_not_found',message:'full provider error'}}),{status:400});});
   const model=new ResponsesModel({...options,sessionId:'test',onRequestStart:r=>starts.push(r),onRequest:r=>ends.push(r)});
   const messages=[{role:'user' as const,content:'question'}];await model.complete(messages);const checkpoint=model.getContinuationCheckpoint()!;
   assert.match(ends[0]!.inspection!.reasoningText!,/actual summary/);assert.match(ends[0]!.inspection!.reasoningText!,/not readable/);

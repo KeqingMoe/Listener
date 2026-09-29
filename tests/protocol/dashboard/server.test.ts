@@ -182,7 +182,8 @@ test("safe metadata, weighted usage, missing usage, and enabled-group isolation"
     assert.equal(b.summary.cacheHitRate, 0.86);
     assert.equal(b.summary.cachedInputTokens, 860);
     assert.equal(b.summary.uncachedInputTokens, 140);
-    assert.equal(b.summary.tps, 500); // Only completed success with known output contributes.
+    assert.equal(b.summary.tps, null); // Historical requests lack streaming timings.
+    assert.equal(b.summary.ttftMs, null);
     assert.equal(b.groups.length, 1);
     assert.doesNotMatch(r.body, new RegExp(sentinel + "|NOT_WAKE_ID|foreign"));
     assert.equal(

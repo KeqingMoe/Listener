@@ -18,7 +18,7 @@ const tabs = [{ id: 'output', label: '输出' }, { id: 'reasoning', label: '思�
 watch(() => [props.requestId, props.groupId], () => { tab.value = 'output'; });
 const count = (value: number | null) => value == null ? '—' : number(value);
 const hasFailure = computed(() => !!data.value && ['failed', 'error', 'timeout', 'cancelled', 'interrupted'].includes(data.value.request.outcome));
-const mode = (value: string | null) => value ? ({fresh:'新请求',continue_live:'续接',continue_restored:'恢复续接','non-stream':'非流式'} as Record<string,string>)[value] || value : '';
+const mode = (value: string | null) => value ? ({fresh:'新请求',continue_live:'续接',continue_restored:'恢复续接'} as Record<string,string>)[value] || value : '';
 const diagnosticFacts = computed(() => {
   const d = data.value?.request.diagnostics;
   if (!d) return [] as [string,string][];

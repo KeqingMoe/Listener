@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { sendChatStream } from '../../support/model-sse.js';
 import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -45,7 +46,7 @@ test('real entrypoint performs isolated reactions, exposes only local ledger sta
   else if(group===B&&round===3)operations=[react('203'),send('must-not-send-after-cancel'),react('201','128077','remove'),tool('finish')];
   else throw Error('unexpected fixture model request');
   for(const op of operations){if(op.function.name!=='react_message')continue;const args=JSON.parse(op.function.arguments),original=events.get(args.message_id);if(original?.group_id!==group)continue;const floors=verificationFloors.get(args.message_id)??[];floors.push(verified.get(args.message_id)??0);verificationFloors.set(args.message_id,floors);}
-  res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:operations.map((op,i)=>({...op,id:`${op.id}_${group}_${round}_${i}`}))}}]}));notify();
+  sendChatStream(res,{choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:operations.map((op,i)=>({...op,id:`${op.id}_${group}_${round}_${i}`}))}}]});notify();
  })().catch(error=>{fail(error);if(!res.headersSent)res.writeHead(500);res.end();});});
  http.on('connection',socket=>{sockets.add(socket);socket.once('close',()=>{sockets.delete(socket);notify();});});http.on('error',fail);
  const ws=new WebSocketServer({host:'127.0.0.1',port:0});ws.on('error',fail);

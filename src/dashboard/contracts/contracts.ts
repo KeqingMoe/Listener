@@ -36,8 +36,9 @@ export interface UsageSummary {
   cacheHitRate: number | null;
   durationP50Ms: number | null;
   durationP95Ms: number | null;
-  /** Weighted non-streaming end-to-end throughput for successful requests with known output usage. */
+  /** Streaming output rate, excluding TTFT, for requests with valid timing and usage. */
   tps: number | null;
+  ttftMs: number | null;
 }
 export interface OverviewResponse {
   range: Range;
@@ -49,6 +50,7 @@ export interface OverviewResponse {
 export interface WakeItem extends CacheMetrics {
   performance: import('./metrics.js').PerformanceMetrics;
   tps: number | null;
+  ttftMs: number | null;
   wakeId: string;
   groupId: string;
   sessionId: string;
@@ -76,6 +78,7 @@ export interface WakesResponse {
 export interface RequestItem extends CacheMetrics {
   performance: import('./metrics.js').PerformanceMetrics;
   tps: number | null;
+  ttftMs: number | null;
   requestId: string;
   startedAt: number;
   endedAt: number;
@@ -149,7 +152,7 @@ export interface ApiError {
 // Wake list/review summaries use stable inspection/message physical-turn associations, including failures and running requests.
 // Legacy metadata detail keeps persisted message.request_id-only request arrays; never assume wakeId=turnId.
 // uncachedInputTokens and cacheHitRate use only valid paired input/cache samples; missing usage is never zero.
-// performance.modelTps (legacy tps) uses tpsOutputTokens/tpsDurationMs from the SAME successful known-output samples.
+// performance.tps uses only successful streaming requests with known output usage and generation timing; ttftMs is the mean first-token wait of measured requests.
 // performance.modelDurationMs sums ended HTTP durations including failures; coverage exposes missing measurements.
 // toolDurationMs is cumulative real ledger timing; toolWallDurationMs/modelWallDurationMs union nested/overlapping intervals.
 // otherDurationMs = wake wall minus model interval union, NOT exclusive tool/NapCat/DB latency; never add tool cumulative time to wall time.

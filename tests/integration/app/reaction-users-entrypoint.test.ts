@@ -11,6 +11,7 @@ import type {AddressInfo,Socket} from 'node:net';
 import {DatabaseSync} from 'node:sqlite';
 import {WebSocketServer,type WebSocket} from 'ws';
 import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.js';
+import { sendChatStream } from '../../support/model-sse.js';
 
 const GROUP=LISTENER_GROUP,SELF='99999',TARGET='9001';
 function message(id:string,body:string,user=OWNER_ID){return {post_type:'message',message_type:'group',group_id:GROUP,user_id:user,self_id:SELF,message_id:id,time:Math.floor(Date.now()/1000),sender:{user_id:user,nickname:'fixture'},message:[{type:'at',data:{qq:SELF}},{type:'text',data:{text:body}}]};}
@@ -40,7 +41,7 @@ test('real entrypoint queries reaction users on demand, keeps pagination opaque,
    else if(requests.length===6){assert.equal(result.target_found,true);assert.equal(result.complete,false);assert.equal(result.has_more,true);assert.ok(result.users.some((u:any)=>u.user_id===OWNER_ID&&u.nickname==='fixture owner'));proofAfter=calls.length;next=query(result.next_cursor);}
    else{assert.equal(requests.length,7);assert.equal(result.target_found,true,'finding the target on an earlier page survives a final empty EOF page');assert.equal(result.complete,true);assert.equal(result.has_more,false);next=send('verified reaction membership');}
   }
-  res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:next.function.name==='send_message'?[next,{...finish(),id:`finish_${requests.length}`}]:[next]}}]}));notify();
+  sendChatStream(res,{choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:next.function.name==='send_message'?[next,{...finish(),id:`finish_${requests.length}`}]:[next]}}]});notify();
  })().catch(error=>{fail(error);if(!res.headersSent)res.writeHead(500);res.end();});});
  http.on('connection',socket=>{sockets.add(socket);socket.once('close',()=>{sockets.delete(socket);notify();});});http.on('error',fail);
  const ws=new WebSocketServer({host:'127.0.0.1',port:0});ws.on('error',fail);ws.on('connection',socket=>{

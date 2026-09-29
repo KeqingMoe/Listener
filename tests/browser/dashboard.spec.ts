@@ -14,10 +14,10 @@ function performance(attribution: PerformanceMetrics['attribution']): Performanc
     wallDurationMs: single ? 2000 : attribution === 'wake' ? 9000 : null, modelDurationMs: single ? 2000 : 6000,
     modelWallDurationMs: single ? 2000 : attribution === 'wake' ? 6000 : null, toolDurationMs: single ? null : 200,
     toolWallDurationMs: attribution === 'wake' ? 200 : null, otherDurationMs: attribution === 'wake' ? 3000 : null,
-    modelTps: 40, roundTps: attribution === 'wake' ? 17.8 : null,
-    tpsDurationMs: single ? 2000 : 4000, tpsOutputTokens: single ? 80 : 160,
+    tps: 40, ttftMs: 500,
+    decodeDurationMs: single ? 2000 : 4000, decodeOutputTokens: single ? 80 : 160,
     whyIncomplete: attribution === 'wake' ? null : 'not_wake',
-    coverage: { requests: single ? 1 : 3, endedRequests: single ? 1 : 3, modelDurationRequests: single ? 1 : 3, modelIntervalRequests: single ? 1 : 3, tpsRequests: single ? 1 : 2, tools: single ? 0 : 1, toolDurationTools: single ? 0 : 1 },
+    coverage: { requests: single ? 1 : 3, endedRequests: single ? 1 : 3, modelDurationRequests: single ? 1 : 3, modelIntervalRequests: single ? 1 : 3, tpsRequests: single ? 1 : 2, ttftRequests: single ? 1 : 2, tools: single ? 0 : 1, toolDurationTools: single ? 0 : 1 },
     attribution, complete: attribution === 'wake',
   };
 }
@@ -25,7 +25,7 @@ const now = Date.UTC(2026, 8, 21, 10);
 const range = { since: now - 86400000, until: now };
 const availability = { telemetry: true, sessions: [{ groupId: '10001', available: true }] };
 const usage: UsageSummary = {
-  performance: performance('aggregate'), tps: 40,
+  performance: performance('aggregate'), tps: 40, ttftMs: 500,
   requests: 3, successes: 2, errors: 1, timeouts: 0, cancelled: 0, running: 0, interrupted: 0, unknown: 0,
   inputTokens: 1200, uncachedInputTokens: 400, cachedInputTokens: 800, outputTokens: 160,
   cacheHitRate: 0.6667,
@@ -38,11 +38,11 @@ const request: ReviewRequest = {
   model: 'synthetic-model', transport: 'responses', startedAt: now - 6000, endedAt: now - 4000,
   durationMs: 2000, status: 'success', outcome: 'success', errorCode: null, httpStatus: null,
   inputTokens: 200, totalInputTokens: 600, cachedInputTokens: 400, outputTokens: 80, reasoningTokens: 30,
-  tps: 40, responseId: 'resp-synthetic-2', previousResponseId: 'resp-synthetic-1', providerRequestId: 'provider-synthetic-2',
+  tps: 40, ttftMs: 500, responseId: 'resp-synthetic-2', previousResponseId: 'resp-synthetic-1', providerRequestId: 'provider-synthetic-2',
   requestMode: 'fresh', hasInspection: true,
 };
 const previous: ReviewRequest = { ...request, transport: 'chat', requestId: 'req-synthetic-1', responseId: 'resp-synthetic-1', previousResponseId: null, startedAt: now - 9000, endedAt: now - 7000 };
-const failed: ReviewRequest = { ...request, performance: { ...performance('request'), modelTps: null, tpsDurationMs: null, tpsOutputTokens: null, coverage: { ...performance('request').coverage, tpsRequests: 0 } }, cacheHitRate: null, requestId: 'req-synthetic-3', status: 'error', outcome: 'failed', errorCode: 'http_error', httpStatus: 429, responseId: null, previousResponseId: 'resp-synthetic-2', startedAt: now - 3000, endedAt: now - 1000, inputTokens: null, totalInputTokens: null, cachedInputTokens: null, outputTokens: null, reasoningTokens: null, tps: null };
+const failed: ReviewRequest = { ...request, performance: { ...performance('request'), tps: null, ttftMs: null, decodeDurationMs: null, decodeOutputTokens: null, coverage: { ...performance('request').coverage, tpsRequests: 0, ttftRequests: 0 } }, cacheHitRate: null, requestId: 'req-synthetic-3', status: 'error', outcome: 'failed', errorCode: 'http_error', httpStatus: 429, responseId: null, previousResponseId: 'resp-synthetic-2', startedAt: now - 3000, endedAt: now - 1000, inputTokens: null, totalInputTokens: null, cachedInputTokens: null, outputTokens: null, reasoningTokens: null, tps: null, ttftMs: null };
 const tool: ReviewTool = {
   ordinal: 1, name: 'read_events', requestId: request.requestId, callId: 'call-synthetic', state: 'finished', status: 'ok', outcome: 'handled', reasonCode: null,
   proposedAt: now - 4500, startedAt: now - 4400, finishedAt: now - 4200, durationMs: 200,
@@ -148,7 +148,7 @@ async function mock(page: Page, state: MockState = {}) {
     if (path === '/api/meta') body = { groups: [{ groupId: '10001' }], readOnly: true, maxRangeDays: 31, now, availability };
     else if (path === '/api/overview') {
       const summary: UsageSummary = state.dense ? { ...usage, requests: 16, successes: 15, inputTokens: 9000, uncachedInputTokens: 3000, cachedInputTokens: 6000, outputTokens: 1200,
-        performance: { ...performance('aggregate'), modelDurationMs: 32000, tpsDurationMs: 30000, tpsOutputTokens: 1200, coverage: { ...performance('aggregate').coverage, requests: 16, endedRequests: 16, modelDurationRequests: 16, modelIntervalRequests: 16, tpsRequests: 15 } },
+        performance: { ...performance('aggregate'), modelDurationMs: 32000, decodeDurationMs: 30000, decodeOutputTokens: 1200, coverage: { ...performance('aggregate').coverage, requests: 16, endedRequests: 16, modelDurationRequests: 16, modelIntervalRequests: 16, tpsRequests: 15 } },
       } : usage;
       body = { ...overview, summary, groups: [{ ...summary, groupId: '10001' }] } satisfies OverviewResponse;
     }
@@ -200,8 +200,8 @@ test('overview charts preserve raw metrics, free coordinates, filters and mobile
   await expect(scatter.locator('canvas').first()).toBeVisible();
   await expect(page.getByTestId('request-trends-summary')).toContainText('3');
   const metric = page.getByLabel('散点纵轴指标');
-  await expect(metric.locator('option')).toHaveCount(7);
-  for (const key of ['input', 'totalInput', 'cachedInput', 'output', 'tps', 'cacheHitRate', 'duration']) {
+  await expect(metric.locator('option')).toHaveCount(8);
+  for (const key of ['input', 'totalInput', 'cachedInput', 'output', 'ttft', 'tps', 'cacheHitRate', 'duration']) {
     await metric.selectOption(key);
     await expect(page).toHaveURL(new RegExp(`chartMetric=${key}`));
     await expect(page.getByTestId('request-scatter-summary')).toContainText('总数 3');
@@ -522,13 +522,13 @@ test('compact overview has trifold token counts and factual health, never offlin
   expect(errors).toEqual([]);
 });
 
-test('request rows show uncached/cache/output and end-to-end TPS without adding reasoning', async ({ page }) => {
+test('request rows show uncached/cache/output and TTFT/TPS without adding reasoning', async ({ page }) => {
   await mock(page);
   await page.goto(requestUrl);
   const row = page.locator('.list-pane tbody tr').filter({ has: page.getByRole('button', { name: `查看请求 ${request.requestId}`, exact: true }) });
   await expect(row.locator('td').nth(4)).toHaveText('200 / 400 / 80');
   await expect(row.locator('td').nth(5)).toHaveText('66.7%');
-  await expect(row.locator('td').nth(6)).toHaveText('40.0');
+  await expect(row.locator('td').nth(6)).toHaveText('500 ms / 40.0');
   await expect(row.locator('td').nth(7)).toHaveText('2.00 s');
   const pane = page.locator('.request-detail');
   await expect(pane.getByRole('tablist', { name: '请求详情' })).toBeVisible();
@@ -537,10 +537,10 @@ test('request rows show uncached/cache/output and end-to-end TPS without adding 
   await expect(pane.locator('.request-tokens')).toContainText('缓存 400');
   await expect(pane.locator('.request-tokens')).toContainText('输出 80');
   await expect(pane.locator('.request-tokens')).toContainText('其中推理 30');
-  await expect(pane.getByLabel('性能指标').locator('div').filter({ hasText: '模型 TPS' }).locator('dd')).toHaveText('40.0');
+  await expect(pane.getByLabel('性能指标').locator('div').filter({ hasText: 'TPS' }).locator('dd')).toHaveText('40.0');
   await pane.getByText('技术详情', { exact: true }).click();
   await expect(pane).toContainText('新请求');
-  await expect(page.locator('.list-pane tbody tr').filter({ hasText: failed.requestId }).locator('td').nth(6)).toHaveText('—');
+  await expect(page.locator('.list-pane tbody tr').filter({ hasText: failed.requestId }).locator('td').nth(6)).toHaveText('— / —');
 });
 
 test('cancellation diagnostics stay collapsed and expose only recorded Chinese facts', async ({ page }) => {

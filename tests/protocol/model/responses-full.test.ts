@@ -7,6 +7,7 @@ import {ResponsesModel} from '../../../src/model/responses.js';
 import {ModelSession} from '../../../src/agent/session/store.js';
 import type {ChatMessage,Completion} from '../../../src/contracts/model.js';
 const options={baseUrl:'https://example.invalid/v1',apiKey:'private-key',model:'test',timeoutMs:1000,maxTokens:100,sessionId:'group',incremental:false};
+const sse=(raw:any)=>new Response(`data: ${JSON.stringify({type:'response.'+raw.status,response:raw})}\n\n`,{headers:{'content-type':'text/event-stream'}});
 const output=(n:number)=>[
  {type:'reasoning',id:`reason${n}`,encrypted_content:`encrypted${n}`,summary:[]},
  {type:'function_call',id:`fc${n}`,call_id:`c${n}`,name:'finish',arguments:'{}',status:'completed'},
@@ -16,7 +17,7 @@ const output=(n:number)=>[
 const append=(base:ChatMessage[],r:Completion):ChatMessage[]=>[...base,{role:'assistant',content:r.content,tool_calls:r.tool_calls},{role:'tool',tool_call_id:r.tool_calls[0]!.id,content:'tool-result'}];
 test('full mode preserves all native outputs in order with tool results, persists and survives failure',async t=>{
  const bodies:any[]=[];let fail=false;
- t.mock.method(globalThis,'fetch',async(_url:any,init:any)=>{bodies.push(JSON.parse(init.body));if(fail)return new Response('{"error":{"code":"previous_response_not_found"}}',{status:404});return Response.json({id:`r${bodies.length}`,status:'completed',output:output(bodies.length)});});
+ t.mock.method(globalThis,'fetch',async(_url:any,init:any)=>{bodies.push(JSON.parse(init.body));if(fail)return new Response('{"error":{"code":"previous_response_not_found"}}',{status:404});return sse({id:`r${bodies.length}`,status:'completed',output:output(bodies.length)});});
  const folder=mkdtempSync(join(tmpdir(),'responses-full-')),path=join(folder,'session.sqlite');
  try{
   const model=new ResponsesModel(options),base:ChatMessage[]=[{role:'system',content:'stable'},{role:'user',content:'user-input'}];
@@ -41,7 +42,7 @@ test('full mode preserves all native outputs in order with tool results, persist
  }finally{rmSync(folder,{recursive:true,force:true});}
 });
 test('full checkpoint bounds, isolation, mutation safety and strict validation',async t=>{
- t.mock.method(globalThis,'fetch',async()=>Response.json({id:'r',status:'completed',output:output(1)}));
+ t.mock.method(globalThis,'fetch',async()=>sse({id:'r',status:'completed',output:output(1)}));
  const model=new ResponsesModel(options),base:ChatMessage[]=[{role:'system',content:'stable'}];await model.complete(base);
  const cp=model.getContinuationCheckpoint()!;
  const restored=new ResponsesModel(options);restored.restoreContinuationCheckpoint(cp);
@@ -59,14 +60,14 @@ test('full checkpoint bounds, isolation, mutation safety and strict validation',
 });
 test('full mode starts fresh on changed projection and never reuses stale opaque output',async t=>{
  const bodies:any[]=[];
- t.mock.method(globalThis,'fetch',async(_u:any,init:any)=>{bodies.push(JSON.parse(init.body));return Response.json({id:'r',status:'completed',output:output(1)});});
+ t.mock.method(globalThis,'fetch',async(_u:any,init:any)=>{bodies.push(JSON.parse(init.body));return sse({id:'r',status:'completed',output:output(1)});});
  const model=new ResponsesModel(options),base:ChatMessage[]=[{role:'system',content:'stable'}];await model.complete(base);
  await model.complete([{role:'system',content:'changed'},{role:'user',content:'new'}]);
  assert.deepEqual(bodies[1].input,[{role:'user',content:[{type:'input_text',text:'new'}]}]);
  assert.equal(model.getContinuationCheckpoint()!.outputHistory!.length,1);
 });
 test('tampered native mapping cannot replace user inputs or change tool arguments',async t=>{
- let requests=0;t.mock.method(globalThis,'fetch',async()=>{requests++;return Response.json({id:'r',status:'completed',output:output(1)});});
+ let requests=0;t.mock.method(globalThis,'fetch',async()=>{requests++;return sse({id:'r',status:'completed',output:output(1)});});
  const model=new ResponsesModel(options),base:ChatMessage[]=[{role:'system',content:'stable'},{role:'user',content:'user'}];
  const result=await model.complete(base),next=append(base,result);
  for(const change of ['index','arguments']){
@@ -82,7 +83,7 @@ test('tampered native mapping cannot replace user inputs or change tool argument
  assert.equal(requests,1);
 });
 test('removed middle native mapping fails closed before any request',async t=>{
- let count=0;t.mock.method(globalThis,'fetch',async()=>Response.json({id:`r${++count}`,status:'completed',output:output(count)}));
+ let count=0;t.mock.method(globalThis,'fetch',async()=>sse({id:`r${++count}`,status:'completed',output:output(count)}));
  const model=new ResponsesModel(options),base:ChatMessage[]=[{role:'user',content:'start'}];
  const first=await model.complete(base),next=append(base,first),second=await model.complete(next),last=append(next,second);
  const third=await model.complete(last),afterThird=append(last,third);

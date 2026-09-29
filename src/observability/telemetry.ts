@@ -1,5 +1,6 @@
 import { closeSync, constants, fchmodSync, fstatSync, openSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
+import { randomUUID } from 'node:crypto';
 import { types } from 'node:util';
 import { normalizeModelRequestDiagnostics } from './model-diagnostics.js';
 import { REQUEST_ERRORS, normalizeUsage, type ModelRequestRecord, type ModelRequestStart, type ModelRequestInspection } from './model-usage.js';
@@ -22,6 +23,7 @@ export interface TelemetrySummary {
   missingInputUsage: number; missingCacheUsage: number;
   cacheHitRate: number | null;
 }
+const validTime=(v:unknown):number|null=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=Number.MAX_SAFE_INTEGER?v:null;
 const int=(v:unknown):number|null=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0?v:null;
 const text=(v:unknown,max=128):string|null=>typeof v==='string'&&v.length>0&&v.length<=max&&!/[\u0000-\u001f\u007f]/.test(v)?v:null;
 const RETENTION_MS=7*24*60*60*1000;
@@ -51,7 +53,8 @@ export class TelemetryStore {
         request_id TEXT PRIMARY KEY, started_at INTEGER NOT NULL, ended_at INTEGER NOT NULL,
         duration_ms REAL NOT NULL, transport TEXT NOT NULL, model TEXT NOT NULL,
         status TEXT NOT NULL, error_code TEXT, http_status INTEGER,
-        input_tokens INTEGER, output_tokens INTEGER, total_tokens INTEGER,
+        ttft_ms REAL, decode_duration_ms REAL,
+         input_tokens INTEGER, output_tokens INTEGER, total_tokens INTEGER,
         cached_input_tokens INTEGER, reasoning_tokens INTEGER,
         group_id TEXT, turn_id TEXT, phase TEXT, diagnostics TEXT
       );`);
@@ -59,6 +62,13 @@ export class TelemetryStore {
       const columns=this.db.prepare('PRAGMA table_info(model_requests)').all();
       if(!columns.some(column=>typeof column.name==='string'&&column.name.toLowerCase()==='diagnostics')) {
         this.db.exec('ALTER TABLE model_requests ADD COLUMN diagnostics TEXT;');
+      }
+      const newDecodeColumn=!columns.some(column=>column.name==='decode_duration_ms');
+      for(const name of ['ttft_ms','decode_duration_ms']) if(!columns.some(column=>typeof column.name==='string'&&column.name.toLowerCase()===name)) this.db.exec(`ALTER TABLE model_requests ADD COLUMN ${name} REAL;`);
+      // Changing TPS semantics invalidates cached trend points even without row writes.
+      // The epoch rotation commits atomically with the nullable column migration.
+      if(newDecodeColumn && this.db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='request_change_meta'").get()) {
+        this.db.prepare('UPDATE request_change_meta SET epoch=? WHERE singleton=1').run(randomUUID());
       }
       this.db.exec(`CREATE INDEX IF NOT EXISTS model_requests_started ON model_requests(started_at);
         CREATE INDEX IF NOT EXISTS model_requests_group_started ON model_requests(group_id,started_at);
@@ -161,13 +171,16 @@ export class TelemetryStore {
     const id=text(value.requestId,128), model=text(value.model,128), transport=value.transport, status=value.status;
     const started=int(value.startedAt), ended=int(value.endedAt), duration=value.durationMs;
     if(!id||!model||started===null||ended===null||typeof duration!=='number'||!Number.isFinite(duration)||duration<0||duration>Number.MAX_SAFE_INTEGER||ended<started||!['chat','responses'].includes(transport)||!['success','error'].includes(status))throw new Error('Invalid telemetry record');
+    let ttft=validTime(value.ttftMs),decode=validTime(value.decodeDurationMs);
+    if(ttft!==null&&ttft>duration)ttft=null;
+    if(decode!==null&&(decode>duration||(ttft!==null&&ttft+decode>duration)))decode=null;
     const u=normalizeUsage(value.usage), error=value.errorCode??null, http=value.httpStatus===undefined?null:int(value.httpStatus);
     if(error!==null&&!REQUEST_ERRORS.includes(error))throw new Error('Invalid telemetry error');
     if(value.httpStatus!==undefined&&(http===null||http<100||http>599))throw new Error('Invalid telemetry status');
     const descriptor=Object.getOwnPropertyDescriptor(value,'diagnostics');
     const diagnostics=normalizeModelRequestDiagnostics(descriptor&&Object.hasOwn(descriptor,'value')?descriptor.value:undefined);
-    this.db.prepare(`INSERT OR IGNORE INTO model_requests(request_id,started_at,ended_at,duration_ms,transport,model,status,error_code,http_status,input_tokens,output_tokens,total_tokens,cached_input_tokens,reasoning_tokens,group_id,turn_id,phase,diagnostics) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(id,started,ended,duration,transport,model,status,error,http,u.inputTokens??null,u.outputTokens??null,u.totalTokens??null,u.cachedInputTokens??null,u.reasoningTokens??null,text(value.groupId,64),text(value.turnId,128),text(value.phase,64),diagnostics?JSON.stringify(diagnostics):null);
+    this.db.prepare(`INSERT OR IGNORE INTO model_requests(request_id,started_at,ended_at,duration_ms,transport,model,status,error_code,http_status,input_tokens,output_tokens,total_tokens,cached_input_tokens,reasoning_tokens,group_id,turn_id,phase,diagnostics,ttft_ms,decode_duration_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(id,started,ended,duration,transport,model,status,error,http,u.inputTokens??null,u.outputTokens??null,u.totalTokens??null,u.cachedInputTokens??null,u.reasoningTokens??null,text(value.groupId,64),text(value.turnId,128),text(value.phase,64),diagnostics?JSON.stringify(diagnostics):null,ttft,decode);
     try {
       this.persistInspection(value,status,ended,sanitizeInspection(value.inspection??{},this.secrets));
     } catch { /* Inspection failures must not change existing record semantics. */ }

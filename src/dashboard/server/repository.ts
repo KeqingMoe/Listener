@@ -75,7 +75,7 @@ export function summarize(rows: Row[], tools?: MetricTool[]): UsageSummary {
     cacheHitRate: denominator ? numerator / denominator : null,
     durationP50Ms: percentile([...durations], 0.5),
     durationP95Ms: percentile([...durations], 0.95),
-    tps: performance.modelTps,
+    tps: performance.tps, ttftMs: performance.ttftMs,
     performance,
   };
 }
@@ -279,7 +279,7 @@ export class Repository {
       startedAt: row.created_at,
       ...finish,
       durationMs: intervalDuration(row.created_at, finish.finishedAt),
-      tps: usage.tps, cacheHitRate: usage.cacheHitRate,
+      tps: usage.tps, ttftMs: usage.ttftMs, cacheHitRate: usage.cacheHitRate,
       performance: performanceMetrics(requests.filter(r=>r.group_id===groupId && ids.has(r.request_id)), {attribution:'wake',startedAt:row.created_at,finishedAt:finish.finishedAt,tools:this.toolTimings(undefined,groupId,row.wake_id),sourceComplete:false}),
       trigger: null,
       modelRequests: usage.requests,
@@ -396,7 +396,7 @@ export class Repository {
     const requests: RequestItem[] = allRequests
       .slice(0, 500)
       .map((r) => ({
-        ...(() => { const u=summarize([r]); return {tps:u.tps,cacheHitRate:u.cacheHitRate,performance:performanceMetrics([r],{attribution:'request'})}; })(),
+        ...(() => { const u=summarize([r]); return {tps:u.tps,ttftMs:u.ttftMs,cacheHitRate:u.cacheHitRate,performance:performanceMetrics([r],{attribution:'request'})}; })(),
         requestId: r.request_id,
         startedAt: r.started_at,
         endedAt: r.ended_at,

@@ -23,6 +23,9 @@ export interface ModelRequestRecord {
   startedAt: number;
   endedAt: number;
   durationMs: number;
+  /** Streaming measurements; null for historical or non-streaming requests. */
+  ttftMs?: number | null;
+  decodeDurationMs?: number | null;
   transport: 'chat' | 'responses';
   model: string;
   status: 'success' | 'error';

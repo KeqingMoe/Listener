@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { sendChatStream } from '../../support/model-sse.js';
 import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -37,7 +38,7 @@ test('real entrypoint receives wire reaction notices and refreshes the bot messa
    if(wakeStep===3&&wakeNumber>1){const last=current.filter((m:any)=>m.role==='tool').at(-1);const aggregate=JSON.parse(last.content);assert.equal(aggregate.status,'ok');assert.equal(aggregate.message.messageId,BOT_MESSAGE);assert.equal(aggregate.message.reactions.items[0].count,wakeNumber===4?9:1);aggregates.push(aggregate.message);}
    const step=wakeStep++;
    const op=step===0?{name:'read_events',arguments:'{"limit":100}'}:step===1?{name:'read_messages',arguments:'{"limit":100}'}:step===2?(wakeNumber===1?{name:'send_message',arguments:JSON.stringify({segments:[{type:'text',text:'bot message to receive reaction'}]})}:{name:'read_message',arguments:JSON.stringify({message_id:BOT_MESSAGE})}):{name:'finish',arguments:'{}'};
-  res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[{id:`op_${wakeNumber}_${wakeStep}`,type:'function',function:op},...(op.name==='send_message'?[{id:`finish_${payloads.length}`,type:'function',function:{name:'finish',arguments:'{}'}}]:[])]}}]}));notify();
+  sendChatStream(res,{choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[{id:`op_${wakeNumber}_${wakeStep}`,type:'function',function:op},...(op.name==='send_message'?[{id:`finish_${payloads.length}`,type:'function',function:{name:'finish',arguments:'{}'}}]:[])]}}]});notify();
  })().catch(error=>{fail(error);if(!res.headersSent)res.writeHead(500);res.end();});});
  http.on('connection',socket=>{sockets.add(socket);socket.once('close',()=>{sockets.delete(socket);notify();});});http.on('error',fail);
  const ws=new WebSocketServer({host:'127.0.0.1',port:0});ws.on('error',fail);

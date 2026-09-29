@@ -7,8 +7,8 @@ import type { ModelRequestRecord } from '../../../src/observability/model-usage.
 import type { ChatMessage } from '../../../src/contracts/model.js';
 
 const options={baseUrl:'https://invalid.example/v1',apiKey:'secret-key',model:'test',timeoutMs:1000,maxTokens:100,sessionId:'test'};
-const chat=()=>new Response(JSON.stringify({choices:[{message:{role:'assistant',content:'ok'},finish_reason:'stop'}]}));
-const response=()=>new Response(JSON.stringify({id:'secret-response-id',status:'completed',output:[{type:'message',role:'assistant',content:[{type:'output_text',text:'ok'}]}]}));
+const chat=()=>new Response('data: '+JSON.stringify({choices:[{index:0,delta:{content:'ok'},finish_reason:'stop'}]})+'\n\ndata: [DONE]\n\n',{headers:{'content-type':'text/event-stream'}});
+const response=()=>new Response('data: '+JSON.stringify({type:'response.completed',response:{id:'secret-response-id',status:'completed',output:[{type:'message',role:'assistant',content:[{type:'output_text',text:'ok'}]}]}})+'\n\n',{headers:{'content-type':'text/event-stream'}});
 
 test('diagnostics projects only exact own data fields without executing getters or proxies',()=>{
   let reads=0;
@@ -55,7 +55,7 @@ for(const transport of ['chat','responses'] as const){
     const records:ModelRequestRecord[]=[];const upstream=new AbortController();
     t.mock.method(globalThis,'fetch',async(_url:unknown,init?:RequestInit)=>new Response(new ReadableStream({start(controller){
       init?.signal?.addEventListener('abort',()=>{upstream.abort('shutdown');controller.error(Error('secret-body'));},{once:true});
-    }})));
+    }}),{headers:{'content-type':'text/event-stream'}}));
     await assert.rejects(make(records,5).complete([],[],upstream.signal),(e:any)=>e.code==='timeout'&&e.diagnostics.abortSource==='request_timeout'&&e.diagnostics.failureStage==='response_body');
     assert.equal(records[0].diagnostics?.abortSource,'request_timeout');
   });
@@ -65,8 +65,8 @@ for(const transport of ['chat','responses'] as const){
     assert.equal((await make(records).complete([])).content,'ok');assert.equal(records[0].status,'success');assert.equal(records[0].diagnostics?.failureStage,undefined);
   });
   test(`${transport}: parse, validation and network stages`,async t=>{
-    for(const [kind,stage] of [['parse','response_parse'],['validate','response_validate'],['network','request'],['body','response_body']] as const){
-      const records:ModelRequestRecord[]=[];t.mock.method(globalThis,'fetch',async()=>{if(kind==='network')throw Error('secret');return kind==='body'?new Response(null):new Response(kind==='parse'?'secret':'{}');});
+    for(const [kind,stage] of [['parse','response_body'],['validate','response_validate'],['network','request'],['body','response_body']] as const){
+      const records:ModelRequestRecord[]=[];t.mock.method(globalThis,'fetch',async()=>{if(kind==='network')throw Error('secret');return kind==='body'?new Response(null):new Response(kind==='parse'?'data: not-json\n\n':transport==='chat'?'data: '+JSON.stringify({choices:[{index:0,delta:{content:'ok'},finish_reason:'invalid'}]})+'\n\ndata: [DONE]\n\n':'data: '+JSON.stringify({type:'response.completed',response:{status:'completed',output:[{type:'bad'}]}})+'\n\n',{headers:{'content-type':'text/event-stream'}});});
       await assert.rejects(make(records).complete([]),(e:any)=>e.diagnostics.failureStage===stage);assert.equal(records[0].diagnostics?.failureStage,stage);t.mock.restoreAll();
     }
   });

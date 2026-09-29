@@ -12,8 +12,8 @@ export interface ReviewRequest extends CacheMetrics {
   diagnostics?: ModelRequestDiagnostics | null;
   inputTokens: number | null; totalInputTokens: number | null; cachedInputTokens: number | null;
   outputTokens: number | null; reasoningTokens: number | null;
-  /** Non-streaming end-to-end outputTokens / (durationMs / 1000), never TTFT. */
-  tps: number | null;
+  /** Streaming output rate; excludes the wait before the first effective output. */
+  tps: number | null; ttftMs: number | null; decodeDurationMs: number | null;
   responseId: string | null; previousResponseId: string | null; providerRequestId: string | null;
   requestMode: string | null; hasInspection: boolean;
 }

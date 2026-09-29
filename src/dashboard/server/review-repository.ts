@@ -33,7 +33,7 @@ const GLOBAL_REVIEW_EVENTS = [
   'onebot.connecting','onebot.ready','onebot.disconnected','onebot.connection_failed',
   'onebot.reconnect_scheduled','onebot.heartbeat_timeout','onebot.identity_failed','onebot.api_failed',
 ];
-const fields = ['request_id','group_id','turn_id','wake_id','model','transport','started_at','ended_at','duration_ms','status','error_code','http_status','input_tokens','cached_input_tokens','output_tokens','reasoning_tokens','response_id','previous_response_id','provider_request_id','request_mode','content_truncated','diagnostics'];
+const fields = ['request_id','group_id','turn_id','wake_id','model','transport','started_at','ended_at','duration_ms','ttft_ms','decode_duration_ms','status','error_code','http_status','input_tokens','cached_input_tokens','output_tokens','reasoning_tokens','response_id','previous_response_id','provider_request_id','request_mode','content_truncated','diagnostics'];
 export class ReviewRepository {
   constructor(readonly base: Repository) {}
   private clean(value: unknown) { return sanitizeInspectionValue(value, this.base.sources.inspectionSecrets ?? []); }
@@ -41,7 +41,7 @@ export class ReviewRepository {
   private rows(table: string, groupId: string, range?: Range, id?: string, scope?: Scope, trendOnly = false, telemetry?: DatabaseSync | null): Row[] {
     const db = telemetry === undefined ? this.base.telemetry() : telemetry; if (!db) return [];
     const cols = columns(db, table); if (!cols.has('group_id') || !cols.has('request_id')) return [];
-    const trendFields = new Set(['request_id','group_id','started_at','ended_at','duration_ms','status','error_code','input_tokens','cached_input_tokens','output_tokens']);
+    const trendFields = new Set(['request_id','group_id','started_at','ended_at','duration_ms','ttft_ms','decode_duration_ms','status','error_code','input_tokens','cached_input_tokens','output_tokens','ttft_ms','decode_duration_ms']);
     const selection = fields.map(f => cols.has(f) && (!trendOnly || trendFields.has(f)) ? f : `NULL AS ${f}`).join(',');
     const clauses:string[]=[],params:string[]=[];
     if(scope)for(const [key,values] of [['request_id',scope.requestIds],['turn_id',scope.turnIds],['wake_id',scope.wakeIds]] as const)if(cols.has(key)&&values?.length){clauses.push(`${key} IN (${values.map(()=>'?').join(',')})`);params.push(...values);}
@@ -98,7 +98,7 @@ export class ReviewRepository {
         const total = n(row.input_tokens), cached = n(row.cached_input_tokens), output = n(row.output_tokens), duration = requestDuration(row);
         const usage=summarize([row]), performance=performanceMetrics([row],{attribution:'request'});
         const wakes = a.byTurn.get(row.turn_id), wake = s(row.wake_id) ?? a.byRequest.get(row.request_id) ?? (wakes?.size === 1 ? [...wakes][0]! : null);
-        result.push({performance,cacheHitRate:usage.cacheHitRate,requestId:row.request_id,groupId:g.groupId,wakeId:wake,turnId:s(row.turn_id),model:this.text(row.model),transport:s(row.transport)??'unknown',startedAt:n(row.started_at)??0,endedAt:n(row.ended_at),durationMs:duration,status:s(row.status)??'unknown',outcome:row.status==='running'||row.status==='interrupted'?row.status:requestOutcome(row.status,row.error_code),errorCode:this.text(row.error_code),httpStatus:n(row.http_status),diagnostics:normalizeModelRequestDiagnostics(parse(row.diagnostics))??null,inputTokens:total!==null&&cached!==null&&cached<=total?total-cached:null,totalInputTokens:total,cachedInputTokens:cached!==null&&total!==null&&cached>total?null:cached,outputTokens:output,reasoningTokens:n(row.reasoning_tokens),tps:performance.modelTps,responseId:this.text(row.response_id),previousResponseId:this.text(row.previous_response_id),providerRequestId:this.text(row.provider_request_id),requestMode:this.text(row.request_mode),hasInspection:row.hasInspection});
+        result.push({performance,cacheHitRate:usage.cacheHitRate,requestId:row.request_id,groupId:g.groupId,wakeId:wake,turnId:s(row.turn_id),model:this.text(row.model),transport:s(row.transport)??'unknown',startedAt:n(row.started_at)??0,endedAt:n(row.ended_at),durationMs:duration,status:s(row.status)??'unknown',outcome:row.status==='running'||row.status==='interrupted'?row.status:requestOutcome(row.status,row.error_code),errorCode:this.text(row.error_code),httpStatus:n(row.http_status),diagnostics:normalizeModelRequestDiagnostics(parse(row.diagnostics))??null,inputTokens:total!==null&&cached!==null&&cached<=total?total-cached:null,totalInputTokens:total,cachedInputTokens:cached!==null&&total!==null&&cached>total?null:cached,outputTokens:output,reasoningTokens:n(row.reasoning_tokens),tps:performance.tps,ttftMs:performance.ttftMs,decodeDurationMs:performance.decodeDurationMs,responseId:this.text(row.response_id),previousResponseId:this.text(row.previous_response_id),providerRequestId:this.text(row.provider_request_id),requestMode:this.text(row.request_mode),hasInspection:row.hasInspection});
       }
       cap(result);
     }
@@ -152,11 +152,11 @@ export class ReviewRepository {
     return {requests,turns,wakes};
   }
   private summarizeWake(wake:WakeItem,requests:ReviewRequest[]):WakeItem {
-    const rows=requests.map(request=>({interval_known:request.performance.coverage.modelIntervalRequests===1,started_at:request.startedAt,ended_at:request.endedAt,input_tokens:request.totalInputTokens,cached_input_tokens:request.cachedInputTokens,output_tokens:request.outputTokens,status:request.status,error_code:request.errorCode,duration_ms:request.durationMs}));
+    const rows=requests.map(request=>({interval_known:request.performance.coverage.modelIntervalRequests===1,started_at:request.startedAt,ended_at:request.endedAt,input_tokens:request.totalInputTokens,cached_input_tokens:request.cachedInputTokens,output_tokens:request.outputTokens,ttft_ms:request.ttftMs,decode_duration_ms:request.decodeDurationMs,status:request.status,error_code:request.errorCode,duration_ms:request.durationMs}));
     const usage=summarize(rows);
     const tools=this.base.toolTimings(undefined,wake.groupId,wake.wakeId);
     const performance=performanceMetrics(rows,{attribution:'wake',startedAt:wake.startedAt,finishedAt:wake.finishedAt,tools,sourceComplete:this.base.telemetry()!==null && this.base.session(wake.groupId)!==null});
-    return {...wake,performance,tps:usage.tps,cacheHitRate:usage.cacheHitRate,modelRequests:requests.length,inputTokens:usage.inputTokens,uncachedInputTokens:usage.uncachedInputTokens,cachedInputTokens:usage.cachedInputTokens,outputTokens:usage.outputTokens};
+    return {...wake,performance,tps:usage.tps,ttftMs:usage.ttftMs,cacheHitRate:usage.cacheHitRate,modelRequests:requests.length,inputTokens:usage.inputTokens,uncachedInputTokens:usage.uncachedInputTokens,cachedInputTokens:usage.cachedInputTokens,outputTokens:usage.outputTokens};
   }
   wakeSummary(wake:WakeItem):WakeItem {
     return this.summarizeWake(wake,this.wakeRequestScope(wake.groupId,wake.wakeId).requests);

@@ -9,7 +9,7 @@ const availability = { telemetry: true, sessions: [] };
 const row = (startedAt: number, patch: Partial<ReviewRequest> = {}): ReviewRequest => ({
   requestId: 'private-id', groupId: '11', model: 'private-model',
   startedAt, outcome: 'success', durationMs: 0, inputTokens: 0, totalInputTokens: 0,
-  cachedInputTokens: 0, outputTokens: 0, tps: null, cacheHitRate: null,
+  cachedInputTokens: 0, outputTokens: 0, tps: null, ttftMs: null, decodeDurationMs: null, cacheHitRate: null,
   performance: performanceMetrics([{ started_at: startedAt, ended_at: startedAt, status: 'success', output_tokens: 0 }]),
   ...patch,
 } as ReviewRequest);
@@ -42,8 +42,8 @@ test('clipped boundaries, inclusive until, no empty tail, every outcome conserve
 test('projection preserves zeros, unknowns, TPS and emits only the compact fields', () => {
   const request = row(100,{durationMs:250,tps:7,inputTokens:null,cachedInputTokens:null,performance:performanceMetrics([])});
   const points=buildRequestTrends({since:0,until:100},availability,[row(0),request]).points;
-  assert.deepEqual(points[0],{startedAt:0,outcome:'success',durationMs:0,inputTokens:0,totalInputTokens:0,cachedInputTokens:0,outputTokens:0,tps:null,cacheHitRate:null});
-  assert.deepEqual(points[1],{startedAt:100,outcome:'success',durationMs:null,inputTokens:null,totalInputTokens:0,cachedInputTokens:null,outputTokens:0,tps:7,cacheHitRate:null});
+  assert.deepEqual(points[0],{startedAt:0,outcome:'success',durationMs:0,inputTokens:0,totalInputTokens:0,cachedInputTokens:0,outputTokens:0,tps:null,ttftMs:null,cacheHitRate:null});
+  assert.deepEqual(points[1],{startedAt:100,outcome:'success',durationMs:null,inputTokens:null,totalInputTokens:0,cachedInputTokens:null,outputTokens:0,tps:7,ttftMs:null,cacheHitRate:null});
 });
 test('unavailable is not all zero, empty available data is, and point limit throws rather than truncates', () => {
   const range={since:0,until:60000};

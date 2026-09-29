@@ -6,6 +6,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {OpenAIModel} from '../../../src/model/chat.js';
 import {Listener} from '../../../src/agent/listener.js';
 import { LISTENER_GROUP } from '../../../src/contracts/identity.js';
+import { sendChatStream } from '../../support/model-sse.js';
 import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.js';
 import type {ListenerConfig} from '../../../src/config/listener.js';
 const self='999',actor='123';
@@ -17,7 +18,7 @@ async function run(maxToolCallsPerWake:number){
  const server=createServer((req,res)=>{let body='';req.on('data',chunk=>body+=chunk);req.on('end',()=>{
   requests.push(JSON.parse(body));
   const calls=requests.length===1?[tool('invalid-json','read_message','{'),tool('unknown','invented_tool','{}'),tool('disabled','mute_member','{"user_id":"456","seconds":3}')]:[tool('finish','finish','{}')];
-  res.setHeader('content-type','application/json');res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:calls}}]}));
+  sendChatStream(res,{choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:calls}}]});
  });});
  server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();assert.ok(address&&typeof address!=='string');
  const config:ListenerConfig={enabled:true,baseUrl:`http://127.0.0.1:${address.port}/v1`,apiKey:'test',model:'test',timeoutMs:2000,maxTokens:128,debounceMs:1,delayMaxMs:1,cooldownMs:0,memoryPath:':memory:',maxContextChars:8000,retentionDays:7,randomReplyProbability:0,maxToolCallsPerWake,wakeTimeoutMs:3000};

@@ -106,7 +106,7 @@ onUnmounted(() => { themeObserver?.disconnect(); resizeObserver?.disconnect(); m
               <span class="coordinate y-coordinate" data-testid="crosshair-y" :style="{ top: `${crosshair.top}px` }">{{ crosshair.y }}</span>
             </div>
           </div>
-          <p class="chart-note muted">保留每个请求的真实开始时间，不聚合、不抽样、不移动点。缺失不作 0；零值正常绘制。<span v-if="metric.key === 'tps'">TPS 仅采用后端有效值，不以失败请求耗时推算。</span><span v-if="summary.total && !summary.drawable">当前指标无可绘制数据。</span><span v-if="displayRange !== 'all'">仅裁剪高于当前指标百分位上限的点，同值全部保留；不改变柱状图和汇总。<span v-if="!summary.limited">有效点少于20条，暂不裁剪。</span></span>十字线标签表示鼠标坐标，不代表最近请求。</p>
+          <p class="chart-note muted">保留每个请求的真实开始时间，不聚合、不抽样、不移动点。缺失不作 0；零值正常绘制。<span v-if="metric.key === 'ttft'">TTFT 是首个有效输出前的等待时间，缺失不作 0。</span><span v-if="metric.key === 'tps'">TPS 仅统计首个有效输出之后的输出阶段，不含 TTFT。</span><span v-if="summary.total && !summary.drawable">当前指标无可绘制数据。</span><span v-if="displayRange !== 'all'">仅裁剪高于当前指标百分位上限的点，同值全部保留；不改变柱状图和汇总。<span v-if="!summary.limited">有效点少于20条，暂不裁剪。</span></span>十字线标签表示鼠标坐标，不代表最近请求。</p>
         </section>
       </div>
     </template>

@@ -36,7 +36,7 @@ test('trends preserves review metering, all seven outcomes and old schemas witho
       assert.equal(body.points.length,old?6:8);assert.equal(body.buckets[0]!.total,body.points.length);
       assert.deepEqual(body.buckets[0]!.counts,{running:old?0:1,interrupted:old?0:1,success:2,failed:1,timeout:1,cancelled:1,unknown:1});
       const success=body.points.find(p=>p.startedAt===100)!;
-      assert.deepEqual(success,{startedAt:100,outcome:'success',durationMs:100,inputTokens:60,totalInputTokens:100,cachedInputTokens:40,outputTokens:10,tps:100,cacheHitRate:0.4});
+      assert.deepEqual(success,{startedAt:100,outcome:'success',durationMs:100,inputTokens:60,totalInputTokens:100,cachedInputTokens:40,outputTokens:10,tps:null,ttftMs:null,cacheHitRate:0.4});
       const zero=body.points.find(p=>p.startedAt===200)!;assert.equal(zero.durationMs,0);assert.equal(zero.outputTokens,0);assert.equal(zero.tps,null);
       assert.equal(body.points.find(p=>p.outcome==='failed')!.tps,null);
       assert.equal(body.points.find(p=>p.outcome==='failed')!.cacheHitRate,0);

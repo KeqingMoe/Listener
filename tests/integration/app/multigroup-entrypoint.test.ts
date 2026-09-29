@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { sendChatStream } from '../../support/model-sse.js';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -36,11 +37,11 @@ test('actual entrypoint shares local transports, isolates two group databases, a
   requests.push({group,body});
    const wakeIndex=body.messages.findLastIndex((m:any)=>m.role==='user'&&typeof m.content==='string'&&JSON.parse(m.content).wake);assert.ok(wakeIndex>0);const wake=JSON.parse(body.messages[wakeIndex].content).wake;assert.equal(wake.group_id,group);assert.ok(!JSON.stringify(wake).includes('fixture-body'));
    assert.ok(body.tools.some((t:any)=>t.function.name==='read_messages'));assert.ok(body.tools.some((t:any)=>t.function.name==='read_events'));
-  if(!body.messages.some((m:any)=>m.role==='tool')){const next={id:`read_${requests.length}`,type:'function',function:{name:'read_messages',arguments:JSON.stringify({limit:100})}};res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[next]}}]}));notify();return;}
+  if(!body.messages.some((m:any)=>m.role==='tool')){const next={id:`read_${requests.length}`,type:'function',function:{name:'read_messages',arguments:JSON.stringify({limit:100})}};sendChatStream(res,{choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[next]}}]});notify();return;}
    assert.ok(JSON.stringify(body.messages).includes(group===A?'only-A-fixture-body':'only-B-fixture-body'));
    if(holdModel){held=res;res.once('close',()=>{heldCancelled=!res.writableEnded;notify();});notify();return;}
   const args={segments:group===A?[{type:'face',id:'20'}]:[{type:'text',text:'reply-only-B'}]};
-  res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[{id:`fixture_${requests.length}`,type:'function',function:{name:'send_message',arguments:JSON.stringify(args)}},{id:`finish_${requests.length}`,type:'function',function:{name:'finish',arguments:'{}'}}]}}]}));notify();
+  sendChatStream(res,{choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[{id:`fixture_${requests.length}`,type:'function',function:{name:'send_message',arguments:JSON.stringify(args)}},{id:`finish_${requests.length}`,type:'function',function:{name:'finish',arguments:'{}'}}]}}]});notify();
  })().catch(error=>{fail(error);if(!res.headersSent)res.writeHead(500);res.end();});});
  http.on('connection',socket=>{sockets.add(socket);socket.on('close',()=>{sockets.delete(socket);notify();});});http.on('error',fail);
  const ws=new WebSocketServer({host:'127.0.0.1',port:0});ws.on('error',fail);

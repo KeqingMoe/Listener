@@ -118,8 +118,13 @@ async function fixture(t: { after(fn: () => Promise<unknown>): void }, options: 
       const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(Buffer.from(chunk));
       wire.push(JSON.parse(Buffer.concat(chunks).toString('utf8')) as JsonObject);
       const next = prepared.shift();
-      response.setHeader('Content-Type', 'application/json');
-      response.end(JSON.stringify({ id: `response_${wire.length}`, status: 'completed', output: (next?.tool_calls ?? []).map(tool => ({ type: 'function_call', call_id: tool.id, name: tool.function.name, arguments: tool.function.arguments })) }));
+      response.setHeader('Content-Type', 'text/event-stream');
+      const output = (next?.tool_calls ?? []).map(tool => ({ id: `fc_${tool.id}`, type: 'function_call', call_id: tool.id, name: tool.function.name, arguments: tool.function.arguments }));
+      for (const [output_index, item] of output.entries()) {
+        response.write(`data: ${JSON.stringify({type:'response.output_item.added',output_index,item:{...item,arguments:''}})}\n\n`);
+        response.write(`data: ${JSON.stringify({type:'response.function_call_arguments.delta',output_index,delta:item.arguments})}\n\n`);
+      }
+      response.end(`data: ${JSON.stringify({type:'response.completed',response:{ id: `response_${wire.length}`, status: 'completed', output }})}\n\n`);
     });
     await new Promise<void>(resolve => server!.listen(0, '127.0.0.1', resolve));
     const address = server.address(); assert.ok(address && typeof address !== 'string');

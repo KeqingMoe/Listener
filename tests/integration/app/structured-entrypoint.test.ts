@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { sendChatStream } from '../../support/model-sse.js';
 import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -55,7 +56,7 @@ test('real entrypoint preserves native segments, literal marker text and structu
     else{assert.equal(observed.length,2);const result=JSON.parse(observed.at(-1).content);assert.equal(result.status,'ok');assert.equal(result.message.messageId,'101');typed(result.message,firstSegments);next=send([{type:'text',text:REPLY_LITERAL}]);}
    }
   }
-  res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[next,...(next.function.name==='send_message'?[{...op('finish',{}),id:`finish_${requests.length}`}]:[])]}}]}));notify();
+  sendChatStream(res,{choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[next,...(next.function.name==='send_message'?[{...op('finish',{}),id:`finish_${requests.length}`}]:[])]}}]});notify();
  })().catch(error=>{fail(error);if(!res.headersSent)res.writeHead(500);res.end();});});
  http.on('connection',socket=>{sockets.add(socket);socket.once('close',()=>{sockets.delete(socket);notify();});});http.on('error',fail);
  const ws=new WebSocketServer({host:'127.0.0.1',port:0});ws.on('error',fail);ws.on('connection',(socket,req)=>{

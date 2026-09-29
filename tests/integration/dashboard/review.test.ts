@@ -65,10 +65,10 @@ test('real TelemetryStore restart recovery time is not an interrupted HTTP end o
   const exact=(await get('/api/requests/orphan?groupId=11')).json().request;assert.equal(exact.endedAt,null);assert.equal(exact.durationMs,null);
   const range=`since=${started-10}&until=${started+2000}`;
   const overviewResponse=await get(`/api/overview?${range}`);assert.equal(overviewResponse.statusCode,200);
-  const summary=overviewResponse.json().summary;assert.equal(summary.requests,2);assert.equal(summary.interrupted,1);assert.equal(summary.performance.modelDurationMs,100);assert.equal(summary.performance.coverage.modelDurationRequests,1);assert.equal(summary.performance.coverage.endedRequests,1);assert.equal(summary.tps,100);
+  const summary=overviewResponse.json().summary;assert.equal(summary.requests,2);assert.equal(summary.interrupted,1);assert.equal(summary.performance.modelDurationMs,100);assert.equal(summary.performance.coverage.modelDurationRequests,1);assert.equal(summary.performance.coverage.endedRequests,1);assert.equal(summary.tps,null);assert.equal(summary.ttftMs,null);
   const list=(await get(`/api/wakes?${range}`)).json();assert.equal(list.items.length,1);
   const detail=(await get('/api/wakes/wake-recovery/review?groupId=11')).json();
-  for(const wake of [list.items[0],detail.wake]){assert.equal(wake.modelRequests,2);assert.equal(wake.performance.modelDurationMs,100);assert.equal(wake.performance.modelWallDurationMs,null);assert.equal(wake.performance.otherDurationMs,null);assert.equal(wake.performance.roundTps,null);assert.equal(wake.performance.coverage.endedRequests,1);}
+  for(const wake of [list.items[0],detail.wake]){assert.equal(wake.modelRequests,2);assert.equal(wake.performance.modelDurationMs,100);assert.equal(wake.performance.modelWallDurationMs,null);assert.equal(wake.performance.otherDurationMs,null);assert.equal('roundTps' in wake.performance,false);assert.equal(wake.performance.coverage.endedRequests,1);}
   // A primary measured record remains usable even with a synthetic interrupted status.
   const update=new DatabaseSync(telemetryPath);update.exec("UPDATE model_requests SET status='interrupted' WHERE request_id='measured'");update.close();
   const measured=review.requests(undefined,'11','measured')[0]!;assert.equal(measured.status,'interrupted');assert.equal(measured.endedAt,started+1100);assert.equal(measured.durationMs,100);
@@ -92,9 +92,9 @@ test('SQLite missing request start never turns DTO display zero into epoch-sized
    const reviewResponse=await f.get('/api/wakes/wake-missing-start/review?groupId=11');assert.equal(reviewResponse.statusCode,200);
    const metaResponse=await f.get('/api/wakes/wake-missing-start?groupId=11');assert.equal(metaResponse.statusCode,200);
    for(const wake of [listWake,reviewResponse.json().wake,metaResponse.json().wake]){
-    assert.equal(wake.modelRequests,1);assert.equal(wake.performance.modelDurationMs,duration);assert.equal(wake.performance.modelTps,duration===null?null:400);assert.equal(wake.tps,duration===null?null:400);
-    assert.equal(wake.performance.tpsDurationMs,duration);assert.equal(wake.performance.coverage.modelDurationRequests,duration===null?0:1);assert.equal(wake.performance.coverage.modelIntervalRequests,0);
-    assert.equal(wake.performance.wallDurationMs,500);assert.equal(wake.performance.modelWallDurationMs,null);assert.equal(wake.performance.otherDurationMs,null);assert.equal(wake.performance.roundTps,null);assert.equal(wake.performance.whyIncomplete,'active_or_missing_timestamps');
+    assert.equal(wake.modelRequests,1);assert.equal(wake.performance.modelDurationMs,duration);assert.equal(wake.performance.tps,null);assert.equal(wake.performance.ttftMs,null);assert.equal(wake.tps,null);
+    assert.equal(wake.performance.decodeDurationMs,null);assert.equal(wake.performance.coverage.modelDurationRequests,duration===null?0:1);assert.equal(wake.performance.coverage.modelIntervalRequests,0);
+    assert.equal(wake.performance.wallDurationMs,500);assert.equal(wake.performance.modelWallDurationMs,null);assert.equal(wake.performance.otherDurationMs,null);assert.equal('roundTps' in wake.performance,false);assert.equal(wake.performance.whyIncomplete,'active_or_missing_timestamps');
    }
   }
  }finally{await f.cleanup();}
@@ -103,13 +103,13 @@ test('performance DTO is consistent across request, wake and overview without ro
  const f=fixture();try{
   const overview=(await f.get('/api/overview?since=0&until=500')).json();
   assert.equal(overview.summary.requests,2);assert.equal(overview.summary.performance.modelDurationMs,200);
-  assert.equal(overview.summary.performance.modelTps,100);assert.equal(overview.summary.performance.tpsDurationMs,100);
+  assert.equal(overview.summary.performance.tps,null);assert.equal(overview.summary.performance.decodeDurationMs,null);
   assert.equal(overview.summary.performance.toolDurationMs,10);assert.equal(overview.summary.performance.wallDurationMs,null);
-  assert.equal(overview.summary.performance.roundTps,null);assert.equal(overview.summary.cacheHitRate,0.4);
+  assert.equal('roundTps' in overview.summary.performance,false);assert.equal(overview.summary.cacheHitRate,0.4);
   const narrow=(await f.get('/api/overview?since=100&until=400')).json();assert.equal(narrow.summary.tps,overview.summary.tps);
   const list=(await f.get('/api/wakes?since=0&until=500')).json();
   const wake=list.items.find((w:any)=>w.wakeId==='wake-a');assert.equal(wake.performance.wallDurationMs,120);assert.equal(wake.performance.modelDurationMs,200);
-  assert.equal(wake.performance.otherDurationMs,null);assert.equal(wake.performance.roundTps,null);assert.equal(wake.performance.whyIncomplete,'scope_crosses_wake');
+  assert.equal(wake.performance.otherDurationMs,null);assert.equal('roundTps' in wake.performance,false);assert.equal(wake.performance.whyIncomplete,'scope_crosses_wake');
   assert.equal(wake.performance.toolDurationMs,10);assert.equal(wake.cacheHitRate,0.4);
   const expanded=(await f.get('/api/wakes/wake-a/review?groupId=11')).json();assert.deepEqual(expanded.wake.performance,wake.performance);
   const metadata=(await f.get('/api/wakes/wake-a?groupId=11')).json();assert.deepEqual(metadata.wake.performance,wake.performance);
@@ -123,7 +123,7 @@ test('authorized review exposes business context, exact tool linkage and Respons
  const f=fixture();try{
  assert.equal((await f.app.inject('/api/requests')).statusCode,401);
  const response=await f.get('/api/requests/first?groupId=11');assert.equal(response.statusCode,200);const b=response.json();
- assert.equal(b.request.inputTokens,60);assert.equal(b.request.totalInputTokens,100);assert.equal(b.request.cachedInputTokens,40);assert.equal(b.request.tps,100);
+ assert.equal(b.request.inputTokens,60);assert.equal(b.request.totalInputTokens,100);assert.equal(b.request.cachedInputTokens,40);assert.equal(b.request.tps,null);assert.equal(b.request.ttftMs,null);
  assert.equal(b.request.providerRequestId,'provider-one');assert.equal(b.tools[0].requestId,'first');assert.equal(b.tools[0].callId,'call-one');assert.equal(b.tools[0].arguments.cursor,'cursor-visible');assert.equal(b.tools[0].arguments.face_ref,'face-visible');assert.deepEqual(b.tools[0].result.messages,['actual readable content']);assert.equal(b.reasoningText,'visible reasoning');assert.equal(b.errorText,null);assert.equal(b.nextRequests[0].requestId,'cancel');assert.equal(b.nextRequests.length,1);
  assert.match(response.body,/normal business text/);assert.doesNotMatch(response.body,/LIVE_SECRET|private-pw|sessioncookie|Bearer abc|base64,AAAA|foreign body/);
  const cancel=(await f.get('/api/requests/cancel?groupId=11')).json();assert.equal(cancel.request.outcome,'cancelled');assert.equal(cancel.request.tps,null);assert.equal(cancel.previousRequest.requestId,'first');assert.equal(cancel.request.wakeId,'wake-b');

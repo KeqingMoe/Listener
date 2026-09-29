@@ -6,9 +6,10 @@ import { providerRequestId, responseInspection } from '../observability/request-
 import { parseResponsesUsage, type ModelRequestInspection, type ModelRequestRecord, type ModelUsage } from '../observability/model-usage.js';
 import { normalizeModelRequestDiagnostics, providerDiagnostics, upstreamAbortSource, type ModelRequestDiagnostics } from '../observability/model-diagnostics.js';
 import { MODEL_USER_AGENT } from '../config/version.js';
+import { readSse, SseError } from './sse.js';
 
 const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
-const MAX_BYTES=2*1024*1024, MAX_ARGS=16*1024;
+const MAX_BYTES=2*1024*1024, MAX_WIRE_BYTES=32*1024*1024, MAX_ARGS=16*1024;
 const hash=(v:string)=>createHash('sha256').update(v).digest('hex');
 const bounded=(v:unknown,max:number):v is string=>typeof v==='string'&&v.length>0&&v.length<=max&&!/[\u0000-\u001f\u007f]/.test(v);
 export class ResponseStateExpiredError extends ModelError {
@@ -148,7 +149,8 @@ export class ResponsesModel implements Model {
     this.busy=true;
     const generation=this.generation,started=performance.now(),startedAt=Date.now(),requestId=randomUUID();
     const snapshot=structuredClone(messages),toolSnapshot=structuredClone(tools);
-    let usage:ModelUsage=parseResponsesUsage(undefined),status:ModelRequestRecord['status']='error',failure:ModelErrorCode='network_error',httpStatus:number|undefined;
+    let ttftMs:number|null=null,decodeDurationMs:number|null=null;
+     let usage:ModelUsage=parseResponsesUsage(undefined),status:ModelRequestRecord['status']='error',failure:ModelErrorCode='network_error',httpStatus:number|undefined;
     const instructions=snapshot.filter(m=>m.role==='system').map(m=>typeof m.content==='string'?m.content:JSON.stringify(m.content)).join('\n\n');
     const functions=toolSnapshot.map(t=>({type:'function',name:t.function.name,description:t.function.description,parameters:t.function.parameters}));
     const headerHash=hash(JSON.stringify({endpoint:this.endpoint,account:hash(this.options.apiKey),instructions,functions,model:this.options.model,maxTokens:this.options.maxTokens}));
@@ -183,13 +185,14 @@ export class ResponsesModel implements Model {
     const timer=setTimeout(()=>{if(!aborted){aborted='timeout';diagnostics.abortSource='request_timeout';}controller.abort();},this.options.timeoutMs);
     try{
       if(!historyValid){this.reset();throw new ModelError('invalid_response');}
-      const body:Record<string,unknown>={model:this.options.model,input,instructions,store:true,stream:false,max_output_tokens:this.options.maxTokens,prompt_cache_key:this.cacheKey,
+      const body:Record<string,unknown>={model:this.options.model,input,instructions,store:true,stream:true,max_output_tokens:this.options.maxTokens,prompt_cache_key:this.cacheKey,
         ...(functions.length?{tools:functions,tool_choice:'auto'}:{}),...(reuse?{previous_response_id:responseId}:{})};
       if(this.options.serverCompactionVerified&&this.options.compactionThreshold!==undefined)body.context_management=[{type:'compaction',compact_threshold:this.options.compactionThreshold}];
       const requestJson=JSON.stringify(body);inspection.requestJson=requestJson;
       try{this.options.onRequestStart?.(Object.freeze({requestId,startedAt,transport:'responses',model:this.options.model,requestJson,requestMode:diagnostics.requestMode??'fresh',...(reuse?{previousResponseId:responseId}:{})}));}catch{}
       const headers=new Headers(this.options.requestHeaders?.());
       headers.set('content-type','application/json');headers.set('authorization',`Bearer ${this.options.apiKey}`);headers.set('user-agent',MODEL_USER_AGENT);
+      const fetchStarted=performance.now();
       const response=await fetch(this.endpoint,{method:'POST',redirect:'error',signal:controller.signal,headers,body:requestJson});
       inspection.providerRequestId=providerRequestId(response.headers);
       if(!response.ok){
@@ -199,7 +202,36 @@ export class ResponsesModel implements Model {
         if(reuse&&expired(raw))throw new ResponseStateExpiredError(httpStatus);
         throw new ModelError('http_error',httpStatus);
       }
-      failure='invalid_response';const raw=await readBody(response,value=>{stage=value;},capture);
+      failure='invalid_response';stage='response_body';
+       if(response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase()!=='text/event-stream'||!response.body)throw new ModelError('invalid_response');
+       let raw:unknown, firstOutput:number|undefined,streamCompletedAt:number|undefined,deltaBytes=0;
+       const deltas=new Map<string,{type:string,index:number,part:number,text:string}>();
+       const addedCalls=new Map<number,Record<string,unknown>>();
+       const observed=(at:number)=>{firstOutput??=at;ttftMs=Math.max(0,firstOutput-fetchStarted);};
+       try{await readSse(response.body,(data,at)=>{
+         const event:unknown=JSON.parse(data);
+         if(!object(event)||typeof event.type!=='string')throw new ModelError('invalid_response');
+         if(['response.output_text.delta','response.refusal.delta','response.function_call_arguments.delta','response.reasoning_text.delta'].includes(event.type)){
+           if(typeof event.delta!=='string'||!Number.isSafeInteger(event.output_index)||Number(event.output_index)<0)throw new ModelError('invalid_response');
+           deltaBytes+=Buffer.byteLength(event.delta);if(deltaBytes>MAX_BYTES)throw new ModelError('response_too_large');
+            const part=event.content_index??0;
+           if(!Number.isSafeInteger(part)||Number(part)<0)throw new ModelError('invalid_response');
+           const key=`${event.type}:${event.output_index}:${part}`,entry=deltas.get(key)??{type:event.type,index:Number(event.output_index),part:Number(part),text:''};entry.text+=event.delta;deltas.set(key,entry);
+           if(event.delta)observed(at);
+         }
+         if(event.type==='response.output_item.added'&&object(event.item)&&event.item.type==='function_call'){
+           if(!Number.isSafeInteger(event.output_index)||Number(event.output_index)<0||!bounded(event.item.name,128)||!bounded(event.item.call_id,256)||!bounded(event.item.id,256)||addedCalls.has(Number(event.output_index)))throw new ModelError('invalid_response');
+           addedCalls.set(Number(event.output_index),event.item);observed(at);
+         }
+         if(['response.completed','response.incomplete','response.failed'].includes(event.type)){
+           if(raw!==undefined||!object(event.response)||event.response.status!==event.type.slice('response.'.length))throw new ModelError('invalid_response');raw=event.response;streamCompletedAt=at;return true;
+         }
+         if(event.type==='error')throw new ModelError('invalid_response');
+       },{signal:controller.signal,maxBytes:MAX_WIRE_BYTES,onBytes:bytes=>{if(bytes.byteLength>MAX_WIRE_BYTES)throw new SseError('response_too_large');}});}catch(error){if(error instanceof ModelError)throw error;throw new ModelError(error instanceof SseError?error.code:'invalid_response');}
+       if(raw===undefined)throw new ModelError('invalid_response');
+       const responseJson=JSON.stringify(raw);
+       if(Buffer.byteLength(responseJson)>MAX_BYTES)throw new ModelError('response_too_large');
+       capture(responseJson,false);
       stage='response_validate';
       if(!object(raw))throw new ModelError('invalid_response');
       usage=parseResponsesUsage(raw.usage);
@@ -208,6 +240,17 @@ export class ResponsesModel implements Model {
       if(raw.status==='incomplete')throw new ModelError('truncated_response');
       if(raw.error!=null)throw new ModelError('invalid_response');
       const result=completion(raw);
+      /* Validate observed deltas against the authoritative terminal snapshot. */
+      for(const delta of deltas.values()){
+        const item=(raw.output as unknown[])[delta.index];
+        if(!object(item))throw new ModelError('invalid_response');
+        if(delta.type==='response.reasoning_text.delta')continue;
+        const part=Array.isArray(item.content)?item.content[delta.part]:undefined;
+        const expected=delta.type==='response.function_call_arguments.delta'?item.arguments:object(part)?(delta.type==='response.refusal.delta'?part.refusal:part.text):undefined;
+        if(expected!==delta.text)throw new ModelError('invalid_response');
+      }
+      for(const [index,added] of addedCalls){const item=(raw.output as unknown[])[index];if(!object(item)||item.type!=='function_call'||item.id!==added.id||item.call_id!==added.call_id||item.name!==added.name)throw new ModelError('invalid_response');}
+      decodeDurationMs=firstOutput!==undefined&&streamCompletedAt!==undefined?streamCompletedAt-firstOutput:null;
       stage='post_response';
       if(generation!==this.generation&&!aborted)diagnostics.abortSource='generation_changed';
       if(controller.signal.aborted||generation!==this.generation)throw new ModelError('cancelled');
@@ -230,7 +273,7 @@ export class ResponsesModel implements Model {
     }finally{
       clearTimeout(timer);signal?.removeEventListener('abort',stop);this.busy=false;
       if(status==='error'&&!inspection.errorText)inspection.errorText=failure;
-      try{this.options.onRequest?.({inspection,requestId,startedAt,endedAt:Date.now(),durationMs:Math.max(0,performance.now()-started),transport:'responses',model:this.options.model,status,
+      try{this.options.onRequest?.({inspection,requestId,startedAt,endedAt:Date.now(),durationMs:Math.max(0,performance.now()-started),ttftMs,decodeDurationMs:status==='success'?decodeDurationMs:null,transport:'responses',model:this.options.model,status,
         ...(status==='error'?{errorCode:failure}:{}),...(httpStatus===undefined?{}:{httpStatus}),usage,diagnostics:normalizeModelRequestDiagnostics(diagnostics)});}catch{/* Observers never change transport results. */}
     }
   }
