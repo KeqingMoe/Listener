@@ -1,4 +1,8 @@
-import test from "node:test";
+import test, { after } from "node:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { ArtifactStore } from "../../../../src/artifacts/store.js";
 import assert from "node:assert/strict";
 import {
   GroupFileTools,
@@ -9,6 +13,29 @@ import { OneBotError } from "../../../../src/onebot/client.js";
 import type { Api } from "../../../../src/contracts/onebot.js";
 import type { JsonObject } from "../../../../src/contracts/json.js";
 import type { TurnContext } from "../../../../src/contracts/tools.js";
+
+const artifactDir = mkdtempSync(join(tmpdir(), "file-request-outcomes-"));
+const store = new ArtifactStore({
+  path: join(artifactDir, "a.sqlite"),
+  directory: join(artifactDir, "files"),
+  providerDirectory: "/napcat/artifacts",
+});
+after(() => {
+  store.close();
+  rmSync(artifactDir, { recursive: true, force: true });
+});
+const art = async (name: string, content = "hi") =>
+  (
+    await store.create({
+      selfId: "456",
+      groupId: "123",
+      name,
+      description: "测试产物",
+      mediaType: "text/plain",
+      ttlMs: 60000,
+      bytes: Buffer.from(content),
+    })
+  ).artifactId;
 
 const ctx: TurnContext = {
   groupId: "123",
@@ -109,6 +136,7 @@ function fixture() {
       downloads++;
       return "text";
     },
+    artifacts: store,
   });
   const run = (name: string, args: unknown, signal?: AbortSignal) =>
     tools.execute(name, args, ctx, signal);
@@ -346,10 +374,12 @@ test("conservative immutable fingerprints can reject collisions but never author
 
 test("documented successful writes preserve native outcomes and do not invent identities", async () => {
   const f = fixture();
-  const upload = await f.run("upload_group_text_file", {
-    name: "note.txt",
-    content: "hi",
-  });
+  const artifact_id = await art("note.txt");
+  const upload = await f.run("upload_group_file", { artifact_id });
+  assert.equal(
+    f.calls.find((c) => c.action === "upload_group_file")!.params.file,
+    `/napcat/artifacts/${artifact_id}`,
+  );
   assert.equal(upload.uploaded, true);
   assert.equal(upload.effect_confirmed, true);
   assert.equal(upload.resource_id_available, false);
@@ -454,7 +484,7 @@ test("write exception classification distinguishes proven unsent calls from hand
 
 test("valid late file ACKs remain facts across cancellation and reset without resurrecting handles", async () => {
   for (const action of [
-    "upload_group_text_file",
+    "upload_group_file",
     "create_group_folder",
     "delete_group_file",
     "delete_group_folder",
@@ -464,7 +494,7 @@ test("valid late file ACKs remain facts across cancellation and reset without re
       file = root.find((x) => x.kind === "file")!.file_handle,
       folder = root.find((x) => x.kind === "folder")!.folder_handle;
     const native = {
-      upload_group_text_file: "upload_group_file",
+      upload_group_file: "upload_group_file",
       create_group_folder: "create_group_file_folder",
       delete_group_file: "delete_group_file",
       delete_group_folder: "delete_group_folder",
@@ -477,8 +507,8 @@ test("valid late file ACKs remain facts across cancellation and reset without re
       }
     };
     const args =
-      action === "upload_group_text_file"
-        ? { name: "n.txt", content: "hi" }
+      action === "upload_group_file"
+        ? { artifact_id: await art("n.txt") }
         : action === "create_group_folder"
           ? { name: "d" }
           : action === "delete_group_file"

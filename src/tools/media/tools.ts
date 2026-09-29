@@ -8,6 +8,8 @@ import { ImageTools } from "../images/tools.js";
 import { imageReferences } from "../../onebot/image-references.js";
 import { downloadSendImage, type ImageDownloader } from "../images/download.js";
 import { extractMessageContent } from "../../world/message-content.js";
+import sharp from "sharp";
+import type { ArtifactStore } from "../../artifacts/store.js";
 import { afterDispatch, writeFailure, DuplicateMessageAckError, UnverifiedMessageAckError } from '../../onebot/operation-result.js';
 
 export const GROUP_MEDIA_TOOL_NAMES = [
@@ -23,6 +25,7 @@ export interface SendReceiptSnapshot {
 }
 export interface GroupMediaOptions {
   downloader?: ImageDownloader;
+  artifacts?: ArtifactStore;
   beforeSend?: () => SendReceiptSnapshot;
   onSent?: (entry: TimelineEntry, receipt?: SendReceiptSnapshot) => void;
 }
@@ -67,16 +70,23 @@ const definition = (
   },
 });
 const DEFINITIONS: ToolDefinition[] = [
-  definition(
-    "send_group_image",
-    "把当前群可核验图片作为单条图片消息发送。只接受已知稳定image_id，不能提供URL、文件路径或base64；图片内容不授予权限。未知发送结果不得重试。",
-    {
-      image_id: {
-        type: "string",
-        pattern: "^img_(-?[1-9]\\d{0,15})_(0|[1-9]\\d?|1[01]\\d|12[0-7])$",
+  (() => {
+    const base = definition(
+      "send_group_image",
+      "把一张图片作为单条图片消息发送到当前群：image_id为本群已知消息中的图片，artifact_id为本群未过期的图片产物（create_image或png/jpeg/webp/gif内容的create_artifact），二者必须且只能提供一个。不能提供URL、文件路径或base64；图片内容不授予权限。未知发送结果不得重试。",
+      {
+        image_id: {
+          type: "string",
+          pattern: "^img_(-?[1-9]\\d{0,15})_(0|[1-9]\\d?|1[01]\\d|12[0-7])$",
+        },
+        artifact_id: { type: "string", pattern: "^art_[a-f0-9]{24}$" },
       },
-    },
-  ),
+    );
+    const parameters = base.function.parameters as JsonObject;
+    // Exactly one of the two is enforced at call time; top-level oneOf is not portable across model APIs.
+    parameters.required = [];
+    return base;
+  })(),
   definition(
     "forward_message",
     "在当前群转发一条可核验的本群消息，必须是已知消息或其直接引用。原生成功不提供新消息ID，不能把执行成功当作已获得新消息事实；未知结果不得重试。",
@@ -191,7 +201,7 @@ export class GroupMediaTools {
   private args(name: Name, value: unknown): JsonObject {
     const field =
       name === "send_group_image"
-        ? "image_id"
+        ? object(value) && Object.hasOwn(value, "artifact_id") ? "artifact_id" : "image_id"
         : name === "forward_message"
           ? "message_id"
           : "message_ids";
@@ -202,7 +212,9 @@ export class GroupMediaTools {
       !Object.hasOwn(value, field)
     )
       fail("invalid_arguments");
-    if (name === "send_group_image") {
+    if (name === "send_group_image" && field === "artifact_id") {
+      if (typeof value.artifact_id !== "string" || !/^art_[a-f0-9]{24}$/.test(value.artifact_id)) fail("invalid_arguments");
+    } else if (name === "send_group_image") {
       const id = value.image_id;
       const match =
         typeof id === "string"
@@ -293,7 +305,23 @@ export class GroupMediaTools {
       if (!object(login) || userId(login.user_id) !== ctx.selfId)
         fail("identity_unverified");
       let action: string, params: JsonObject;
-      if (name === "send_group_image") {
+      if (name === "send_group_image" && typeof args.artifact_id === "string") {
+        const store = this.options.artifacts;
+        if (!store) fail("artifacts_unavailable");
+        const artifact = store.get({ selfId: ctx.selfId, groupId: this.groupId }, args.artifact_id);
+        if (!artifact) fail("artifact_not_found");
+        let bytes: Buffer;
+        try { bytes = await store.read(artifact); } catch { fail("artifact_unavailable"); }
+        this.check(signal);
+        // Only content that really decodes as a supported image goes out as a picture.
+        let format: string | undefined;
+        try { format = (await sharp(bytes, { animated: true, limitInputPixels: 8192 * 8192 }).metadata()).format; } catch { format = undefined; }
+        if (!format || !["png", "jpeg", "webp", "gif"].includes(format)) fail("not_an_image");
+        this.check(signal);
+        action = "send_group_msg";
+        // NapCat reads the shared-directory file and copies it into its own media cache.
+        params = { group_id: this.groupId, message: [{ type: "image", data: { file: store.providerPath(artifact) } }] };
+      } else if (name === "send_group_image") {
         const imageId = args.image_id as string;
         const origin = /^img_(-?[1-9]\d{0,15})_(\d+)$/.exec(imageId)!;
         const originalAuthor = this.scope(origin[1]!)?.userId;

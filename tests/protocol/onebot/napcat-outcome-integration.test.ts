@@ -8,6 +8,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { AddressInfo } from "node:net";
 import { WebSocketServer, type WebSocket } from "ws";
 import { OneBotClient } from "../../../src/onebot/client.js";
+import { ArtifactStore } from "../../../src/artifacts/store.js";
 import { Listener } from "../../../src/agent/listener.js";
 import { ModelSession } from "../../../src/agent/session/store.js";
 import { WorldEventStore } from "../../../src/world/events.js";
@@ -76,6 +77,7 @@ interface Options {
     h: Harness,
   ) => Envelope | undefined | Promise<Envelope | undefined>;
   reactions?: boolean;
+  artifacts?: ArtifactStore;
 }
 interface Harness {
   listener: Listener;
@@ -307,7 +309,12 @@ async function fixture(
       () => 0,
       undefined,
       undefined,
-      { session, world, modelRequestId: () => `request-${requests.length}` },
+      {
+        session,
+        world,
+        artifacts: options.artifacts,
+        modelRequestId: () => `request-${requests.length}`,
+      },
     );
     h = {
       listener,
@@ -776,33 +783,65 @@ for (const [name, native, args, data] of [
     { result: {}, groupItem: {} },
   ],
   [
-    "upload_group_text_file",
     "upload_group_file",
-    { name: "hello.txt", content: "hello" },
+    "upload_group_file",
+    { artifact_id: "" },
     { file_id: null },
   ],
 ] as [string, string, JsonObject, unknown][])
   test(`wire ${name} accepts official optional result fields without false unknown`, async () => {
-    await fixture(
-      {
-        extended: { [name]: "direct", poke_member: "direct" },
-        native: (c) => (c.action === native ? ok(data) : undefined),
-        respond: (r) =>
-          r === 1
-            ? response(
-                call("action", name, args),
-                call("independent", "poke_member", { user_id: OTHER }),
-              )
-            : response(call("done", "finish")),
-      },
-      async (h) => {
-        await h.run();
-        assert.equal(h.results().action!.status, "ok");
-        assert.equal(h.results().action!.error, undefined);
-        submitted(h.results().independent);
-        assert.equal(h.calls.filter((c) => c.action === native).length, 1);
-      },
-    );
+    const artifactDir = mkdtempSync(join(tmpdir(), "napcat-artifacts-"));
+    const artifacts = new ArtifactStore({
+      path: join(artifactDir, "a.sqlite"),
+      directory: join(artifactDir, "files"),
+      providerDirectory: "/napcat/artifacts",
+    });
+    try {
+      if (Object.hasOwn(args, "artifact_id"))
+        args.artifact_id = (
+          await artifacts.create({
+            selfId: SELF,
+            groupId: GROUP,
+            name: "hello.txt",
+            description: "测试产物",
+            mediaType: "text/plain",
+            ttlMs: 60000,
+            bytes: Buffer.from("hello"),
+          })
+        ).artifactId;
+      await fixture(
+        {
+          artifacts,
+          extended: { [name]: "direct", poke_member: "direct" },
+          native: (c) => (c.action === native ? ok(data) : undefined),
+          respond: (r) =>
+            r === 1
+              ? response(
+                  call("action", name, args),
+                  call("independent", "poke_member", { user_id: OTHER }),
+                )
+              : response(call("done", "finish")),
+        },
+        async (h) => {
+          await h.run();
+          assert.equal(h.results().action!.status, "ok");
+          assert.equal(h.results().action!.error, undefined);
+          submitted(h.results().independent);
+          const dispatched = h.calls.filter((c) => c.action === native);
+          assert.equal(dispatched.length, 1);
+          if (Object.hasOwn(args, "artifact_id")) {
+            assert.equal(
+              dispatched[0]!.params.file,
+              `/napcat/artifacts/${args.artifact_id}`,
+            );
+            assert.equal(dispatched[0]!.params.name, "hello.txt");
+          }
+        },
+      );
+    } finally {
+      artifacts.close();
+      rmSync(artifactDir, { recursive: true, force: true });
+    }
   });
 test("file delete uses original opaque provider token despite fresh listing reissuance and accepts different returned UUID", async () => {
   await fixture(

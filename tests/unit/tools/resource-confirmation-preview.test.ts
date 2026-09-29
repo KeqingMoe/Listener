@@ -1,10 +1,18 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { ArtifactStore } from '../../../src/artifacts/store.js';
 import assert from 'node:assert/strict';
 import type { Api } from '../../../src/contracts/onebot.js';
 import type { JsonObject } from '../../../src/contracts/json.js';
 import type { TurnContext } from '../../../src/contracts/tools.js';
 import { GroupFileTools, GROUP_FILE_TOOL_NAMES } from '../../../src/tools/files/tools.js';
 import { GroupRequestTools, GROUP_REQUEST_TOOL_NAMES } from '../../../src/tools/requests/tools.js';
+const artifactDir=mkdtempSync(join(tmpdir(),'resource-preview-'));
+const store=new ArtifactStore({path:join(artifactDir,'a.sqlite'),directory:join(artifactDir,'files'),providerDirectory:'/napcat/artifacts'});
+after(()=>{store.close();rmSync(artifactDir,{recursive:true,force:true});});
 const ctx: TurnContext = {groupId:'123',selfId:'456',actorId:'789',messageId:'1'};
 const FILE_ID='PROVIDER_FILE_SECRET', FOLDER_ID='PROVIDER_FOLDER_SECRET';
 function files() {
@@ -18,7 +26,7 @@ function files() {
     if(action==='upload_group_file')return {file_id:'created'};
     return null;
   }};
-  const tools=new GroupFileTools(api,ctx.groupId,GROUP_FILE_TOOL_NAMES);
+  const tools=new GroupFileTools(api,ctx.groupId,GROUP_FILE_TOOL_NAMES,{artifacts:store});
   return {tools,api,state,calls,async handles(){const result=await tools.execute('list_group_files',{limit:5},ctx);assert.equal(result.status,'ok');const rows=result.items as JsonObject[];return {file_handle:rows.find(row=>row.kind==='file')!.file_handle,folder_handle:rows.find(row=>row.kind==='folder')!.folder_handle};}};
 }
 function requests() {
@@ -58,11 +66,19 @@ test('file preflight checks fresh ownership and role, root or actual upload dest
   await assert.rejects(f.tools.confirmationDetails('delete_group_file',{file_handle:h.file_handle},ctx),{message:'insufficient_permission'});
   f.state.uploader=ctx.selfId;await f.tools.confirmationDetails('delete_group_file',{file_handle:h.file_handle},ctx);
   await assert.rejects(f.tools.confirmationDetails('delete_group_folder',{folder_handle:h.folder_handle},ctx),{message:'insufficient_permission'});
-  const upload={name:'new.txt',content:'literal content',folder_handle:h.folder_handle};
-  const description=await f.tools.confirmationDetails('upload_group_text_file',upload,ctx);assert.match(description,/资料/);assert.match(description,/new.txt/);assert.doesNotMatch(description,/PROVIDER_|literal content/);
-  f.state.folderName='已改名';assert.notEqual(await f.tools.confirmationDetails('upload_group_text_file',upload,ctx),description);
+  const bytes=Buffer.from('literal content');
+  const artifact=await store.create({selfId:ctx.selfId,groupId:ctx.groupId,name:'new.txt',description:'周报草稿',mediaType:'text/plain',ttlMs:60000,bytes});
+  const upload={artifact_id:artifact.artifactId,folder_handle:h.folder_handle};
+  const description=await f.tools.confirmationDetails('upload_group_file',upload,ctx);assert.match(description,/资料/);assert.doesNotMatch(description,/PROVIDER_|literal content|napcat|art_/);
+  const details=JSON.parse(description);assert.equal(details.操作,'upload_group_file');assert.equal(details.文件名,'new.txt');assert.equal(details.说明,'周报草稿');assert.equal(details.大小字节,bytes.length);assert.equal(details.SHA256前8位,createHash('sha256').update(bytes).digest('hex').slice(0,8));
+  assert.equal(JSON.parse(await f.tools.confirmationDetails('upload_group_file',{artifact_id:artifact.artifactId},ctx)).目标目录,'本群文件根目录');
+  f.state.folderName='已改名';assert.notEqual(await f.tools.confirmationDetails('upload_group_file',upload,ctx),description);
   assert.match(await f.tools.confirmationDetails('create_group_folder',{name:'new folder'},ctx),/本群文件根目录/);
-  f.state.exists=false;await assert.rejects(f.tools.confirmationDetails('upload_group_text_file',upload,ctx),{message:'resource_not_verified'});noFileWrites(f.calls);
+  await assert.rejects(f.tools.confirmationDetails('upload_group_file',{artifact_id:'art_'+'0'.repeat(24)},ctx),{message:'artifact_not_found'});
+  const foreign=await store.create({selfId:ctx.selfId,groupId:'999',name:'x.txt',description:'x',mediaType:'text/plain',ttlMs:60000,bytes});
+  await assert.rejects(f.tools.confirmationDetails('upload_group_file',{artifact_id:foreign.artifactId},ctx),{message:'artifact_not_found'});
+  await assert.rejects(new GroupFileTools(f.api,ctx.groupId,GROUP_FILE_TOOL_NAMES).confirmationDetails('upload_group_file',{artifact_id:artifact.artifactId},ctx),{message:'artifacts_unavailable'});
+  f.state.exists=false;await assert.rejects(f.tools.confirmationDetails('upload_group_file',upload,ctx),{message:'resource_not_verified'});noFileWrites(f.calls);
 });
 test('file previews reject off, wrong group, invented or wrong-kind handles and getters without native calls',async()=>{
   const f=files(),h=await f.handles();f.calls.length=0;
@@ -70,8 +86,10 @@ test('file previews reject off, wrong group, invented or wrong-kind handles and 
   await assert.rejects(f.tools.confirmationDetails('delete_group_file',{file_handle:h.file_handle},{...ctx,groupId:'999'}),{message:'forbidden_group'});
   await assert.rejects(f.tools.confirmationDetails('delete_group_file',{file_handle:'gf_'+'0'.repeat(48)},ctx),{message:'invalid_handle'});
   await assert.rejects(f.tools.confirmationDetails('delete_group_file',{file_handle:h.folder_handle},ctx),{message:'invalid_handle'});
-  let invoked=0;const args={name:'f.txt',get content(){invoked++;return 'secret';}};
-  await assert.rejects(f.tools.confirmationDetails('upload_group_text_file',args,ctx),{message:'invalid_arguments'});
+  let invoked=0;const args={get artifact_id(){invoked++;return 'art_'+'0'.repeat(24);}};
+  await assert.rejects(f.tools.confirmationDetails('upload_group_file',args,ctx),{message:'invalid_arguments'});
+  await assert.rejects(f.tools.confirmationDetails('upload_group_file',{artifact_id:'art_'+'0'.repeat(24),file:'/etc/passwd'},ctx),{message:'invalid_arguments'});
+  await assert.rejects(f.tools.confirmationDetails('upload_group_file',{artifact_id:'/etc/passwd'},ctx),{message:'invalid_arguments'});
   const badContext={...ctx,get selfId(){invoked++;return ctx.selfId;}};
   await assert.rejects(f.tools.confirmationDetails('create_group_folder',{name:'a'},badContext),{message:'invalid_arguments'});
   assert.equal(invoked,0);assert.deepEqual(f.calls,[]);

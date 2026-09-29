@@ -15,7 +15,7 @@ config.toml
 
 # 本地记忆和运行产物
 data/
-artifacts/
+/artifacts/
 *.sqlite
 *.sqlite-*
 *.db

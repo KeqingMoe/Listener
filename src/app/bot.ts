@@ -28,6 +28,7 @@ import { ReminderScheduler } from '../reminders/scheduler.js';
 import { SandboxService } from '../sandbox/service.js';
 import { SandboxJobStore } from '../sandbox/store.js';
 import { WebTools } from '../tools/web/tools.js';
+import { ArtifactStore } from '../artifacts/store.js';
 import { createSearchBackend } from '../tools/web/search.js';
 let logger: ReturnType<typeof configureLogging> | undefined;
 let telemetry: TelemetryStore | undefined;
@@ -39,6 +40,7 @@ let customFaceCoordinator: CustomFaceCoordinator | undefined;
 let reminderStore: ReminderStore | undefined;
 let reminderScheduler: ReminderScheduler | undefined;
 let sandboxStore: SandboxJobStore | undefined;
+let artifactStore: ArtifactStore | undefined;
 let sandboxService: SandboxService | undefined;
 
 async function main(): Promise<void> {
@@ -66,6 +68,8 @@ async function main(): Promise<void> {
   reminderStore=new ReminderStore({path:resolve(app.storage.directory,'reminders.sqlite')});
   sandboxStore=new SandboxJobStore({path:resolve(app.storage.directory,'sandbox.sqlite')});
   sandboxService=new SandboxService({store:sandboxStore});
+  artifactStore=new ArtifactStore({path:resolve(app.storage.directory,'artifacts.sqlite'),directory:app.storage.artifactDirectory,providerDirectory:app.storage.napcatArtifactDirectory});
+  const artifactSweep=setInterval(()=>{void artifactStore?.sweep().catch(()=>log('warn','app.artifact_sweep_failed',{reason:'sweep_failed'}));},10*60*1000);artifactSweep.unref();
   const webTools=new WebTools({...(app.web.search?{search:createSearchBackend(app.web.search)}:{})});
   customFaceStore=new CustomFaceStore({path:resolve(app.storage.directory,'custom-faces.sqlite')});
   customFaceCoordinator=new CustomFaceCoordinator({path:resolve(app.storage.directory,'custom-face-operations.sqlite')});
@@ -115,7 +119,7 @@ async function main(): Promise<void> {
         if(model instanceof ResponsesModel){const checkpoint=session.getTransportCheckpoint();if(checkpoint){try{model.restoreContinuationCheckpoint(checkpoint);}catch{session.reset('invalid_transport_checkpoint');}}}
         for(const entry of memory.recent())world.appendMessage(entry,{source:'migration',observedAt:entry.time});
         chmodSync(policy.storage.databasePath,0o600);
-        const listener=new Listener(client,model,memory,group,Math.random,undefined,scheduler,{world,session,modelRequestId:()=>lastRequestId,customFaces,reminders:reminderStore,web:webTools,sandbox:sandboxService,sandboxSummary:(self,group)=>{const jobs=sandboxService?.summary(self,group)??[];return jobs.length?{jobs:jobs.map(j=>({job_id:j.job_id,status:j.status,description:j.description}))}:{};}});
+        const listener=new Listener(client,model,memory,group,Math.random,undefined,scheduler,{world,session,modelRequestId:()=>lastRequestId,customFaces,reminders:reminderStore,web:webTools,artifacts:artifactStore,sandbox:sandboxService,sandboxSummary:(self,group)=>{const jobs=sandboxService?.summary(self,group)??[];return jobs.length?{jobs:jobs.map(j=>({job_id:j.job_id,status:j.status,description:j.description}))}:{};}});
         if(group.observeReactions)log('info','app.reactions_ready',{count:getReactionCatalog().length});
         log('info','app.group_ready',{group_id:groupId});
         return listener;
@@ -167,6 +171,7 @@ async function main(): Promise<void> {
       if(results.some(result=>result.status==='rejected')){log('error','app.shutdown_failed',{reason:'operation_failed'});process.exitCode=1;}
       else log('info','app.stopped');
     }).finally(async()=>{
+      try{artifactStore?.close();}catch{log('warn','app.artifact_close_failed',{reason:'close_failed'});}
       try{sandboxStore?.close();}catch{log('warn','app.sandbox_close_failed',{reason:'close_failed'});}
       try{reminderStore?.close();}catch{log('warn','app.reminders_close_failed',{reason:'close_failed'});}
       try{customFaceCoordinator?.close();}catch{log('warn','app.custom_faces_close_failed',{reason:'close_failed'});}

@@ -43,6 +43,8 @@ npm run config:check -- --group 123456789
 | | `registry_path` | `<directory>/group-registry.json`，Bot与面板共享的私有群清单，不含正文或密钥 |
 | | `custom_face_directory` | `<directory>/custom-face-originals`，Bot侧受控持久原图目录；相对路径以配置文件目录为基准 |
 | | `napcat_custom_face_directory` | 默认与Bot侧原图目录的绝对路径相同；NapCat侧专用绝对POSIX目录，容器部署必须映射到同一实际目录，不得含`.`或`..`路径段 |
+| | `artifact_directory` | `<directory>/artifacts`，Bot侧产物文件目录，文件按产物ID命名；须独立于其他存储文件与原图目录 |
+| | `napcat_artifact_directory` | 默认与Bot侧产物目录的绝对路径相同；NapCat侧读取产物（上传群文件、发送图片）的绝对POSIX目录，容器部署必须映射到同一实际目录 |
 | `logging` | `level` | info；可选debug/info/warn/error |
 | | `console` | true |
 | | `file` | 缺省开启；关闭用false，自定义用参数对象，不能写true |
@@ -172,6 +174,8 @@ NapCat在容器内时，两侧目录必须映射到**同一实际目录**。例�
 [storage]
 custom_face_directory = "/opt/qqbot/data/custom-face-originals"
 napcat_custom_face_directory = "/qqbot-custom-faces"
+artifact_directory = "/opt/qqbot/data/artifacts"
+napcat_artifact_directory = "/qqbot-artifacts"
 ```
 
 这两项只是部署文件路径，不是收藏列表；仅填写路径不会建立容器映射。目录须专用且可核验，程序使用目录0700、文件0400权限，按内容摘要保存经过验证的原始字节。缓存限制为512MiB、4096个文件；达到限制时拒绝新增缓存，不自动删除QQ仍可能引用的文件。它不是调用结束即删的临时文件，也不做TTL清理；删除QQ收藏不代表本地原图被同步删除。请勿将此目录作为群共享文件目录或公开下载目录。
@@ -213,7 +217,7 @@ napcat_custom_face_directory = "/qqbot-custom-faces"
 | `get_group_file_space` | direct | 否 | 无 | QQ功能 | 查询群文件数量与空间信息；部分上游数值可能是占位值。 |
 | `list_group_files` | direct | 否 | 无 | QQ功能 | 查看群根目录或指定文件夹的文件、目录及可操作引用，不保证列出全部文件。 |
 | `list_group_requests` | direct | 否 | 无 | QQ功能 | 查看本群待处理的直接入群申请，需Bot有管理员权限；不显示邀请Bot加入其他群的请求。 |
-| `view_images` | direct | 否 | `max_download_mb`默认10，范围1..10 MiB；单张图片下载上限，无图片数量配额 | Bot辅助 | 读取本群可核验图片并提供给模型理解；需要模型支持原生图片输入。 |
+| `view_images` | direct | 否 | `max_download_mb`默认10，范围1..10 MiB；单张图片下载上限，无图片数量配额 | Bot辅助 | 读取本群可核验图片或本群图片产物并提供给模型理解；需要模型支持原生图片输入。 |
 | `read_forward` | direct | 否 | 无 | Bot辅助 | 按需展开合并转发供模型阅读，不会将内容转发到群里。 |
 | `read_group_text_file` | direct | 否 | 无 | Bot辅助 | 下载并读取本群列表中选定文件的文本内容，不是PDF／Office等通用文档解析器。 |
 | `transcribe_voice` | direct | 否 | 无 | QQ功能 | 使用QQ原生识别当前群已知或直接引用消息中的语音，结果先提供给模型，不自动发送。 |
@@ -240,8 +244,11 @@ napcat_custom_face_directory = "/qqbot-custom-faces"
 | --- | --- | --- | --- | --- | --- |
 | `web_search` | direct | 否 | 无 | Bot辅助 | 通过部署配置的搜索服务搜索网页，返回来源列表。未配置 `[web].search` 时不提供此工具。 |
 | `web_fetch` | direct | 否 | 无 | Bot辅助 | 读取公开http(s)网页的可见正文，不访问内网或本机地址。 |
+| `create_artifact` | direct | 否 | 无 | Bot辅助 | 把文本或字节保存为本群有期限的产物，供上传群文件等工具使用。 |
+| `create_image` | direct | 否 | 无 | Bot辅助 | 把RGBA像素编码为PNG/JPEG/WebP图片产物。 |
+| `list_artifacts` | direct | 否 | 无 | Bot辅助 | 列出本群未过期的产物。 |
 
-细节见 [联网搜索与网页读取](web.md)。
+细节见 [联网搜索与网页读取](web.md)、[产物](artifacts.md)。
 
 ### 一次性定时提醒
 
@@ -265,7 +272,7 @@ napcat_custom_face_directory = "/qqbot-custom-faces"
 | `react_message` | direct | 否 | 无 | QQ功能 | 给消息添加或取消Bot自己的表情回应，不是发送QQ原生表情消息。 |
 | `poke_member` | direct | 是 | 无 | QQ功能 | 对指定群成员拍一拍／戳一戳。 |
 | `group_sign` | direct | 是 | 无 | QQ功能 | 使用Bot账号在本群签到，不是创建定时任务。 |
-| `send_group_image` | direct | 是 | 无 | QQ功能 | 把本群可核验的已有图片发到当前群，不生成新图片，也不接受任意URL。 |
+| `send_group_image` | direct | 是 | 无 | QQ功能 | 把本群可核验的已有图片或本群图片产物发到当前群，不接受任意URL或本机路径。 |
 | `forward_message` | direct | 是 | 无 | QQ功能 | 将一条可核验的本群消息原生转发到当前群。 |
 | `send_group_forward` | direct | 是 | 无 | QQ功能 | 将多条可核验的已有消息合并转发，不伪造发送者或正文。 |
 | `send_group_ai_voice` | direct | 是 | 无 | QQ功能 | 使用QQ的AI声线把文字作为语音发到本群，不是语音识别或本项目模型的音频生成。 |
@@ -300,7 +307,7 @@ napcat_custom_face_directory = "/qqbot-custom-faces"
 | `publish_group_notice` | confirm | 是 | 无 | QQ功能 | 发布纯文字群公告。 |
 | `delete_group_notice` | confirm | 是 | 无 | QQ功能 | 删除当前公告列表中核验存在的指定公告。 |
 | `respond_group_request` | confirm | 是 | 无 | QQ功能 | 同意或拒绝通过申请列表核验的本群直接入群申请，不接受任意申请标识或其他群的请求。 |
-| `upload_group_text_file` | confirm | 是 | 无 | QQ功能 | 把工具调用中提供的文字生成文本文件并上传到本群，不上传任意本机文件。 |
+| `upload_group_file` | confirm | 是 | 无 | QQ功能 | 把本群产物（create_artifact/create_image生成）上传为群文件，NapCat按共享目录路径读取，不上传任意本机文件。 |
 | `create_group_folder` | confirm | 是 | 无 | QQ功能 | 在本群群文件中创建目录。 |
 | `delete_group_file` | confirm | 是 | 无 | QQ功能 | 删除本群文件列表中核验选定的文件。 |
 | `delete_group_folder` | confirm | 是 | 无 | QQ功能 | 删除本群核验选定的群文件目录，不允许删除根目录。 |

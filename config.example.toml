@@ -32,6 +32,9 @@ timeout_ms = 180000
 # [storage]
 # custom_face_directory = "data/custom-face-originals" # Bot侧，相对config.toml。
 # napcat_custom_face_directory = "/qqbot-custom-faces" # NapCat侧，绝对POSIX路径。
+# 产物（create_artifact/create_image）同理：上传群文件与发送产物图片时NapCat按路径读取。
+# artifact_directory = "data/artifacts" # Bot侧，相对config.toml。
+# napcat_artifact_directory = "/qqbot-artifacts" # NapCat侧，绝对POSIX路径。
 
 [defaults]
 # false：只服务显式启用的群；true：服务Bot加入的所有群，可按群排除。

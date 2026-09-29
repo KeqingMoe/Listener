@@ -34,6 +34,8 @@ import type { ReminderStore } from '../reminders/store.js';
 import type { SandboxService } from '../sandbox/service.js';
 import { SandboxTools, SANDBOX_TOOL_NAMES, buildSandboxTools } from './sandbox/tools.js';
 import { WebTools, WEB_TOOL_NAMES, buildWebToolDefinitions } from './web/tools.js';
+import { ArtifactTools, ARTIFACT_TOOL_NAMES, buildArtifactToolDefinitions } from './artifacts/tools.js';
+import type { ArtifactStore } from '../artifacts/store.js';
 import { resolveOwnerId } from '../contracts/identity.js';
 import { CustomFaceTools, CUSTOM_FACE_TOOL_NAMES, buildCustomFaceToolDefinitions, type CustomFaceOptions } from './custom-faces/tools.js';
 
@@ -42,6 +44,7 @@ export interface ExtendedToolOptions {
   reminders?: ReminderStore;
   sandbox?: SandboxService;
   web?: WebTools;
+  artifacts?: ArtifactStore;
   ownerId?: string;
   beforeSend?: GroupMediaOptions['beforeSend'];
   onSent?: GroupMediaOptions['onSent'];
@@ -133,7 +136,7 @@ export function createExtendedTools(
     groupId,
     GROUP_MEDIA_TOOL_NAMES.filter((name) => enabled.has(name)),
     memory,
-    { downloader: options.downloader, beforeSend: options.beforeSend, onSent: options.onSent },
+    { downloader: options.downloader, artifacts: options.artifacts, beforeSend: options.beforeSend, onSent: options.onSent },
   );
   for (const definition of media.definitions())
     register({
@@ -166,6 +169,7 @@ export function createExtendedTools(
       api,
       groupId,
       GROUP_FILE_TOOL_NAMES.filter((name) => enabled.has(name)),
+      { artifacts: options.artifacts },
     );
   for (const definition of files.definitions())
     if (enabled.has(definition.function.name))
@@ -223,6 +227,13 @@ export function createExtendedTools(
   for (const definition of buildWebToolDefinitions([...enabled])) register({
     definition, sideEffect: false,
     execute: (args, _context, signal) => options.web ? options.web.execute(definition.function.name, args, signal) : Promise.resolve({ status: 'error', error: 'web_unavailable' }),
+  });
+  const artifacts = options.artifacts ? new ArtifactTools(options.artifacts) : undefined;
+  for (const definition of buildArtifactToolDefinitions([...enabled])) register({
+    definition, sideEffect: false,
+    execute: (args, context, signal) => context.groupId !== groupId
+      ? Promise.resolve({ status: 'error', error: 'invalid_scope' })
+      : artifacts ? artifacts.execute(definition.function.name, args, context, signal) : Promise.resolve({ status: 'error', error: 'artifacts_unavailable' }),
   });
   return registry;
 }

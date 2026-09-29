@@ -29,7 +29,7 @@ export const EXTENDED_TOOL_NAMES = [
   "get_group_file_space",
   "list_group_files",
   "read_group_text_file",
-  "upload_group_text_file",
+  "upload_group_file",
   "create_group_folder",
   "delete_group_file",
   "delete_group_folder",
@@ -46,10 +46,17 @@ export const EXTENDED_TOOL_NAMES = [
   "cancel_javascript_job",
   "web_search",
   "web_fetch",
+  "create_artifact",
+  "create_image",
+  "list_artifacts",
 ] as const;
 export type ExtendedToolName = (typeof EXTENDED_TOOL_NAMES)[number];
+/** No QQ-visible effect and no confirmation mode (artifact tools write only bot-local, TTL-bound storage). */
 export const EXTENDED_READ_ONLY_TOOLS: readonly ExtendedToolName[] = [
   "query_javascript_jobs",
+  "create_artifact",
+  "create_image",
+  "list_artifacts",
   "web_search",
   "web_fetch",
   "get_group_info",

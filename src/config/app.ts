@@ -20,7 +20,7 @@ export interface AppConfig {
   runtime:{maxConcurrentTurns:number};
   /** Absent search means the web_search tool is not offered at all. */
   web:{search?:WebSearchProviderConfig};
-  storage:{directory:string;telemetryPath:string;registryPath:string;customFaceDirectory:string;napcatCustomFaceDirectory:string};
+  storage:{directory:string;telemetryPath:string;registryPath:string;customFaceDirectory:string;napcatCustomFaceDirectory:string;artifactDirectory:string;napcatArtifactDirectory:string};
   logging:LoggingConfig;
   defaultsEnabled:boolean;
   configuredGroupIds:readonly string[];

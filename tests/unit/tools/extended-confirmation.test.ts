@@ -86,7 +86,7 @@ const samples: Record<string, JsonObject> = {
   get_group_file_space: {},
   list_group_files: { limit: 1 },
   read_group_text_file: { file_handle: file, max_bytes: 128 },
-  upload_group_text_file: { name: "note.txt", content: "hello" },
+  upload_group_file: { artifact_id: "art_" + "c".repeat(24) },
   create_group_folder: { name: "notes" },
   delete_group_file: { file_handle: file },
   delete_group_folder: { folder_handle: file },
@@ -264,16 +264,17 @@ test("all invisible format controls are escaped in display but original args rem
   assert.equal(r.description.split("\n").length, 5);
 });
 test("description limit rejects entire proposals rather than omitting large text or resolved details", () => {
-  for (const [name, args] of [
+  for (const [name, args, resolved] of [
     ["publish_group_notice", { text: "a".repeat(4000) }],
     ["send_group_ai_voice", { character_id: "v", text: "汉".repeat(1500) }],
     [
-      "upload_group_text_file",
-      { name: "small.txt", content: "a".repeat(4000) },
+      "upload_group_file",
+      { artifact_id: "art_" + "c".repeat(24) },
+      "说明".repeat(2000),
     ],
-  ] as const)
+  ] as [string, JsonObject, string?][])
     rejected(
-      () => prepare(name, args, definition(name)),
+      () => prepare(name, args, definition(name), resolved),
       "confirmation_description_too_large",
     );
   rejected(
@@ -281,10 +282,12 @@ test("description limit rejects entire proposals rather than omitting large text
     "confirmation_description_too_large",
   );
   const small = prepare(
-    "upload_group_text_file",
-    { name: "a.txt", content: "FULL\nCONTENT" },
-    definition("upload_group_text_file"),
+    "upload_group_file",
+    { artifact_id: "art_" + "c".repeat(24) },
+    definition("upload_group_file"),
+    '{"文件名":"a.txt","说明":"FULL\nCONTENT"}',
   );
+  assert.match(small.description, /art_c{24}/);
   assert.match(small.description, /FULL\\nCONTENT/);
   let low = 0,
     high = 3500;

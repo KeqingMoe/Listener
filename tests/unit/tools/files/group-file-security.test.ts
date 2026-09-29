@@ -1,4 +1,8 @@
-import test from "node:test";
+import test, { after } from "node:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { ArtifactStore } from "../../../../src/artifacts/store.js";
 import assert from "node:assert/strict";
 import {
   GroupFileTools,
@@ -7,6 +11,28 @@ import {
 import type { Api } from "../../../../src/contracts/onebot.js";
 import type { JsonObject } from "../../../../src/contracts/json.js";
 import type { TurnContext } from "../../../../src/contracts/tools.js";
+const artifactDir = mkdtempSync(join(tmpdir(), "group-file-security-"));
+const store = new ArtifactStore({
+  path: join(artifactDir, "a.sqlite"),
+  directory: join(artifactDir, "files"),
+  providerDirectory: "/napcat/artifacts",
+});
+after(() => {
+  store.close();
+  rmSync(artifactDir, { recursive: true, force: true });
+});
+const art = async (name: string, content = "safe", groupId = "123") =>
+  (
+    await store.create({
+      selfId: "456",
+      groupId,
+      name,
+      description: "测试产物",
+      mediaType: "text/plain",
+      ttlMs: 60000,
+      bytes: Buffer.from(content),
+    })
+  ).artifactId;
 const ctx: TurnContext = {
   groupId: "123",
   selfId: "456",
@@ -66,6 +92,7 @@ function fixture(
   };
   const tools = new GroupFileTools(api, ctx.groupId, GROUP_FILE_TOOL_NAMES, {
     downloader: async () => "safe",
+    artifacts: store,
   });
   const run = (name: string, args: unknown) => tools.execute(name, args, ctx);
   const list = async (args: JsonObject = {}) => {
@@ -106,10 +133,9 @@ test("security: unknown folder deletion prevents new writes targeting that folde
       .status,
     "unknown",
   );
-  await f.run("upload_group_text_file", {
+  await f.run("upload_group_file", {
     folder_handle: folderHandle,
-    name: "new.txt",
-    content: "safe",
+    artifact_id: await art("new.txt"),
   });
   assert.equal(
     f.calls.filter((c) => c.action === "upload_group_file").length,
@@ -196,33 +222,60 @@ test("security: supplied group identity in capacity or listing responses cannot 
 test("security: accessors are rejected without invoking untrusted getters", async () => {
   const f = fixture();
   let invoked = 0;
-  const args = Object.defineProperty({ name: "safe.txt" }, "content", {
+  const artifact_id = await art("safe.txt");
+  const args = Object.defineProperty({ artifact_id }, "folder_handle", {
     enumerable: true,
     get() {
       invoked++;
       return "safe";
     },
   });
-  assert.equal((await f.run("upload_group_text_file", args)).status, "error");
+  assert.equal((await f.run("upload_group_file", args)).status, "error");
   assert.equal(invoked, 0);
   assert.equal(f.calls.length, 0);
 });
 
-test("security: upload is literal UTF8 bytes, never a local-file or URL resource read", async () => {
+test("security: upload sends only the scoped artifact shared path, never model-supplied paths, URLs or base64", async () => {
   const f = fixture(),
     content =
       "file:///etc/private https://private.example.invalid/token /home/secret";
+  const artifact_id = await art("literal.txt", content);
   assert.equal(
-    (await f.run("upload_group_text_file", { name: "literal.txt", content }))
-      .status,
+    (await f.run("upload_group_file", { artifact_id })).status,
     "ok",
   );
   const upload = f.calls.find((c) => c.action === "upload_group_file")!;
-  assert.equal(
-    upload.params.file,
-    `base64://${Buffer.from(content).toString("base64")}`,
-  );
+  assert.equal(upload.params.file, `/napcat/artifacts/${artifact_id}`);
+  assert.ok(!String(upload.params.file).startsWith("base64://"));
+  assert.doesNotMatch(JSON.stringify(upload.params), /private|secret/);
   assert.equal(upload.params.name, "literal.txt");
+  for (const file of [
+    "/etc/passwd",
+    "file:///etc/private",
+    "https://private.example.invalid/token",
+    "base64://c2VjcmV0",
+  ]) {
+    assert.equal(
+      (await f.run("upload_group_file", { artifact_id, file })).error,
+      "invalid_arguments",
+    );
+    assert.equal(
+      (await f.run("upload_group_file", { artifact_id: file })).error,
+      "invalid_arguments",
+    );
+  }
+  assert.equal(
+    (
+      await f.run("upload_group_file", {
+        artifact_id: await art("foreign.txt", "x", "999"),
+      })
+    ).error,
+    "artifact_not_found",
+  );
+  assert.equal(
+    f.calls.filter((c) => c.action === "upload_group_file").length,
+    1,
+  );
 });
 
 test("security: foreign or missing per-row group identity never produces an opaque handle", async () => {

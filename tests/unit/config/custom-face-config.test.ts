@@ -30,8 +30,8 @@ function fixture(t: { after(fn: () => void): void }, input: { storage?: string; 
 test('six favorite tools default direct without implicitly enabling any group or low-level registry', t => {
   const f = fixture(t), app = f.load(), group = app.resolveGroup(GROUP);
   assert.equal(app.defaultsEnabled, false); assert.equal(group.enabled, false);
-  assert.equal(TOOL_NAMES.length, 58);
-  assert.equal(TOOL_NAMES.filter(name => TOOL_CAPABILITIES[name].defaultMode === 'direct').length, 39);
+  assert.equal(TOOL_NAMES.length, 61);
+  assert.equal(TOOL_NAMES.filter(name => TOOL_CAPABILITIES[name].defaultMode === 'direct').length, 42);
   assert.equal(TOOL_NAMES.filter(name => TOOL_CAPABILITIES[name].defaultMode === 'confirm').length, 18);
   assert.equal(TOOL_NAMES.filter(name => TOOL_CAPABILITIES[name].defaultMode === 'off').length, 1);
   const sources = inspectGroupConfig(app, GROUP).sources as Record<string, string>;
@@ -105,6 +105,17 @@ test('two original-directory paths resolve deliberately without creating files',
   assert.equal(existsSync(join(custom.root, 'assets')), false);
   const directoryOnly = fixture(t, { storage: 'directory="state"' });
   assert.equal(directoryOnly.load().storage.customFaceDirectory, join(directoryOnly.root, 'state', 'custom-face-originals'));
+});
+
+test('artifact directory pair defaults beside storage and validates the NapCat side', t => {
+  const f = fixture(t), app = f.load();
+  assert.equal(app.storage.artifactDirectory, join(f.root, 'data', 'artifacts'));
+  assert.equal(app.storage.napcatArtifactDirectory, app.storage.artifactDirectory);
+  const custom = fixture(t, { storage: 'artifact_directory="shared/art"\nnapcat_artifact_directory="/app/art"' }).load();
+  assert.equal(custom.storage.artifactDirectory, join(custom.configPath, '..', 'shared', 'art'));
+  assert.equal(custom.storage.napcatArtifactDirectory, '/app/art');
+  for (const value of ['', '/', 'relative', '/a/../b', '/a\\b']) assert.throws(fixture(t, { storage: `napcat_artifact_directory=${JSON.stringify(value)}` }).load, /napcat_artifact_directory/, value);
+  assert.throws(fixture(t, { storage: 'artifact_directory="data/custom-face-originals"' }).load, /artifact_directory/);
 });
 
 test('NapCat directory must be a dedicated absolute POSIX path, not a relative or traversing path', t => {

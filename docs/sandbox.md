@@ -69,9 +69,10 @@ return answer.toString();
 代码内可 `await tools.<工具名>(参数)`，参数与返回值和模型直接调用该工具完全相同，包括发送消息、看图、群管理等有QQ副作用的工具。`tools` 只列出本群当前可用的工具，并排除只对本轮唤醒有意义的 `finish`、`manage_attention`、`get_wake_state`、`ack_events` 及嵌套的 `execute_javascript`。
 
 ```js
-const primes = [];
-for (let n = 2; primes.length < 10; n++) if (primes.every(p => n % p)) primes.push(n);
-const sent = await tools.send_message({ segments: [{ type: 'text', text: primes.join(' ') }] });
+const w = 64, h = 64, p = new Uint8Array(w * h * 4);
+for (let i = 0; i < w * h; i++) { p[i * 4] = i % 256; p[i * 4 + 3] = 255; }
+const img = await tools.create_image({ name: 'grad.png', description: '渐变', ttl_ms: 600000, width: w, height: h, pixels: p, format: 'png' });
+const sent = await tools.send_group_image({ artifact_id: img.artifact_id });
 return JSON.stringify(sent);
 ```
 

@@ -112,3 +112,21 @@ test('confirm-mode tools from the sandbox post the normal confirmation and repor
   assert.equal((r as {tool_calls:{abnormal:JsonObject[]}}).tool_calls.abnormal[0]!.status,'confirmation_required');
  }finally{await h.close();}
 });
+
+test('sandbox code creates image artifacts from Uint8Array pixels',async()=>{
+ const {mkdtempSync,rmSync}=await import('node:fs');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+ const {ArtifactStore}=await import('../../../src/artifacts/store.js');
+ const root=mkdtempSync(join(tmpdir(),'bridge-art-'));const artifacts=new ArtifactStore({path:join(root,'a.sqlite'),directory:join(root,'files'),providerDirectory:'/napcat/art'});
+ const cfg=config({create_image:'direct',list_artifacts:'direct'});
+ const mem=memory(),session=new ModelSession({path:':memory:',groupId:group}),world=new WorldEventStore({path:':memory:',groupId:group});
+ const bot=new Listener({async call(){return {};}},undefined,mem,cfg,Math.random,undefined,undefined,{session,world,artifacts,pacer:virtualPacer().pacer});bot.setConnected(true);
+ const store=new SandboxJobStore({path:':memory:'}),service=new SandboxService({store,limits:{timeoutMs:10000}});
+ service.setToolBridge({names:()=>bot.hostToolNames(),call:(s,n,a,sig)=>bot.executeHostTool(n,a,{groupId:s.groupId,selfId:s.selfId,actorId:s.actorId,messageId:s.messageId},sig)});
+ try{
+  const r=await service.execute({selfId:self,groupId:group,description:'img',mode:'sync',waitMs:20000,code:`
+   const w=64,h=32,p=new Uint8Array(w*h*4);for(let i=0;i<w*h;i++){p[i*4]=i%256;p[i*4+3]=255;}
+   const img=await tools.create_image({name:'grad.png',description:'渐变',ttl_ms:60000,width:w,height:h,pixels:p,format:'png'});
+   const list=await tools.list_artifacts({});return JSON.stringify({status:img.status,type:img.media_type,count:list.artifacts.length});`},undefined,{actorId:actor,messageId:'1'});
+  assert.equal(r.status,'completed',JSON.stringify(r));assert.deepEqual(JSON.parse((r as {value:string}).value),{status:'ok',type:'image/png',count:1});
+ }finally{await service.stop();await bot.stop();store.close();artifacts.close();world.close();session.close();rmSync(root,{recursive:true,force:true});}
+});

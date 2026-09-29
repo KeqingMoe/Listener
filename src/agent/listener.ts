@@ -1,5 +1,6 @@
 import type { SandboxService } from '../sandbox/service.js';
 import type { WebTools } from '../tools/web/tools.js';
+import type { ArtifactStore } from '../artifacts/store.js';
 import { isExecutionDiagnostic } from '../sandbox/protocol.js';
 import { buildSystemPrompt, observedSystemPrompt } from './prompts.js';
 import { buildToolDefinitions, SANDBOX_EXCLUDED_TOOLS } from './tool-definitions.js';
@@ -61,7 +62,7 @@ export interface CustomFaceRuntime {
   staging?: CustomFaceStager;
   originalDownloader?: OriginalImageDownloader;
 }
-export interface ListenerRuntime { pacer?:SideEffectPacer; web?:WebTools; sandbox?:SandboxService; sandboxSummary?:(selfId:string,groupId:string)=>JsonObject; reminders?: ReminderStore; world?: WorldEventStore; session?: ModelSession; modelRequestId?:()=>string|undefined; customFaces?: CustomFaceRuntime }
+export interface ListenerRuntime { pacer?:SideEffectPacer; web?:WebTools; artifacts?:ArtifactStore; sandbox?:SandboxService; sandboxSummary?:(selfId:string,groupId:string)=>JsonObject; reminders?: ReminderStore; world?: WorldEventStore; session?: ModelSession; modelRequestId?:()=>string|undefined; customFaces?: CustomFaceRuntime }
 
 export function messageId(value: unknown): string | undefined {
   if (typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
@@ -161,7 +162,7 @@ export class Listener {
     this.ownerId=resolveOwnerId(this.config.ownerId);
     this.config.ownerId=this.ownerId;
     const enabled=new Set<string>(enabledExtendedTools(this.config.tools?.extended));
-    this.groupFiles=new GroupFileTools(api,this.groupId,GROUP_FILE_TOOL_NAMES.filter(name=>enabled.has(name)));
+    this.groupFiles=new GroupFileTools(api,this.groupId,GROUP_FILE_TOOL_NAMES.filter(name=>enabled.has(name)),{artifacts:runtime.artifacts});
     this.groupRequests=new GroupRequestTools(api,this.groupId,GROUP_REQUEST_TOOL_NAMES.filter(name=>enabled.has(name)));
     if(runtime.session&&!runtime.world)throw new Error('Model session requires world store');
     if(runtime.world&&runtime.world.groupId!==this.groupId)throw new Error('World group mismatch');
@@ -691,14 +692,14 @@ export class Listener {
       getGroupMembers:optionalToolEnabled(this.config,'get_group_members',this.config.tools?.members!==false),
       getMemberInfo:optionalToolEnabled(this.config,'get_member_info',this.config.tools?.members!==false),
     });
-    const imageTools=this.config.images?.enabled?new ImageTools(this.api,workingMemory,this.config.images,this.imageDownloader,this.groupId):undefined;
+    const imageTools=this.config.images?.enabled?new ImageTools(this.api,workingMemory,this.config.images,this.imageDownloader,this.groupId,this.runtime.artifacts):undefined;
     const imageState = imageTools?.createTurn() ?? {loadedIds:new Set<string>()};
     const forwardTools=this.config.forward?.enabled?new ForwardTools(this.api,workingMemory,this.config.forward,this.groupId):undefined;
     const reactionTools=this.config.tools?.reactions?new ReactionTools(turnApi,workingMemory,this.groupId):undefined;
     const reactionUsers=optionalToolEnabled(this.config,'get_reaction_users',this.config.tools?.reactions===true)?new ReactionUserTools(turnApi,workingMemory,this.groupId):undefined;
     const extendedTools=createExtendedTools(turnApi,workingMemory,this.groupId,this.config.tools?.extended,{
       downloader:this.imageDownloader,files:this.groupFiles,requests:this.groupRequests,
-      reminders:this.runtime.reminders,sandbox:this.runtime.sandbox,web:this.runtime.web,ownerId:this.ownerId,
+      reminders:this.runtime.reminders,sandbox:this.runtime.sandbox,web:this.runtime.web,artifacts:this.runtime.artifacts,ownerId:this.ownerId,
       customFaces:this.customFaces?{
         ...this.customFaces,imageState,
         maxDownloadMb:this.config.images?.maxDownloadMb??10,

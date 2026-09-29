@@ -31,7 +31,7 @@ const titles: Record<string, string> = {
   get_group_file_space: "查询群文件空间",
   list_group_files: "列出群文件",
   read_group_text_file: "读取群文本文件",
-  upload_group_text_file: "上传生成的文本文件",
+  upload_group_file: "上传产物为群文件",
   create_group_folder: "新建群文件目录",
   delete_group_file: "删除群文件",
   delete_group_folder: "删除群文件目录",
