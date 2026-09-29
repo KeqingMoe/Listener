@@ -189,7 +189,7 @@ export function buildApp(options: AppOptions) {
   });
   app.get("/api/overview", async (req) => {
     const { range, groupId } = parse(req.query),
-      rows = reviewRepository.requests(range, groupId).map(r=>({interval_known:r.performance.coverage.modelIntervalRequests===1,request_id:r.requestId,group_id:r.groupId,started_at:r.startedAt,ended_at:r.endedAt,duration_ms:r.durationMs,status:r.status,error_code:r.errorCode,input_tokens:r.totalInputTokens,cached_input_tokens:r.cachedInputTokens,output_tokens:r.outputTokens})),
+      rows = reviewRepository.requests(range, groupId).map(r=>({interval_known:r.performance.coverage.modelIntervalRequests===1,request_id:r.requestId,group_id:r.groupId,started_at:r.startedAt,ended_at:r.endedAt,duration_ms:r.durationMs,status:r.status,error_code:r.errorCode,input_tokens:r.totalInputTokens,cached_input_tokens:r.cachedInputTokens,output_tokens:r.outputTokens,ttft_ms:r.ttftMs,decode_duration_ms:r.decodeDurationMs})),
       toolRows = repository.toolTimings(range, groupId),
       bucket = range.until - range.since <= 2 * DAY ? 3600000 : DAY;
     const series = [];

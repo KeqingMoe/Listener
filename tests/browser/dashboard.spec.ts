@@ -504,14 +504,32 @@ test('compact overview has trifold token counts and factual health, never offlin
   await page.goto('/');
   await expect(page.getByRole('heading', { name: '群组汇总' })).toBeVisible();
   const groupTable = page.locator('section.panel').filter({ has: page.getByRole('heading', { name: '群组汇总' }) }).locator('table');
-  await expect(groupTable.locator('thead th')).toHaveText(['群组', '请求', '成功', '失败 / 超时', '输入', '缓存', '输出', '缓存命中', 'P95']);
-  await expect(groupTable.locator('tbody tr').first().locator('td')).toHaveCount(9);
-  await expect(page.getByLabel('性能指标').locator('div').filter({ hasText: '缓存命中率' })).toHaveAttribute('title', '仅使用总输入与缓存计数有效配对的样本：缓存量之和 / 同批总输入之和；未知不视为零，总输入为零时比率未知。');
+  await expect(groupTable.locator('thead th')).toHaveText(['群组', '请求', '成功', '失败 / 超时', '输入', '缓存', '输出', '缓存命中', 'TTFT', 'TPS', 'P95']);
+  await expect(groupTable.locator('tbody tr').first().locator('td')).toHaveCount(11);
+  await expect(page.locator('.metric-strip')).toContainText('缓存命中');
+   await expect(page.locator('.metric-strip')).toContainText('TTFT');
+   await expect(page.locator('.metric-strip')).toContainText('TPS');
+   await expect(page.locator('.metric-strip')).toContainText('模型累计');
+   await expect(page.locator('.metric-strip')).toContainText('工具累计');
   const headers = await groupTable.locator('thead th').allTextContents();
-  for (const [label, value] of [['输入', '400'], ['缓存', '800'], ['输出', '160']]) {
+  for (const [label, value] of [['输入', '400'], ['缓存', '800'], ['输出', '160'], ['TTFT', '500 ms'], ['TPS', '40.0 tok/s']]) {
     const index = headers.indexOf(label);
     expect(index).toBeGreaterThanOrEqual(0);
     await expect(groupTable.locator('tbody tr').first().locator('td').nth(index)).toHaveText(value);
+  }
+  const strip = page.getByLabel('总览汇总', { exact: true });
+  await expect(strip.locator(':scope > div')).toHaveCount(11);
+  await expect(strip.locator(':scope > div').filter({ has: page.locator('span', { hasText: /^TTFT$/ }) }).locator('strong')).toHaveText('500 ms');
+  await expect(strip.locator(':scope > div').filter({ has: page.locator('span', { hasText: /^TPS$/ }) }).locator('strong')).toHaveText('40.0 tok/s');
+  await expect(page.getByLabel('性能指标', { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('chart-updated-at')).toHaveCount(0);
+  await expect(page.getByText('与全局数据同步刷新。', { exact: true })).toHaveCount(0);
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await strip.evaluate(el => getComputedStyle(el).display)).toBe('grid');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    const styles = await strip.locator('strong').evaluateAll(elements => elements.map(el => ({ size: getComputedStyle(el).fontSize, weight: getComputedStyle(el).fontWeight })));
+    expect(new Set(styles.map(s => JSON.stringify(s))).size).toBe(1);
   }
   await expect(page.locator('.topbar')).not.toContainText('Token');
   await expect(page.getByRole('heading', { name: '最近运行事实' })).toBeVisible();

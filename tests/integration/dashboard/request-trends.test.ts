@@ -18,6 +18,7 @@ function fixture(old = false) {
     ('cancelled','11',500,600,100,'error',NULL,NULL,NULL,'cancelled'),
     ('unknown','11',600,NULL,NULL,'unrecognized',NULL,NULL,NULL,NULL),
     ('foreign','22',100,200,100,'success',99999,0,99999,NULL);`);
+   if(!old) db.exec(`ALTER TABLE model_requests ADD COLUMN ttft_ms REAL; ALTER TABLE model_requests ADD COLUMN decode_duration_ms REAL; UPDATE model_requests SET ttft_ms=12.5,decode_duration_ms=87.5 WHERE request_id='success';`);
   if(!old) db.exec(`CREATE TABLE model_request_inspections(request_id TEXT PRIMARY KEY,group_id TEXT,started_at INTEGER,ended_at INTEGER,status TEXT,wake_id TEXT,request_json TEXT,model TEXT);
     INSERT INTO model_request_inspections VALUES('running','11',700,NULL,'running','wake','PRIVATE_BODY','PRIVATE_MODEL'),('interrupted','11',800,999999,'interrupted','wake','PRIVATE_BODY','PRIVATE_MODEL'),('success','11',100,200,'success','wake','PRIVATE_BODY','PRIVATE_MODEL');`);
   db.close();
@@ -36,7 +37,7 @@ test('trends preserves review metering, all seven outcomes and old schemas witho
       assert.equal(body.points.length,old?6:8);assert.equal(body.buckets[0]!.total,body.points.length);
       assert.deepEqual(body.buckets[0]!.counts,{running:old?0:1,interrupted:old?0:1,success:2,failed:1,timeout:1,cancelled:1,unknown:1});
       const success=body.points.find(p=>p.startedAt===100)!;
-      assert.deepEqual(success,{startedAt:100,outcome:'success',durationMs:100,inputTokens:60,totalInputTokens:100,cachedInputTokens:40,outputTokens:10,tps:null,ttftMs:null,cacheHitRate:0.4});
+      assert.deepEqual(success,{startedAt:100,outcome:'success',durationMs:100,inputTokens:60,totalInputTokens:100,cachedInputTokens:40,outputTokens:10,tps:old?null:114.28571428571429,ttftMs:old?null:12.5,cacheHitRate:0.4});
       const zero=body.points.find(p=>p.startedAt===200)!;assert.equal(zero.durationMs,0);assert.equal(zero.outputTokens,0);assert.equal(zero.tps,null);
       assert.equal(body.points.find(p=>p.outcome==='failed')!.tps,null);
       assert.equal(body.points.find(p=>p.outcome==='failed')!.cacheHitRate,0);
@@ -47,6 +48,12 @@ test('trends preserves review metering, all seven outcomes and old schemas witho
       assert.equal((await f.get('/api/request-trends?since=100&until=100')).json().points.length,1);
       assert.equal((await f.get('/api/request-trends?since=101&until=199')).json().points.length,0);
       const overview=(await f.get('/api/overview?since=100&until=800')).json();assert.ok(!('points' in overview));assert.equal(overview.summary.requests,body.points.length);
+       for(const aggregate of [overview.summary,...overview.groups,...overview.series.filter((s:any)=>s.requests>0)]){
+         assert.equal(aggregate.ttftMs,old?null:12.5);assert.equal(aggregate.tps,old?null:10000/87.5);
+         assert.equal(aggregate.performance.ttftMs,old?null:12.5);assert.equal(aggregate.performance.tps,old?null:10000/87.5);
+       }
+       const sync=(await f.get('/api/resource-sync?resource='+encodeURIComponent('/api/overview?since=100&until=800'))).json();
+       assert.equal(sync.mode,'snapshot');assert.deepEqual(sync.data.summary,overview.summary);assert.deepEqual(sync.data.groups,overview.groups);
     }finally{await f.cleanup();}
   }
 });

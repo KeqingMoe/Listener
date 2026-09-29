@@ -36,6 +36,18 @@ function apply(data:any,r:any):any {
  return result;
 }
 const requests='/api/requests?since=0&until=1000';
+test('overview sync transitions from unknown legacy timings to measured summary and groups',async()=>{
+ const f=fixture();try{
+  const path='/api/overview?since=0&until=1000';let r=await f.sync(path),data=r.data;
+  assert.equal(data.summary.ttftMs,null);assert.equal(data.summary.tps,null);
+  f.db.exec(`ALTER TABLE model_requests ADD COLUMN ttft_ms REAL; ALTER TABLE model_requests ADD COLUMN decode_duration_ms REAL; UPDATE model_requests SET ttft_ms=20,decode_duration_ms=80 WHERE request_id='a';`);
+  r=await f.sync(path,r.cursor);assert.notEqual(r.mode,'unchanged');data=apply(data,r);
+  for(const summary of [data.summary,...data.groups,...data.series.filter((s:any)=>s.requests>0)]){assert.equal(summary.ttftMs,20);assert.equal(summary.tps,125);assert.equal(summary.performance.ttftMs,20);assert.equal(summary.performance.tps,125);}
+  const unchanged=await f.sync(path,r.cursor);assert.equal(unchanged.mode,'unchanged');
+  f.db.exec(`UPDATE model_requests SET ttft_ms=40,decode_duration_ms=60 WHERE request_id='a'`);
+  const updated=await f.sync(path,unchanged.cursor);data=apply(data,updated);assert.equal(data.summary.ttftMs,40);assert.ok(Math.abs(data.groups[0].tps-10000/60)<1e-9);
+ }finally{await f.cleanup();}
+});
 test('in-flight source changes never label stale projections as unchanged',async()=>{
  const f=fixture(),original=ReviewRepository.prototype.requests;let calls=0,write=true;
  ReviewRepository.prototype.requests=function(...args){calls++;const result=original.apply(this,args);if(write){write=false;f.db.exec("UPDATE model_requests SET status='running' WHERE request_id='a'");}return result;};

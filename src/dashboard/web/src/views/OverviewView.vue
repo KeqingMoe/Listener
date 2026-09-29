@@ -7,7 +7,6 @@ import { number, percent, duration, time } from "../api/client";
 import { useFilters, useResource } from "../composables/useDashboard";
 import DataState from "../components/ui/DataState.vue";
 import AvailabilityNote from "../components/ui/AvailabilityNote.vue";
-import PerformanceFacts from "../components/ui/PerformanceFacts.vue";
 import OverviewCharts from "../components/overview/OverviewCharts.vue";
 
 const route = useRoute();
@@ -27,16 +26,26 @@ const groups = computed(() => (data.value?.groups ?? []).filter(g => g.groupId.t
 const healthGroups = computed(() => (health.data.value?.groups ?? []).filter(g =>
   (!groupId.value || g.groupId === groupId.value) && g.groupId.toLowerCase().includes(search.value),
 ));
+const tps = (value: number | null | undefined) => value == null ? '—' : `${value.toFixed(1)} tok/s`;
+const ttftHint = '已结束且 TTFT 有效、不超过请求耗时的样本算术平均值，包含失败请求；缺失不作 0。';
+const tpsHint = '仅成功且计时、输出有效配对的请求：输出 token（含推理）之和 / 首个有效输出至流完成耗时之和；不含 TTFT，缺失或零耗时不参与。客户端观测速率受网络缓冲影响。';
 const metrics = computed(() => {
   const s = data.value?.summary;
-  return s ? [
+  if (!s) return [];
+  const p = s.performance;
+  return [
     { label: "请求", value: s.requests, format: number, hint: "当前群组与时间范围内全部模型请求" },
     { label: "输入", value: s.uncachedInputTokens, format: number, hint: "未缓存输入 token" },
     { label: "缓存", value: s.cachedInputTokens, format: number, hint: "缓存输入 token" },
     { label: "输出", value: s.outputTokens, format: number, hint: "输出包含推理，不重复相加" },
     { label: "耗时 P50", value: s.durationP50Ms, format: duration, hint: "模型请求耗时" },
     { label: "耗时 P95", value: s.durationP95Ms, format: duration, hint: "模型请求耗时" },
-  ] : [];
+    { label: "缓存命中", value: s.cacheHitRate, format: percent, hint: "仅使用总输入与缓存计数有效配对的样本：缓存量之和 / 同批总输入之和；未知不视为零，总输入为零时比率未知。" },
+    { label: "TTFT", value: p.ttftMs, format: duration, hint: `${ttftHint} 已记录 ${number(p.coverage.ttftRequests)} 次。` },
+    { label: "TPS", value: p.tps, format: tps, hint: tpsHint },
+    { label: "模型累计", value: p.modelDurationMs, format: duration, hint: "已记录的模型 HTTP 耗时累计" },
+    { label: "工具累计", value: p.toolDurationMs, format: duration, hint: "工具执行账本耗时累计" },
+  ];
 });
 </script>
 
@@ -52,7 +61,7 @@ const metrics = computed(() => {
             <strong>{{ display(metric.value, metric.format) }}</strong>
           </div>
         </div>
-        <PerformanceFacts :performance="data.summary.performance" :cache="data.summary" />
+
       </template>
     </DataState>
     <OverviewCharts />
@@ -69,7 +78,7 @@ const metrics = computed(() => {
           <p v-if="route.query.outcome || search" class="muted">汇总按时间与群组统计全部结果；搜索仅筛选下方群组。</p>
           <div class="table-wrap">
             <table class="compact-table">
-              <thead><tr><th>群组</th><th>请求</th><th>成功</th><th>失败 / 超时</th><th title="未缓存输入 tokens">输入</th><th>缓存</th><th title="包含推理，不重复相加">输出</th><th title="仅使用总输入与缓存计数有效配对的样本；未知不视为零">缓存命中</th><th>P95</th></tr></thead>
+              <thead><tr><th>群组</th><th>请求</th><th>成功</th><th>失败 / 超时</th><th title="未缓存输入 tokens">输入</th><th>缓存</th><th title="包含推理，不重复相加">输出</th><th title="仅使用总输入与缓存计数有效配对的样本；未知不视为零">缓存命中</th><th :title="ttftHint">TTFT</th><th :title="tpsHint">TPS</th><th>P95</th></tr></thead>
               <tbody>
                 <tr v-for="g in groups" :key="g.groupId">
                   <td><RouterLink :to="{ path: '/requests', query: { ...route.query, group: g.groupId } }">{{ g.groupId }}</RouterLink></td>
@@ -78,9 +87,11 @@ const metrics = computed(() => {
                   <td :title="g.cachedInputTokens == null ? missing : undefined">{{ display(g.cachedInputTokens) }}</td>
                   <td :title="g.outputTokens == null ? missing : undefined">{{ display(g.outputTokens) }}</td>
                   <td :title="g.cacheHitRate == null ? missing : undefined">{{ display(g.cacheHitRate, percent) }}</td>
+                  <td :title="g.performance.ttftMs == null ? missing : ttftHint">{{ display(g.performance.ttftMs, duration) }}</td>
+                  <td :title="g.performance.tps == null ? missing : tpsHint">{{ display(g.performance.tps, tps) }}</td>
                   <td :title="g.durationP95Ms == null ? missing : undefined">{{ display(g.durationP95Ms, duration) }}</td>
                 </tr>
-                <tr v-if="!groups.length"><td colspan="9" class="muted">当前筛选无群组记录</td></tr>
+                <tr v-if="!groups.length"><td colspan="11" class="muted">当前筛选无群组记录</td></tr>
               </tbody>
             </table>
           </div>
@@ -120,3 +131,8 @@ const metrics = computed(() => {
     </section>
   </section>
 </template>
+<style scoped>
+.metric-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: var(--space-2) var(--space-4); align-items: stretch; }
+.metric-strip > div { min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) 0; }
+.metric-strip strong { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+</style>

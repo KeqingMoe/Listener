@@ -7,14 +7,13 @@ import { CanvasRenderer } from "echarts/renderers";
 import { BarChart, ScatterChart } from "echarts/charts";
 import { GridComponent, TooltipComponent } from "echarts/components";
 import { useRequestTrends } from "../../composables/useRequestTrends";
-import { time } from "../../api/client";
 import { chartMetrics, chartRanges, resolveChartRange, coordinateNumber, coordinateTime, outcomes, resolveMetric, scatterSummary } from "./chartMetrics";
 import { chartOptions, plot } from "./chartOptions";
 
 use([CanvasRenderer, BarChart, ScatterChart, GridComponent, TooltipComponent]);
 const route = useRoute();
 const router = useRouter();
-const { data, loading, error, retry, updatedAt } = useRequestTrends();
+const { data, loading, error, retry } = useRequestTrends();
 const metric = computed(() => resolveMetric(route.query.chartMetric));
 const displayRange = computed(() => resolveChartRange(route.query.chartRange));
 function selectRange(event: Event) {
@@ -78,10 +77,7 @@ onUnmounted(() => { themeObserver?.disconnect(); resizeObserver?.disconnect(); m
 
 <template>
   <section ref="root" class="overview-charts" aria-label="请求趋势图表" :aria-busy="loading">
-    <div class="section-title chart-refresh-controls">
-      <span class="muted" data-testid="chart-updated-at">图表更新时间：{{ time(updatedAt) }}<span v-if="loading && data"> · 正在更新…</span></span>
-      <span class="muted">与全局数据同步刷新。</span>
-    </div>
+    <div v-if="loading && data" class="chart-refresh-feedback muted" role="status">正在更新请求趋势…</div>
     <div v-if="loading && !data" class="panel data-state" role="status">正在加载请求趋势…</div>
     <div v-if="error" class="panel data-state" role="alert"><span class="error">{{ data ? '图表数据已过期，更新失败：' : '请求趋势加载失败：' }}{{ error }}</span> <button type="button" @click="retry">重试图表</button></div>
     <template v-if="data">
@@ -115,8 +111,7 @@ onUnmounted(() => { themeObserver?.disconnect(); resizeObserver?.disconnect(); m
 
 <style scoped>
 .overview-charts { min-width: 0; margin-bottom: var(--space-4); }
-.chart-refresh-controls { flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2) 0; font-size: var(--font-small); }
-.chart-refresh-controls label { display: flex; align-items: center; gap: var(--space-2); }
+.chart-refresh-feedback { padding: var(--space-2) 0; font-size: var(--font-small); }
 .chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
 .chart-panel { margin-bottom: 0; min-width: 0; }
 .chart-panel > .section-title { min-height: 57px; flex-wrap: wrap; gap: var(--space-2); }
