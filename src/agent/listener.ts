@@ -575,6 +575,56 @@ export class Listener {
     const context=batch?.primary.context;
     await withLogContext({turn_id:batch?.turnId??this.hostWakeId,group_id:this.groupId,...(context?{actor_id:context.actorId,message_id:context.messageId}:{})},()=>this.runTurn());
   }
+  /** Tool implementations bound to one working memory. Shared by model turns and host callers;
+   * per-turn policy (dedupe, review gates, budgets) stays with the caller. */
+  private hostToolkit(options:{memory:Memory;valid:()=>boolean;onVisualContent?:(parts:ChatContentPart[])=>void;onSent?:(entry:TimelineEntry)=>void}) {
+    const {memory:workingMemory,valid}=options;
+    const observations=this.reactionObservations;
+    const turnApi:Api=observations?{call:async(action,params)=>{
+      if(!valid())throw new Error('cancelled');
+      const target=typeof params?.message_id==='string'?params.message_id:undefined;
+      const revision=action==='get_msg'&&target&&valid()?observations.revision(target):undefined;
+      if(action==='set_msg_emoji_like'&&target&&valid())observations.markDirty(target);
+      try{
+        const result=await this.api.call(action,params);
+        if(action==='get_msg'&&target&&valid())observations.ingest(target,result,workingMemory,revision);
+        return result;
+      }finally{
+        if(action==='set_msg_emoji_like'&&target&&valid())observations.markDirty(target);
+      }
+    }}:this.api;
+    const groupTools = new GroupTools(turnApi,workingMemory,{
+      groupId:this.groupId,
+      ...(this.config.tools ? {members:this.config.tools.members,mention:this.config.tools.mention} : {}),
+      getGroupMembers:optionalToolEnabled(this.config,'get_group_members',this.config.tools?.members!==false),
+      getMemberInfo:optionalToolEnabled(this.config,'get_member_info',this.config.tools?.members!==false),
+    });
+    const imageTools=this.config.images?.enabled?new ImageTools(this.api,workingMemory,this.config.images,this.imageDownloader,this.groupId):undefined;
+    const imageState = imageTools?.createTurn() ?? {loadedIds:new Set<string>()};
+    const forwardTools=this.config.forward?.enabled?new ForwardTools(this.api,workingMemory,this.config.forward,this.groupId):undefined;
+    const reactionTools=this.config.tools?.reactions?new ReactionTools(turnApi,workingMemory,this.groupId):undefined;
+    const reactionUsers=optionalToolEnabled(this.config,'get_reaction_users',this.config.tools?.reactions===true)?new ReactionUserTools(turnApi,workingMemory,this.groupId):undefined;
+    const extendedTools=createExtendedTools(turnApi,workingMemory,this.groupId,this.config.tools?.extended,{
+      downloader:this.imageDownloader,files:this.groupFiles,requests:this.groupRequests,
+      reminders:this.runtime.reminders,sandbox:this.runtime.sandbox,web:this.runtime.web,ownerId:this.ownerId,
+      customFaces:this.customFaces?{
+        ...this.customFaces,imageState,
+        maxDownloadMb:this.config.images?.maxDownloadMb??10,
+        onVisualContent:parts=>{if(valid())options.onVisualContent?.(parts);},
+      }:undefined,
+      requestConfirmation:(name,args,definition,context,signal)=>this.proposeExtended(name,args,definition,context,workingMemory,signal),
+      beforeSend:()=>this.captureSendReceipt(),
+      onSent:(entry,receipt)=>{
+        // A late valid ACK remains a world fact even after cancellation or disconnection.
+        this.claimMessageAck(entry,receipt);
+        if(this.runtime.world)recordToolMessage(this.runtime.world,entry);
+        if(!valid())return;
+        if(!this.memory?.find(entry.messageId))this.memory?.append(entry);
+        options.onSent?.(entry);
+      },
+    });
+    return {turnApi,groupTools,imageTools,imageState,forwardTools,reactionTools,reactionUsers,extendedTools};
+  }
   private async runTurn(): Promise<void> {
     if (this.running || this.commandBusy || (!this.pending&&!this.hasHostWork()) || !this.model || (!this.memory&&!this.runtime.session) || !this.connected || this.stopped) return;
     const hostOnly=!this.pending;
@@ -633,52 +683,14 @@ export class Listener {
       const moderationCapabilities={mute:moderationPolicy?.mute??'off',unmute:moderationPolicy?.unmute??'off',recall:moderationPolicy?.recall??'off',member_card:moderationPolicy?.memberCard??'off'};
       const observations=this.reactionObservations;
       const lookupReaction=(messageId:string)=>observations?.get(messageId);
-      const turnApi:Api=observations?{call:async(action,params)=>{
-        if(!valid())throw new Error('cancelled');
-        const target=typeof params?.message_id==='string'?params.message_id:undefined;
-        const revision=action==='get_msg'&&target&&valid()?observations.revision(target):undefined;
-        if(action==='set_msg_emoji_like'&&target&&valid())observations.markDirty(target);
-        try{
-          const result=await this.api.call(action,params);
-          if(action==='get_msg'&&target&&valid())observations.ingest(target,result,workingMemory,revision);
-          return result;
-        }finally{
-          if(action==='set_msg_emoji_like'&&target&&valid())observations.markDirty(target);
-        }
-      }}:this.api;
-      const groupTools = new GroupTools(turnApi,workingMemory,{
-        groupId:this.groupId,
-        ...(this.config.tools ? {members:this.config.tools.members,mention:this.config.tools.mention} : {}),
-        getGroupMembers:optionalToolEnabled(this.config,'get_group_members',this.config.tools?.members!==false),
-        getMemberInfo:optionalToolEnabled(this.config,'get_member_info',this.config.tools?.members!==false),
-      });
-      const imageTools=this.config.images?.enabled?new ImageTools(this.api,workingMemory,this.config.images,this.imageDownloader,this.groupId):undefined;
-      const imageState = imageTools?.createTurn() ?? {loadedIds:new Set<string>()};
       const pendingCustomFaceImages:ChatContentPart[]=[];
-      const forwardTools=this.config.forward?.enabled?new ForwardTools(this.api,workingMemory,this.config.forward,this.groupId):undefined;
-      const reactionTools=this.config.tools?.reactions?new ReactionTools(turnApi,workingMemory,this.groupId):undefined;
-      const reactionUsers=optionalToolEnabled(this.config,'get_reaction_users',this.config.tools?.reactions===true)?new ReactionUserTools(turnApi,workingMemory,this.groupId):undefined;
       const extendedProposals=new Map<string,JsonObject>();
       this.groupFiles.resetWake();
       this.groupRequests.resetWake();
-      const extendedTools=createExtendedTools(turnApi,workingMemory,this.groupId,this.config.tools?.extended,{
-        downloader:this.imageDownloader,files:this.groupFiles,requests:this.groupRequests,
-        reminders:this.runtime.reminders,sandbox:this.runtime.sandbox,web:this.runtime.web,ownerId:this.ownerId,
-        customFaces:this.customFaces?{
-          ...this.customFaces,imageState,
-          maxDownloadMb:this.config.images?.maxDownloadMb??10,
-          onVisualContent:parts=>{if(valid())pendingCustomFaceImages.push(...parts);},
-        }:undefined,
-        requestConfirmation:(name,args,definition,context,signal)=>this.proposeExtended(name,args,definition,context,workingMemory,signal),
-        beforeSend:()=>this.captureSendReceipt(),
-        onSent:(entry,receipt)=>{
-          // A late valid ACK remains a world fact even after cancellation or disconnection.
-          this.claimMessageAck(entry,receipt);
-          if(this.runtime.world)recordToolMessage(this.runtime.world,entry);
-          if(!valid())return;
-          if(!this.memory?.find(entry.messageId))this.memory?.append(entry);
-          sentEntries.set(entry.messageId,structuredClone(entry));
-        },
+      const {groupTools,imageTools,imageState,forwardTools,reactionTools,reactionUsers,extendedTools}=this.hostToolkit({
+        memory:workingMemory,valid,
+        onVisualContent:parts=>pendingCustomFaceImages.push(...parts),
+        onSent:entry=>sentEntries.set(entry.messageId,structuredClone(entry)),
       });
       const reactionContext=reactionTools?this.reactionContext(workingMemory):undefined;
       const single=batch.direct.length===1?batch.direct[0]:batch.items.length===1?batch.items[0]:undefined;
