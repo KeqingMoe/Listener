@@ -448,3 +448,12 @@ export function createOriginalImageDownloader(dependencies: ImageDownloadDepende
 export const downloadOriginalImage: OriginalImageDownloader = createOriginalImageDownloader();
 export const downloadImage: ImageDownloader = createImageDownloader();
 export default downloadImage;
+/** Decode a normalized model image into RGBA pixels for sandbox code (first frame only). */
+export async function imagePixels(dataUrl: string): Promise<{ width: number; height: number; pixels: Uint8Array }> {
+  const match = /^data:image\/(?:png|jpeg|webp|gif);base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
+  if (!match) throw new Error('invalid_image');
+  const { data, info } = await sharp(Buffer.from(match[1]!, 'base64'), { pages: 1, limitInputPixels: MODEL_IMAGE_MAX_EDGE * MODEL_IMAGE_MAX_EDGE * 4 })
+    .ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  if (info.channels !== 4) throw new Error('invalid_image');
+  return { width: info.width, height: info.height, pixels: new Uint8Array(data.buffer, data.byteOffset, data.byteLength) };
+}

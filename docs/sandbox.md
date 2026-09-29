@@ -62,11 +62,30 @@ return answer.toString();
 
 `query_javascript_jobs` 默认返回当前账号当前群的活动任务及尚未交付的后台结果；可按 `job_id` 查询详情，或使用 `status`、`offset`、`limit` 分页。`cancel_javascript_job` 只能取消当前账号当前群的任务，已完成任务不会重新执行。
 
-沙箱只提供 JavaScript 语言能力、受限日志及结果传递，不提供文件、网络、环境变量、Node 模块、定时器或 QQ 工具。`console.log/info/warn/error/debug` 仅接受字符串参数，其他值请在沙箱内自行转换；日志超限或参数类型错误会使任务失败。支持 `await` 不代表开放了异步 I/O。
+沙箱不提供文件、网络、环境变量、Node 模块或定时器；宿主能力只能经下文的 `tools` 桥访问。`console.log/info/warn/error/debug` 仅接受字符串参数，其他值请在沙箱内自行转换；日志超限或参数类型错误会使任务失败。支持 `await` 不代表开放了异步 I/O。
+
+## 在代码中调用工具
+
+代码内可 `await tools.<工具名>(参数)`，参数与返回值和模型直接调用该工具完全相同，包括发送消息、看图、群管理等有QQ副作用的工具。`tools` 只列出本群当前可用的工具，并排除只对本轮唤醒有意义的 `finish`、`manage_attention`、`get_wake_state`、`ack_events` 及嵌套的 `execute_javascript`。
+
+```js
+const primes = [];
+for (let n = 2; primes.length < 10; n++) if (primes.every(p => n % p)) primes.push(n);
+const sent = await tools.send_message({ segments: [{ type: 'text', text: primes.join(' ') }] });
+return JSON.stringify(sent);
+```
+
+- 授权在每次调用时按当前群策略判定：`off` 返回 `tool_disabled`，`confirm` 工具照常发确认通知并返回 `confirmation_required`，需主人 `/confirm`。任务发起者只用于归属，不授予权限。群被移除、账号切换或连接断开时返回 `host_unavailable`。
+- 工具失败以结果对象返回（`status` 为 `error`/`unknown` 等），不抛异常；只有参数无法编码（函数、循环引用、非有限数字、Uint8Array以外的TypedArray、多个参数）或工具不存在时抛 `TypeError`。
+- 字节字段在代码内使用 `Uint8Array`，返回的字节字段也是 `Uint8Array`。`view_images`、`view_custom_face` 在代码内返回 `images: [{image_id, width, height, pixels}]`，`pixels` 为模型所见同尺寸（长边不超过1568）的RGBA像素。
+- 代码内的调用不占本轮工具调用预算。发送消息、回应、群管理等副作用与模型直接调用共用每群令牌桶：突发20次，之后每秒恢复1次，任意两次间隔不少于100毫秒；超出时排队等待而不是失败。这些是程序常量。
+- 单次调用参数JSON最多1 MiB，字节附件合计最多64 MiB、256个；同一任务最多8个调用并发。
+- 每次调用记录工具名、状态、错误码、结果中的消息/产物/确认码ID、参数大小与哈希，不保存参数原文。执行结果、后台完成通知及任务详情都附带 `tool_calls` 摘要：各工具按状态计数，并列出最多32条非 ok 调用（其余计入 `abnormal_omitted`）。`query_javascript_jobs` 配合 `job_id` 与 `calls_offset` 可分页查看完整记录。
+- 后台任务在唤醒结束后仍可调用工具。结果为 `unknown` 时不要重试；不要写没有退出条件的发送循环。
 
 ## 隔离与生命周期
 
-QuickJS 被编译为 WebAssembly，在独立 Node 子进程中执行；每项任务创建全新 Runtime 和 Context，不复用其他任务的全局变量。子进程不继承 Bot 的密钥环境，父进程可以强制终止它。当前没有容器或操作系统级文件、网络权限隔离：访问能力由 WASM 边界和不暴露宿主接口限制，独立进程负责故障隔离。QuickJS 内存上限不是整个子进程 RSS 上限，也不宣称可以防御运行时本身的所有漏洞。
+QuickJS 被编译为 WebAssembly，在独立 Node 子进程中执行；每项任务创建全新 Runtime 和 Context，不复用其他任务的全局变量。子进程不继承 Bot 的密钥环境，父进程可以强制终止它。当前没有容器或操作系统级文件、网络权限隔离：访问能力由 WASM 边界和只经 IPC 暴露的工具桥限制，独立进程负责故障隔离。QuickJS 内存上限不是整个子进程 RSS 上限，也不宣称可以防御运行时本身的所有漏洞。
 
 服务全局最多同时执行2项任务，另有64项排队容量；满载返回 `queue_full`，不是每群调用次数配额。前台等待时限由每次 `sync`/`auto` 调用的 `wait_ms` 决定，并包括排队和启动时间。无限后台任务会占用执行槽位，模型应查询并取消不再需要的任务。
 

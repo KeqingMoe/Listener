@@ -12,6 +12,7 @@ test('sandbox prompt explains actionable guest diagnostics without granting auth
   assert.match(prompt,/invalid_return_type的contract diagnostic/);
   assert.match(prompt,/\.toString\(\)/);assert.match(prompt,/JSON\.stringify\(\)/);
   assert.match(prompt,/wait_ms/);
+  assert.match(prompt,/await tools\.<工具名>/);assert.match(prompt,/结果为unknown时不要重试/);assert.match(prompt,/RGBA像素/);
  }
  const disabled=buildSystemPrompt({...config,tools:{...config.tools!,extended:{execute_javascript:'off'}}});
  assert.doesNotMatch(disabled,/计算沙箱：/);

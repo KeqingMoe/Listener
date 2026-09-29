@@ -2,7 +2,9 @@ import type { SandboxService } from '../sandbox/service.js';
 import type { WebTools } from '../tools/web/tools.js';
 import { isExecutionDiagnostic } from '../sandbox/protocol.js';
 import { buildSystemPrompt, observedSystemPrompt } from './prompts.js';
-import { buildToolDefinitions } from './tool-definitions.js';
+import { buildToolDefinitions, SANDBOX_EXCLUDED_TOOLS } from './tool-definitions.js';
+import { SideEffectPacer } from './pacing.js';
+import { imagePixels } from '../tools/images/download.js';
 import { setTimeout as delay } from 'node:timers/promises';
 import { applyToolPolicies, optionalToolEnabled, observesReactions } from '../config/runtime.js';
 import { TOOL_NAMES } from '../config/tool-policy.js';
@@ -59,7 +61,7 @@ export interface CustomFaceRuntime {
   staging?: CustomFaceStager;
   originalDownloader?: OriginalImageDownloader;
 }
-export interface ListenerRuntime { web?:WebTools; sandbox?:SandboxService; sandboxSummary?:(selfId:string,groupId:string)=>JsonObject; reminders?: ReminderStore; world?: WorldEventStore; session?: ModelSession; modelRequestId?:()=>string|undefined; customFaces?: CustomFaceRuntime }
+export interface ListenerRuntime { pacer?:SideEffectPacer; web?:WebTools; sandbox?:SandboxService; sandboxSummary?:(selfId:string,groupId:string)=>JsonObject; reminders?: ReminderStore; world?: WorldEventStore; session?: ModelSession; modelRequestId?:()=>string|undefined; customFaces?: CustomFaceRuntime }
 
 export function messageId(value: unknown): string | undefined {
   if (typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
@@ -249,7 +251,7 @@ export class Listener {
     if(result.groupId!==this.groupId||(this.sandboxSelfId!==undefined&&result.selfId!==this.sandboxSelfId)||this.stopped||!this.connected||!this.runtime.session||!this.config.enabled)throw new Error('sandbox_delivery_unavailable');
     this.sandboxSelfId=result.selfId;
     const eventId=`${result.selfId}:${result.jobId}`;
-    this.runtime.session.receiveExternalEvent(eventId,result.selfId,{job_id:result.jobId,description:typeof result.description==='string'?result.description.slice(0,1024):'',status:result.status,...(typeof result.value==='string'?{value:result.value}:{}),...(typeof result.error==='string'?{error:result.error}:{}),...(isExecutionDiagnostic(result.diagnostic)?{diagnostic:{...result.diagnostic}}:{}),finished_at:typeof result.finishedAt==='number'?result.finishedAt:Date.now()});
+    this.runtime.session.receiveExternalEvent(eventId,result.selfId,{job_id:result.jobId,description:typeof result.description==='string'?result.description.slice(0,1024):'',status:result.status,...(typeof result.value==='string'?{value:result.value}:{}),...(typeof result.error==='string'?{error:result.error}:{}),...(isExecutionDiagnostic(result.diagnostic)?{diagnostic:{...result.diagnostic}}:{}),...(object(result.toolCalls)?{tool_calls:structuredClone(result.toolCalls)}:{}),finished_at:typeof result.finishedAt==='number'?result.finishedAt:Date.now()});
     this.schedule();
     return this.runtime.session.externalEventProjected(eventId,result.selfId);
   }
@@ -575,6 +577,96 @@ export class Listener {
     const context=batch?.primary.context;
     await withLogContext({turn_id:batch?.turnId??this.hostWakeId,group_id:this.groupId,...(context?{actor_id:context.actorId,message_id:context.messageId}:{})},()=>this.runTurn());
   }
+  private get pacer():SideEffectPacer{return this.ownPacer??=this.runtime.pacer??new SideEffectPacer();}
+  private ownPacer?:SideEffectPacer;
+  /** Tool names sandbox code may call right now: the model's current tool set minus wake-steering tools. */
+  hostToolNames(): string[] {
+    if(this.stopped)return [];
+    return buildToolDefinitions(this.config,!!this.runtime.session).map(tool=>tool.function.name).filter(name=>!SANDBOX_EXCLUDED_TOOLS.includes(name));
+  }
+  private hostMemory(): Memory|undefined {
+    if(this.runtime.session&&this.runtime.world&&this.memory)return {
+      append:entry=>this.memory!.append(entry),
+      recent:()=>this.runtime.world!.recentMessages(128),
+      find:messageId=>this.runtime.world!.findMessage(messageId),
+      context:()=>{throw new Error('session_snapshot_forbidden');},
+      compact:async()=>{throw new Error('session_compaction_forbidden');},
+      clear:()=>{},close:()=>{},
+    };
+    return this.memory;
+  }
+  /** One sandbox tool call. Policy, identity and group state are checked now, not at job creation.
+   * Same implementations as model calls; results are returned, never thrown. */
+  async executeHostTool(name:string,args:unknown,context:TurnContext,signal:AbortSignal): Promise<JsonObject> {
+    const generation=this.generation;
+    const valid=()=>!signal.aborted&&!this.stopped&&this.connected&&generation===this.generation;
+    if(!valid()||context.groupId!==this.groupId||!this.config.enabled)return {status:'error',error:'host_unavailable'};
+    if(!this.hostToolNames().includes(name))return {status:'error',error:'tool_disabled'};
+    const memory=this.hostMemory();
+    if(!memory)return {status:'error',error:'host_unavailable'};
+    const visual:ChatContentPart[]=[];
+    try{
+      const kit=this.hostToolkit({memory,valid,onVisualContent:parts=>visual.push(...parts)});
+      const moderation=MODERATION_TOOLS.some(tool=>tool.function.name===name);
+      const sideEffect=name==='send_message'||name==='react_message'||moderation||(kit.extendedTools.has(name)&&kit.extendedTools.isSideEffect(name));
+      if(sideEffect)await this.pacer.take(signal);
+      if(!valid())return {status:'error',error:'cancelled'};
+      const confirmation=async(result:JsonObject,cancel:(code:string)=>void):Promise<JsonObject>=>{
+        const code=String(result.code);
+        try{
+          const text=`待主人确认（${String(result.expires_in_seconds)}秒内）：${String(result.description)}\n发送 /confirm ${code} 才会执行。`;
+          const entry=await this.sendPart({segments:[{type:'text',data:{text}}],text},context,signal);
+          return {status:'confirmation_required',notification_message_id:entry.messageId};
+        }catch{cancel(code);return {status:'unknown',error:'confirmation_notification_failed',proposal_cancelled:true};}
+      };
+      if(name==='send_message'){
+        let prepared:PreparedMessage;
+        try{prepared=await kit.groupTools.prepareMessage(args,context);}catch{return {status:'error',error:'invalid_arguments'};}
+        try{
+          const entry=await this.sendPart(prepared,context,signal);
+          return {status:'ok',effect_confirmed:true,message_id:entry.messageId,...(entry.cancelled_after_dispatch?{cancelled_after_dispatch:true}:{}),...(entry.local_projection_failed?{local_projection_failed:true}:{})};
+        }catch(error){return writeFailure(error,error instanceof DuplicateMessageAckError?'duplicate_message_ack':'delivery_unknown');}
+      }
+      if(moderation){
+        const recallId=object(args)&&typeof args.message_id==='string'?args.message_id:undefined;
+        const result=await this.moderation.request(name,args,context,signal,name==='recall_message'&&recallId?memory.find(recallId)?.userId:undefined);
+        return result.status==='confirmation_required'?confirmation(result,code=>this.moderation.cancelPending(code)):result;
+      }
+      if(name==='react_message')return kit.reactionTools?await kit.reactionTools.react(args,context,kit.reactionTools.createTurn(),signal):{status:'error',error:'tool_disabled'};
+      if(name==='get_reaction_users')return kit.reactionUsers?await kit.reactionUsers.read(args,context,kit.reactionUsers.createTurn(),signal):{status:'error',error:'tool_disabled'};
+      if(name==='read_forward')return kit.forwardTools?await kit.forwardTools.read(args,context,kit.forwardTools.createTurn(),signal):{status:'error',error:'forward_disabled'};
+      if(name==='view_images'){
+        if(!kit.imageTools)return {status:'error',error:'images_disabled'};
+        const viewed=await kit.imageTools.view(args,context,kit.imageState as ReturnType<ImageTools['createTurn']>,signal);
+        return {...viewed.result,images:await this.pixelsOf(viewed.content)};
+      }
+      if(WORLD_TOOL_NAMES.includes(name as typeof WORLD_TOOL_NAMES[number])){
+        if(!this.runtime.world)return {status:'error',error:'tool_disabled'};
+        const world=new WorldTools({store:this.runtime.world,groupId:this.groupId,selfId:context.selfId});
+        return await world.execute(name,args,context,signal);
+      }
+      if(GROUP_TOOLS.some(tool=>tool.function.name===name))return await kit.groupTools.execute(name,args,context);
+      if(kit.extendedTools.has(name)){
+        const result=await kit.extendedTools.execute(name,args,context,signal);
+        if(name==='view_custom_face'&&result.status==='ok'){const {visual_content_provided:_,visual_content_already_provided:__,...rest}=result;return {...rest,images:await this.pixelsOf(visual)};}
+        if(result.status==='confirmation_required'&&typeof result.code==='string')return confirmation(result,code=>this.moderation.cancelPending(code));
+        return result;
+      }
+      return {status:'error',error:'tool_disabled'};
+    }catch{return signal.aborted?{status:'error',error:'cancelled'}:{status:'error',error:'tool_failed'};}
+  }
+  /** Sandbox view results carry RGBA pixels instead of model-visible image content. */
+  private async pixelsOf(content:ChatContentPart[]):Promise<JsonObject[]> {
+    const images:JsonObject[]=[];let meta:JsonObject={};
+    for(const part of content){
+      if(part.type==='text'){const at=part.text.indexOf('{');try{meta=at>=0?JSON.parse(part.text.slice(at,part.text.lastIndexOf('}')+1)) as JsonObject:{};}catch{meta={};}continue;}
+      if(part.type!=='image_url')continue;
+      const decoded=await imagePixels(part.image_url.url);
+      images.push({...(typeof meta.image_id==='string'?{image_id:meta.image_id}:{}),...(typeof meta.face_ref==='string'?{face_ref:meta.face_ref}:{}),width:decoded.width,height:decoded.height,pixels:decoded.pixels as unknown as JsonObject});
+      meta={};
+    }
+    return images;
+  }
   /** Tool implementations bound to one working memory. Shared by model turns and host callers;
    * per-turn policy (dedupe, review gates, budgets) stays with the caller. */
   private hostToolkit(options:{memory:Memory;valid:()=>boolean;onVisualContent?:(parts:ChatContentPart[])=>void;onSent?:(entry:TimelineEntry)=>void}) {
@@ -814,6 +906,7 @@ export class Listener {
                }catch{/* Invalid proposals are rejected by the confirmation adapter, never dispatched. */}
              }
              const previousProposal=extendedProposals.get(proposalKey);
+             if(!previousProposal&&extendedTools.has(call.function.name)&&extendedTools.isSideEffect(call.function.name)){await this.pacer.take(controller.signal);if(!valid())return;}
              result=previousProposal?{...structuredClone(previousProposal),cached:true}:await extendedTools.execute(call.function.name,args,trigger.context,controller.signal);
               imageContent.push(...pendingCustomFaceImages.splice(0));
              if(result.status==='confirmation_required'&&!previousProposal){
@@ -852,6 +945,7 @@ export class Listener {
                }
                if(result.status==='error'||result.status==='unknown')managementNeedsReview=true;
              }
+             if(call.function.name==='execute_javascript'&&object(result.tool_calls)&&Array.isArray(result.tool_calls.abnormal)&&result.tool_calls.abnormal.length)managementNeedsReview=true;
              traceResult(result);appendToolResult(call,result);
              if(!valid())return;
              continue;
@@ -870,6 +964,7 @@ export class Listener {
             continue;
           }
           if(call.function.name==='react_message'){
+            if(reactionTools&&reactionState){await this.pacer.take(controller.signal);if(!valid())return;}
             result=reactionTools&&reactionState?await reactionTools.react(args,trigger.context,reactionState,controller.signal):{status:'error',error:'tool_disabled'};
             if(!result.duplicate){
               if(reactionUsers&&reactionUserState&&typeof result.message_id==='string'&&typeof result.emoji_id==='string')reactionUsers.invalidate(reactionUserState,result.message_id,result.emoji_id);
@@ -919,6 +1014,7 @@ export class Listener {
             else {
               if(lastWakeSendAt)await delay(Math.max(0,lastWakeSendAt+450+Math.floor(Math.random()*450)-Date.now()),undefined,{signal:controller.signal});
               if(!valid())return;
+              await this.pacer.take(controller.signal);if(!valid())return;
               sending=true;
               try {
                 const entry=await this.sendPart(prepared,trigger.context,controller.signal);
@@ -949,6 +1045,7 @@ export class Listener {
             else if(object(args)&&typeof args.user_id==='string'&&managementUnknownTargets.has(`${call.function.name==='set_member_card'?'card':'mute'}:${args.user_id}`))result={status:'unknown',error:'delivery_unknown'};
             else if(call.function.name==='recall_message'&&recallId&&!workingMemory.find(recallId)&&!workingMemory.recent().some(entry=>entry.replyTo===recallId))result={status:'error',error:'message_not_in_context'};
             else {
+              await this.pacer.take(controller.signal);if(!valid())return;
               result=await this.moderation.request(call.function.name,args,trigger.context,controller.signal,call.function.name==='recall_message'&&recallId?workingMemory.find(recallId)?.userId:undefined);
               const targetKey=object(args)&&typeof args.user_id==='string'?`${call.function.name==='set_member_card'?'card':'mute'}:${args.user_id}`:undefined;
               if(targetKey)managementTargets.set(key,targetKey);

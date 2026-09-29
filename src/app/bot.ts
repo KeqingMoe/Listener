@@ -125,6 +125,10 @@ async function main(): Promise<void> {
       }
     },
   });
+  sandboxService.setToolBridge({
+    names:scope=>router.hostToolNames(scope.selfId,scope.groupId),
+    call:(scope,name,args,signal)=>router.executeHostTool({groupId:scope.groupId,selfId:scope.selfId,actorId:scope.actorId,messageId:scope.messageId},name,args,signal),
+  });
   let sandboxFlush:Promise<void>|undefined;
   const flushSandbox=():Promise<void>=>{if(sandboxFlush)return sandboxFlush; sandboxFlush=(async()=>{const account=router.reminderAccount;if(!account)return;let cursor=0;for(;;){const page=sandboxService!.pendingResults(account,100,cursor);for(const job of page.jobs){try{await router.dispatchSandboxResult({...job,jobId:job.job_id,selfId:job.selfId,groupId:job.groupId});sandboxService!.ackResult(account,job.groupId,job.job_id);}catch{/* unavailable groups remain pending */}}if(page.nextCursor===null)break;cursor=page.nextCursor;}})().catch(()=>{}).finally(()=>{sandboxFlush=undefined;});return sandboxFlush;};
   const unsubscribeSandbox=sandboxService.subscribe(()=>{void flushSandbox();});

@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { SideEffectPacer } from '../../../src/agent/pacing.js';
 import assert from 'node:assert/strict';
 import {setTimeout as delay,setImmediate as flush} from 'node:timers/promises';
 import {Listener} from '../../../src/agent/listener.js';
@@ -41,7 +42,7 @@ function setup(options:{settings?:Partial<ListenerConfig>;respond?:(r:Request)=>
   throw Error(`unexpected API ${action}`);
  }};
  const model:Model={async complete(messages,definitions=[],signal){const r={messages:structuredClone(messages),tools:structuredClone(definitions),signal,index:requests.length};requests.push(r);return options.respond?options.respond(r):complete(silent());}};
- const bot=new Listener(api,model,memory,cfg,()=>0.5,async()=>({dataUrl:'data:image/png;base64,YQ==',width:1,height:1,firstFrameOnly:false}));
+ let virtual=0;const bot=new Listener(api,model,memory,cfg,()=>0.5,async()=>({dataUrl:'data:image/png;base64,YQ==',width:1,height:1,firstFrameOnly:false}),undefined,{pacer:new SideEffectPacer({now:()=>virtual,sleep:async ms=>{virtual+=ms;}})});
  return {bot,memory,requests,calls,wire,async receive(e:Wire){wire.set(e.message_id,e);await bot.receive(e,SELF);},async close(){await bot.stop();}};
 }
 const payload=(r:Request)=>JSON.parse(r.messages.find(m=>m.role==='user')!.content as string);

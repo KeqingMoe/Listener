@@ -45,3 +45,5 @@ export function buildToolDefinitions(config: ListenerConfig, worldEnabled=false)
   tools.push(...buildExtendedToolDefinitions(resolveGroupId(config.groupId), config.tools?.extended));
   return tools;
 }
+/** Tools that steer the current wake itself; they have no meaning inside sandbox code. */
+export const SANDBOX_EXCLUDED_TOOLS: readonly string[] = ['finish','manage_attention','get_wake_state','ack_events','execute_javascript'];

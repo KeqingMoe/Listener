@@ -11,6 +11,8 @@ export interface GroupHandler {
   sendReminder?(reminder: Reminder, beforeDispatchClaim: () => boolean): Promise<DeliveryOutcome>;
   receiveSandboxResult?(result: {selfId:string;groupId:string;jobId:string;[key:string]:unknown}): Promise<boolean>;
   resumeSandboxResults?(selfId:string):void;
+  hostToolNames?():string[];
+  executeHostTool?(name:string,args:unknown,context:{groupId:string;selfId:string;actorId:string;messageId:string},signal:AbortSignal):Promise<import('../contracts/json.js').JsonObject>;
   setConnected(value: boolean): void;
   stop(): Promise<void>;
 }
@@ -91,6 +93,19 @@ export class GroupRouter {
     if(!handler?.receiveSandboxResult||!valid())throw new Error('sandbox_delivery_unavailable');
     const projected = await handler.receiveSandboxResult(result);
     if(!projected) throw new Error('sandbox_delivery_unavailable');
+  }
+  /** Tool names for a sandbox job of an already-resident group; never allocates a handler. */
+  hostToolNames(selfId:string,groupId:string):string[]{
+    if(this.reminderAccount!==selfId||!this.enabled(groupId)||!this.members.has(groupId)||this.departed.has(groupId)||this.closing.has(groupId))return [];
+    return this.handlers.get(groupId)?.hostToolNames?.()??[];
+  }
+  /** A sandbox tool call, validated against the live account, membership and handler at call time. */
+  async executeHostTool(context:{groupId:string;selfId:string;actorId:string;messageId:string},name:string,args:unknown,signal:AbortSignal):Promise<import('../contracts/json.js').JsonObject>{
+    const {groupId,selfId}=context;
+    if(id(groupId)!==groupId||id(selfId)!==selfId||this.reminderAccount!==selfId||!this.enabled(groupId)||!this.members.has(groupId)||this.departed.has(groupId)||this.closing.has(groupId))return {status:'error',error:'host_unavailable'};
+    const handler=this.handlers.get(groupId);
+    if(!handler?.executeHostTool)return {status:'error',error:'host_unavailable'};
+    return withLogContext({group_id:groupId},()=>handler.executeHostTool!(name,args,context,signal));
   }
   private publish(): void { this.dynamic?.membershipChanged?.([...this.members]); }
   private async closeGroups(groupIds:Iterable<string>):Promise<void>{

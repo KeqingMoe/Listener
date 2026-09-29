@@ -1,0 +1,114 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {Listener} from '../../../src/agent/listener.js';
+import {SideEffectPacer,SIDE_EFFECT_PACING} from '../../../src/agent/pacing.js';
+import {SandboxService} from '../../../src/sandbox/service.js';
+import {SandboxJobStore} from '../../../src/sandbox/store.js';
+import {startExecution} from '../../../src/sandbox/executor.js';
+import {ModelSession} from '../../../src/agent/session/store.js';
+import {WorldEventStore} from '../../../src/world/events.js';
+import type {Memory,TimelineEntry} from '../../../src/contracts/messages.js';
+import type {ListenerConfig} from '../../../src/config/listener.js';
+import type {JsonObject} from '../../../src/contracts/json.js';
+
+const group='123456',self='999',actor='42';
+const config=(extended:Record<string,string>={}):ListenerConfig=>({groupId:group,enabled:true,baseUrl:'https://example.invalid',apiKey:'x',model:'x',timeoutMs:1000,maxTokens:128,debounceMs:1,cooldownMs:0,memoryPath:':memory:',maxContextChars:8000,retentionDays:7,randomReplyProbability:0,tools:{members:true,mention:true,extended:{execute_javascript:'direct',get_group_info:'direct',...extended} as never}});
+function memory():Memory&{rows:TimelineEntry[]}{const rows:TimelineEntry[]=[];return {rows,append:e=>{rows.push(e);return true;},recent:()=>rows,find:id=>rows.find(e=>e.messageId===id),context:()=>'',async compact(){},clear(){},close(){}};}
+const virtualPacer=()=>{let now=0;const pacer=new SideEffectPacer({now:()=>now,sleep:async ms=>{now+=ms;}});return {pacer,now:()=>now};};
+
+function host(cfg=config()) {
+ const calls:{action:string;params:JsonObject}[]=[];let next=5000;
+ const api={async call(action:string,params:JsonObject={}){calls.push({action,params});
+  if(action==='send_group_msg')return {message_id:next++};
+  if(action==='get_login_info')return {user_id:Number(self)};
+  if(action==='get_group_member_info')return {group_id:Number(group),user_id:Number(params.user_id),nickname:'M',role:'member'};
+  return {};}};
+ const mem=memory(),session=new ModelSession({path:':memory:',groupId:group}),world=new WorldEventStore({path:':memory:',groupId:group});
+ const {pacer}=virtualPacer();
+ const bot=new Listener(api,{async complete(){return {content:null,tool_calls:[]};}},mem,cfg,Math.random,undefined,undefined,{session,world,pacer});
+ bot.setConnected(true);
+ const store=new SandboxJobStore({path:':memory:'});
+ const service=new SandboxService({store,limits:{timeoutMs:10000}});
+ service.setToolBridge({names:()=>bot.hostToolNames(),call:(scope,name,args,signal)=>bot.executeHostTool(name,args,{groupId:scope.groupId,selfId:scope.selfId,actorId:scope.actorId,messageId:scope.messageId},signal)});
+ const run=(code:string)=>service.execute({selfId:self,groupId:group,description:'bridge test',code,mode:'sync',waitMs:20000},undefined,{actorId:actor,messageId:'1'});
+ return {bot,api,calls,mem,world,service,store,run,async close(){await service.stop();await bot.stop();store.close();world.close();session.close();}};
+}
+
+test('pacer allows a 20-call burst, then one per second, never closer than 100ms, FIFO',async()=>{
+ const {pacer,now}=virtualPacer();const times:number[]=[];const signal=new AbortController().signal;
+ for(let i=0;i<60;i++){await pacer.take(signal);times.push(now());}
+ assert.equal(SIDE_EFFECT_PACING.capacity,20);
+ for(let i=1;i<times.length;i++)assert.ok(times[i]!-times[i-1]!>=100,`gap ${i}`);
+ assert.ok(times[19]!<=1900+1);
+ assert.ok(Math.abs((times[59]!-times[40]!)/19-1000)<=1,'sustained one per second');
+ const aborted=new AbortController();aborted.abort();await assert.rejects(pacer.take(aborted.signal));
+});
+
+test('guest tools mirror results, carry Uint8Array both ways and throw only for invalid calls',async()=>{
+ const seen:unknown[]=[];
+ const r=await startExecution({timeoutMs:5000,tools:['echo'],callTool:async(_n,args)=>{seen.push(args);return {status:'ok',bytes:new Uint8Array([7,8,9]),args:args as JsonObject};},code:`
+  const r=await tools.echo({data:new Uint8Array([1,2,3,4]).subarray(1,3),n:1});
+  const errors=[];
+  for(const bad of [()=>tools.echo({f(){}}),()=>tools.echo({x:new Float32Array(1)}),()=>tools.echo({$bytes:0}),()=>tools.echo({x:NaN}),()=>tools.missing({})]){try{bad();errors.push('none')}catch(e){errors.push(e.name)}}
+  return JSON.stringify({ok:r.status,bytes:Array.from(r.bytes),isU8:r.bytes instanceof Uint8Array,errors,frozen:Object.isFrozen(tools)});`}).result;
+ assert.equal(r.status,'completed');
+ assert.deepEqual(JSON.parse((r as {value:string}).value),{ok:'ok',bytes:[7,8,9],isU8:true,errors:['TypeError','TypeError','TypeError','TypeError','TypeError'],frozen:true});
+ assert.deepEqual(seen,[{data:Buffer.from([2,3]),n:1}]);
+});
+
+test('sandbox code sends messages through the same path, records calls and returns a forced summary',async()=>{
+ const h=host();try{
+  const r=await h.run(`const out=[];for(let i=0;i<3;i++)out.push(await tools.send_message({segments:[{type:'text',text:'第'+i+'条'}]}));
+   const bad=await tools.send_message({segments:'nope'});const off=await tools.mute_member?.({user_id:'1',seconds:60});
+   return JSON.stringify({ids:out.map(r=>r.message_id),bad:bad.status,mute:typeof tools.mute_member,finish:typeof tools.finish,js:typeof tools.execute_javascript});`);
+  assert.equal(r.status,'completed');const value=JSON.parse((r as {value:string}).value);
+  assert.deepEqual(value,{ids:['5000','5001','5002'],bad:'error',mute:'undefined',finish:'undefined',js:'undefined'});
+  assert.equal(h.calls.filter(c=>c.action==='send_group_msg').length,3);
+  assert.equal(h.mem.rows.filter(e=>e.bot).length,3);
+  const summary=(r as {tool_calls?:JsonObject}).tool_calls as {counts:JsonObject;abnormal:JsonObject[];abnormal_omitted:number};
+  assert.deepEqual(summary.counts,{send_message:{error:1,ok:3}});
+  assert.deepEqual(summary.abnormal,[{seq:4,tool:'send_message',status:'error',error:'invalid_arguments'}]);
+  const page=h.service.calls({selfId:self,groupId:group},(r as {job_id:string}).job_id);
+  assert.equal(page.calls.length,4);assert.equal(page.calls[0]!.ids.message_id,'5000');assert.match(page.calls[0]!.argsHash,/^[a-f0-9]{64}$/);
+ }finally{await h.close();}
+});
+
+test('policy is evaluated per call, not at job creation',async()=>{
+ const h=host();try{
+  (h.bot as unknown as {config:ListenerConfig}).config.tools!.extended!.poke_member='off' as never;
+  const r=await h.run(`return JSON.stringify(await tools.get_group_info({}));`);
+  assert.equal(r.status,'completed');
+  const stopped=h.bot.stop();await stopped;
+  assert.deepEqual(await h.bot.executeHostTool('send_message',{segments:[{type:'text',text:'x'}]},{groupId:group,selfId:self,actorId:actor,messageId:'1'},new AbortController().signal),{status:'error',error:'host_unavailable'});
+  assert.deepEqual(h.bot.hostToolNames(),[]);
+ }finally{await h.close();}
+});
+
+test('view_images inside the sandbox returns RGBA pixels instead of model-visible content',async()=>{
+ const sharp=(await import('sharp')).default;
+ const png=await sharp(Buffer.from([255,0,0,255,0,0,255,128]),{raw:{width:2,height:1,channels:4}}).png().toBuffer();
+ const api={async call(action:string,params:JsonObject={}){
+  if(action==='get_msg')return {message_type:'group',group_id:Number(group),message_id:params.message_id,sender:{user_id:7,nickname:'A'},time:1,message:[{type:'image',data:{url:'https://example.invalid/a.png',file:'a.png'}}]};
+  if(action==='get_login_info')return {user_id:Number(self)};return {};}};
+ const mem=memory();mem.append({messageId:'77',userId:'7',nickname:'A',time:1,text:'[图片]',images:[{id:'img_77_0',index:0}] as never});
+ const cfg={...config(),images:{enabled:true,maxDownloadMb:1}} as ListenerConfig;
+ const bot=new Listener(api,undefined,mem,cfg,Math.random,async()=>({dataUrl:'data:image/png;base64,'+png.toString('base64'),width:2,height:1,firstFrameOnly:false}),undefined,{pacer:virtualPacer().pacer});
+ bot.setConnected(true);
+ try{
+  assert.ok(bot.hostToolNames().includes('view_images'));
+  const r=await bot.executeHostTool('view_images',{image_ids:['img_77_0']},{groupId:group,selfId:self,actorId:actor,messageId:'1'},new AbortController().signal);
+  assert.equal(r.status,'ok');const images=r.images as unknown as {image_id:string;width:number;height:number;pixels:Uint8Array}[];
+  assert.equal(images.length,1);assert.equal(images[0]!.image_id,'img_77_0');assert.equal(images[0]!.width,2);assert.equal(images[0]!.height,1);
+  assert.deepEqual(Array.from(images[0]!.pixels),[255,0,0,255,0,0,255,128]);
+ }finally{await bot.stop();}
+});
+
+test('confirm-mode tools from the sandbox post the normal confirmation and report confirmation_required',async()=>{
+ const h=host(config({poke_member:'confirm'}));try{
+  const r=await h.run(`return JSON.stringify(await tools.poke_member({user_id:'7'}));`);
+  assert.equal(r.status,'completed');const value=JSON.parse((r as {value:string}).value);
+  assert.equal(value.status,'confirmation_required',JSON.stringify(value));assert.match(String(value.notification_message_id),/^\d+$/);
+  const notice=h.calls.find(c=>c.action==='send_group_msg');assert.match(JSON.stringify(notice?.params),/\/confirm [a-f0-9]+/);
+  assert.equal((r as {tool_calls:{abnormal:JsonObject[]}}).tool_calls.abnormal[0]!.status,'confirmation_required');
+ }finally{await h.close();}
+});
