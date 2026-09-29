@@ -14,7 +14,7 @@ function fixture(t:{after(fn:()=>void):void}) {
   mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'synthetic persona');
   return (source:string):AppConfig=>{writeFileSync(join(dir,'config.toml'),withFixtureModel(source));return loadAppConfig({configPath:join(dir,'config.toml'),env:{ONEBOT_ACCESS_TOKEN:'fixture',OPENAI_API_KEY:'fixture-key'}});};
 }
-const noConfirm=new Set<string>([...EXTENDED_READ_ONLY_TOOLS,'get_group_members','get_member_info','react_message','get_reaction_users','view_images','read_forward','manage_attention']);
+const noConfirm=new Set<string>([...EXTENDED_READ_ONLY_TOOLS,'get_group_members','get_member_info','react_message','get_reaction_users','view_images','read_forward','manage_attention','create_reminder','update_reminder','cancel_reminder']);
 const scopes=['defaults.tools','groups."11".tools'] as const;
 test('catalog covers existing and optional tools, defaults are complete and do not enable service',t=>{
   const expected=[...EXTENDED_TOOL_NAMES,'mute_member','unmute_member','recall_message','set_member_card','get_group_members','get_member_info','react_message','get_reaction_users','view_images','read_forward','manage_attention'];

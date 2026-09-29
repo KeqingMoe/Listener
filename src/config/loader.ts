@@ -146,7 +146,8 @@ export function assertStoragePaths(storage:AppConfig['storage'],groups:readonly 
   const canonicalCache=new Map<string,string>();
   const databases=[{path:storage.telemetryPath,field:'storage.telemetry_path'},
     {path:resolve(storage.directory,'custom-faces.sqlite'),field:'storage.directory'},
-    {path:resolve(storage.directory,'custom-face-operations.sqlite'),field:'storage.directory'}];
+    {path:resolve(storage.directory,'custom-face-operations.sqlite'),field:'storage.directory'},
+    {path:resolve(storage.directory,'reminders.sqlite'),field:'storage.directory'}];
   for(const group of groups)for(const path of [group.storage.databasePath,group.storage.databasePath+'.events.sqlite',group.storage.databasePath+'.session.sqlite'])databases.push({path,field:'groups.storage.database'});
   const paths:Array<{path:string;field:string;owner:string}>=[{path:storage.registryPath,field:'storage.registry_path',owner:'registry'}];
   databases.forEach(({path,field},index)=>{

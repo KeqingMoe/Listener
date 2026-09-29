@@ -23,6 +23,8 @@ import { getReactionCatalog } from '../onebot/catalog/reactions.js';
 import { CustomFaceStore } from '../tools/custom-faces/store.js';
 import { CustomFaceCoordinator } from '../tools/custom-faces/coordinator.js';
 import { SharedCustomFaceStaging } from '../tools/custom-faces/staging.js';
+import { ReminderStore } from '../reminders/store.js';
+import { ReminderScheduler } from '../reminders/scheduler.js';
 let logger: ReturnType<typeof configureLogging> | undefined;
 let telemetry: TelemetryStore | undefined;
 let runtimeEvents:RuntimeEventStore|undefined,stopObserving:(()=>void)|undefined;
@@ -30,6 +32,8 @@ let heartbeat:ReturnType<typeof setInterval>|undefined;
 let registry: GroupRegistry | undefined;
 let customFaceStore: CustomFaceStore | undefined;
 let customFaceCoordinator: CustomFaceCoordinator | undefined;
+let reminderStore: ReminderStore | undefined;
+let reminderScheduler: ReminderScheduler | undefined;
 
 async function main(): Promise<void> {
   const app=loadAppConfig();
@@ -53,6 +57,7 @@ async function main(): Promise<void> {
   if(declared.some(group=>group.enabled&&group.session.compaction!==false))throw new Error('Server compaction is not verified for this endpoint');
   registry=new GroupRegistry(app,()=>log('warn','app.registry_failed',{reason:'storage_failed'}));
   mkdirSync(app.storage.directory,{recursive:true,mode:0o700});
+  reminderStore=new ReminderStore({path:resolve(app.storage.directory,'reminders.sqlite')});
   customFaceStore=new CustomFaceStore({path:resolve(app.storage.directory,'custom-faces.sqlite')});
   customFaceCoordinator=new CustomFaceCoordinator({path:resolve(app.storage.directory,'custom-face-operations.sqlite')});
   const customFaces={store:customFaceStore,coordinator:customFaceCoordinator,staging:new SharedCustomFaceStaging({directory:app.storage.customFaceDirectory,providerDirectory:app.storage.napcatCustomFaceDirectory})};
@@ -101,7 +106,7 @@ async function main(): Promise<void> {
         if(model instanceof ResponsesModel){const checkpoint=session.getTransportCheckpoint();if(checkpoint){try{model.restoreContinuationCheckpoint(checkpoint);}catch{session.reset('invalid_transport_checkpoint');}}}
         for(const entry of memory.recent())world.appendMessage(entry,{source:'migration',observedAt:entry.time});
         chmodSync(policy.storage.databasePath,0o600);
-        const listener=new Listener(client,model,memory,group,Math.random,undefined,scheduler,{world,session,modelRequestId:()=>lastRequestId,customFaces});
+        const listener=new Listener(client,model,memory,group,Math.random,undefined,scheduler,{world,session,modelRequestId:()=>lastRequestId,customFaces,reminders:reminderStore});
         if(group.observeReactions)log('info','app.reactions_ready',{count:getReactionCatalog().length});
         log('info','app.group_ready',{group_id:groupId});
         return listener;
@@ -111,6 +116,10 @@ async function main(): Promise<void> {
       }
     },
   });
+  reminderScheduler=new ReminderScheduler({store:reminderStore, currentAccount:()=>router.reminderAccount,
+    eligible:groupId=>{const group=app.resolveGroup(groupId);return group.enabled&&group.tools.create_reminder.mode==='direct';},
+    dispatch:(reminder,claim)=>router.dispatchReminder(reminder,claim)});
+  reminderScheduler.start();
   let selfId:string|undefined,stopping=false;
   const pulse=()=>log('debug','app.heartbeat',{status:selfId?'connected':'disconnected'});
   pulse();heartbeat=setInterval(pulse,15000);heartbeat.unref();
@@ -134,11 +143,13 @@ async function main(): Promise<void> {
   client.on('message',receive);client.on('notice',receive);
   const stop=()=>{
     if(stopping)return;stopping=true;clearInterval(heartbeat);log('info','app.stopping');
+    const remindersStopping=reminderScheduler?.stop();
     const groupsStopping=router.stop();scheduler.close();
-    void Promise.allSettled([groupsStopping,client.stop()]).then(results=>{
+    void Promise.allSettled([groupsStopping,client.stop(),remindersStopping]).then(results=>{
       if(results.some(result=>result.status==='rejected')){log('error','app.shutdown_failed',{reason:'operation_failed'});process.exitCode=1;}
       else log('info','app.stopped');
     }).finally(async()=>{
+      try{reminderStore?.close();}catch{log('warn','app.reminders_close_failed',{reason:'close_failed'});}
       try{customFaceCoordinator?.close();}catch{log('warn','app.custom_faces_close_failed',{reason:'close_failed'});}
        try{customFaceStore?.close();}catch{log('warn','app.custom_faces_close_failed',{reason:'close_failed'});}
        try{registry?.close();}catch{log('warn','app.registry_failed',{reason:'close_failed'});}
@@ -150,7 +161,7 @@ async function main(): Promise<void> {
   process.on('SIGINT',stop);process.on('SIGTERM',stop);client.start();
 }
 void main().catch(async(error:unknown)=>{
-  try{customFaceCoordinator?.close();}catch{}
+  try{reminderStore?.close();}catch{};try{customFaceCoordinator?.close();}catch{}
   try{customFaceStore?.close();}catch{}
   try{registry?.close();}catch{}
   try{telemetry?.close();}catch{}

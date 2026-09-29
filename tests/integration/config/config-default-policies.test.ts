@@ -22,6 +22,7 @@ const DIRECT = [
   'get_group_members', 'get_member_info', 'get_group_info', 'get_group_honor', 'get_group_mutes',
   'read_group_notices', 'read_group_essence', 'get_group_ai_voices', 'get_group_file_space',
   'list_group_files', 'read_group_text_file', 'list_group_requests', 'transcribe_voice',
+  'create_reminder', 'list_reminders', 'update_reminder', 'cancel_reminder',
   'react_message', 'get_reaction_users', 'view_images', 'read_forward', 'manage_attention',
   'poke_member', 'group_sign', 'send_group_image', 'forward_message', 'send_group_forward', 'send_group_ai_voice',
   'list_custom_faces', 'view_custom_face', 'send_custom_face', 'add_custom_face', 'delete_custom_face', 'set_custom_face_description',
@@ -41,15 +42,15 @@ function fixture(t: { after(fn: () => void): void }, policies = '') {
   return loadAppConfig({ configPath: join(root, 'config.toml'), env: {} });
 }
 
-test('all 49 optional tools have the approved defaults; opening tools never opens group routing', t => {
+test('all 53 optional tools have the approved defaults; opening tools never opens group routing', t => {
   const app = fixture(t), group = app.resolveGroup(GROUP);
   assert.equal(app.defaultsEnabled, false);
   assert.equal(group.enabled, false);
   assert.equal(group.reply.random, false);
   assert.equal(group.observation.reactions, true);
   assert.deepEqual([...DIRECT, ...CONFIRM, 'leave_group'].sort(), [...TOOL_NAMES].sort());
-  assert.equal(TOOL_NAMES.length, 49);
-  assert.equal(DIRECT.length, 30);
+  assert.equal(TOOL_NAMES.length, 53);
+  assert.equal(DIRECT.length, 34);
   assert.equal(CONFIRM.length, 18);
   const inspection = inspectGroupConfig(app, GROUP);
   const values = inspection.values as Record<string, unknown>;
@@ -85,7 +86,7 @@ test('the public tool reference lists every capability with its actual default a
     const names = [...match[1]!.matchAll(/`([^`]+)`/g)];
     assert.equal(names.length, 1, 'each tool gets its own explanation');
     for (const name of names) {
-      const helper = ['view_images', 'view_custom_face', 'read_forward', 'read_group_text_file', 'manage_attention'].includes(name[1]!);
+      const helper = ['view_images', 'view_custom_face', 'read_forward', 'read_group_text_file', 'manage_attention', 'create_reminder', 'list_reminders', 'update_reminder', 'cancel_reminder'].includes(name[1]!);
       assert.equal(columns[4], helper ? 'Bot辅助' : 'QQ功能', name[1]);
       assert.equal(rows.has(name[1]!), false, `duplicate documentation: ${name[1]}`);
       rows.set(name[1]!, { mode: match[2]!, confirm: match[3] === '是' });

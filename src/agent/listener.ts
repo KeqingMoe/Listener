@@ -49,13 +49,14 @@ import { CustomFaceTools, CUSTOM_FACE_TOOL_NAMES } from '../tools/custom-faces/t
 import { CustomFaceStore } from '../tools/custom-faces/store.js';
 import { CustomFaceCoordinator } from '../tools/custom-faces/coordinator.js';
 import type { CustomFaceStager } from '../tools/custom-faces/staging.js';
+import type { ReminderStore, Reminder, DeliveryOutcome } from '../reminders/store.js';
 export interface CustomFaceRuntime {
   store: CustomFaceStore;
   coordinator: CustomFaceCoordinator;
   staging?: CustomFaceStager;
   originalDownloader?: OriginalImageDownloader;
 }
-export interface ListenerRuntime { world?: WorldEventStore; session?: ModelSession; modelRequestId?:()=>string|undefined; customFaces?: CustomFaceRuntime }
+export interface ListenerRuntime { reminders?: ReminderStore; world?: WorldEventStore; session?: ModelSession; modelRequestId?:()=>string|undefined; customFaces?: CustomFaceRuntime }
 
 export function messageId(value: unknown): string | undefined {
   if (typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
@@ -468,6 +469,22 @@ export class Listener {
     }
   }
   private sendQueue:Promise<void>=Promise.resolve();
+  async sendReminder(reminder: Reminder, claim: () => boolean): Promise<DeliveryOutcome> {
+    const run = this.sendQueue.then(async (): Promise<DeliveryOutcome> => {
+      if (this.stopped || !this.connected || reminder.groupId !== this.groupId || this.config.tools?.extended?.create_reminder !== 'direct') throw new Error('reminder_unavailable');
+      const login = await this.api.call('get_login_info', {});
+      if (!object(login) || id(login.user_id) !== reminder.selfId || this.stopped || !this.connected) throw new Error('reminder_unavailable');
+      if (!claim()) throw new Error('reminder_not_pending');
+      const late = Date.now() - reminder.dueAt > 60_000;
+      const text = `${late ? `【延后提醒，原定 ${new Date(reminder.dueAt).toLocaleString('zh-CN',{timeZone:reminder.timeZone})} ${reminder.timeZone}】\n` : '【提醒】\n'}${reminder.text}`;
+      try {
+        const entry = await this.dispatchMessage({text,segments:[{type:'text',data:{text}}]}, {groupId:this.groupId,selfId:reminder.selfId,actorId:reminder.creatorId,messageId:reminder.sourceMessageId});
+        return {state:'sent',messageId:entry.messageId};
+      } catch(error) { return writeFailure(error).status === 'error' ? {state:'failed',reason:'delivery_failed'} : {state:'unknown',reason:'dispatch_unknown'}; }
+    });
+    this.sendQueue=run.then(()=>{},()=>{});
+    return run;
+  }
   private async sendPart(part: PreparedMessage, context: TurnContext, signal?:AbortSignal): Promise<SentMessage> {
     const generation=this.generation;
     const run=this.sendQueue.then(async()=>{
@@ -627,6 +644,7 @@ export class Listener {
       this.groupRequests.resetWake();
       const extendedTools=createExtendedTools(turnApi,workingMemory,this.groupId,this.config.tools?.extended,{
         downloader:this.imageDownloader,files:this.groupFiles,requests:this.groupRequests,
+        reminders:this.runtime.reminders,ownerId:this.ownerId,
         customFaces:this.customFaces?{
           ...this.customFaces,imageState,
           maxDownloadMb:this.config.images?.maxDownloadMb??10,

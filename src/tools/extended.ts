@@ -29,10 +29,15 @@ import {
 } from "./actions/tools.js";
 import { ToolRegistry, type RegisteredTool } from "./registry.js";
 import { GroupTranscriptionTools } from './transcription/tools.js';
+import { GroupReminderTools, buildReminderTools, REMINDER_TOOL_NAMES } from './reminders/tools.js';
+import type { ReminderStore } from '../reminders/store.js';
+import { resolveOwnerId } from '../contracts/identity.js';
 import { CustomFaceTools, CUSTOM_FACE_TOOL_NAMES, buildCustomFaceToolDefinitions, type CustomFaceOptions } from './custom-faces/tools.js';
 
 export interface ExtendedToolOptions {
   downloader?: ImageDownloader;
+  reminders?: ReminderStore;
+  ownerId?: string;
   beforeSend?: GroupMediaOptions['beforeSend'];
   onSent?: GroupMediaOptions['onSent'];
   files?: GroupFileTools;
@@ -63,6 +68,8 @@ export function createExtendedTools(
     }
     if (!tool.sideEffect)
       throw new Error("Read-only tools do not support mutation confirmation");
+    if ((REMINDER_TOOL_NAMES as readonly string[]).includes(name))
+      throw new Error('Reminder tools do not support mutation confirmation');
     const definition = structuredClone(tool.definition);
     definition.function.description =
       definition.function.description.replace(
@@ -190,6 +197,12 @@ export function createExtendedTools(
     execute: (args, context, signal) => customFaces
       ? customFaces.execute(definition.function.name, args, context, signal)
       : Promise.resolve({ status: 'error', error: 'custom_faces_unavailable' }),
+  });
+  const reminderNames = REMINDER_TOOL_NAMES.filter(name => enabled.has(name));
+  const reminders = options.reminders ? new GroupReminderTools(api, memory, groupId, resolveOwnerId(options.ownerId), options.reminders, reminderNames) : undefined;
+  for (const definition of buildReminderTools(reminderNames)) register({
+    definition, sideEffect: definition.function.name !== 'list_reminders',
+    execute: (args, context, signal) => reminders ? reminders.execute(definition.function.name, args, context, signal) : Promise.resolve({status:'error',error:'reminders_unavailable'}),
   });
   return registry;
 }

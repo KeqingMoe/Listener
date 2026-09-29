@@ -11,7 +11,8 @@ import { GroupFileTools, GROUP_FILE_TOOL_NAMES } from '../../../src/tools/files/
 import { GroupRequestTools, GROUP_REQUEST_TOOL_NAMES } from '../../../src/tools/requests/tools.js';
 
 const context: TurnContext = {groupId:LISTENER_GROUP, actorId:'123', selfId:'999', messageId:'11'};
-const writes = EXTENDED_TOOL_NAMES.filter(name=>!EXTENDED_READ_ONLY_TOOLS.includes(name));
+const scheduledWrites = ['create_reminder','update_reminder','cancel_reminder'] as const;
+const writes = EXTENDED_TOOL_NAMES.filter(name=>!EXTENDED_READ_ONLY_TOOLS.includes(name)&&!(scheduledWrites as readonly string[]).includes(name));
 const memory: Memory = {recent:()=>[],find:()=>undefined,append:()=>false,context:()=>'',async compact(){},clear(){},close(){}};
 function source(){let calls=0;const api:Api={async call(){calls++;throw new Error('unexpected native call PRIVATE');}};return {api,get calls(){return calls;}};}
 
@@ -46,13 +47,17 @@ test('all confirm write handlers route only to the adapter and retain original t
 });
 
 test('all read-only capabilities reject confirm rather than becoming directly executable',()=>{
-  assert.equal(EXTENDED_READ_ONLY_TOOLS.length,13);
+  assert.equal(EXTENDED_READ_ONLY_TOOLS.length,14);
   for(const name of EXTENDED_READ_ONLY_TOOLS){
     const native=source();
     assert.throws(()=>createExtendedTools(native.api,memory,LISTENER_GROUP,{[name]:'confirm'}),/Read-only tools do not support mutation confirmation/,name);
     assert.throws(()=>buildExtendedToolDefinitions(LISTENER_GROUP,{[name]:'confirm'}),/Read-only tools do not support mutation confirmation/,name);
     assert.equal(native.calls,0,name);
   }
+});
+
+test('scheduled reminder writes reject confirm even when a confirmation adapter exists',()=>{
+ for(const name of scheduledWrites){const native=source();assert.throws(()=>createExtendedTools(native.api,memory,LISTENER_GROUP,{[name]:'confirm'},{async requestConfirmation(){throw new Error('must not propose');}}));assert.throws(()=>buildExtendedToolDefinitions(LISTENER_GROUP,{[name]:'confirm'}));assert.equal(native.calls,0);}
 });
 
 test('disabled tools cannot use the adapter as a backdoor and omitted modes remain disabled',async()=>{

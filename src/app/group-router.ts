@@ -3,9 +3,12 @@ import { resolveGroupId } from '../contracts/identity.js';
 import { withLogContext } from '../observability/logger.js';
 import { normalizeOneBotEvent } from '../world/ingest.js';
 import { types } from 'node:util';
+import type { Reminder, DeliveryOutcome } from '../reminders/store.js';
 
 export interface GroupHandler {
   receive(event: unknown, selfId: string): Promise<void>;
+  /** Active, host-scheduled reminder dispatch; must not synthesize a receive event. */
+  sendReminder?(reminder: Reminder, beforeDispatchClaim: () => boolean): Promise<DeliveryOutcome>;
   setConnected(value: boolean): void;
   stop(): Promise<void>;
 }
@@ -31,6 +34,7 @@ export class GroupRouter {
   private stopped = false;
   private epoch = 0;
   private selfId?: string;
+  private membershipVerified = false;
   private serial: Promise<void> = Promise.resolve();
   private stopPromise?: Promise<void>;
   private readonly dynamic?: DynamicGroupRouting;
@@ -47,6 +51,31 @@ export class GroupRouter {
   get size(): number { return this.members.size; }
   get residentSize(): number { return this.handlers.size; }
   get groupIds(): readonly string[] { return [...this.members]; }
+  get reminderAccount(): string | undefined { return this.connected && !this.stopped && this.membershipVerified ? this.selfId : undefined; }
+  /** Only persisted host tasks may use this entry; membership never comes from task data. */
+  async dispatchReminder(reminder: Reminder, claim: () => boolean): Promise<DeliveryOutcome> {
+    const { groupId, selfId } = reminder;
+    const epoch = this.epoch, groupEpoch = this.groupEpoch.get(groupId) ?? 0;
+    const valid = () => id(groupId) === groupId && id(selfId) === selfId &&
+      this.reminderAccount === selfId && epoch === this.epoch &&
+      (this.groupEpoch.get(groupId) ?? 0) === groupEpoch && this.enabled(groupId) &&
+      this.members.has(groupId) && !this.departed.has(groupId) && !this.closing.has(groupId);
+    if (!valid()) throw new Error('reminder_unavailable');
+    // Allocation shares receive's structural queue, but delivery must not hold it.
+    const handler = this.handlers.get(groupId) ?? await this.enqueue(async () => {
+      if (!valid()) return;
+      let result = this.handlers.get(groupId);
+      if (!result && this.dynamic) {
+        result = await this.dynamic.create(groupId);
+        if (!valid()) { await result.stop(); return; }
+        result.setConnected(true); this.handlers.set(groupId, result);
+      }
+      return result;
+    });
+    if (!valid() || !handler?.sendReminder) throw new Error('reminder_unavailable');
+    return withLogContext({group_id: groupId}, () => handler.sendReminder!(reminder, () =>
+      valid() && this.handlers.get(groupId) === handler && claim()));
+  }
   private enqueue<T>(run: () => Promise<T>): Promise<T> {
     const result = this.serial.then(run);
     this.serial = result.then(() => {}, () => {});
@@ -74,11 +103,12 @@ export class GroupRouter {
   setConnected(value: boolean): void {
     if (this.stopped) return;
     this.connected = value;
-    if (!value) this.epoch++;
+    if (!value) { this.epoch++; this.membershipVerified = false; }
     for (const [groupId,handler] of this.handlers) handler.setConnected(value&&!this.departed.has(groupId)&&!this.closing.has(groupId));
   }
   /** A failed/invalid snapshot leaves the last known membership intact. */
   async connect(selfId: string): Promise<void> {
+    this.membershipVerified = false;
     if (this.stopped || id(selfId) !== selfId) return;
     const changedIdentity = this.selfId !== undefined && this.selfId !== selfId;
     const epoch = ++this.epoch;
@@ -98,7 +128,7 @@ export class GroupRouter {
     }
     if (this.stopped || epoch !== this.epoch) return;
     this.setConnected(true);
-    if (!this.dynamic) return;
+    if (!this.dynamic) { this.membershipVerified = true; return; }
     const revision = this.revision;
     let response: unknown;
     try { response = await this.dynamic.listGroups(); }
@@ -145,6 +175,7 @@ export class GroupRouter {
       this.members = next;
       for(const groupId of next)if((this.touched.get(groupId)??0)<=revision)this.departed.delete(groupId);
       for (const [groupId, at] of this.touched) if (at <= revision) this.touched.delete(groupId);
+      this.membershipVerified = true;
     });
   }
   async receive(event: unknown, selfId: string): Promise<void> {
