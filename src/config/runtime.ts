@@ -8,7 +8,8 @@ export function applyToolPolicies(config: ResolvedListenerConfig): ResolvedListe
 export function applyToolPolicies(config: ListenerConfig): ListenerConfig;
 export function applyToolPolicies(config: ListenerConfig): ListenerConfig {
   const policies=config.toolPermissions;
-  if(!policies)return config;
+  // A tool without a configured backend is absent rather than visible-but-failing.
+  if(!policies)return config.webSearch||!config.tools?.extended?.web_search?config:{...config,tools:{...config.tools,extended:{...config.tools.extended,web_search:'off'}}};
   const direct=(name:ToolName)=>policies[name]?.mode==='direct';
   const mode=(name:ToolName)=>policies[name]?.mode??'off';
   const extended:ExtendedToolsConfig={};
@@ -40,10 +41,12 @@ export function toListenerConfig(app:AppConfig,group:ResolvedGroupConfig):Resolv
     sessionMaxContextBytes:group.session.maxTranscriptBytes,
     serverCompaction:group.session.compaction?'auto':'off',...(group.session.compaction?{compactThreshold:group.session.compaction.thresholdTokens}:{}),
     maxToolCallsPerWake:group.execution.maxToolCallsPerWake,wakeTimeoutMs:group.execution.wakeTimeoutMs,
+    ...(app.web.search?{webSearch:structuredClone(app.web.search)}:{}),
     memoryPath:group.storage.databasePath,retentionDays:group.history.retentionDays,
     // Cache constructor bound only; production ModelSession never summarizes via this budget.
     maxContextChars:24000,
-    toolPermissions:structuredClone(group.tools),observeReactions:group.observation.reactions,
+    // A tool without a configured backend is absent rather than visible-but-failing.
+    toolPermissions:{...structuredClone(group.tools),...(app.web.search?{}:{web_search:{mode:'off'}})},observeReactions:group.observation.reactions,
     messageMentions:group.messages.mentions,confirmationTtlSeconds:group.confirmation.ttlSeconds,
   });
 }

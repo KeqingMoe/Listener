@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { parse as parseToml } from 'smol-toml';
 import { parse as parseDotenv } from 'dotenv';
-import type { AppConfig, ResolvedGroupConfig, ModelTransport } from './app.js';
+import type { AppConfig, ResolvedGroupConfig, ModelTransport, WebSearchProviderConfig } from './app.js';
 import type { LoggingConfig, LogLevel } from '../observability/logger.js';
 import { OWNER_ID } from '../contracts/identity.js';
 import { TOOL_NAMES, TOOL_CAPABILITIES, type ResolvedToolPolicies, type ToolMode, type ToolName, type ToolPolicy } from './tool-policy.js';
@@ -86,6 +86,16 @@ function modelTransport(value:unknown):ModelTransport {
   if(options.type!=='responses')return fail('model.transport.type','必须是responses');
   if(!own(options,'incremental'))return fail('model.transport.incremental','必须显式指定布尔值');
   return {type:'responses',incremental:bool(options,'incremental','model.transport',false)};
+}
+function webSearch(value:unknown):WebSearchProviderConfig|undefined {
+  if(value===undefined)return undefined;
+  // Discriminate first so an unknown provider is reported as such, not as stray fields.
+  const tag=table(value,'web.search',value&&typeof value==='object'?Object.keys(value):[]);
+  if(!own(tag,'type'))return fail('web.search.type','必须显式指定搜索服务类型');
+  if(tag.type!=='searxng')return fail('web.search.type','不支持的搜索服务类型');
+  const raw=table(value,'web.search',['type','url']);
+  if(!own(raw,'url'))return fail('web.search.url','必须显式指定SearXNG地址');
+  return {type:'searxng',url:url(text(raw,'url','web.search',''),'web.search.url',true).replace(/\/+$/,'')};
 }
 const POLICY_KEYS=['enabled','persona','reply','session','execution','messages','observation','confirmation','history','storage','tools'] as const;
 function policy(rawValue:unknown,path:string,base:string,directory:string,groupId:string,transport:ModelTransport,defaults?:ResolvedGroupConfig):ResolvedGroupConfig {
@@ -173,8 +183,8 @@ export function assertStoragePaths(storage:AppConfig['storage'],groups:readonly 
 export function loadAppConfig(options:{configPath?:string;envPath?:string;env?:NodeJS.ProcessEnv}={}):AppConfig {
   const configPath=resolve(options.configPath??'config.toml'),base=dirname(configPath);let parsed:unknown,source='';
   try{source=readFileSync(configPath,'utf8');parsed=parseToml(source);}catch{return fail('config.toml','无法读取或TOML格式无效');}
-  const root=table(parsed,'config',['bot','onebot','model','runtime','storage','logging','defaults','groups']);
-  const bot=table(root.bot,'bot',['name','owner_id','owner_name']),one=table(root.onebot,'onebot',['url','token_env','api_timeout_ms','reconnect_base_ms','reconnect_max_ms','heartbeat_ms']),model=table(root.model,'model',['base_url','model','api_key_env','timeout_ms','max_output_tokens','opencode_headers','transport']),runtime=table(root.runtime,'runtime',['max_concurrent_turns']),rawStorage=table(root.storage,'storage',['directory','telemetry_path','registry_path','custom_face_directory','napcat_custom_face_directory']),logs=table(root.logging,'logging',['level','console','file']);
+  const root=table(parsed,'config',['bot','onebot','model','runtime','web','storage','logging','defaults','groups']);
+  const bot=table(root.bot,'bot',['name','owner_id','owner_name']),one=table(root.onebot,'onebot',['url','token_env','api_timeout_ms','reconnect_base_ms','reconnect_max_ms','heartbeat_ms']),model=table(root.model,'model',['base_url','model','api_key_env','timeout_ms','max_output_tokens','opencode_headers','transport']),runtime=table(root.runtime,'runtime',['max_concurrent_turns']),web=table(root.web,'web',['search']),rawStorage=table(root.storage,'storage',['directory','telemetry_path','registry_path','custom_face_directory','napcat_custom_face_directory']),logs=table(root.logging,'logging',['level','console','file']);
   const directory=filePath(text(rawStorage,'directory','storage','data'),base,'storage.directory');
   const customFaceDirectory=filePath(text(rawStorage,'custom_face_directory','storage',resolve(directory,'custom-face-originals')),base,'storage.custom_face_directory');
   const napcatCustomFaceDirectory=text(rawStorage,'napcat_custom_face_directory','storage',customFaceDirectory);
@@ -210,7 +220,7 @@ export function loadAppConfig(options:{configPath?:string;envPath?:string;env?:N
   assertStoragePaths(storage,[...resolved.values()]);
   // Validate a literal defaults database even when no explicit group exists.
   if(defaultDatabaseExplicit)assertStoragePaths(storage,[defaultPolicy]);
-  const app:AppConfig={configPath,identity:{name:text(bot,'name','bot','Listener'),ownerId,ownerName:text(bot,'owner_name','bot','主人')},onebot,model:{transport,baseUrl:url(text(model,'base_url','model','https://api.openai.com/v1'),'model.base_url',true),apiKey:secret(keyEnv,'model.api_key_env',true),model:text(model,'model','model',''),timeoutMs:num(model,'timeout_ms','model',180000,1000,300000),maxTokens:num(model,'max_output_tokens','model',32768,1,Number.MAX_SAFE_INTEGER),opencodeHeaders:bool(model,'opencode_headers','model',false)},runtime:{maxConcurrentTurns:num(runtime,'max_concurrent_turns','runtime',2,1,8)},storage,logging,defaultsEnabled:defaultPolicy.enabled,configuredGroupIds:Object.freeze([...configuredGroupIds]),resolveGroup(groupId:string){id(groupId,'groups');const group=structuredClone(resolved.get(groupId)??resolvePolicy(groupId));assertStoragePaths(storage,[...resolved.values()].filter(other=>other.groupId!==groupId).concat(group));return group;}};
+  const app:AppConfig={configPath,identity:{name:text(bot,'name','bot','Listener'),ownerId,ownerName:text(bot,'owner_name','bot','主人')},onebot,model:{transport,baseUrl:url(text(model,'base_url','model','https://api.openai.com/v1'),'model.base_url',true),apiKey:secret(keyEnv,'model.api_key_env',true),model:text(model,'model','model',''),timeoutMs:num(model,'timeout_ms','model',180000,1000,300000),maxTokens:num(model,'max_output_tokens','model',32768,1,Number.MAX_SAFE_INTEGER),opencodeHeaders:bool(model,'opencode_headers','model',false)},runtime:{maxConcurrentTurns:num(runtime,'max_concurrent_turns','runtime',2,1,8)},web:{...(own(web,'search')?{search:webSearch(web.search)}:{})},storage,logging,defaultsEnabled:defaultPolicy.enabled,configuredGroupIds:Object.freeze([...configuredGroupIds]),resolveGroup(groupId:string){id(groupId,'groups');const group=structuredClone(resolved.get(groupId)??resolvePolicy(groupId));assertStoragePaths(storage,[...resolved.values()].filter(other=>other.groupId!==groupId).concat(group));return group;}};
   configSources.set(app, { path: configPath, digest: sourceDigest(source) });
   // Empty process values intentionally override a file credential to disable login.
   // Password policy belongs to AuthStore so invalid/missing values still serve the UI.

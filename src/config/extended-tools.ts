@@ -44,10 +44,14 @@ export const EXTENDED_TOOL_NAMES = [
   "execute_javascript",
   "query_javascript_jobs",
   "cancel_javascript_job",
+  "web_search",
+  "web_fetch",
 ] as const;
 export type ExtendedToolName = (typeof EXTENDED_TOOL_NAMES)[number];
 export const EXTENDED_READ_ONLY_TOOLS: readonly ExtendedToolName[] = [
   "query_javascript_jobs",
+  "web_search",
+  "web_fetch",
   "get_group_info",
   "get_group_honor",
   "get_group_mutes",

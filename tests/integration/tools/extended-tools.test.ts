@@ -439,7 +439,7 @@ test("each explicit capability appears identically in schema generation Listener
     );
     assert.equal(registry.has(name), true);
     assert.deepEqual(buildExtendedToolDefinitions(groupId, setting), defs);
-    const listenerDefs = buildToolDefinitions(config(setting), true).filter(
+    const listenerDefs = buildToolDefinitions({ ...config(setting), webSearch: { type: 'searxng', url: 'http://127.0.0.1:8888' } }, true).filter(
       (d) =>
         (EXTENDED_TOOL_NAMES as readonly string[]).includes(d.function.name),
     );

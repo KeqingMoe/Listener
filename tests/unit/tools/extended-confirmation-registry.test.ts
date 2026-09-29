@@ -49,7 +49,7 @@ test('all confirm write handlers route only to the adapter and retain original t
 });
 
 test('all read-only capabilities reject confirm rather than becoming directly executable',()=>{
-  assert.equal(EXTENDED_READ_ONLY_TOOLS.length,15);
+  assert.equal(EXTENDED_READ_ONLY_TOOLS.length,17);
   for(const name of SANDBOX) {
     assert.equal(EXTENDED_READ_ONLY_TOOLS.includes(name),name==='query_javascript_jobs');
     assert.throws(()=>createExtendedTools(source().api,memory,LISTENER_GROUP,{[name]:'confirm'}),/(?:Read-only|Sandbox) tools do not support mutation confirmation/);

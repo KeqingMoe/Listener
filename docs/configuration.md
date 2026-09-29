@@ -37,6 +37,7 @@ npm run config:check -- --group 123456789
 | | `opencode_headers` | false；请求添加每群持久 `x-opencode-session` |
 | | `transport` | 默认`"chat"`；`"chat"`、`"responses"`，或`{type = "responses", incremental = false}` |
 | `runtime` | `max_concurrent_turns` | 2，范围1..8；全局同时运行的唤醒数，同一群不会并行唤醒 |
+| `web` | `search` | 缺省不提供`web_search`；联网搜索服务，按`type`区分，见[联网搜索与网页读取](web.md) |
 | `storage` | `directory` | `data`，分群及全局数据文件的基准目录 |
 | | `telemetry_path` | `<directory>/telemetry.sqlite`，模型用量库 |
 | | `registry_path` | `<directory>/group-registry.json`，Bot与面板共享的私有群清单，不含正文或密钥 |
@@ -194,7 +195,7 @@ napcat_custom_face_directory = "/qqbot-custom-faces"
 
 例如，`send_group_ai_voice`调用的是**QQ的AI语音功能**，使用QQ提供的声线把文字发成语音，不是让本项目配置的模型生成音频；`view_images`则把可核验图片提供给**本项目配置的模型**理解，不是调用QQ的“AI识图”。两者名称里都可能涉及AI，但作用不同。
 
-当前共有56个可配置工具：37个默认`direct`、18个默认`confirm`、1个默认`off`。已有显式模式继续优先，不会被新增工具的默认值覆盖。
+当前共有58个可配置工具：39个默认`direct`、18个默认`confirm`、1个默认`off`。已有显式模式继续优先，不会被新增工具的默认值覆盖。
 
 ### 查询与阅读
 
@@ -232,6 +233,15 @@ napcat_custom_face_directory = "/qqbot-custom-faces"
 | `cancel_javascript_job` | direct | 否 | 无 | Bot辅助 | 取消当前账号当前群的后台JavaScript任务。 |
 
 细节见 [JavaScript 沙箱](sandbox.md)。三个工具不支持`confirm`，没有新的行为次数配额；`mode`不是配置项。
+
+### 联网搜索与网页读取
+
+| 工具 | 默认 | 支持confirm | 配置参数 | 类别 | 用途 |
+| --- | --- | --- | --- | --- | --- |
+| `web_search` | direct | 否 | 无 | Bot辅助 | 通过部署配置的搜索服务搜索网页，返回来源列表。未配置 `[web].search` 时不提供此工具。 |
+| `web_fetch` | direct | 否 | 无 | Bot辅助 | 读取公开http(s)网页的可见正文，不访问内网或本机地址。 |
+
+细节见 [联网搜索与网页读取](web.md)。
 
 ### 一次性定时提醒
 

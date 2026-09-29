@@ -33,6 +33,7 @@ import { GroupReminderTools, buildReminderTools, REMINDER_TOOL_NAMES } from './r
 import type { ReminderStore } from '../reminders/store.js';
 import type { SandboxService } from '../sandbox/service.js';
 import { SandboxTools, SANDBOX_TOOL_NAMES, buildSandboxTools } from './sandbox/tools.js';
+import { WebTools, WEB_TOOL_NAMES, buildWebToolDefinitions } from './web/tools.js';
 import { resolveOwnerId } from '../contracts/identity.js';
 import { CustomFaceTools, CUSTOM_FACE_TOOL_NAMES, buildCustomFaceToolDefinitions, type CustomFaceOptions } from './custom-faces/tools.js';
 
@@ -40,6 +41,7 @@ export interface ExtendedToolOptions {
   downloader?: ImageDownloader;
   reminders?: ReminderStore;
   sandbox?: SandboxService;
+  web?: WebTools;
   ownerId?: string;
   beforeSend?: GroupMediaOptions['beforeSend'];
   onSent?: GroupMediaOptions['onSent'];
@@ -71,6 +73,8 @@ export function createExtendedTools(
     }
     if (!tool.sideEffect)
       throw new Error("Read-only tools do not support mutation confirmation");
+    if ((WEB_TOOL_NAMES as readonly string[]).includes(name))
+      throw new Error('Web tools do not support mutation confirmation');
     if ((SANDBOX_TOOL_NAMES as readonly string[]).includes(name))
       throw new Error('Sandbox tools do not support mutation confirmation');
     if ((REMINDER_TOOL_NAMES as readonly string[]).includes(name))
@@ -215,6 +219,10 @@ export function createExtendedTools(
     execute: (args, context, signal) => context.groupId !== groupId
       ? Promise.resolve({status:'error',error:'invalid_scope'})
       : sandbox ? sandbox.execute(definition.function.name,args,context,signal) : Promise.resolve({status:'error',error:'sandbox_unavailable'}),
+  });
+  for (const definition of buildWebToolDefinitions([...enabled])) register({
+    definition, sideEffect: false,
+    execute: (args, _context, signal) => options.web ? options.web.execute(definition.function.name, args, signal) : Promise.resolve({ status: 'error', error: 'web_unavailable' }),
   });
   return registry;
 }

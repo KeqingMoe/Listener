@@ -23,6 +23,10 @@ max_output_tokens = 32768
 # 单次模型请求最长等待；长 reasoning 可能需要更久。
 timeout_ms = 180000
 
+# 联网搜索服务；不配置时不提供 web_search。web_fetch 不依赖此项。详见 docs/web.md。
+# [web]
+# search = { type = "searxng", url = "http://127.0.0.1:8888" }
+
 # 收藏添加需要Bot和NapCat访问同一实际原图目录；同主机默认无需另填。
 # 容器部署时先建立目录映射，再按两侧路径配置；不是QQ收藏ID清单。
 # [storage]

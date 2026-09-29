@@ -1,4 +1,5 @@
 import type { SandboxService } from '../sandbox/service.js';
+import type { WebTools } from '../tools/web/tools.js';
 import { isExecutionDiagnostic } from '../sandbox/protocol.js';
 import { buildSystemPrompt, observedSystemPrompt } from './prompts.js';
 import { buildToolDefinitions } from './tool-definitions.js';
@@ -58,7 +59,7 @@ export interface CustomFaceRuntime {
   staging?: CustomFaceStager;
   originalDownloader?: OriginalImageDownloader;
 }
-export interface ListenerRuntime { sandbox?:SandboxService; sandboxSummary?:(selfId:string,groupId:string)=>JsonObject; reminders?: ReminderStore; world?: WorldEventStore; session?: ModelSession; modelRequestId?:()=>string|undefined; customFaces?: CustomFaceRuntime }
+export interface ListenerRuntime { web?:WebTools; sandbox?:SandboxService; sandboxSummary?:(selfId:string,groupId:string)=>JsonObject; reminders?: ReminderStore; world?: WorldEventStore; session?: ModelSession; modelRequestId?:()=>string|undefined; customFaces?: CustomFaceRuntime }
 
 export function messageId(value: unknown): string | undefined {
   if (typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
@@ -69,7 +70,7 @@ function object(value: unknown): value is JsonObject { return !!value && typeof 
 function keys(value: JsonObject, allowed: string[]): boolean { return Object.keys(value).every(k => allowed.includes(k)); }
 function logToolResult(tool: string, result: JsonObject, started: number, round: number): void {
   const status = ['ok','pending','partial','error','confirmation_required','executed','staged','unknown'].includes(String(result.status)) ? String(result.status) : 'error';
-  const codes = ['invalid_arguments','tool_disabled','images_disabled','image_unavailable','forbidden_group','message_not_in_context','cancelled','image_first','call_limit','forward_first','transcription_first','forward_disabled','invalid_range','budget_exhausted','forbidden_reference','resource_limit','resource_cycle','forward_unavailable','range_out_of_bounds','plan_limit','operation_limit','plan_not_found','invalid_transaction','random_failed','turn_finished','reaction_rejected','reaction_result_unknown','verification_failed','api_unavailable','reaction_failed','reaction_catalog_unavailable','invalid_turn','reaction_users_unavailable','pagination_unavailable','pagination_cycle','incomplete_page','invalid_cursor','query_invalidated','provider_rejected','delivery_unknown','action_result_unknown','operation_result_unknown','previous_submission_pending','membership_transition_pending','duplicate_message_ack','management_result_review_required','confirmation_verification_failed'];
+  const codes = ['invalid_arguments','tool_disabled','images_disabled','image_unavailable','forbidden_group','message_not_in_context','cancelled','image_first','call_limit','forward_first','transcription_first','forward_disabled','invalid_range','budget_exhausted','forbidden_reference','resource_limit','resource_cycle','forward_unavailable','range_out_of_bounds','plan_limit','operation_limit','plan_not_found','invalid_transaction','random_failed','turn_finished','reaction_rejected','reaction_result_unknown','verification_failed','api_unavailable','reaction_failed','reaction_catalog_unavailable','invalid_turn','reaction_users_unavailable','pagination_unavailable','pagination_cycle','incomplete_page','invalid_cursor','query_invalidated','provider_rejected','delivery_unknown','action_result_unknown','operation_result_unknown','previous_submission_pending','membership_transition_pending','duplicate_message_ack','management_result_review_required','confirmation_verification_failed','busy','web_unavailable','search_unavailable','search_timeout','invalid_url','blocked_url','fetch_timeout','fetch_too_large','unsupported_content_type','unsupported_charset','fetch_failed'];
   const detail=typeof result.error==='string'?result.error:result.reason;
   const reason = typeof detail === 'string' && codes.includes(detail) ? detail : status === 'error' ? 'tool_rejected' : undefined;
   const flags:Record<string,boolean>={};
@@ -662,7 +663,7 @@ export class Listener {
       this.groupRequests.resetWake();
       const extendedTools=createExtendedTools(turnApi,workingMemory,this.groupId,this.config.tools?.extended,{
         downloader:this.imageDownloader,files:this.groupFiles,requests:this.groupRequests,
-        reminders:this.runtime.reminders,sandbox:this.runtime.sandbox,ownerId:this.ownerId,
+        reminders:this.runtime.reminders,sandbox:this.runtime.sandbox,web:this.runtime.web,ownerId:this.ownerId,
         customFaces:this.customFaces?{
           ...this.customFaces,imageState,
           maxDownloadMb:this.config.images?.maxDownloadMb??10,

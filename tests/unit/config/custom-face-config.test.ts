@@ -30,8 +30,8 @@ function fixture(t: { after(fn: () => void): void }, input: { storage?: string; 
 test('six favorite tools default direct without implicitly enabling any group or low-level registry', t => {
   const f = fixture(t), app = f.load(), group = app.resolveGroup(GROUP);
   assert.equal(app.defaultsEnabled, false); assert.equal(group.enabled, false);
-  assert.equal(TOOL_NAMES.length, 56);
-  assert.equal(TOOL_NAMES.filter(name => TOOL_CAPABILITIES[name].defaultMode === 'direct').length, 37);
+  assert.equal(TOOL_NAMES.length, 58);
+  assert.equal(TOOL_NAMES.filter(name => TOOL_CAPABILITIES[name].defaultMode === 'direct').length, 39);
   assert.equal(TOOL_NAMES.filter(name => TOOL_CAPABILITIES[name].defaultMode === 'confirm').length, 18);
   assert.equal(TOOL_NAMES.filter(name => TOOL_CAPABILITIES[name].defaultMode === 'off').length, 1);
   const sources = inspectGroupConfig(app, GROUP).sources as Record<string, string>;

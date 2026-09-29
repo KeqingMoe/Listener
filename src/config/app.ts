@@ -1,6 +1,8 @@
 import type { Config } from './onebot.js';
 import type { LoggingConfig } from '../observability/logger.js';
 import type { ResolvedToolPolicies } from './tool-policy.js';
+/** Tagged union so further providers add branches without reinterpreting fields. */
+export type WebSearchProviderConfig={type:'searxng';url:string};
 export type ModelTransport='chat'|'responses'|{type:'responses';incremental:boolean};
 export interface ResolvedGroupConfig {
   groupId:string; enabled:boolean; personaPath:string; persona:string;
@@ -16,6 +18,8 @@ export interface AppConfig {
   onebot:Config;
   model:{baseUrl:string;apiKey:string;model:string;timeoutMs:number;maxTokens:number;opencodeHeaders:boolean;transport:ModelTransport};
   runtime:{maxConcurrentTurns:number};
+  /** Absent search means the web_search tool is not offered at all. */
+  web:{search?:WebSearchProviderConfig};
   storage:{directory:string;telemetryPath:string;registryPath:string;customFaceDirectory:string;napcatCustomFaceDirectory:string};
   logging:LoggingConfig;
   defaultsEnabled:boolean;

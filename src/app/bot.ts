@@ -27,6 +27,8 @@ import { ReminderStore } from '../reminders/store.js';
 import { ReminderScheduler } from '../reminders/scheduler.js';
 import { SandboxService } from '../sandbox/service.js';
 import { SandboxJobStore } from '../sandbox/store.js';
+import { WebTools } from '../tools/web/tools.js';
+import { createSearchBackend } from '../tools/web/search.js';
 let logger: ReturnType<typeof configureLogging> | undefined;
 let telemetry: TelemetryStore | undefined;
 let runtimeEvents:RuntimeEventStore|undefined,stopObserving:(()=>void)|undefined;
@@ -64,6 +66,7 @@ async function main(): Promise<void> {
   reminderStore=new ReminderStore({path:resolve(app.storage.directory,'reminders.sqlite')});
   sandboxStore=new SandboxJobStore({path:resolve(app.storage.directory,'sandbox.sqlite')});
   sandboxService=new SandboxService({store:sandboxStore});
+  const webTools=new WebTools({...(app.web.search?{search:createSearchBackend(app.web.search)}:{})});
   customFaceStore=new CustomFaceStore({path:resolve(app.storage.directory,'custom-faces.sqlite')});
   customFaceCoordinator=new CustomFaceCoordinator({path:resolve(app.storage.directory,'custom-face-operations.sqlite')});
   const customFaces={store:customFaceStore,coordinator:customFaceCoordinator,staging:new SharedCustomFaceStaging({directory:app.storage.customFaceDirectory,providerDirectory:app.storage.napcatCustomFaceDirectory})};
@@ -112,7 +115,7 @@ async function main(): Promise<void> {
         if(model instanceof ResponsesModel){const checkpoint=session.getTransportCheckpoint();if(checkpoint){try{model.restoreContinuationCheckpoint(checkpoint);}catch{session.reset('invalid_transport_checkpoint');}}}
         for(const entry of memory.recent())world.appendMessage(entry,{source:'migration',observedAt:entry.time});
         chmodSync(policy.storage.databasePath,0o600);
-        const listener=new Listener(client,model,memory,group,Math.random,undefined,scheduler,{world,session,modelRequestId:()=>lastRequestId,customFaces,reminders:reminderStore,sandbox:sandboxService,sandboxSummary:(self,group)=>{const jobs=sandboxService?.summary(self,group)??[];return jobs.length?{jobs:jobs.map(j=>({job_id:j.job_id,status:j.status,description:j.description}))}:{};}});
+        const listener=new Listener(client,model,memory,group,Math.random,undefined,scheduler,{world,session,modelRequestId:()=>lastRequestId,customFaces,reminders:reminderStore,web:webTools,sandbox:sandboxService,sandboxSummary:(self,group)=>{const jobs=sandboxService?.summary(self,group)??[];return jobs.length?{jobs:jobs.map(j=>({job_id:j.job_id,status:j.status,description:j.description}))}:{};}});
         if(group.observeReactions)log('info','app.reactions_ready',{count:getReactionCatalog().length});
         log('info','app.group_ready',{group_id:groupId});
         return listener;

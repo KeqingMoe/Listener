@@ -1,4 +1,4 @@
-import type { ModelTransport } from './app.js';
+import type { ModelTransport, WebSearchProviderConfig } from './app.js';
 import type { ResolvedToolPolicies } from './tool-policy.js';
 import type { ForwardConfig } from '../tools/forwards/tools.js';
 import type { ExtendedToolsConfig } from './extended-tools.js';
@@ -42,6 +42,8 @@ export interface ListenerConfig {
   images?: ImagesConfig;
   forward?: ForwardConfig;
   attention?: { enabled: boolean; maxPlans: number };
+  /** Deployment search backend; without it web_search is never offered. */
+  webSearch?: WebSearchProviderConfig;
 }
 
 /** The application boundary always supplies a complete, independently scoped policy. */
