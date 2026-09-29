@@ -32,8 +32,8 @@ npm run config:check -- --group 123456789
 | `model` | `base_url` | `https://api.openai.com/v1`；HTTPS或支持的本机HTTP地址，不允许URL凭证、查询参数或fragment |
 | | `model` | **必填**，服务商提供的非空模型名称；模型须支持工具调用 |
 | | `api_key_env` | `OPENAI_API_KEY`，指定**必填**的模型密钥环境变量 |
-| | `timeout_ms` | 45000，范围1000..120000 |
-| | `max_output_tokens` | 8192，安全正整数；单次模型输出预算，仍受服务商限制 |
+| | `timeout_ms` | 180000，范围1000..300000 |
+| | `max_output_tokens` | 32768，安全正整数；单次模型输出预算，reasoning、正文和工具调用共享，仍受服务商限制 |
 | | `opencode_headers` | false；请求添加每群持久 `x-opencode-session` |
 | | `transport` | 默认`"chat"`；`"chat"`、`"responses"`，或`{type = "responses", incremental = false}` |
 | `runtime` | `max_concurrent_turns` | 2，范围1..8；全局同时运行的唤醒数，同一群不会并行唤醒 |
@@ -97,7 +97,7 @@ transport = {
 | `session.max_transcript_bytes` | 524288 | 范围65536..8388608；本地模型会话容量，不是服务商的token窗口 |
 | `session.compaction` | false | 服务端压缩关闭；参数形式为`{threshold_tokens}`，当前运行入口不支持启用，保持false |
 | `execution.max_tool_calls_per_wake` | 96 | 安全正整数，范围1..9007199254740991；一次唤醒全部工具共享 |
-| `execution.wake_timeout_ms` | 90000 | 范围1000..600000；一次完整唤醒的时间预算 |
+| `execution.wake_timeout_ms` | 240000 | 范围1000..600000；一次完整唤醒的时间预算 |
 | `messages.mentions` | true | 允许Bot发送成员@，不改变被@触发；不支持@全体或@自己 |
 | `observation.reactions` | true | 后台反应观察；与添加回应、查询回应者的工具权限分别设置 |
 | `confirmation.ttl_seconds` | 60 | 范围1..60，主人确认操作的有效期 |

@@ -572,7 +572,7 @@ export class Listener {
     const trigger = {...batch.primary,kind:batch.kind};
     this.running = true; this.lastTurn = Date.now(); this.lastSealedSequence=this.arrivalSequence;
     const started=Date.now();let outcome='tool_budget_exhausted';let reason: string | undefined;let sentMessages=0,sentSubmissions=0;
-    const toolCallsLimit=this.config.maxToolCallsPerWake??96,wakeTimeoutMs=this.config.wakeTimeoutMs??90000;
+    const toolCallsLimit=this.config.maxToolCallsPerWake??96,wakeTimeoutMs=this.config.wakeTimeoutMs??240000;
     let toolCalls=0,modelRounds=0,managementExecuted=0,managementUnknown=0,managementSubmitted=0;
     let reactedCount=0,reactionUnknown=0,reactionFailures=0,reactionSubmitted=0;
     const reactionErrors:string[]=[];

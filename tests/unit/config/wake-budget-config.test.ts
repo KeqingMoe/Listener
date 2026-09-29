@@ -11,10 +11,10 @@ function fixture(t:{after(fn:()=>void):void}){
   mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'persona');
   return(source:string):AppConfig=>{writeFileSync(join(dir,'config.toml'),withFixtureModel(source));return loadAppConfig({configPath:join(dir,'config.toml'),env:{ONEBOT_ACCESS_TOKEN:'fixture',OPENAI_API_KEY:'fixture-model-key'}});};
 }
-test('execution defaults are 96 calls and 90 seconds for configured and dynamic groups',t=>{
+test('execution defaults are 96 calls and 240 seconds for configured and dynamic groups',t=>{
   const app=fixture(t)('[groups."11"]\n[groups."22"]');
-  for(const id of ['11','22','99']){const g=app.resolveGroup(id);assert.deepEqual(g.execution,{maxToolCallsPerWake:96,wakeTimeoutMs:90000});assert.equal(g.enabled,false);}
-  assert.equal(app.model.maxTokens,8192);assert.equal(app.runtime.maxConcurrentTurns,2);
+  for(const id of ['11','22','99']){const g=app.resolveGroup(id);assert.deepEqual(g.execution,{maxToolCallsPerWake:96,wakeTimeoutMs:240000});assert.equal(g.enabled,false);}
+  assert.equal(app.model.maxTokens,32768);assert.equal(app.runtime.maxConcurrentTurns,2);
 });
 test('execution inherits ordinary fields independently and contains no model credentials',t=>{
   const app=fixture(t)('[model]\nmodel="synthetic-model"\nmax_output_tokens=16384\ntransport="responses"\n[runtime]\nmax_concurrent_turns=3\n[defaults.execution]\nmax_tool_calls_per_wake=128\nwake_timeout_ms=100000\n[groups."11".execution]\nmax_tool_calls_per_wake=64\n[groups."22".execution]\nwake_timeout_ms=120000');

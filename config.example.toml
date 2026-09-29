@@ -18,6 +18,10 @@ transport = {
 }
 base_url = "https://api.openai.com/v1"
 model = "" # 必填：填写服务商提供的、支持工具调用的模型名称；看图另需图片输入能力。
+# reasoning、正文和工具调用共享此单次输出预算；按服务商上限执行。
+max_output_tokens = 32768
+# 单次模型请求最长等待；长 reasoning 可能需要更久。
+timeout_ms = 180000
 
 # 收藏添加需要Bot和NapCat访问同一实际原图目录；同主机默认无需另填。
 # 容器部署时先建立目录映射，再按两侧路径配置；不是QQ收藏ID清单。
@@ -32,6 +36,8 @@ persona = "prompts/listener.md"
 reply.random = false
 # 一次唤醒全部工具共享调用次数；默认96，安全正整数范围1..9007199254740991。
 execution.max_tool_calls_per_wake = 96
+# 单次唤醒的总时间预算；包含模型请求和工具调用。
+execution.wake_timeout_ms = 240000
 
 # 后台 reaction 观察默认开启，与添加回应和查询回应者的工具权限独立。
 
