@@ -31,12 +31,15 @@ import { ToolRegistry, type RegisteredTool } from "./registry.js";
 import { GroupTranscriptionTools } from './transcription/tools.js';
 import { GroupReminderTools, buildReminderTools, REMINDER_TOOL_NAMES } from './reminders/tools.js';
 import type { ReminderStore } from '../reminders/store.js';
+import type { SandboxService } from '../sandbox/service.js';
+import { SandboxTools, SANDBOX_TOOL_NAMES, buildSandboxTools } from './sandbox/tools.js';
 import { resolveOwnerId } from '../contracts/identity.js';
 import { CustomFaceTools, CUSTOM_FACE_TOOL_NAMES, buildCustomFaceToolDefinitions, type CustomFaceOptions } from './custom-faces/tools.js';
 
 export interface ExtendedToolOptions {
   downloader?: ImageDownloader;
   reminders?: ReminderStore;
+  sandbox?: SandboxService;
   ownerId?: string;
   beforeSend?: GroupMediaOptions['beforeSend'];
   onSent?: GroupMediaOptions['onSent'];
@@ -68,6 +71,8 @@ export function createExtendedTools(
     }
     if (!tool.sideEffect)
       throw new Error("Read-only tools do not support mutation confirmation");
+    if ((SANDBOX_TOOL_NAMES as readonly string[]).includes(name))
+      throw new Error('Sandbox tools do not support mutation confirmation');
     if ((REMINDER_TOOL_NAMES as readonly string[]).includes(name))
       throw new Error('Reminder tools do not support mutation confirmation');
     const definition = structuredClone(tool.definition);
@@ -203,6 +208,13 @@ export function createExtendedTools(
   for (const definition of buildReminderTools(reminderNames)) register({
     definition, sideEffect: definition.function.name !== 'list_reminders',
     execute: (args, context, signal) => reminders ? reminders.execute(definition.function.name, args, context, signal) : Promise.resolve({status:'error',error:'reminders_unavailable'}),
+  });
+  const sandbox = options.sandbox ? new SandboxTools(options.sandbox) : undefined;
+  for (const definition of buildSandboxTools()) if(enabled.has(definition.function.name)) register({
+    definition, sideEffect: definition.function.name !== 'query_javascript_jobs',
+    execute: (args, context, signal) => context.groupId !== groupId
+      ? Promise.resolve({status:'error',error:'invalid_scope'})
+      : sandbox ? sandbox.execute(definition.function.name,args,context,signal) : Promise.resolve({status:'error',error:'sandbox_unavailable'}),
   });
   return registry;
 }

@@ -41,9 +41,13 @@ export const EXTENDED_TOOL_NAMES = [
   "add_custom_face",
   "delete_custom_face",
   "set_custom_face_description",
+  "execute_javascript",
+  "query_javascript_jobs",
+  "cancel_javascript_job",
 ] as const;
 export type ExtendedToolName = (typeof EXTENDED_TOOL_NAMES)[number];
 export const EXTENDED_READ_ONLY_TOOLS: readonly ExtendedToolName[] = [
+  "query_javascript_jobs",
   "get_group_info",
   "get_group_honor",
   "get_group_mutes",

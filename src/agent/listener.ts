@@ -1,3 +1,5 @@
+import type { SandboxService } from '../sandbox/service.js';
+import { isExecutionDiagnostic } from '../sandbox/protocol.js';
 import { buildSystemPrompt, observedSystemPrompt } from './prompts.js';
 import { buildToolDefinitions } from './tool-definitions.js';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -56,7 +58,7 @@ export interface CustomFaceRuntime {
   staging?: CustomFaceStager;
   originalDownloader?: OriginalImageDownloader;
 }
-export interface ListenerRuntime { reminders?: ReminderStore; world?: WorldEventStore; session?: ModelSession; modelRequestId?:()=>string|undefined; customFaces?: CustomFaceRuntime }
+export interface ListenerRuntime { sandbox?:SandboxService; sandboxSummary?:(selfId:string,groupId:string)=>JsonObject; reminders?: ReminderStore; world?: WorldEventStore; session?: ModelSession; modelRequestId?:()=>string|undefined; customFaces?: CustomFaceRuntime }
 
 export function messageId(value: unknown): string | undefined {
   if (typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
@@ -66,7 +68,7 @@ export function messageId(value: unknown): string | undefined {
 function object(value: unknown): value is JsonObject { return !!value && typeof value === 'object' && !Array.isArray(value); }
 function keys(value: JsonObject, allowed: string[]): boolean { return Object.keys(value).every(k => allowed.includes(k)); }
 function logToolResult(tool: string, result: JsonObject, started: number, round: number): void {
-  const status = ['ok','partial','error','confirmation_required','executed','staged','unknown'].includes(String(result.status)) ? String(result.status) : 'error';
+  const status = ['ok','pending','partial','error','confirmation_required','executed','staged','unknown'].includes(String(result.status)) ? String(result.status) : 'error';
   const codes = ['invalid_arguments','tool_disabled','images_disabled','image_unavailable','forbidden_group','message_not_in_context','cancelled','image_first','call_limit','forward_first','transcription_first','forward_disabled','invalid_range','budget_exhausted','forbidden_reference','resource_limit','resource_cycle','forward_unavailable','range_out_of_bounds','plan_limit','operation_limit','plan_not_found','invalid_transaction','random_failed','turn_finished','reaction_rejected','reaction_result_unknown','verification_failed','api_unavailable','reaction_failed','reaction_catalog_unavailable','invalid_turn','reaction_users_unavailable','pagination_unavailable','pagination_cycle','incomplete_page','invalid_cursor','query_invalidated','provider_rejected','delivery_unknown','action_result_unknown','operation_result_unknown','previous_submission_pending','membership_transition_pending','duplicate_message_ack','management_result_review_required','confirmation_verification_failed'];
   const detail=typeof result.error==='string'?result.error:result.reason;
   const reason = typeof detail === 'string' && codes.includes(detail) ? detail : status === 'error' ? 'tool_rejected' : undefined;
@@ -118,6 +120,10 @@ export class Listener {
   private lastSealedSequence = 0;
   private generation = 0;
   private pending?: ReplyBatch;
+  private sandboxSelfId?:string;
+  private hostWakeId=newTraceId();
+  private hasHostWork():boolean {return !!this.sandboxSelfId&&!!this.runtime.session?.hasExternalEvents(this.sandboxSelfId);}
+  resumeSandboxResults(selfId:string):void {this.sandboxSelfId=selfId;this.schedule();}
   private resolving = new Map<string,number>();
   private timer?: NodeJS.Timeout;
   private active?: AbortController;
@@ -238,6 +244,14 @@ export class Listener {
     if (this.pending) log('info','trigger.dropped',{turn_id:this.pending.turnId,group_id:this.groupId,actor_id:this.pending.primary.context.actorId,message_id:this.pending.primary.entry.messageId,count:this.pending.items.length,reason});
     this.pending = undefined;
   }
+  async receiveSandboxResult(result:{selfId:string;groupId:string;jobId:string;[key:string]:unknown}): Promise<boolean> {
+    if(result.groupId!==this.groupId||(this.sandboxSelfId!==undefined&&result.selfId!==this.sandboxSelfId)||this.stopped||!this.connected||!this.runtime.session||!this.config.enabled)throw new Error('sandbox_delivery_unavailable');
+    this.sandboxSelfId=result.selfId;
+    const eventId=`${result.selfId}:${result.jobId}`;
+    this.runtime.session.receiveExternalEvent(eventId,result.selfId,{job_id:result.jobId,description:typeof result.description==='string'?result.description.slice(0,1024):'',status:result.status,...(typeof result.value==='string'?{value:result.value}:{}),...(typeof result.error==='string'?{error:result.error}:{}),...(isExecutionDiagnostic(result.diagnostic)?{diagnostic:{...result.diagnostic}}:{}),finished_at:typeof result.finishedAt==='number'?result.finishedAt:Date.now()});
+    this.schedule();
+    return this.runtime.session.externalEventProjected(eventId,result.selfId);
+  }
   setConnected(value: boolean): void {
     this.connected = value;
     if (!value) { this.generation++; this.cancelActive('disconnected'); clearTimeout(this.timer); this.timer = undefined; this.dropPending('disconnected'); this.resolving.clear(); this.resetModeration(); this.clearEphemeralState(); }
@@ -349,7 +363,9 @@ export class Listener {
     this.lastRandomAt=now;this.randomAttempts.push(now);return true;
   }
   private schedule(): void {
-    if (this.running || this.admission || this.timer || this.commandBusy || this.stopped || !this.connected || !this.pending) return;
+    if (this.running || this.admission || this.timer || this.commandBusy || this.stopped || !this.connected) return;
+    if(!this.pending&&this.hasHostWork()){this.timer=setTimeout(()=>{this.timer=undefined;void this.run();},Math.max(0,this.lastTurn+this.config.cooldownMs-Date.now()));return;}
+    if(!this.pending)return;
     const batch=this.pending;
     if(batch.kind==='random'&&!batch.randomSelected){
       if(!this.selectRandom(batch.primary.entry.messageId,{turn_id:batch.turnId,group_id:this.groupId,actor_id:batch.primary.context.actorId})){this.dropPending('random_batch_skipped');return;}
@@ -527,19 +543,19 @@ export class Listener {
   }
   private async run(): Promise<void> {
     if(!this.turnScheduler){await this.runAdmitted();return;}
-    if(this.admission||this.running||!this.pending||this.stopped||!this.connected)return;
+    if(this.admission||this.running||(!this.pending&&!this.hasHostWork())||this.stopped||!this.connected)return;
     const controller=new AbortController(),generation=this.generation,started=Date.now();
     this.admission=controller;
     let release:(()=>void)|undefined;
-    const turnId=this.pending.turnId;
+    const turnId=this.pending?.turnId??this.hostWakeId??`host_${this.groupId}`;
     log('debug','trigger.queued',{group_id:this.groupId,turn_id:turnId});
     try {
       release=await this.turnScheduler.acquire(this.groupId,controller.signal);
-      if(controller.signal.aborted||generation!==this.generation||this.stopped||!this.connected||!this.pending)return;
+      if(controller.signal.aborted||generation!==this.generation||this.stopped||!this.connected||(!this.pending&&!this.hasHostWork()))return;
       // A first @ may have arrived while a random batch was waiting for a
       // global slot. Respect its remaining collection window without holding
       // the slot, then rejoin behind already waiting groups.
-      if(this.commandBusy||this.pending.readyAt>Date.now())return;
+      if(this.commandBusy||(this.pending&&this.pending.readyAt>Date.now()))return;
       log('debug','trigger.admitted',{group_id:this.groupId,turn_id:turnId,wait_ms:Date.now()-started});
       await this.runAdmitted();
     } catch {
@@ -554,18 +570,20 @@ export class Listener {
     }
   }
   private async runAdmitted(): Promise<void> {
-    const batch=this.pending;if(!batch)return;
-    const {context}=batch.primary;
-    await withLogContext({turn_id:batch.turnId,group_id:context.groupId,actor_id:context.actorId,message_id:context.messageId},()=>this.runTurn());
+    const batch=this.pending;if(!batch&&!this.hasHostWork())return;
+    const context=batch?.primary.context;
+    await withLogContext({turn_id:batch?.turnId??this.hostWakeId,group_id:this.groupId,...(context?{actor_id:context.actorId,message_id:context.messageId}:{})},()=>this.runTurn());
   }
   private async runTurn(): Promise<void> {
-    if (this.running || this.commandBusy || !this.pending || !this.model || (!this.memory&&!this.runtime.session) || !this.connected || this.stopped) return;
-    const batch = this.pending;
-    if(this.attention){
+    if (this.running || this.commandBusy || (!this.pending&&!this.hasHostWork()) || !this.model || (!this.memory&&!this.runtime.session) || !this.connected || this.stopped) return;
+    const hostOnly=!this.pending;
+    const batch = this.pending??{turnId:this.hostWakeId,kind:'sandbox_result' as const,items:[] as BatchItem[],direct:[] as BatchItem[],omittedMessages:0,primary:{context:{groupId:this.groupId,selfId:this.sandboxSelfId!,actorId:'',messageId:''} as TurnContext,entry:undefined,trigger:undefined},payload:():JsonObject=>({}),add:()=>{},addAttention:()=>{}};
+    this.hostWakeId=newTraceId();
+    if(this.attention&&!hostOnly){
       for(const item of this.unreadItems())batch.add(item,0);
       batch.addAttention(this.attention.evaluate(Date.now(),this.unreadItems().length>0));
     }
-    const attentionContext=this.attention?this.attentionContext(batch):undefined;
+    const attentionContext=this.attention&&batch instanceof ReplyBatch?this.attentionContext(batch):undefined;
     for(const item of this.unreadItems())this.unread.delete(item.sequence);
     this.unreadOmitted=0;this.armAttention();
     this.pending = undefined;
@@ -644,7 +662,7 @@ export class Listener {
       this.groupRequests.resetWake();
       const extendedTools=createExtendedTools(turnApi,workingMemory,this.groupId,this.config.tools?.extended,{
         downloader:this.imageDownloader,files:this.groupFiles,requests:this.groupRequests,
-        reminders:this.runtime.reminders,ownerId:this.ownerId,
+        reminders:this.runtime.reminders,sandbox:this.runtime.sandbox,ownerId:this.ownerId,
         customFaces:this.customFaces?{
           ...this.customFaces,imageState,
           maxDownloadMb:this.config.images?.maxDownloadMb??10,
@@ -665,7 +683,7 @@ export class Listener {
       const single=batch.direct.length===1?batch.direct[0]:batch.items.length===1?batch.items[0]:undefined;
       const actorIds=new Set((batch.direct.length?batch.direct:batch.items).map(item=>item.context.actorId));
       if(!valid())return;
-      const reactionTargets=observations?[trigger.entry.messageId,
+      const reactionTargets=observations&&trigger.entry?[trigger.entry.messageId,
         ...batch.direct.flatMap(item=>item.entry.replyTo?[item.entry.replyTo]:[]).slice(0,2),
         ...frozen.recent().filter(entry=>entry.bot&&entry.userId===trigger.context.selfId).slice(-2).reverse().map(entry=>entry.messageId),
         ...batch.items.map(item=>item.entry.messageId)]:[];
@@ -679,10 +697,12 @@ export class Listener {
       if(session){
         this.worldWake={wakeId:batch.turnId,startedAt:started/1000,trigger:{type:batch.kind}};
         this.worldBudget=wakeBudget;
-        this.worldState=()=>({...(this.attention?{attention_state:this.attentionContext(batch)}:{}),...(this.config.tools?.reactions?{reaction_state:this.reactionContext(workingMemory)}:{})});
+        this.worldState=()=>({...(this.attention&&batch instanceof ReplyBatch?{attention_state:this.attentionContext(batch)}:{}),...(this.config.tools?.reactions?{reaction_state:this.reactionContext(workingMemory)}:{})});
         this.worldTools??=new WorldTools({store:this.runtime.world!,groupId:this.groupId,selfId:trigger.context.selfId,wake:()=>this.worldWake,currentBudget:()=>this.worldBudget(),state:()=>this.worldState()});
         session.beginWake(observedSystemPrompt(this.config,this.groupId),tools,{wake_id:batch.turnId,group_id:this.groupId,trigger:{type:batch.kind},wake_budget:wakeBudget()});
         sessionStarted=true;sessionScope=session.state();
+        session.projectExternalEvents(trigger.context.selfId);
+        if(this.runtime.sandboxSummary){const summary=this.runtime.sandboxSummary(trigger.context.selfId,this.groupId);if(Array.isArray(summary.jobs)&&summary.jobs.length)session.appendInput(JSON.stringify({host_event:{type:'javascript_job_summary',...summary}}));}
       }
       const messages: ChatMessage[] = session ? [] : [
         {role:'system',content:buildSystemPrompt({...this.config,groupId:this.groupId})},

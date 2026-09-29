@@ -92,6 +92,7 @@ export class ModelSession {
     CREATE TABLE IF NOT EXISTS model_session_journal(seq INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,wake_id TEXT,kind TEXT NOT NULL,payload TEXT NOT NULL,created_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS model_session_messages(seq INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,wake_id TEXT,message TEXT NOT NULL,bytes INTEGER NOT NULL,transient_image INTEGER NOT NULL DEFAULT 0,request_id TEXT,UNIQUE(session_id,request_id));
     CREATE INDEX IF NOT EXISTS model_session_messages_session ON model_session_messages(session_id,seq);
+     CREATE TABLE IF NOT EXISTS model_external_events(event_id TEXT PRIMARY KEY,self_id TEXT NOT NULL,payload TEXT NOT NULL,received_at INTEGER NOT NULL,projected_at INTEGER);
     CREATE TABLE IF NOT EXISTS model_tool_ledger(ordinal INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,wake_id TEXT,assistant_seq INTEGER NOT NULL,call_id TEXT NOT NULL,name TEXT NOT NULL,arguments TEXT NOT NULL,state TEXT NOT NULL,result TEXT,proposed_at INTEGER NOT NULL,started_at INTEGER,finished_at INTEGER,UNIQUE(assistant_seq,call_id));
     CREATE INDEX IF NOT EXISTS model_tool_ledger_session ON model_tool_ledger(session_id,ordinal);`);
    try{this.db.exec(SESSION_INSPECTION_INDEXES);}catch{/* Optional readonly lookup acceleration must not disable the bot. */}
@@ -137,6 +138,22 @@ export class ModelSession {
   this.saveMeta();this.db.prepare('UPDATE model_session_meta SET fingerprint=NULL,checkpoint=NULL WHERE singleton=1').run();
  }
  state():ModelSessionState {this.check();return structuredClone(this.stateValue);}
+ /** Durable host inbox, independent of model-session rotation and tool call IDs. */
+ receiveExternalEvent(eventId:string,selfId:string,payload:JsonObject):boolean {
+  this.check();if(!/^[A-Za-z0-9:_-]{1,256}$/.test(eventId)||!/^\d+$/.test(selfId)||!object(payload))throw new Error('invalid_external_event');
+  const encoded=encode(payload,512*1024);return this.transaction(()=>{
+   if(this.db.prepare('SELECT 1 FROM model_external_events WHERE event_id=?').get(eventId))return false;
+   this.db.prepare('INSERT INTO model_external_events(event_id,self_id,payload,received_at) VALUES(?,?,?,?)').run(eventId,selfId,encoded,Date.now());return true;
+  });
+ }
+ externalEventProjected(eventId:string,selfId:string):boolean {this.check();return !!this.db.prepare('SELECT 1 FROM model_external_events WHERE event_id=? AND self_id=? AND projected_at IS NOT NULL').get(eventId,selfId);}
+ hasExternalEvents(selfId:string):boolean {this.check();return !!this.db.prepare('SELECT 1 FROM model_external_events WHERE self_id=? AND projected_at IS NULL LIMIT 1').get(selfId);}
+ projectExternalEvents(selfId:string):number {
+  this.check();if(!this.stateValue.wakeId||this.pending().length)throw new Error('invalid_input_boundary');
+  return this.transaction(()=>{const rows=this.db.prepare('SELECT event_id,payload FROM model_external_events WHERE self_id=? AND projected_at IS NULL ORDER BY received_at,event_id LIMIT 1').all(selfId);
+   for(const row of rows){this.append({role:'user',content:JSON.stringify({host_event:JSON.parse(String(row.payload))})});this.audit('external_event_received',{event_id:String(row.event_id)});this.db.prepare('UPDATE model_external_events SET projected_at=? WHERE event_id=?').run(Date.now(),String(row.event_id));}return rows.length;
+  });
+ }
  messages():ChatMessage[] {
   this.check();return this.db.prepare('SELECT seq,message FROM model_session_messages WHERE session_id=? ORDER BY seq').all(this.stateValue.sessionId).map(row=>structuredClone(this.images.get(Number(row.seq))??JSON.parse(String(row.message)) as ChatMessage));
  }

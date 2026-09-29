@@ -25,6 +25,8 @@ import { CustomFaceCoordinator } from '../tools/custom-faces/coordinator.js';
 import { SharedCustomFaceStaging } from '../tools/custom-faces/staging.js';
 import { ReminderStore } from '../reminders/store.js';
 import { ReminderScheduler } from '../reminders/scheduler.js';
+import { SandboxService } from '../sandbox/service.js';
+import { SandboxJobStore } from '../sandbox/store.js';
 let logger: ReturnType<typeof configureLogging> | undefined;
 let telemetry: TelemetryStore | undefined;
 let runtimeEvents:RuntimeEventStore|undefined,stopObserving:(()=>void)|undefined;
@@ -34,6 +36,8 @@ let customFaceStore: CustomFaceStore | undefined;
 let customFaceCoordinator: CustomFaceCoordinator | undefined;
 let reminderStore: ReminderStore | undefined;
 let reminderScheduler: ReminderScheduler | undefined;
+let sandboxStore: SandboxJobStore | undefined;
+let sandboxService: SandboxService | undefined;
 
 async function main(): Promise<void> {
   const app=loadAppConfig();
@@ -58,6 +62,8 @@ async function main(): Promise<void> {
   registry=new GroupRegistry(app,()=>log('warn','app.registry_failed',{reason:'storage_failed'}));
   mkdirSync(app.storage.directory,{recursive:true,mode:0o700});
   reminderStore=new ReminderStore({path:resolve(app.storage.directory,'reminders.sqlite')});
+  sandboxStore=new SandboxJobStore({path:resolve(app.storage.directory,'sandbox.sqlite')});
+  sandboxService=new SandboxService({store:sandboxStore});
   customFaceStore=new CustomFaceStore({path:resolve(app.storage.directory,'custom-faces.sqlite')});
   customFaceCoordinator=new CustomFaceCoordinator({path:resolve(app.storage.directory,'custom-face-operations.sqlite')});
   const customFaces={store:customFaceStore,coordinator:customFaceCoordinator,staging:new SharedCustomFaceStaging({directory:app.storage.customFaceDirectory,providerDirectory:app.storage.napcatCustomFaceDirectory})};
@@ -106,7 +112,7 @@ async function main(): Promise<void> {
         if(model instanceof ResponsesModel){const checkpoint=session.getTransportCheckpoint();if(checkpoint){try{model.restoreContinuationCheckpoint(checkpoint);}catch{session.reset('invalid_transport_checkpoint');}}}
         for(const entry of memory.recent())world.appendMessage(entry,{source:'migration',observedAt:entry.time});
         chmodSync(policy.storage.databasePath,0o600);
-        const listener=new Listener(client,model,memory,group,Math.random,undefined,scheduler,{world,session,modelRequestId:()=>lastRequestId,customFaces,reminders:reminderStore});
+        const listener=new Listener(client,model,memory,group,Math.random,undefined,scheduler,{world,session,modelRequestId:()=>lastRequestId,customFaces,reminders:reminderStore,sandbox:sandboxService,sandboxSummary:(self,group)=>{const jobs=sandboxService?.summary(self,group)??[];return jobs.length?{jobs:jobs.map(j=>({job_id:j.job_id,status:j.status,description:j.description}))}:{};}});
         if(group.observeReactions)log('info','app.reactions_ready',{count:getReactionCatalog().length});
         log('info','app.group_ready',{group_id:groupId});
         return listener;
@@ -116,6 +122,10 @@ async function main(): Promise<void> {
       }
     },
   });
+  let sandboxFlush:Promise<void>|undefined;
+  const flushSandbox=():Promise<void>=>{if(sandboxFlush)return sandboxFlush; sandboxFlush=(async()=>{const account=router.reminderAccount;if(!account)return;let cursor=0;for(;;){const page=sandboxService!.pendingResults(account,100,cursor);for(const job of page.jobs){try{await router.dispatchSandboxResult({...job,jobId:job.job_id,selfId:job.selfId,groupId:job.groupId});sandboxService!.ackResult(account,job.groupId,job.job_id);}catch{/* unavailable groups remain pending */}}if(page.nextCursor===null)break;cursor=page.nextCursor;}})().catch(()=>{}).finally(()=>{sandboxFlush=undefined;});return sandboxFlush;};
+  const unsubscribeSandbox=sandboxService.subscribe(()=>{void flushSandbox();});
+  const sandboxPulse=setInterval(()=>{void flushSandbox();},15000);sandboxPulse.unref();
   reminderScheduler=new ReminderScheduler({store:reminderStore, currentAccount:()=>router.reminderAccount,
     eligible:groupId=>{const group=app.resolveGroup(groupId);return group.enabled&&group.tools.create_reminder.mode==='direct';},
     dispatch:(reminder,claim)=>router.dispatchReminder(reminder,claim)});
@@ -127,7 +137,7 @@ async function main(): Promise<void> {
     selfId=data&&typeof data==='object'&&'user_id' in data?id(data.user_id):undefined;
     if(!selfId){router.setConnected(false);log('warn','onebot.identity_failed');return;}
     const identity=selfId;
-    void router.connect(identity).then(()=>{if(selfId===identity&&!stopping)log('info','onebot.ready',{count:router.size});}).catch(()=>log('warn','app.group_discovery_failed',{reason:'group_initialization_failed'}));
+    void router.connect(identity).then(()=>{if(selfId===identity&&!stopping){void flushSandbox();log('info','onebot.ready',{count:router.size});}}).catch(()=>log('warn','app.group_discovery_failed',{reason:'group_initialization_failed'}));
   });
   client.on('disconnected',()=>{selfId=undefined;router.setConnected(false);if(!stopping)log('warn','onebot.disconnected');});
   const receive=(event:unknown)=>{
@@ -142,13 +152,15 @@ async function main(): Promise<void> {
   };
   client.on('message',receive);client.on('notice',receive);
   const stop=()=>{
-    if(stopping)return;stopping=true;clearInterval(heartbeat);log('info','app.stopping');
+    if(stopping)return;stopping=true;clearInterval(heartbeat);clearInterval(sandboxPulse);unsubscribeSandbox();log('info','app.stopping');
     const remindersStopping=reminderScheduler?.stop();
-    const groupsStopping=router.stop();scheduler.close();
-    void Promise.allSettled([groupsStopping,client.stop(),remindersStopping]).then(results=>{
+    const sandboxStopping=sandboxService?.stop();
+     const groupsStopping=router.stop();scheduler.close();
+    void Promise.allSettled([groupsStopping,client.stop(),remindersStopping,sandboxStopping,sandboxFlush]).then(results=>{
       if(results.some(result=>result.status==='rejected')){log('error','app.shutdown_failed',{reason:'operation_failed'});process.exitCode=1;}
       else log('info','app.stopped');
     }).finally(async()=>{
+      try{sandboxStore?.close();}catch{log('warn','app.sandbox_close_failed',{reason:'close_failed'});}
       try{reminderStore?.close();}catch{log('warn','app.reminders_close_failed',{reason:'close_failed'});}
       try{customFaceCoordinator?.close();}catch{log('warn','app.custom_faces_close_failed',{reason:'close_failed'});}
        try{customFaceStore?.close();}catch{log('warn','app.custom_faces_close_failed',{reason:'close_failed'});}

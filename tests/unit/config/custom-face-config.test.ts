@@ -15,7 +15,7 @@ const GROUP = '100000002', OTHER_GROUP = '100000003';
 const ALL = ['list_custom_faces', 'view_custom_face', 'send_custom_face', 'add_custom_face', 'delete_custom_face', 'set_custom_face_description'] as const;
 const READONLY = ['list_custom_faces', 'view_custom_face'] as const;
 const WRITES = ['send_custom_face', 'add_custom_face', 'delete_custom_face', 'set_custom_face_description'] as const;
-const DATABASES = ['custom-faces.sqlite', 'custom-face-operations.sqlite'];
+const DATABASES = ['custom-faces.sqlite', 'custom-face-operations.sqlite', 'sandbox.sqlite'];
 const SUFFIXES = ['', '-wal', '-shm', '-journal'];
 function fixture(t: { after(fn: () => void): void }, input: { storage?: string; defaults?: string; groups?: string } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'qqbot-custom-face-config-'));
@@ -30,8 +30,8 @@ function fixture(t: { after(fn: () => void): void }, input: { storage?: string; 
 test('six favorite tools default direct without implicitly enabling any group or low-level registry', t => {
   const f = fixture(t), app = f.load(), group = app.resolveGroup(GROUP);
   assert.equal(app.defaultsEnabled, false); assert.equal(group.enabled, false);
-  assert.equal(TOOL_NAMES.length, 53);
-  assert.equal(TOOL_NAMES.filter(name => TOOL_CAPABILITIES[name].defaultMode === 'direct').length, 34);
+  assert.equal(TOOL_NAMES.length, 56);
+  assert.equal(TOOL_NAMES.filter(name => TOOL_CAPABILITIES[name].defaultMode === 'direct').length, 37);
   assert.equal(TOOL_NAMES.filter(name => TOOL_CAPABILITIES[name].defaultMode === 'confirm').length, 18);
   assert.equal(TOOL_NAMES.filter(name => TOOL_CAPABILITIES[name].defaultMode === 'off').length, 1);
   const sources = inspectGroupConfig(app, GROUP).sources as Record<string, string>;

@@ -9,6 +9,8 @@ export interface GroupHandler {
   receive(event: unknown, selfId: string): Promise<void>;
   /** Active, host-scheduled reminder dispatch; must not synthesize a receive event. */
   sendReminder?(reminder: Reminder, beforeDispatchClaim: () => boolean): Promise<DeliveryOutcome>;
+  receiveSandboxResult?(result: {selfId:string;groupId:string;jobId:string;[key:string]:unknown}): Promise<boolean>;
+  resumeSandboxResults?(selfId:string):void;
   setConnected(value: boolean): void;
   stop(): Promise<void>;
 }
@@ -80,6 +82,15 @@ export class GroupRouter {
     const result = this.serial.then(run);
     this.serial = result.then(() => {}, () => {});
     return result;
+  }
+  async dispatchSandboxResult(result:{selfId:string;groupId:string;jobId:string;[key:string]:unknown}):Promise<void> {
+    const {groupId,selfId}=result,epoch=this.epoch,groupEpoch=this.groupEpoch.get(groupId)??0;
+    const valid=()=>id(groupId)===groupId&&id(selfId)===selfId&&this.reminderAccount===selfId&&epoch===this.epoch&&(this.groupEpoch.get(groupId)??0)===groupEpoch&&this.enabled(groupId)&&this.members.has(groupId)&&!this.departed.has(groupId)&&!this.closing.has(groupId);
+    if(!valid())throw new Error('sandbox_delivery_unavailable');
+    const handler=this.handlers.get(groupId)??await this.enqueue(async()=>{if(!valid())return;let current=this.handlers.get(groupId);if(!current&&this.dynamic){current=await this.dynamic.create(groupId);if(!valid()){await current.stop();return;}current.setConnected(true);this.handlers.set(groupId,current);}return current;});
+    if(!handler?.receiveSandboxResult||!valid())throw new Error('sandbox_delivery_unavailable');
+    const projected = await handler.receiveSandboxResult(result);
+    if(!projected) throw new Error('sandbox_delivery_unavailable');
   }
   private publish(): void { this.dynamic?.membershipChanged?.([...this.members]); }
   private async closeGroups(groupIds:Iterable<string>):Promise<void>{

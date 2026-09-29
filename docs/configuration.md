@@ -194,7 +194,7 @@ napcat_custom_face_directory = "/qqbot-custom-faces"
 
 例如，`send_group_ai_voice`调用的是**QQ的AI语音功能**，使用QQ提供的声线把文字发成语音，不是让本项目配置的模型生成音频；`view_images`则把可核验图片提供给**本项目配置的模型**理解，不是调用QQ的“AI识图”。两者名称里都可能涉及AI，但作用不同。
 
-当前共有53个可配置工具：34个默认`direct`、18个默认`confirm`、1个默认`off`。已有显式模式继续优先，不会被新增工具的默认值覆盖。
+当前共有56个可配置工具：37个默认`direct`、18个默认`confirm`、1个默认`off`。已有显式模式继续优先，不会被新增工具的默认值覆盖。
 
 ### 查询与阅读
 
@@ -222,6 +222,16 @@ napcat_custom_face_directory = "/qqbot-custom-faces"
 `transcribe_voice`接受`{message_id}`，只允许当前群本地可见消息或近期消息直接引用的目标；执行前核验登录身份、消息所属群、已知发送者和语音段，再调用NapCat的`fetch_ptt_text`。无需配置独立ASR服务或密钥。设为`off`关闭；只读工具不支持`confirm`。
 
 收到语音并不新增自动唤醒条件，仍使用已有@、引用及随机参与规则。模型按需调用识别，在下一轮看到文字后决定是否回复；识别文字是不可信的用户内容，不授予额外权限。超时、过期消息、QQ不支持或没有识别结果均明确返回失败，不伪装成空白转写；不承诺所有语言、方言或识别准确率。这不是视频或任意音频文件的通用转写接口，也不同于`send_group_ai_voice`的文字转语音。
+
+### JavaScript 计算沙箱
+
+| 工具 | 默认 | 支持confirm | 配置参数 | 类别 | 用途 |
+| --- | --- | --- | --- | --- | --- |
+| `execute_javascript` | direct | 否 | 无 | Bot辅助 | 在隔离沙箱执行统一async函数体；`mode`由模型按次调用选择`sync`、`async`或`auto`。最终必须return字符串。 |
+| `query_javascript_jobs` | direct | 否 | 无 | Bot辅助 | 查询当前账号当前群的活动任务和未交付结果，可按任务、状态分页。 |
+| `cancel_javascript_job` | direct | 否 | 无 | Bot辅助 | 取消当前账号当前群的后台JavaScript任务。 |
+
+细节见 [JavaScript 沙箱](sandbox.md)。三个工具不支持`confirm`，没有新的行为次数配额；`mode`不是配置项。
 
 ### 一次性定时提醒
 

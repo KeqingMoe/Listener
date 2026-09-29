@@ -12,13 +12,15 @@ import { GroupRequestTools, GROUP_REQUEST_TOOL_NAMES } from '../../../src/tools/
 
 const context: TurnContext = {groupId:LISTENER_GROUP, actorId:'123', selfId:'999', messageId:'11'};
 const scheduledWrites = ['create_reminder','update_reminder','cancel_reminder'] as const;
-const writes = EXTENDED_TOOL_NAMES.filter(name=>!EXTENDED_READ_ONLY_TOOLS.includes(name)&&!(scheduledWrites as readonly string[]).includes(name));
+const SANDBOX = ['execute_javascript','query_javascript_jobs','cancel_javascript_job'] as const;
+const writes = EXTENDED_TOOL_NAMES.filter(name=>!EXTENDED_READ_ONLY_TOOLS.includes(name)&&!(scheduledWrites as readonly string[]).includes(name)&&!(SANDBOX as readonly string[]).includes(name));
 const memory: Memory = {recent:()=>[],find:()=>undefined,append:()=>false,context:()=>'',async compact(){},clear(){},close(){}};
 function source(){let calls=0;const api:Api={async call(){calls++;throw new Error('unexpected native call PRIVATE');}};return {api,get calls(){return calls;}};}
 
 // Deliberately bypass the TOML loader: this guard must live in the dispatch layer.
 test('all 25 write capabilities fail closed in confirm mode without a confirmation adapter',async()=>{
   assert.equal(writes.length,25);
+  assert.equal(SANDBOX.length,3);
   for(const name of writes){
     const native=source(),config:ExtendedToolsConfig={[name]:'confirm'};
     const registry=createExtendedTools(native.api,memory,LISTENER_GROUP,config);
@@ -47,12 +49,30 @@ test('all confirm write handlers route only to the adapter and retain original t
 });
 
 test('all read-only capabilities reject confirm rather than becoming directly executable',()=>{
-  assert.equal(EXTENDED_READ_ONLY_TOOLS.length,14);
+  assert.equal(EXTENDED_READ_ONLY_TOOLS.length,15);
+  for(const name of SANDBOX) {
+    assert.equal(EXTENDED_READ_ONLY_TOOLS.includes(name),name==='query_javascript_jobs');
+    assert.throws(()=>createExtendedTools(source().api,memory,LISTENER_GROUP,{[name]:'confirm'}),/(?:Read-only|Sandbox) tools do not support mutation confirmation/);
+  }
   for(const name of EXTENDED_READ_ONLY_TOOLS){
     const native=source();
-    assert.throws(()=>createExtendedTools(native.api,memory,LISTENER_GROUP,{[name]:'confirm'}),/Read-only tools do not support mutation confirmation/,name);
-    assert.throws(()=>buildExtendedToolDefinitions(LISTENER_GROUP,{[name]:'confirm'}),/Read-only tools do not support mutation confirmation/,name);
+    assert.throws(()=>createExtendedTools(native.api,memory,LISTENER_GROUP,{[name]:'confirm'}),/(?:Read-only|Sandbox) tools do not support mutation confirmation/,name);
+    assert.throws(()=>buildExtendedToolDefinitions(LISTENER_GROUP,{[name]:'confirm'}),/(?:Read-only|Sandbox) tools do not support mutation confirmation/,name);
     assert.equal(native.calls,0,name);
+  }
+});
+
+test('sandbox tools publish schemas, mark only query readonly, and never support confirmation',()=>{
+  for(const name of SANDBOX){
+    const native=source(),registry=createExtendedTools(native.api,memory,LISTENER_GROUP,{[name]:'direct'});
+    assert.equal(registry.has(name),true,name);
+    assert.equal(registry.isSideEffect(name),name!=='query_javascript_jobs',name);
+    const schema=buildExtendedToolDefinitions(LISTENER_GROUP,{[name]:'direct'});
+    assert.deepEqual(schema,registry.definitions(),name);
+    assert.equal(schema.length,1,name);assert.equal(schema[0]!.function.name,name);
+    assert.equal(schema[0]!.function.parameters.additionalProperties,false,name);
+    assert.throws(()=>createExtendedTools(native.api,memory,LISTENER_GROUP,{[name]:'confirm'},{async requestConfirmation(){throw new Error('must not propose');}}));
+    assert.throws(()=>buildExtendedToolDefinitions(LISTENER_GROUP,{[name]:'confirm'}));assert.equal(native.calls,0,name);
   }
 });
 
