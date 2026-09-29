@@ -66,7 +66,7 @@ function object(value: unknown): value is JsonObject { return !!value && typeof 
 function keys(value: JsonObject, allowed: string[]): boolean { return Object.keys(value).every(k => allowed.includes(k)); }
 function logToolResult(tool: string, result: JsonObject, started: number, round: number): void {
   const status = ['ok','partial','error','confirmation_required','executed','staged','unknown'].includes(String(result.status)) ? String(result.status) : 'error';
-  const codes = ['invalid_arguments','tool_disabled','images_disabled','image_unavailable','forbidden_group','message_not_in_context','cancelled','image_first','call_limit','forward_first','forward_disabled','invalid_range','budget_exhausted','forbidden_reference','resource_limit','resource_cycle','forward_unavailable','range_out_of_bounds','plan_limit','operation_limit','plan_not_found','invalid_transaction','random_failed','turn_finished','reaction_rejected','reaction_result_unknown','verification_failed','api_unavailable','reaction_failed','reaction_catalog_unavailable','invalid_turn','reaction_users_unavailable','pagination_unavailable','pagination_cycle','incomplete_page','invalid_cursor','query_invalidated','provider_rejected','delivery_unknown','action_result_unknown','operation_result_unknown','previous_submission_pending','membership_transition_pending','duplicate_message_ack','management_result_review_required','confirmation_verification_failed'];
+  const codes = ['invalid_arguments','tool_disabled','images_disabled','image_unavailable','forbidden_group','message_not_in_context','cancelled','image_first','call_limit','forward_first','transcription_first','forward_disabled','invalid_range','budget_exhausted','forbidden_reference','resource_limit','resource_cycle','forward_unavailable','range_out_of_bounds','plan_limit','operation_limit','plan_not_found','invalid_transaction','random_failed','turn_finished','reaction_rejected','reaction_result_unknown','verification_failed','api_unavailable','reaction_failed','reaction_catalog_unavailable','invalid_turn','reaction_users_unavailable','pagination_unavailable','pagination_cycle','incomplete_page','invalid_cursor','query_invalidated','provider_rejected','delivery_unknown','action_result_unknown','operation_result_unknown','previous_submission_pending','membership_transition_pending','duplicate_message_ack','management_result_review_required','confirmation_verification_failed'];
   const detail=typeof result.error==='string'?result.error:result.reason;
   const reason = typeof detail === 'string' && codes.includes(detail) ? detail : status === 'error' ? 'tool_rejected' : undefined;
   const flags:Record<string,boolean>={};
@@ -712,6 +712,7 @@ export class Listener {
         const activeCalls=finishIndex<0?response.tool_calls:response.tool_calls.slice(0,finishIndex+1);
         const viewingImages = activeCalls.some(call=>call.function.name==='view_images'||call.function.name==='view_custom_face');
         const readingForward = activeCalls.some(call=>call.function.name==='read_forward');
+        const transcribingVoice = activeCalls.some(call=>call.function.name==='transcribe_voice');
         const imageContent: ChatContentPart[] = [];
         let terminal=false,managementNeedsReview=false,customFaceNeedsReview=false;
         for (const call of response.tool_calls) {
@@ -733,16 +734,17 @@ export class Listener {
           if(this.config.toolPermissions&&TOOL_NAMES.includes(call.function.name as typeof TOOL_NAMES[number])&&!tools.some(tool=>tool.function.name===call.function.name)){
              const denied={status:'error',error:'tool_disabled'};traceResult(denied);appendToolResult(call,denied);continue;
            }
-           if(call.function.name==='finish'&&object(args)&&keys(args,[])&&!viewingImages&&!readingForward&&!customFaceNeedsReview){
+           if(call.function.name==='finish'&&object(args)&&keys(args,[])&&!viewingImages&&!readingForward&&!transcribingVoice&&!customFaceNeedsReview){
             outcome=sentMessages?'replied':'silent';finished=true;terminal=true;traceResult({status:'ok'});appendToolResult(call,{status:'ok'});break;
           }
           if(managementNeedsReview&&(call.function.name==='send_message'||extendedTools.isSideEffect(call.function.name)||(customFaceNeedsReview&&call.function.name==='finish'))){
             const blocked={status:'error',error:'management_result_review_required',reason_code:'management_result_review_required'};traceResult(blocked);
             appendToolResult(call,blocked);continue;
           }
-          if ((viewingImages || readingForward) && (extendedTools.isSideEffect(call.function.name) || ['send_message','finish','manage_attention','react_message',...MODERATION_TOOLS.map(tool=>tool.function.name)].includes(call.function.name))) {
-            traceResult({status:'error',error:viewingImages?'image_first':'forward_first'});
-            appendToolResult(call,{status:'error',reason_code:viewingImages?'image_first':'forward_first',error:viewingImages?'先接收本轮图片内容，再在下一轮决定回复或操作。':'先接收本轮转发读取结果，再在下一轮决定回复或操作。'});
+          if ((viewingImages || readingForward || transcribingVoice) && (extendedTools.isSideEffect(call.function.name) || ['send_message','finish','manage_attention','react_message',...MODERATION_TOOLS.map(tool=>tool.function.name)].includes(call.function.name))) {
+            const reason = viewingImages ? 'image_first' : readingForward ? 'forward_first' : 'transcription_first';
+            traceResult({status:'error',error:reason});
+            appendToolResult(call,{status:'error',reason_code:reason,error:viewingImages?'先接收本轮图片内容，再在下一轮决定回复或操作。':readingForward?'先接收本轮转发读取结果，再在下一轮决定回复或操作。':reason});
             continue;
           }
           if(EXTENDED_TOOL_NAMES.includes(call.function.name as typeof EXTENDED_TOOL_NAMES[number])){

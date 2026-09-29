@@ -43,6 +43,7 @@ function part(value:unknown,index:number,wire:boolean,refs:ReturnType<typeof saf
  const type=kind(value.type),data=wire?(object(value.data)?value.data:undefined):value;
  const bad=()=>({segment:{type:'unsupported' as const,kind:type},lost:true});
  if(type==='unsupported'&&!wire)return {segment:{type:'unsupported',kind:kind(value.kind)},lost:false};
+ if(type==='record')return {segment:{type:'record',content_status:'not_transcribed'},lost:false};
  if(type==='image')return {segment:media('image',refs.images.find(ref=>wire?ref.index===index:ref.id===value.image_id)),lost:false};
  if(type==='forward'||(wire&&type==='json'&&refs.forwards.some(ref=>ref.index===index)))return {segment:media('forward',refs.forwards.find(ref=>wire?ref.index===index:ref.id===value.forward_id)),lost:false};
  if(!data)return bad();

@@ -71,6 +71,7 @@ function validSegment(value: unknown): value is MessageSegment {
   if (value.type === 'face') return text(value.id, 64) && (value.name === undefined || (typeof value.name === 'string' && value.name.length <= 80));
   if (value.type === 'at') return text(value.user_id, 64);
   if (value.type === 'reply') return text(value.message_id, 64);
+  if (value.type === 'record') return only(value, ['type','content_status']) && value.content_status === 'not_transcribed';
   if (value.type === 'image') return value.content_status === 'not_viewed';
   if (value.type === 'forward') return value.content_status === 'not_read';
   return value.type === 'unsupported' && text(value.kind, 64);

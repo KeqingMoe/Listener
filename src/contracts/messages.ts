@@ -7,6 +7,7 @@ export type MessageSegment =
   | { type: 'face'; id: string; name?: string }
   | { type: 'at'; user_id: string }
   | { type: 'reply'; message_id: string }
+  | { type: 'record'; content_status: 'not_transcribed' }
   | { type: 'image'; image_id?: string; content_status: 'not_viewed'; reason?: string }
   | { type: 'forward'; forward_id?: string; count?: number; count_source?: 'hint' | 'verified'; content_status: 'not_read'; reason?: string }
   | { type: 'unsupported'; kind: string };

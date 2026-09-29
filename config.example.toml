@@ -42,6 +42,7 @@ get_group_info = "direct" # 查询QQ群名称、人数等资料。
 poke_member = "direct" # QQ拍一拍／戳一戳指定群成员。
 react_message = "direct" # 添加或取消消息下方的表情回应，不是发送表情消息。
 send_group_ai_voice = "direct" # 使用QQ提供的AI声线发送文字转语音，不是本项目模型生成音频。
+transcribe_voice = "direct" # 按需识别本群语音，调用QQ原生转文字；只读，不支持confirm，也不新增唤醒条件。
 mute_member = {
   mode = "confirm", # 禁言需主人确认；direct为自主执行，off为关闭。
   max_seconds = 2592000, # 默认及最大30天；可显式设置更小的正整数秒数。

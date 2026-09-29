@@ -46,7 +46,7 @@ test('all confirm write handlers route only to the adapter and retain original t
 });
 
 test('all read-only capabilities reject confirm rather than becoming directly executable',()=>{
-  assert.equal(EXTENDED_READ_ONLY_TOOLS.length,12);
+  assert.equal(EXTENDED_READ_ONLY_TOOLS.length,13);
   for(const name of EXTENDED_READ_ONLY_TOOLS){
     const native=source();
     assert.throws(()=>createExtendedTools(native.api,memory,LISTENER_GROUP,{[name]:'confirm'}),/Read-only tools do not support mutation confirmation/,name);

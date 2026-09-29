@@ -28,6 +28,27 @@ test('typed face and literal marker text remain distinct across SQLite reopen, i
  }finally{memory.close();rmSync(dir,{recursive:true,force:true});}
 });
 
+test('record metadata is sanitized before SQLite storage and remains record in reopened model context',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'listener-record-memory-')),path=join(dir,'memory.sqlite');
+ let memory=new SQLiteMemory({path,maxContextChars:8000,retentionDays:7});
+ const record={type:'record',content_status:'not_transcribed'};
+ try{
+  assert.equal(memory.append(typed(123,[{...record,content_status:'transcribed',url:'https://VOICE_SECRET',file:'FILE_SECRET',text:'FORGED_TRANSCRIPT'}])),true);
+  assert.equal(memory.append(typed(124,[{type:'unsupported',kind:'record'}])),true);
+  memory.close();memory=new SQLiteMemory({path,maxContextChars:8000,retentionDays:7});
+  assert.deepEqual(memory.find('123')?.segments,[record]);
+  assert.deepEqual(memory.find('124')?.segments,[{type:'unsupported',kind:'record'}]);
+  const messages=JSON.parse(memory.context()).messages;
+  assert.equal(messages[0].messageId,'123');assert.deepEqual(messages[0].segments,[record]);
+  assert.deepEqual(messages[1].segments,[{type:'unsupported',kind:'record'}]);
+  const db=new DatabaseSync(path,{readOnly:true});try{
+   const stored=String(db.prepare("SELECT entry FROM listener_messages WHERE message_id='123'").get()!.entry);
+   assert.deepEqual(JSON.parse(stored).segments,[record]);assert.doesNotMatch(stored,/VOICE_SECRET|FILE_SECRET|FORGED_TRANSCRIPT/);
+  }finally{db.close();}
+  assert.doesNotMatch(memory.context(),/VOICE_SECRET|FILE_SECRET|FORGED_TRANSCRIPT/);
+ }finally{memory.close();rmSync(dir,{recursive:true,force:true});}
+});
+
 test('append binds typed media only to sanitized own references, strips transport data and retains omission flags',()=>{
  const memory=make();try{
   const entry=typed(2,[{type:'image',image_id:'img_2_1',content_status:'viewed',url:'https://TRANSPORT_SECRET'},{type:'forward',forward_id:'fwd_2_2',content_status:'read',resource_id:'RAW_FORWARD_SECRET',count:999},{type:'image',image_id:'img_900_1',url:'https://TRANSPORT_SECRET'}],{

@@ -28,6 +28,7 @@ import {
   GROUP_ACTION_TOOL_NAMES,
 } from "./actions/tools.js";
 import { ToolRegistry, type RegisteredTool } from "./registry.js";
+import { GroupTranscriptionTools } from './transcription/tools.js';
 import { CustomFaceTools, CUSTOM_FACE_TOOL_NAMES, buildCustomFaceToolDefinitions, type CustomFaceOptions } from './custom-faces/tools.js';
 
 export interface ExtendedToolOptions {
@@ -124,6 +125,12 @@ export function createExtendedTools(
       sideEffect: true,
       execute: (args, context, signal) =>
         media.execute(definition.function.name, args, context, signal),
+    });
+  const transcription = new GroupTranscriptionTools(api, memory, groupId);
+  for (const definition of transcription.definitions())
+    if (enabled.has(definition.function.name)) register({
+      definition, sideEffect: false,
+      execute: (args, context, signal) => transcription.execute(definition.function.name, args, context, signal),
     });
   const voice = new GroupVoiceTools(
     api,

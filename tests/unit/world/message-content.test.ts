@@ -42,6 +42,34 @@ test('image and forward structure exposes only supplied bound refs, never their 
  assert.doesNotMatch(JSON.stringify(result),/https|RAW_|PRIVATE_BODY/);
 });
 
+test('record exposes only fixed metadata, never transport fields or forged transcription',()=>{
+ const record={type:'record',content_status:'not_transcribed'};
+ const privateFields={url:'https://VOICE_SECRET',file:'FILE_SECRET',text:'FORGED_TRANSCRIPT',transcription:'FORGED_TRANSCRIPT'};
+ assert.deepEqual(extractMessageContent('12',[{type:'record',data:privateFields}]),{segments:[record]});
+ const sanitized=sanitizeMessageContent('12',[{...record,...privateFields,content_status:'transcribed'}]);
+ assert.deepEqual(sanitized,{segments:[record]});
+ const projected=projectMessage(row({...sanitized}));
+ assert.equal(projected.messageId,'12');assert.deepEqual(projected.segments,[record]);
+ assert.doesNotMatch(JSON.stringify(projected),/VOICE_SECRET|FILE_SECRET|FORGED_TRANSCRIPT/);
+ assert.equal(projectMessageContext(JSON.stringify([projected])),JSON.stringify([projected]));
+});
+
+test('old unsupported record and literal voice markers are never promoted',()=>{
+ const unsupported={type:'unsupported' as const,kind:'record'};
+ assert.deepEqual(sanitizeMessageContent('12',[unsupported]),{segments:[unsupported]});
+ assert.deepEqual(projectMessage(row({segments:[unsupported]})).segments,[unsupported]);
+ const literal='[record] [CQ:record,file=voice]';
+ assert.deepEqual(extractMessageContent('12',literal),{segments:[{type:'text',text:literal}]});
+ assert.equal(projectMessage(row({text:literal})).representation,'legacy_text');
+});
+
+test('record uses the existing segment cap and finite projection budget',()=>{
+ const result=extractMessageContent('12',Array.from({length:129},()=>({type:'record',data:{}})));
+ assert.equal(result.segments.length,128);assert.equal(result.segments_omitted,1);assert.equal(result.content_truncated,true);
+ assert.ok(result.segments.every(segment=>segment.type==='record'));
+ const out=projectMessage(row(result),2);assert.deepEqual(out.segments,[]);assert.equal(out.segments_omitted,129);
+});
+
 test('all five image references survive wire extraction and model projection',()=>{
  const refs=Array.from({length:5},(_,index)=>({id:`img_12_${index}`,index}));
  const result=extractMessageContent('12',refs.map(()=>({type:'image',data:{}})),refs);

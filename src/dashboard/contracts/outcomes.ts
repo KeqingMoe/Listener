@@ -1,7 +1,7 @@
 // Diagnostic categories do not change the model/tool protocol status or prove an external effect.
 export const REQUEST_REASONS = ["cancelled", "timeout", "http_error", "network_error", "response_too_large", "invalid_response", "truncated_response"] as const;
 export const REASONS = [
-  ...REQUEST_REASONS, "image_first", "forward_first", "turn_finished", "tool_disabled",
+  ...REQUEST_REASONS, "image_first", "forward_first", "transcription_first", "turn_finished", "tool_disabled",
   "images_disabled", "forward_disabled", "forbidden_group", "forbidden_reference", "owner_required",
   "invalid_arguments", "permission_denied", "image_unavailable", "message_not_in_context", "call_limit", "invalid_range",
   "budget_exhausted", "tool_budget_exhausted", "resource_limit", "resource_cycle", "forward_unavailable",
@@ -53,7 +53,7 @@ export function toolOutcome(row: { state?: unknown; status?: unknown; reason_cod
   if (row.status === "cancelled") return "cancelled";
   if (row.status === "error") {
     const reason = toolReason(row);
-    if (reason === "image_first" || reason === "forward_first" || reason === "management_result_review_required") return "deferred";
+    if (reason === "image_first" || reason === "forward_first" || reason === "transcription_first" || reason === "management_result_review_required") return "deferred";
     if (reason === "cancelled") return "cancelled";
     // A more specific diagnostic must not erase the underlying rejection category.
     if ((reason && REJECTED.includes(reason)) || (typeof row.error === "string" && REJECTED.includes(row.error))) return "rejected";
