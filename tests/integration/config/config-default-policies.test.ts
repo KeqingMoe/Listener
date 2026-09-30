@@ -13,7 +13,7 @@ import {
 } from '../../../src/config/tool-policy.ts';
 import { Listener } from '../../../src/agent/listener.ts';
 import { buildToolDefinitions } from '../../../src/agent/tool-definitions.ts';
-import { buildSystemPrompt } from '../../../src/agent/prompts.ts';
+import { buildSystemPrompt } from '../../../src/agent/prompts/index.ts';
 import type { Api } from '../../../src/contracts/onebot.ts';
 import type { JsonObject } from '../../../src/contracts/json.ts';
 import type { Memory, TimelineEntry } from '../../../src/contracts/messages.ts';

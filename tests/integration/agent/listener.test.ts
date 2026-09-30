@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Listener, normalizeEvent } from '../../../src/agent/listener.ts';
-import { buildSystemPrompt } from '../../../src/agent/prompts.ts';
+import { buildSystemPrompt } from '../../../src/agent/prompts/index.ts';
 import { buildToolDefinitions } from '../../../src/agent/tool-definitions.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
 import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.ts';

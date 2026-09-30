@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Listener } from '../../../src/agent/listener.ts';
 import { buildToolDefinitions } from '../../../src/agent/tool-definitions.ts';
-import { buildSystemPrompt } from '../../../src/agent/prompts.ts';
+import { buildSystemPrompt } from '../../../src/agent/prompts/index.ts';
 import {
   applyToolPolicies,
   toListenerConfig,

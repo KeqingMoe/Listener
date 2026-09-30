@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildSystemPrompt } from '../../../src/agent/prompts.ts';
+import { buildSystemPrompt } from '../../../src/agent/prompts/index.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
 import { OWNER_ID } from '../../../src/contracts/identity.ts';
 import { toolPermissions } from '../../support/tool-permissions.ts';

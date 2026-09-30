@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Listener } from '../../../src/agent/listener.ts';
-import { buildSystemPrompt } from '../../../src/agent/prompts.ts';
+import { buildSystemPrompt } from '../../../src/agent/prompts/index.ts';
 import { Moderation } from '../../../src/tools/management/moderation.ts';
 import { ReplyBatch, type BatchItem } from '../../../src/agent/reply-batch.ts';
 import { OWNER_ID } from '../../../src/contracts/identity.ts';

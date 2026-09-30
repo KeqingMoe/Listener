@@ -1,5 +1,5 @@
 import { isExecutionDiagnostic } from '../sandbox/protocol.ts';
-import { buildSystemPrompt } from './prompts.ts';
+import { buildSystemPrompt } from './prompts/index.ts';
 import {
   buildToolDefinitions,
   SANDBOX_EXCLUDED_TOOLS,

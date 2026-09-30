@@ -8,7 +8,7 @@ import { loadAppConfig } from '../../../src/config/loader.ts';
 import { ConfigError } from '../../../src/config/errors.ts';
 import { toListenerConfig } from '../../../src/config/runtime.ts';
 import { buildToolDefinitions } from '../../../src/agent/tool-definitions.ts';
-import { buildSystemPrompt } from '../../../src/agent/prompts.ts';
+import { buildSystemPrompt } from '../../../src/agent/prompts/index.ts';
 
 const GROUP = '22';
 

@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { safetyRules, buildSystemPrompt } from '../../../src/agent/prompts.ts';
+import {
+  safetyRules,
+  buildSystemPrompt,
+} from '../../../src/agent/prompts/index.ts';
 import {
   CHAT_TOOLS,
   buildToolDefinitions,
