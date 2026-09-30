@@ -18,7 +18,6 @@ export interface GroupHandler {
     jobId: string;
     [key: string]: unknown;
   }): Promise<boolean>;
-  resumeSandboxResults?(selfId: string): void;
   hostToolNames?(): string[];
   executeHostTool?(
     name: string,

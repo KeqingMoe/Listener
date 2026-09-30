@@ -345,14 +345,6 @@ export class GroupReminderTools {
     );
   }
 
-  definitions(): ToolDefinition[] {
-    return buildReminderTools([...this.enabled]);
-  }
-
-  isSideEffect(name: string): boolean {
-    return this.enabled.has(name) && name !== 'list_reminders';
-  }
-
   private check(signal?: AbortSignal): void {
     if (signal?.aborted) {
       fail('cancelled');

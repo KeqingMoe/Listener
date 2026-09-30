@@ -93,10 +93,6 @@ export class WebTools {
     this.fetcher = options.fetcher ?? createWebFetcher();
   }
 
-  get searchAvailable(): boolean {
-    return !!this.options.search;
-  }
-
   async execute(
     name: string,
     args: unknown,

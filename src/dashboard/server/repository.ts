@@ -359,33 +359,6 @@ export class Repository {
       .join(',');
   }
 
-  requests(range: Range, groupId?: string): Row[] {
-    const db = this.open(this.sources.telemetryPath);
-    if (!db) {
-      return [];
-    }
-    const ids = this.groups
-      .filter((g) => !groupId || g.groupId === groupId)
-      .map((g) => g.groupId);
-    const result: Row[] = [];
-    for (let i = 0; i < ids.length; i += 200) {
-      const batch = ids.slice(i, i + 200);
-      result.push(
-        ...(db
-          .prepare(
-            `SELECT request_id,group_id,started_at,ended_at,duration_ms,status,transport,input_tokens,output_tokens,cached_input_tokens,${this.requestColumns(db)} FROM model_requests WHERE started_at>=? AND started_at<=? AND group_id IN (${batch.map(() => '?').join(',')}) ORDER BY started_at,request_id LIMIT 10001`,
-          )
-          .all(range.since, range.until, ...batch) as Row[]),
-      );
-      this.bounded(result);
-    }
-    return result.sort(
-      (a, b) =>
-        a.started_at - b.started_at ||
-        String(a.request_id).localeCompare(String(b.request_id)),
-    );
-  }
-
   private finish(db: DatabaseSync, wakeId: string) {
     const row = db
       .prepare(

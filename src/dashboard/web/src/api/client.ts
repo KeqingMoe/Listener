@@ -61,54 +61,6 @@ export const time = (value: number | null | undefined) =>
   value == null
     ? '—'
     : new Date(value).toLocaleString('zh-CN', { hour12: false });
-const diagnosticKeys = {
-  request: [
-    'abortSource',
-    'providerCategory',
-    'providerParameter',
-    'failureStage',
-    'requestMode',
-    'requestTimeoutMs',
-  ],
-  wake: [
-    'duration_ms',
-    'model_rounds',
-    'tool_calls',
-    'sent_messages',
-    'sent_submissions',
-    'management_executed',
-    'management_submitted',
-    'management_unknown',
-    'reactions',
-    'reaction_submitted',
-    'reaction_unknown',
-    'reaction_failures',
-    'tool_calls_limit',
-    'wake_timeout_ms',
-  ],
-} as const;
-
-/** 纵深防御：只按白名单提取诊断字段，绝不整体序列化API诊断载荷。 */
-export function diagnosticRows(
-  value: unknown,
-  kind: keyof typeof diagnosticKeys,
-): [string, string][] {
-  if (!value || typeof value !== 'object') {
-    return [];
-  }
-  const record = value as Record<string, unknown>;
-  return diagnosticKeys[kind].flatMap<[string, string]>((key) => {
-    const item = record[key];
-    if (typeof item === 'number' && Number.isFinite(item)) {
-      return [[key, number(item)]];
-    }
-    if (kind === 'request' && typeof item === 'string') {
-      return [[key, item]];
-    }
-    return [];
-  });
-}
-
 export const status = (value: string | null) =>
   value === null
     ? '—'

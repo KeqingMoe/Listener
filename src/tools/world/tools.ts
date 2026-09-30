@@ -499,10 +499,6 @@ export class WorldTools {
     });
   }
 
-  definitions(): ToolDefinition[] {
-    return buildWorldTools();
-  }
-
   private now(): number {
     const now = this.clock();
     if (!time(now)) {

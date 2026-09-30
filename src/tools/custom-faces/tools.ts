@@ -333,10 +333,6 @@ export class CustomFaceTools {
     this.downloader = options.originalDownloader ?? downloadOriginalImage;
   }
 
-  definitions(): ToolDefinition[] {
-    return buildCustomFaceToolDefinitions([...this.enabled]);
-  }
-
   private check(signal?: AbortSignal): void {
     if (signal?.aborted) {
       fail('cancelled');

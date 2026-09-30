@@ -81,41 +81,6 @@ test('weighted durations, unknown and cached results are classified without clai
       .invocations,
     0,
   );
-  const trace = s.getToolTrace({ wakeId: wake, limit: 99 });
-  assert.equal(JSON.stringify(trace).includes('PRIVATE'), false);
-  assert.equal(JSON.stringify(trace).includes('SECRET_RESULT'), false);
-  assert.equal(trace.items[1]!.errorCode, undefined);
-  s.close();
-});
-
-test('huge requested trace limit remains byte bounded and cursor pages have no missing calls', () => {
-  const s = new ModelSession({ path: ':memory:' });
-  s.beginWake('i', tools);
-  const wake = s.state().wakeId!;
-  const calls = Array.from({ length: 200 }, (_, i) => ({
-    ...call('id' + i + 'x'.repeat(170)),
-    function: {
-      name: 'send_message',
-      arguments: JSON.stringify({ text: 'PRIVATE_ARGUMENT' }),
-    },
-  }));
-  s.appendAssistant(completion(...calls), 'model-request');
-  s.finishWake('budget');
-  const ids: string[] = [];
-  let cursor: number | undefined;
-  do {
-    const page = s.getToolTrace({
-      wakeId: wake,
-      limit: Number.MAX_SAFE_INTEGER,
-      ...(cursor !== undefined ? { cursor } : {}),
-    });
-    assert.ok(Buffer.byteLength(JSON.stringify(page)) <= 24 * 1024);
-    assert.equal(JSON.stringify(page).includes('PRIVATE_ARGUMENT'), false);
-    ids.push(...page.items.map((i) => i.callId));
-    cursor = page.nextCursor;
-  } while (cursor !== undefined);
-  assert.equal(ids.length, 200);
-  assert.equal(new Set(ids).size, 200);
   s.close();
 });
 
@@ -124,7 +89,6 @@ test('analytics aggregates outcomes, durations, exposure and keeps private args 
   try {
     const s = new ModelSession({ path: x.path, groupId: '123456789' });
     s.beginWake('instructions', tools, { trigger: 'a' });
-    const wakeA = s.state().wakeId!;
     s.appendAssistant(completion(call('ok')), 'request-a');
     assert.equal(s.startTool('ok'), true);
     s.finishTool('ok', {
@@ -156,22 +120,6 @@ test('analytics aggregates outcomes, durations, exposure and keeps private args 
         (x) => x.name === 'send_message' && x.wakes >= 2,
       ),
     );
-    const trace = s.getToolTrace({ wakeId: wakeA, limit: 10 });
-    assert.equal(trace.returned, 1);
-    assert.equal(trace.items[0]!.status, 'ok');
-    assert.equal((trace.items[0] as any).secret, undefined);
-    assert.equal((trace.items[0] as any).arguments, undefined);
-    const availability = s.getToolAvailability({
-      since: 0,
-      until: Date.now(),
-      limit: 10,
-    });
-    assert.equal(availability.returned, 2);
-    assert.deepEqual(availability.items[0]!.exposedToolNames, [
-      'send_message',
-      'finish',
-    ]);
-    assert.equal(JSON.stringify(availability).includes('instructions'), false);
     s.close();
   } finally {
     clean(x);
@@ -186,26 +134,7 @@ test('analytics filters validate scope, inclusive time and limits', () => {
     s.appendAssistant(completion(call('a')));
     assert.throws(() => s.summarizeTools({ since: -1, until: 2 }), /window/);
     assert.throws(
-      () => s.getToolTrace({ wakeId: s.state().wakeId!, limit: 0 }),
-      /page/,
-    );
-    assert.throws(
-      () =>
-        s.getToolAvailability({
-          since: 0,
-          until: 1,
-          limit: 1,
-          extra: 1,
-        } as any),
-      /filter/,
-    );
-    assert.throws(
-      () =>
-        s.getToolTrace({
-          wakeId: s.state().wakeId!,
-          limit: 1,
-          extra: 1,
-        } as any),
+      () => s.summarizeTools({ since: 0, until: 1, extra: 1 } as any),
       /filter/,
     );
     s.close();

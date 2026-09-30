@@ -72,37 +72,6 @@ export interface ToolSummary extends ToolCounts {
   toolExposureCounts: Array<{ name: string; wakes: number }>;
 }
 
-export interface DiagnosticPage<T> {
-  requested: number;
-  returned: number;
-  truncated: boolean;
-  nextCursor?: number;
-  items: T[];
-}
-
-export interface ToolTrace {
-  assistantSeq: number;
-  callId: string;
-  name: string;
-  state: string;
-  status: string;
-  errorCode?: string;
-  proposedAt: number;
-  startedAt?: number;
-  finishedAt?: number;
-  durationMs?: number;
-  requestId?: string;
-}
-
-export interface ToolAvailability {
-  wakeId: string;
-  sessionId: string;
-  proposedAt: number;
-  fingerprint: string;
-  exposedToolNames: string[];
-}
-
-const DIAGNOSTIC_MAX = 24 * 1024;
 const KNOWN_SUCCESS = [
   'ok',
   'executed',
@@ -145,16 +114,6 @@ function windowFilter(value: ToolWindow): void {
     ) {
       throw new Error('invalid_analytics_filter');
     }
-  }
-}
-
-function pageFilter(limit: number, cursor?: number): void {
-  if (
-    !Number.isSafeInteger(limit) ||
-    limit < 1 ||
-    (cursor !== undefined && (!Number.isSafeInteger(cursor) || cursor < 0))
-  ) {
-    throw new Error('invalid_analytics_page');
   }
 }
 
@@ -1135,143 +1094,6 @@ export class ModelSession {
       });
     }
     return { ...total, byTool, toolExposureCounts };
-  }
-
-  private diagnosticPage<T>(
-    rows: Iterable<Record<string, unknown>>,
-    limit: number,
-    project: (row: Record<string, unknown>) => T,
-  ): DiagnosticPage<T> {
-    const page: DiagnosticPage<T> = {
-      requested: limit,
-      returned: 0,
-      truncated: false,
-      items: [],
-    };
-    let cursor: number | undefined;
-    for (const row of rows) {
-      const item = project(row),
-        next = Number(row.cursor);
-      if (
-        page.items.length >= limit ||
-        Buffer.byteLength(
-          JSON.stringify({
-            ...page,
-            returned: page.items.length + 1,
-            truncated: true,
-            nextCursor: next,
-            items: [...page.items, item],
-          }),
-        ) > DIAGNOSTIC_MAX
-      ) {
-        if (cursor === undefined) {
-          throw new Error('analytics_row_resource_limit');
-        }
-        page.truncated = true;
-        page.nextCursor = cursor;
-        break;
-      }
-      page.items.push(item);
-      cursor = next;
-    }
-    page.returned = page.items.length;
-    return page;
-  }
-
-  getToolTrace(options: {
-    wakeId: string;
-    limit: number;
-    cursor?: number;
-  }): DiagnosticPage<ToolTrace> {
-    this.check();
-    fields(options, ['wakeId', 'limit', 'cursor']);
-    pageFilter(options.limit, options.cursor);
-    if (
-      typeof options.wakeId !== 'string' ||
-      !options.wakeId ||
-      options.wakeId.length > 256
-    ) {
-      throw new Error('invalid_analytics_filter');
-    }
-    const rows = this.db
-      .prepare(
-        `SELECT l.ordinal AS cursor,l.assistant_seq,l.call_id,l.name,l.state,l.proposed_at,l.started_at,l.finished_at,
-    json_extract(l.result,'$.status') AS status,json_extract(l.result,'$.error') AS error,m.request_id
-    FROM model_tool_ledger l LEFT JOIN model_session_messages m ON m.seq=l.assistant_seq WHERE l.wake_id=? AND l.ordinal>? ORDER BY l.ordinal LIMIT ?`,
-      )
-      .iterate(
-        options.wakeId,
-        options.cursor ?? 0,
-        Math.min(options.limit + 1, Number.MAX_SAFE_INTEGER),
-      );
-    return this.diagnosticPage(rows, options.limit, (row) => {
-      const rawStatus = typeof row.status === 'string' ? row.status : '';
-      const status = ['error', 'unknown', 'skipped', ...KNOWN_SUCCESS].includes(
-        rawStatus,
-      )
-        ? rawStatus
-        : row.state === 'pending' || row.state === 'started'
-          ? 'pending'
-          : 'unknown';
-      return {
-        assistantSeq: Number(row.assistant_seq),
-        callId: String(row.call_id),
-        name: safeName(String(row.name)),
-        state: String(row.state),
-        status,
-        ...(typeof row.error === 'string' &&
-        /^[a-z][a-z0-9_]{0,79}$/.test(row.error)
-          ? { errorCode: row.error }
-          : {}),
-        proposedAt: Number(row.proposed_at),
-        ...(row.started_at !== null
-          ? { startedAt: Number(row.started_at) }
-          : {}),
-        ...(row.finished_at !== null
-          ? { finishedAt: Number(row.finished_at) }
-          : {}),
-        ...(row.started_at !== null &&
-        row.finished_at !== null &&
-        Number(row.finished_at) >= Number(row.started_at)
-          ? { durationMs: Number(row.finished_at) - Number(row.started_at) }
-          : {}),
-        ...(typeof row.request_id === 'string'
-          ? { requestId: row.request_id }
-          : {}),
-      };
-    });
-  }
-
-  getToolAvailability(options: {
-    since: number;
-    until: number;
-    limit: number;
-    cursor?: number;
-  }): DiagnosticPage<ToolAvailability> {
-    this.check();
-    fields(options, ['since', 'until', 'limit', 'cursor']);
-    windowFilter(options);
-    pageFilter(options.limit, options.cursor);
-    const rows = this.db
-      .prepare(
-        "SELECT seq AS cursor,wake_id,session_id,created_at,json_extract(payload,'$.fingerprint') AS fingerprint,json_extract(payload,'$.exposed_tool_names') AS names FROM model_session_journal WHERE kind='wake_begin' AND created_at BETWEEN ? AND ? AND seq>? ORDER BY seq LIMIT ?",
-      )
-      .iterate(
-        options.since,
-        options.until,
-        options.cursor ?? 0,
-        Math.min(options.limit + 1, Number.MAX_SAFE_INTEGER),
-      );
-    return this.diagnosticPage(rows, options.limit, (row) => ({
-      wakeId: String(row.wake_id),
-      sessionId: String(row.session_id),
-      proposedAt: Number(row.created_at),
-      fingerprint: String(row.fingerprint),
-      exposedToolNames:
-        typeof row.names === 'string'
-          ? (JSON.parse(row.names) as string[])
-          : [],
-    }));
   }
 
   close(): void {

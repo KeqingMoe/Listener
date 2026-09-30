@@ -415,11 +415,6 @@ export class Listener {
     );
   }
 
-  resumeSandboxResults(selfId: string): void {
-    this.sandboxSelfId = selfId;
-    this.schedule();
-  }
-
   private resolving = new Map<string, number>();
   private timer?: NodeJS.Timeout;
   private active?: AbortController;
