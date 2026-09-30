@@ -365,6 +365,7 @@ owner_id = "${LOCAL_OWNER}"
 url = "ws://127.0.0.1:${wsPort}"
 token_env = "FIXTURE_TOKEN"
 [models.main]
+tool_schema = "json"
 base_url = "http://127.0.0.1:${httpPort}/v1"
 model = "fixture-moderation"
 api_key_env = "FIXTURE_KEY"

@@ -1,5 +1,6 @@
 import { isExecutionDiagnostic } from '../sandbox/protocol.ts';
 import { buildSystemPrompt } from './prompts/index.ts';
+import { presentTools, toolSchemaMode } from './tool-declarations/index.ts';
 import {
   buildToolDefinitions,
   SANDBOX_EXCLUDED_TOOLS,
@@ -1414,6 +1415,12 @@ export class Listener {
         remaining_ms: Math.max(0, wakeTimeoutMs - (Date.now() - started)),
       });
       const tools = buildToolDefinitions(this.config);
+      const system = buildSystemPrompt(
+        { ...this.config, groupId: this.groupId },
+        tools,
+      );
+      // 发给模型的形态；校验、确认与沙箱仍使用完整定义tools。
+      const presented = presentTools(tools, toolSchemaMode(this.config));
       // 唤醒原因：关注唤醒附本次命中的计划（批次最多64条，purpose不超过160字）。
       const wakeTrigger: JsonObject = {
         type: batch.kind,
@@ -1438,16 +1445,12 @@ export class Listener {
         wake: () => this.worldWake,
         currentBudget: () => this.worldBudget(),
       });
-      session.beginWake(
-        buildSystemPrompt({ ...this.config, groupId: this.groupId }),
-        tools,
-        {
-          wake_id: batch.turnId,
-          group_id: this.groupId,
-          trigger: wakeTrigger,
-          wake_budget: wakeBudget(),
-        },
-      );
+      session.beginWake(system, presented, {
+        wake_id: batch.turnId,
+        group_id: this.groupId,
+        trigger: wakeTrigger,
+        wake_budget: wakeBudget(),
+      });
       sessionStarted = true;
       sessionScope = session.state();
       session.projectExternalEvents(trigger.context.selfId);
@@ -1551,7 +1554,11 @@ export class Listener {
           response = await withLogContext(
             { round: round + 1, phase: 'conversation' },
             () =>
-              this.model!.complete(requestMessages, tools, controller.signal),
+              this.model!.complete(
+                requestMessages,
+                presented,
+                controller.signal,
+              ),
           );
         } catch (error) {
           if (
@@ -1564,20 +1571,16 @@ export class Listener {
             if (this.model instanceof ResponsesModel) {
               this.model.reset();
             }
-            session.beginWake(
-              buildSystemPrompt({ ...this.config, groupId: this.groupId }),
-              tools,
-              {
-                wake_id: batch.turnId,
-                group_id: this.groupId,
-                trigger: { type: batch.kind },
-                wake_budget: wakeBudget(),
-                recovery: {
-                  read_tools_again: true,
-                  earlier_actions_may_have_completed: stats.toolCalls > 0,
-                },
+            session.beginWake(system, presented, {
+              wake_id: batch.turnId,
+              group_id: this.groupId,
+              trigger: { type: batch.kind },
+              wake_budget: wakeBudget(),
+              recovery: {
+                read_tools_again: true,
+                earlier_actions_may_have_completed: stats.toolCalls > 0,
               },
-            );
+            });
             sessionScope = session.state();
             assistantSeq = undefined;
             continue;
@@ -1671,6 +1674,32 @@ export class Listener {
             const done = { status: 'error', error: 'turn_finished' };
             traceResult(done);
             appendToolResult(call, done);
+            continue;
+          }
+          const definition = tools.find(
+            (tool) => tool.function.name === call.function.name,
+          );
+          const wrapper =
+            isObject(args) && Object.keys(args).length === 1
+              ? ['params', '_'].find((key) => Object.hasOwn(args, key))
+              : undefined;
+          // 声明写成 function x(_: {...})，模型偶尔把参数包进 params 或 _；不代为解包，只提示改法。
+          if (
+            definition &&
+            wrapper &&
+            !Object.hasOwn(
+              definition.function.parameters.properties ?? {},
+              wrapper,
+            )
+          ) {
+            const wrapped = {
+              status: 'error',
+              error: 'invalid_arguments',
+              reason_code: 'wrapped_arguments',
+              hint: `arguments 应直接是参数对象，去掉外层的 ${wrapper}`,
+            };
+            traceResult(wrapped);
+            appendToolResult(call, wrapped);
             continue;
           }
           if (

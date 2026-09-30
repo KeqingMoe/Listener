@@ -39,7 +39,9 @@ const names = (source: string, t: { after(fn: () => void): void }) => {
     app,
     config,
     tools: buildToolDefinitions(config).map((d) => d.function.name),
-    prompt: buildSystemPrompt(config),
+    // 能力段文字属于json模式；ts模式另外只看声明是否出现。
+    prompt: buildSystemPrompt({ ...config, toolSchema: 'json' }),
+    declared: buildSystemPrompt(config),
   };
 };
 
@@ -104,6 +106,9 @@ test('without a search backend web_search is absent from tools and prompt; web_f
   assert.ok(without.tools.includes('web_fetch'));
   assert.doesNotMatch(without.prompt, /先web_search/);
   assert.match(without.prompt, /联网资料：需要具体页面全文时用web_fetch/);
+  assert.equal(without.config.toolSchema, 'ts');
+  assert.match(without.declared, /function web_fetch\(/);
+  assert.doesNotMatch(without.declared, /web_search/);
   assert.equal(without.config.toolPermissions.web_search.mode, 'off');
   assert.equal(without.app.resolveGroup(GROUP).tools.web_search.mode, 'direct');
 

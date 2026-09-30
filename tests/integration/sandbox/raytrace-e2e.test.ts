@@ -93,6 +93,7 @@ function fixture(
           timeoutMs: 1000,
           maxTokens: 8192,
           opencodeHeaders: false,
+          toolSchema: 'json',
         },
       ],
     ]),

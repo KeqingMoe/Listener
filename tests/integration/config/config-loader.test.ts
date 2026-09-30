@@ -17,6 +17,7 @@ import {
   dashboardPassword,
 } from '../../../src/config/loader.ts';
 import { ConfigError } from '../../../src/config/errors.ts';
+import { toListenerConfig } from '../../../src/config/runtime.ts';
 import { OWNER_ID } from '../../../src/contracts/identity.ts';
 
 function fixture(t: { after(fn: () => void): void }, source = '') {
@@ -85,6 +86,31 @@ test('opencode_headers defaults false and only accepts model-level booleans', (t
     '[models.main]\nopencode_go_headers=true',
     '[defaults]\nopencode_headers=true',
     '[groups."22"]\nopencode_headers=true',
+  ]) {
+    f.config(source);
+    assert.throws(() => f.load(), ConfigError);
+  }
+});
+
+test('tool_schema defaults to ts per model and reaches the listener config', (t) => {
+  const f = fixture(t);
+  assert.equal(f.load().models.get('main')!.toolSchema, 'ts');
+  for (const value of ['ts', 'both', 'json'] as const) {
+    f.config(
+      `[models.main]\ntool_schema="${value}"\n[bot]\nowner_id="${OWNER_ID}"\n[groups."22"]\nenabled=true`,
+    );
+    const app = f.load();
+    assert.equal(app.models.get('main')!.toolSchema, value);
+    assert.equal(
+      toListenerConfig(app, app.resolveGroup('22')).toolSchema,
+      value,
+    );
+  }
+  for (const source of [
+    '[models.main]\ntool_schema="typescript"',
+    '[models.main]\ntool_schema=true',
+    '[defaults]\ntool_schema="json"',
+    '[groups."22"]\ntool_schema="json"',
   ]) {
     f.config(source);
     assert.throws(() => f.load(), ConfigError);

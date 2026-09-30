@@ -1,4 +1,4 @@
-import type { WebSearchProviderConfig } from './app.ts';
+import type { ToolSchemaMode, WebSearchProviderConfig } from './app.ts';
 import type { ResolvedToolPolicies } from './tool-policy.ts';
 import type { ExtendedToolsConfig } from './extended-tools.ts';
 
@@ -56,10 +56,13 @@ export interface ListenerConfig {
   confirmationTtlSeconds?: number;
   /** 部署配置的搜索后端；未配置时不提供web_search。 */
   webSearch?: WebSearchProviderConfig;
+  /** 所选模型的工具呈现方式；未给出时按json（完整JSON Schema）。 */
+  toolSchema?: ToolSchemaMode;
 }
 
 /** 应用边界始终提供完整且按群独立的策略。 */
 export interface ResolvedListenerConfig extends ListenerConfig {
+  toolSchema: ToolSchemaMode;
   observeReactions: boolean;
   messageMentions: boolean;
   confirmationTtlSeconds: number;

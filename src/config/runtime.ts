@@ -95,5 +95,6 @@ export function toListenerConfig(
     observeReactions: group.observation.reactions,
     messageMentions: group.messages.mentions,
     confirmationTtlSeconds: group.confirmation.ttlSeconds,
+    toolSchema: app.models.get(group.model)!.toolSchema,
   };
 }

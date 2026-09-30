@@ -17,6 +17,7 @@ import type {
   LogLevel,
   ModelConfig,
   ModelTransport,
+  ToolSchemaMode,
   WebSearchProviderConfig,
 } from './app.ts';
 import { OWNER_ID } from '../contracts/identity.ts';
@@ -272,6 +273,7 @@ const MODEL_KEYS = [
   'max_output_tokens',
   'opencode_headers',
   'transport',
+  'tool_schema',
 ] as const;
 
 /** 解析[models.<名字>]；密钥由调用方读取，这里只校验字段。 */
@@ -300,7 +302,16 @@ function modelEntry(name: string, raw: Table, apiKey: string): ModelConfig {
       Number.MAX_SAFE_INTEGER,
     ),
     opencodeHeaders: bool(raw, 'opencode_headers', path, false),
+    toolSchema: toolSchema(raw, path),
   };
+}
+
+function toolSchema(raw: Table, path: string): ToolSchemaMode {
+  const value = own(raw, 'tool_schema') ? raw.tool_schema : 'ts';
+  if (value !== 'ts' && value !== 'both' && value !== 'json') {
+    return fail(`${path}.tool_schema`, '必须是"ts"、"both"或"json"');
+  }
+  return value;
 }
 
 function webSearch(value: unknown): WebSearchProviderConfig | undefined {

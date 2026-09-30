@@ -16,11 +16,28 @@ import { VOICE_RULES } from './voice.ts';
 import { CUSTOM_FACE_RULES } from './custom-faces.ts';
 import { webRules } from './web.ts';
 import { OBSERVATION_BOUNDARY } from './observation.ts';
+import { declaredSystemPrompt } from './declared.ts';
+import { toolSchemaMode } from '../tool-declarations/index.ts';
+import type { ToolDefinition } from '../../contracts/tools.ts';
+import { buildToolDefinitions } from '../tool-definitions.ts';
 
 export { safetyRules };
 
-/** 会话模式的系统提示词，config须带本群groupId。各能力段仅在本群启用对应工具时出现。 */
-export function buildSystemPrompt(input: ListenerConfig): string {
+/**
+ * 会话模式的系统提示词，config须带本群groupId；tools为本轮完整工具定义，缺省按config生成。
+ * ts/both模式用TypeScript声明描述工具；json模式沿用按能力分段的规则。
+ */
+export function buildSystemPrompt(
+  input: ListenerConfig,
+  tools: readonly ToolDefinition[] = buildToolDefinitions(input),
+): string {
+  return toolSchemaMode(input) === 'json'
+    ? jsonSystemPrompt(input)
+    : declaredSystemPrompt(input, tools);
+}
+
+/** json模式：工具用法在工具描述中，这里按能力分段补充跨工具规则。 */
+function jsonSystemPrompt(input: ListenerConfig): string {
   const config = applyToolPolicies(input);
   const extended = enabledExtendedTools(config.tools.extended);
   const reactions = reactionRules({

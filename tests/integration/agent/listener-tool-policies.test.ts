@@ -17,6 +17,7 @@ import {
 import type {
   AppConfig,
   ResolvedGroupConfig,
+  ToolSchemaMode,
 } from '../../../src/config/app.ts';
 import { GroupTools } from '../../../src/tools/messaging/tools.ts';
 import { ImageTools } from '../../../src/tools/images/tools.ts';
@@ -26,6 +27,7 @@ import type { Api } from '../../../src/contracts/onebot.ts';
 import type { Memory, TimelineEntry } from '../../../src/contracts/messages.ts';
 import type { Model, ChatMessage } from '../../../src/contracts/model.ts';
 import type { JsonObject } from '../../../src/contracts/json.ts';
+import type { ToolDefinition } from '../../../src/contracts/tools.ts';
 import { sessionRuntime } from '../../support/listener-fixture.ts';
 
 const GROUP = '334455',
@@ -56,6 +58,7 @@ function policies(
 function fixture(
   overrides: Partial<ResolvedToolPolicies> = {},
   observe = false,
+  toolSchema: ToolSchemaMode = 'json',
 ) {
   const group: ResolvedGroupConfig = {
     groupId: GROUP,
@@ -102,6 +105,7 @@ function fixture(
           timeoutMs: 1000,
           maxTokens: 8192,
           opencodeHeaders: false,
+          toolSchema,
         },
       ],
     ]),
@@ -719,6 +723,84 @@ test('resolved confirm policies share TTL and require the configured owner once 
       SELF,
     );
     assert.equal(writes().length, 2);
+  } finally {
+    await bot.stop();
+  }
+});
+
+test('ts mode sends declarations to the model while confirm proposals still validate the full schema', async () => {
+  const { config } = fixture(
+      { mute_member: { mode: 'confirm', maxSeconds: 45 } },
+      false,
+      'ts',
+    ),
+    rpc = transport(),
+    memory = new Cache();
+  let captured: JsonObject[] = [];
+  let sent: { system: string; tools: ToolDefinition[] } | undefined;
+  const model: Model = {
+    async complete(messages, tools = []) {
+      sent ??= {
+        system: String(messages.find((m) => m.role === 'system')?.content),
+        tools,
+      };
+      const outputs = messages.filter((m) => m.role === 'tool');
+      if (!outputs.length) {
+        return {
+          content: null,
+          tool_calls: [
+            tool('mute_member', { user_id: MEMBER, seconds: 46 }, 'over'),
+            tool('mute_member', { user_id: MEMBER, seconds: 'x' }, 'bad'),
+            tool('mute_member', { user_id: MEMBER, seconds: 30 }, 'ok'),
+            tool(
+              'mute_member',
+              { params: { user_id: MEMBER, seconds: 30 } },
+              'wrapped',
+            ),
+            tool('get_time', { _: {} }, 'wrapped_empty'),
+          ],
+        };
+      }
+      captured = outputs.map((m) => JSON.parse(String(m.content)));
+      return { content: null, tool_calls: [tool('finish', {})] };
+    },
+  };
+  const bot = new Listener(
+    rpc.api,
+    model,
+    memory,
+    config,
+    undefined,
+    undefined,
+    undefined,
+    sessionRuntime(config.groupId).runtime,
+  );
+  try {
+    await bot.receive(incoming(), SELF);
+    await until(() => captured.length === 5);
+    const mute = sent!.tools.find((t) => t.function.name === 'mute_member')!;
+    assert.deepEqual(mute.function.parameters, {
+      type: 'object',
+      additionalProperties: true,
+    });
+    assert.match(sent!.system, /function mute_member\(_: /);
+    assert.match(sent!.system, /1 到 45/);
+    assert.deepEqual(
+      captured.map((r) => r.status),
+      ['error', 'error', 'confirmation_required', 'error', 'error'],
+    );
+    assert.deepEqual(
+      captured.slice(3).map((r) => [r.reason_code, r.hint]),
+      [
+        ['wrapped_arguments', 'arguments 应直接是参数对象，去掉外层的 params'],
+        ['wrapped_arguments', 'arguments 应直接是参数对象，去掉外层的 _'],
+      ],
+    );
+    assert.doesNotMatch(sent!.system, /\(params/);
+    assert.equal(
+      rpc.calls.filter((c) => c.action === 'send_group_msg').length,
+      1,
+    );
   } finally {
     await bot.stop();
   }

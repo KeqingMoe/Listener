@@ -35,6 +35,7 @@ npm run config:check -- --group 123456789
 | | `max_output_tokens` | 32768，安全正整数；单次模型输出预算，reasoning、正文和工具调用共享，仍受服务商限制 |
 | | `opencode_headers` | false；请求添加每群持久 `x-opencode-session` |
 | | `transport` | 默认`"chat"`；`"chat"`、`"responses"`，或`{type = "responses", incremental = false}` |
+| | `tool_schema` | 默认`"ts"`；`"ts"`、`"both"`或`"json"`，工具的呈现方式，见下文 |
 | `runtime` | `max_concurrent_turns` | 2，范围1..8；全局同时运行的唤醒数，同一群不会并行唤醒 |
 | `web` | `search` | 缺省不提供`web_search`；联网搜索服务，按`type`区分，见[联网搜索与网页读取](web.md) |
 | `storage` | `directory` | `data`，分群及全局数据文件的基准目录 |
@@ -100,6 +101,13 @@ model = "friend"
 群切换到另一个模型名时会开始新的模型会话；只修改同名模型的地址、ID或key不会自动重置，必要时由主人发送 `/reset`。
 
 `transport` 仅接受 `"chat"`、`"responses"` 或 `{type = "responses", incremental = true/false}`（最后一项为布尔值二选一）。`"responses"` 默认启用 `previous_response_id` 增量续接；`incremental = false` 发送完整上下文，`true` 启用增量续接。对象必须同时提供 `type = "responses"` 和布尔值 `incremental`，不接受chat对象、缺少incremental的对象或未知字段。
+
+`tool_schema` 决定模型如何看到工具：
+- `"ts"`：系统提示词里给出本群已启用工具的TypeScript声明（参数、返回值与用法），请求的 `tools` 只含名字、一句话概要和开放的参数对象。提示词最短。
+- `"both"`：同样给出声明，`tools` 另带完整参数结构（不含说明文字）。适合依赖结构化参数才能正确调用的模型。
+- `"json"`：不附声明，`tools` 带完整JSON Schema与说明，提示词按能力分段描述规则。
+
+三种方式下程序都按完整定义校验参数，确认队列也一样。切换会改变会话指纹，下次唤醒开始新会话。
 
 ## 群策略与继承
 

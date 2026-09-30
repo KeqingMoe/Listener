@@ -20,7 +20,7 @@
 | `src/dashboard/contracts` | 面板前后端共用的数据类型和计算 |
 | `src/dashboard/web` | Vue页面与Vite配置 |
 
-`agent/listener.ts` 负责每群唤醒编排；提示词在 `agent/prompts/`（`core.ts` 为通用规则，其余按能力分文件，`index.ts` 组装），工具定义组合在 `agent/tool-definitions.ts`。`agent/memory.ts` 管理消息缓存和摘要，与 `world` 的事实库、`agent/session` 的会话账本是不同存储。
+`agent/listener.ts` 负责每群唤醒编排；提示词在 `agent/prompts/`：`index.ts` 按模型的 `tool_schema` 选择组装方式，json 模式用 `core.ts` 的通用规则加按能力分文件的规则，ts/both 模式用 `declared.ts`（跨工具约定加工具声明）。工具定义组合在 `agent/tool-definitions.ts`，是参数校验与确认的唯一依据；`agent/tool-declarations/` 按工具给出呈现给模型的 TypeScript 声明（`common.ts` 为公共类型，其余按工具组分文件，`index.ts` 渲染声明并决定发给模型的 `tools` 形态）。`agent/memory.ts` 管理消息缓存和摘要，与 `world` 的事实库、`agent/session` 的会话账本是不同存储。
 
 ## 构建
 

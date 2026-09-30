@@ -4,6 +4,13 @@ import type { ResolvedToolPolicies } from './tool-policy.ts';
 /** 带标签的联合类型，新增provider只需加分支，无需重新解释已有字段。 */
 export type WebSearchProviderConfig = { type: 'searxng'; url: string };
 
+/**
+ * 工具的呈现方式：ts把参数与返回值写成TypeScript声明放进系统提示词、
+ * tools只给名字与一句话概要；both另在tools保留完整参数结构（无描述）；
+ * json沿用完整JSON Schema与描述，不附声明。
+ */
+export type ToolSchemaMode = 'ts' | 'both' | 'json';
+
 export type ModelTransport =
   'chat' | 'responses' | { type: 'responses'; incremental: boolean };
 
@@ -19,6 +26,7 @@ export interface ModelConfig {
   maxTokens: number;
   opencodeHeaders: boolean;
   transport: ModelTransport;
+  toolSchema: ToolSchemaMode;
 }
 
 export interface ResolvedGroupConfig {

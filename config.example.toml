@@ -24,6 +24,9 @@ model = "" # 必填：填写服务商提供的、支持工具调用的模型名�
 max_output_tokens = 32768
 # 单次模型请求最长等待；长 reasoning 可能需要更久。
 timeout_ms = 180000
+# 工具呈现方式："ts"（默认，TypeScript声明）、"both"（声明+参数结构）或"json"。
+# 模型调用工具时参数经常出错，可改为 "both"。
+# tool_schema = "ts"
 
 # 另一个模型示例：某些群改用其他服务商或另一把key。
 # [models.other]
