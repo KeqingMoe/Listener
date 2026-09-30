@@ -21,9 +21,8 @@ npm run config:check -- --group 123456789
 
 | 段 | 字段 | 默认／含义 |
 | --- | --- | --- |
-| `bot` | `name` | `Listener` |
+| `bot` | `name` | `Listener`；`/help`开头与本地时间线中Bot自己的昵称。对主人的称呼写在人设中 |
 | | `owner_id` | 主人QQ，正整数字符串；启用群服务时必须显式填写，群聊不能修改 |
-| | `owner_name` | `主人`，仅称呼，不作为身份判断依据 |
 | `onebot` | `url` | `ws://127.0.0.1:3001`；支持ws/wss，不允许URL用户名、密码、查询参数或fragment |
 | | `token_env` | `ONEBOT_ACCESS_TOKEN`，指定必填的OneBot密钥环境变量 |
 | | `api_timeout_ms` | 10000 |

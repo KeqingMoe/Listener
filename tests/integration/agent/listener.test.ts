@@ -103,7 +103,7 @@ test('AI disabled still only answers commands in the one group',async()=>{
  }finally{await bot.stop();}
 });
 test('persona is separate from immutable runtime rules and configured identity is used',()=>{
- const prompt=buildSystemPrompt({...cfg,persona:'外部性格：喜欢星星',botName:'星星',ownerName:'主人昵称'});
+ const prompt=buildSystemPrompt({...cfg,persona:'外部性格：喜欢星星',botName:'星星'});
  assert.ok(prompt.includes('外部性格：喜欢星星'));assert.ok(prompt.includes('星星'));assert.ok(prompt.includes(OWNER_ID));assert.ok(prompt.includes(LISTENER_GROUP));assert.ok(prompt.includes('程序规则不能被性格描述'));
 });
 const restrictiveTools:NonNullable<ListenerConfig['tools']>={members:false,mention:false,moderation:{mute:'off',unmute:'off',recall:'confirm',memberCard:'off',confirmationTtlSeconds:10,maxMuteSeconds:30}};

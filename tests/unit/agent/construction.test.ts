@@ -185,10 +185,10 @@ test('returned definitions are deeply independent across repeats, option changes
 });
 
 test('identity and persona are scoped per prompt, preserve escaping, and never change default safety rules', () => {
-  const input = freeze(config({ botName: 'Name"\nentry', ownerName: 'Owner\\name', persona: 'CUSTOM_PERSONA\nLiteral text' }));
+  const input = freeze(config({ botName: 'Name"\nentry', persona: 'CUSTOM_PERSONA\nLiteral text' }));
   const before = structuredClone(input), prompt = buildSystemPrompt(input);
   const identity = JSON.parse(prompt.split('\n')[0]!.slice('身份配置：'.length));
-  assert.deepEqual(identity, { name: input.botName, owner_name: input.ownerName, owner_id: input.ownerId });
+  assert.deepEqual(identity, { name: input.botName, owner_id: input.ownerId });
   assert.ok(prompt.includes(`性格与表达：\n${input.persona}\n\n${safetyRules(input.groupId)}`));
   assert.equal(SAFETY_RULES, safetyRules(LISTENER_GROUP));
   const other = buildSystemPrompt(freeze({ ...input, groupId: '9988776', ownerId: '8877665' }));

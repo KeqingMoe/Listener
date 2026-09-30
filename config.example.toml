@@ -6,7 +6,6 @@
 [bot]
 name = "Listener"
 owner_id = "100000001"
-owner_name = "主人"
 
 [onebot]
 url = "ws://127.0.0.1:3001"

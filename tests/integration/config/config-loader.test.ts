@@ -54,8 +54,9 @@ test('owner is canonical global configuration and is required for either admissi
 });
 test('strings and booleans have no coercion; removed bot group_id never grants scope',t=>{
  const f=fixture(t);for(const [scope,key]of [['runtime','ai_enabled'],['defaults','enabled'],['defaults.reply','mention'],['defaults.reply','quote_bot'],['defaults.messages','mentions'],['defaults.observation','reactions']]){f.config(`[${scope}]\n${key}="true"`);assert.throws(()=>f.load(),ConfigError);}
- for(const key of ['name','owner_name'])for(const value of ['123','""','"   "']){f.config(`[bot]\n${key}=${value}`);assert.throws(()=>f.load(),ConfigError);}
+ for(const key of ['name'])for(const value of ['123','""','"   "']){f.config(`[bot]\n${key}=${value}`);assert.throws(()=>f.load(),ConfigError);}
  f.config('[bot]\ngroup_id="22"');assert.throws(()=>f.load(),ConfigError);
+ f.config('[bot]\nowner_name="主人"');assert.throws(()=>f.load(),/bot：包含未知字段/);
 });
 test('URL security rejects credentials, query, fragment, unsupported schemes and nonlocal plaintext model URL',t=>{
  const f=fixture(t);for(const [scope,key,values]of [['onebot','url',['https://example.com','ws://user:SENSITIVE@example.com','ws://example.com/?','wss://example.com/#x','bad']],['model','base_url',['http://example.com','https://user:SENSITIVE@example.com','https://example.com/?SENSITIVE','https://example.com/#','ftp://localhost']]] as const)for(const value of values){f.config(`[${scope}]\n${key}="${value}"`);assert.throws(()=>f.load(),e=>e instanceof ConfigError&&!e.message.includes(value)&&!e.message.includes('SENSITIVE'));}

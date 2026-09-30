@@ -33,7 +33,7 @@ export function observesReactions(config:ListenerConfig):boolean {
 export function toListenerConfig(app:AppConfig,group:ResolvedGroupConfig):ResolvedListenerConfig {
   const random=group.reply.random;
   return applyToolPolicies({
-    groupId:group.groupId,ownerId:app.identity.ownerId,botName:app.identity.name,ownerName:app.identity.ownerName,
+    groupId:group.groupId,ownerId:app.identity.ownerId,botName:app.identity.name,
     enabled:group.enabled,...app.model,
     persona:group.persona,debounceMs:group.reply.delayMs[0],delayMaxMs:group.reply.delayMs[1],cooldownMs:group.reply.cooldownMs,
     mentionEnabled:group.reply.mention,quoteBotEnabled:group.reply.quoteBot,

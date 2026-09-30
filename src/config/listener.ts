@@ -31,7 +31,7 @@ export interface ListenerConfig {
   serverCompaction?: 'off' | 'auto'; compactThreshold?: number;
   memoryPath: string; maxContextChars: number; retentionDays: number;
   randomReplyProbability?: number; randomCooldownMs?: number; randomMaxPerMinute?: number; delayMaxMs?: number;
-  persona?: string; botName?: string; ownerName?: string;
+  persona?: string; botName?: string;
   mentionEnabled?: boolean; quoteBotEnabled?: boolean;
   /** Resolved authorization takes precedence over the module-specific projections below. */
   toolPermissions?: ResolvedToolPolicies;

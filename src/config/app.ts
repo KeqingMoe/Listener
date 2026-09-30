@@ -14,7 +14,7 @@ export interface ResolvedGroupConfig {
 }
 export interface AppConfig {
   configPath:string;
-  identity:{name:string;ownerId:string;ownerName:string};
+  identity:{name:string;ownerId:string};
   onebot:Config;
   model:{baseUrl:string;apiKey:string;model:string;timeoutMs:number;maxTokens:number;opencodeHeaders:boolean;transport:ModelTransport};
   runtime:{maxConcurrentTurns:number};
