@@ -398,7 +398,10 @@ export class Listener {
     this.schedule();
   }
 
-  private attentionContext(batch: ReplyBatch): JsonObject {
+  private attentionContext(
+    batch: ReplyBatch,
+    unreadOmitted: number,
+  ): JsonObject {
     let plans = this.attention!.snapshot(Date.now());
     let truncated = false;
     if (JSON.stringify(plans).length > 12000) {
@@ -420,7 +423,7 @@ export class Listener {
       details_truncated: truncated,
       triggered: batch.attentionHits,
       omitted_triggers: batch.omittedAttentionHits,
-      unread_omitted: this.unreadOmitted,
+      unread_omitted: unreadOmitted,
       ...(this.lastAttentionCommit
         ? { last_commit: this.lastAttentionCommit }
         : {}),
@@ -1426,9 +1429,11 @@ export class Listener {
         this.attention.evaluate(Date.now(), this.unreadItems().length > 0),
       );
     }
+    // 唤醒开始前封存本批丢弃的未读条数；get_wake_state在唤醒中途读取时仍报告该值。
+    const unreadOmitted = this.unreadOmitted;
     const attentionContext =
       this.attention && batch instanceof ReplyBatch
-        ? this.attentionContext(batch)
+        ? this.attentionContext(batch, unreadOmitted)
         : undefined;
     for (const item of this.unreadItems()) {
       this.unread.delete(item.sequence);
@@ -1608,7 +1613,7 @@ export class Listener {
         this.worldBudget = wakeBudget;
         this.worldState = () => ({
           ...(this.attention && batch instanceof ReplyBatch
-            ? { attention_state: this.attentionContext(batch) }
+            ? { attention_state: this.attentionContext(batch, unreadOmitted) }
             : {}),
           ...(this.config.tools.reactions
             ? { reaction_state: this.reactionContext(workingMemory) }
