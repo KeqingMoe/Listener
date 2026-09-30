@@ -1775,7 +1775,9 @@ test('wake tokens keep uncached input and cache separate and outcome filters use
   const table = page.locator('.list-pane table');
   await expect(table.locator('tbody tr')).toHaveCount(1);
   const headers = await table.locator('thead th').allTextContents();
-  const index = headers.indexOf('输入 / 缓存 / 输出');
+  const index = headers
+    .map((header) => header.trim())
+    .indexOf('输入 / 缓存 / 输出');
   expect(index).toBeGreaterThanOrEqual(0);
   await expect(
     table.locator('tbody tr').first().locator('td').nth(index),
@@ -1807,7 +1809,9 @@ test('missing wake token components remain dash instead of inferred zero or tota
   const table = page.locator('.list-pane table');
   await expect(table.locator('tbody tr')).toHaveCount(1);
   const headers = await table.locator('thead th').allTextContents();
-  const index = headers.indexOf('输入 / 缓存 / 输出');
+  const index = headers
+    .map((header) => header.trim())
+    .indexOf('输入 / 缓存 / 输出');
   expect(index).toBeGreaterThanOrEqual(0);
   await expect(
     table.locator('tbody tr').first().locator('td').nth(index),
