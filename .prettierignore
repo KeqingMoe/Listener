@@ -1,9 +1,9 @@
-node_modules/
-dist/
-dist-dashboard/
-coverage/
-data/
-prompts/
+/node_modules/
+/dist/
+/dist-dashboard/
+/coverage/
+/data/
+/prompts/
+/artifacts/
 package-lock.json
 *.md
-artifacts/
