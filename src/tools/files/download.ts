@@ -1,18 +1,19 @@
-import { lookup as dnsLookup } from "node:dns/promises";
+import { lookup as dnsLookup } from 'node:dns/promises';
 import {
   request as httpRequest,
   type ClientRequest,
   type IncomingMessage,
-} from "node:http";
-import { request as httpsRequest, type RequestOptions } from "node:https";
-import { isIP } from "node:net";
-import { isPublicAddress } from "../images/download.ts";
+} from 'node:http';
+import { request as httpsRequest, type RequestOptions } from 'node:https';
+import { isIP } from 'node:net';
+import { isPublicAddress } from '../images/download.ts';
 
 export type GroupTextDownloader = (
   url: string,
   maxBytes: number,
   signal?: AbortSignal,
 ) => Promise<string>;
+
 export interface GroupTextDownloadDependencies {
   lookup?: (
     hostname: string,
@@ -25,36 +26,40 @@ export interface GroupTextDownloadDependencies {
   /** Test-only deadline override. The production singleton always uses 15 seconds. */
   timeoutMs?: number;
 }
+
 const MAX_BYTES = 262_144;
-const failed = () => new Error("Group text download failed");
-const aborted = () => new Error("Group text download aborted");
+const failed = () => new Error('Group text download failed');
+const aborted = () => new Error('Group text download aborted');
 
 function validateUrl(value: string): URL {
   if (
-    typeof value !== "string" ||
+    typeof value !== 'string' ||
     value.length > 8192 ||
     !/^https?:\/\//i.test(value) ||
     /[\u0000-\u0020\u007f\\#]/.test(value)
-  )
+  ) {
     throw failed();
+  }
   const url = new URL(value);
   // URL normalizes explicit default ports to empty strings. Reject even an empty
   // credentials marker, not just username/password values after normalization.
   if (
-    !["http:", "https:"].includes(url.protocol) ||
+    !['http:', 'https:'].includes(url.protocol) ||
     url.port ||
     url.username ||
     url.password ||
     url.hash ||
-    value.split("/")[2]?.includes("@") ||
+    value.split('/')[2]?.includes('@') ||
     !url.hostname
-  )
+  ) {
     throw failed();
+  }
   return url;
 }
+
 function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
-    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    const cleanup = () => signal.removeEventListener('abort', onAbort);
     const onAbort = () => {
       cleanup();
       reject(aborted());
@@ -64,7 +69,7 @@ function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
       onAbort();
       return;
     }
-    signal.addEventListener("abort", onAbort, { once: true });
+    signal.addEventListener('abort', onAbort, { once: true });
     work.then(
       (value) => {
         cleanup();
@@ -91,14 +96,17 @@ export function createGroupTextDownloader(
   const request =
     dependencies.request ??
     ((options, callback) =>
-      options.protocol === "http:"
+      options.protocol === 'http:'
         ? httpRequest(options, callback)
         : httpsRequest(options, callback));
   const deadline = dependencies.timeoutMs ?? 15_000;
-  if (!Number.isSafeInteger(deadline) || deadline < 1 || deadline > 15_000)
+  if (!Number.isSafeInteger(deadline) || deadline < 1 || deadline > 15_000) {
     throw failed();
+  }
   return async (value, maxBytes, callerSignal) => {
-    if (callerSignal?.aborted) throw aborted();
+    if (callerSignal?.aborted) {
+      throw aborted();
+    }
     let url: URL;
     try {
       url = validateUrl(value);
@@ -106,8 +114,9 @@ export function createGroupTextDownloader(
         !Number.isSafeInteger(maxBytes) ||
         maxBytes < 1 ||
         maxBytes > MAX_BYTES
-      )
+      ) {
         throw failed();
+      }
     } catch {
       throw failed();
     }
@@ -115,13 +124,13 @@ export function createGroupTextDownloader(
       signal = controller.signal;
     let timedOut = false;
     const cancel = () => controller.abort();
-    callerSignal?.addEventListener("abort", cancel, { once: true });
+    callerSignal?.addEventListener('abort', cancel, { once: true });
     const timer = setTimeout(() => {
       timedOut = true;
       controller.abort();
     }, deadline);
     try {
-      const hostname = url.hostname.startsWith("[")
+      const hostname = url.hostname.startsWith('[')
         ? url.hostname.slice(1, -1)
         : url.hostname;
       const literalFamily = isIP(hostname);
@@ -139,28 +148,35 @@ export function createGroupTextDownloader(
             !isPublicAddress(entry.address) ||
             isIP(entry.address) !== entry.family,
         )
-      )
+      ) {
         throw failed();
+      }
       // Capture primitive values, not a mutable resolver-owned record.
       const { address, family } = addresses[0]!;
-      if (signal.aborted) throw aborted();
+      if (signal.aborted) {
+        throw aborted();
+      }
       const bytes = await new Promise<Buffer>((resolve, reject) => {
         let req: ClientRequest | undefined,
           response: IncomingMessage | undefined,
           settled = false;
-        const cleanup = () => signal.removeEventListener("abort", onAbort);
+        const cleanup = () => signal.removeEventListener('abort', onAbort);
         const finish = (error?: Error, result?: Buffer) => {
-          if (settled) return;
+          if (settled) {
+            return;
+          }
           settled = true;
           cleanup();
           if (error) {
             reject(error);
             response?.destroy();
             req?.destroy();
-          } else resolve(result!);
+          } else {
+            resolve(result!);
+          }
         };
         const onAbort = () => finish(aborted());
-        signal.addEventListener("abort", onAbort, { once: true });
+        signal.addEventListener('abort', onAbort, { once: true });
         if (signal.aborted) {
           onAbort();
           return;
@@ -170,10 +186,10 @@ export function createGroupTextDownloader(
             {
               protocol: url.protocol,
               hostname,
-              port: url.protocol === "https:" ? 443 : 80,
-              method: "GET",
+              port: url.protocol === 'https:' ? 443 : 80,
+              method: 'GET',
               path: `${url.pathname}${url.search}`,
-              ...(url.protocol === "https:"
+              ...(url.protocol === 'https:'
                 ? {
                     rejectUnauthorized: true,
                     ...(!literalFamily ? { servername: hostname } : {}),
@@ -185,17 +201,20 @@ export function createGroupTextDownloader(
               // Pin connection DNS while retaining the original host for Host/SNI and
               // native certificate verification. No proxy agent or caller headers.
               lookup: (_hostname, options, callback) => {
-                if (options.all) callback(null, [{ address: address, family }]);
-                else callback(null, address, family);
+                if (options.all) {
+                  callback(null, [{ address: address, family }]);
+                } else {
+                  callback(null, address, family);
+                }
               },
               headers: {
-                Accept: "text/plain, application/octet-stream;q=0.5",
-                "Accept-Encoding": "identity",
+                Accept: 'text/plain, application/octet-stream;q=0.5',
+                'Accept-Encoding': 'identity',
               },
             },
             (incoming) => {
               response = incoming;
-              incoming.on("error", () => finish(failed()));
+              incoming.on('error', () => finish(failed()));
               if (settled) {
                 incoming.destroy();
                 return;
@@ -204,15 +223,15 @@ export function createGroupTextDownloader(
                 finish(failed());
                 return;
               }
-              const encoding = incoming.headers["content-encoding"];
-              if (encoding !== undefined && encoding !== "identity") {
+              const encoding = incoming.headers['content-encoding'];
+              if (encoding !== undefined && encoding !== 'identity') {
                 finish(failed());
                 return;
               }
-              const declared = incoming.headers["content-length"];
+              const declared = incoming.headers['content-length'];
               if (
                 declared !== undefined &&
-                (typeof declared !== "string" ||
+                (typeof declared !== 'string' ||
                   !/^\d+$/.test(declared) ||
                   Number(declared) > maxBytes)
               ) {
@@ -221,8 +240,10 @@ export function createGroupTextDownloader(
               }
               const chunks: Buffer[] = [];
               let total = 0;
-              incoming.on("data", (chunk: unknown) => {
-                if (settled) return;
+              incoming.on('data', (chunk: unknown) => {
+                if (settled) {
+                  return;
+                }
                 if (!Buffer.isBuffer(chunk)) {
                   finish(failed());
                   return;
@@ -232,47 +253,62 @@ export function createGroupTextDownloader(
                   finish(failed());
                   return;
                 }
-                if (chunk.length) chunks.push(chunk);
+                if (chunk.length) {
+                  chunks.push(chunk);
+                }
               });
-              incoming.on("aborted", () => finish(failed()));
-              incoming.on("end", () => {
+              incoming.on('aborted', () => finish(failed()));
+              incoming.on('end', () => {
                 if (
                   !incoming.complete ||
                   (declared !== undefined && total !== Number(declared))
-                )
+                ) {
                   finish(failed());
-                else finish(undefined, Buffer.concat(chunks, total));
+                } else {
+                  finish(undefined, Buffer.concat(chunks, total));
+                }
               });
-              incoming.on("close", () => {
-                if (!settled) finish(failed());
+              incoming.on('close', () => {
+                if (!settled) {
+                  finish(failed());
+                }
               });
             },
           );
-          req.on("error", () => finish(failed()));
-          if (signal.aborted) onAbort();
-          if (settled) req.destroy();
-          else req.end();
+          req.on('error', () => finish(failed()));
+          if (signal.aborted) {
+            onAbort();
+          }
+          if (settled) {
+            req.destroy();
+          } else {
+            req.end();
+          }
         } catch {
           finish(failed());
         }
       });
-      if (signal.aborted) throw aborted();
-      const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      if (signal.aborted) {
+        throw aborted();
+      }
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
       // Permit normal text whitespace (TAB/LF/CR), never NUL/ESC or C1 controls.
-      if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(text))
+      if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(text)) {
         throw failed();
+      }
       return text;
     } catch {
       throw timedOut
-        ? new Error("Group text download timed out")
+        ? new Error('Group text download timed out')
         : callerSignal?.aborted
           ? aborted()
           : failed();
     } finally {
       clearTimeout(timer);
-      callerSignal?.removeEventListener("abort", cancel);
+      callerSignal?.removeEventListener('abort', cancel);
     }
   };
 }
+
 export const downloadGroupText: GroupTextDownloader =
   createGroupTextDownloader();

@@ -1,9 +1,16 @@
-import { createHash, randomBytes } from "node:crypto";
-import { resolveGroupId } from "../../contracts/identity.ts";
-import { type Api } from "../../contracts/onebot.ts";
-import { type JsonObject } from "../../contracts/json.ts";
-import { type ToolDefinition, type TurnContext } from "../../contracts/tools.ts";
-import { afterDispatch, submittedResult, writeFailure } from '../../onebot/operation-result.ts';
+import { createHash, randomBytes } from 'node:crypto';
+import { resolveGroupId } from '../../contracts/identity.ts';
+import { type Api } from '../../contracts/onebot.ts';
+import { type JsonObject } from '../../contracts/json.ts';
+import {
+  type ToolDefinition,
+  type TurnContext,
+} from '../../contracts/tools.ts';
+import {
+  afterDispatch,
+  submittedResult,
+  writeFailure,
+} from '../../onebot/operation-result.ts';
 
 // Pinned NapCat v4.18.28 contracts:
 // packages/napcat-onebot/action/system/GetSystemMsg.ts: join_requests = type 7,
@@ -13,14 +20,15 @@ import { afterDispatch, submittedResult, writeFailure } from '../../onebot/opera
 // it accepts flag/approve/reason/count, WITHOUT group_id, and discards the ACK.
 // Do not extend this bridge to imprecise numbers or invitations to join groups.
 export const GROUP_REQUEST_TOOL_NAMES = Object.freeze([
-  "list_group_requests",
-  "respond_group_request",
+  'list_group_requests',
+  'respond_group_request',
 ] as const);
 const TTL_MS = 15 * 60 * 1000,
   CAPACITY = 4096,
   SOURCE_LIMIT = 1000, // Bounded account-wide prefix, never a completeness claim.
   OUTPUT_LIMIT = 24 * 1024;
 const NAMES = new Set<string>(GROUP_REQUEST_TOOL_NAMES);
+
 interface Handle {
   key: string;
   flag: string;
@@ -28,62 +36,76 @@ interface Handle {
   self: string;
   expires: number;
 }
+
 interface Pending {
   key: string;
   flag: string;
   applicant: string;
   raw: JsonObject;
 }
+
 function record(value: unknown): value is JsonObject {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
   try {
     return (
       [Object.prototype, null].includes(Object.getPrototypeOf(value)) &&
       Reflect.ownKeys(value).every(
         (k) =>
-          typeof k === "string" &&
-          Object.hasOwn(Object.getOwnPropertyDescriptor(value, k)!, "value"),
+          typeof k === 'string' &&
+          Object.hasOwn(Object.getOwnPropertyDescriptor(value, k)!, 'value'),
       )
     );
   } catch {
     return false;
   }
 }
+
 function id(value: unknown): string | undefined {
-  if (typeof value === "number")
+  if (typeof value === 'number') {
     return Number.isSafeInteger(value) && value > 0 ? String(value) : undefined;
-  return typeof value === "string" && /^[1-9]\d{0,31}$/.test(value)
+  }
+  return typeof value === 'string' && /^[1-9]\d{0,31}$/.test(value)
     ? value
     : undefined;
 }
+
 function safeNatural(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
+
 function flag(value: unknown): string | undefined {
   // The audited response is a number. String flags supplied by arbitrary raw
   // responses are not an alternative schema. Never recover rounded precision.
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
     ? String(value)
     : undefined;
 }
+
 class Denied extends Error {
   constructor(readonly code: string) {
     super(code);
   }
 }
+
 function fail(code: string): never {
   throw new Denied(code);
 }
+
 function text(value: unknown): string | undefined {
-  if (typeof value !== "string") return;
+  if (typeof value !== 'string') {
+    return;
+  }
   return value
     .slice(0, 1024)
-    .replace(/[\u0000-\u001f\u007f\p{Cs}]/gu, "")
-    .replace(/\[CQ:[^\]]*(?:\]|$)/g, "[unsupported segment]")
-    .replace(/(?:https?:\/\/|file:\/\/|data:)[^\s]*/gi, "[redacted]");
+    .replace(/[\u0000-\u001f\u007f\p{Cs}]/gu, '')
+    .replace(/\[CQ:[^\]]*(?:\]|$)/g, '[unsupported segment]')
+    .replace(/(?:https?:\/\/|file:\/\/|data:)[^\s]*/gi, '[redacted]');
 }
+
 function schema(properties: JsonObject, required: string[]): JsonObject {
-  return { type: "object", additionalProperties: false, properties, required };
+  return { type: 'object', additionalProperties: false, properties, required };
 }
 
 /** Persistent per Listener. reset() revokes capabilities, never unknown locks.
@@ -95,7 +117,11 @@ export class GroupRequestTools {
   private readonly enabled: ReadonlySet<string>;
   private readonly handles = new Map<string, Handle>();
   private readonly uncertain = new Set<string>();
-  private readonly submitted = new Map<string, { intent: string; applicant: string; result: JsonObject }>();
+  private readonly submitted = new Map<
+    string,
+    { intent: string; applicant: string; result: JsonObject }
+  >();
+
   private epoch = 0;
   private serial: Promise<void> = Promise.resolve();
   constructor(
@@ -104,71 +130,118 @@ export class GroupRequestTools {
     enabledNames: readonly string[] = [],
   ) {
     this.groupId = resolveGroupId(groupId);
-    if (!Array.isArray(enabledNames) || enabledNames.some((n) => !NAMES.has(n)))
-      throw new Error("Invalid group request capabilities");
+    if (
+      !Array.isArray(enabledNames) ||
+      enabledNames.some((n) => !NAMES.has(n))
+    ) {
+      throw new Error('Invalid group request capabilities');
+    }
     this.enabled = new Set(enabledNames);
   }
+
   reset(): void {
     this.epoch++;
     this.handles.clear();
   }
+
   /** Wake boundaries intentionally preserve handles and unknown locks. */
   resetWake(): void {}
   definitions(): ToolDefinition[] {
     const list: ToolDefinition[] = [
       {
-        type: "function",
+        type: 'function',
         function: {
-          name: "list_group_requests",
+          name: 'list_group_requests',
           description:
-            "读取当前群尚待处理的直接入群申请，须Bot为本群管理员或群主。仅返回本群有损过滤后的观察与15分钟临时request_handle，不接受/输出原始flag；不显示邀请Bot加入其他群的请求。limit为必填正安全整数，offset仅对本次新查询快照本地分页；上游仅读取全账号最多1000条通知形成的前缀，不是本群全部申请；未见不表示不存在，覆盖及缺字段情况未知，不承诺列尽。",
+            '读取当前群尚待处理的直接入群申请，须Bot为本群管理员或群主。仅返回本群有损过滤后的观察与15分钟临时request_handle，不接受/输出原始flag；不显示邀请Bot加入其他群的请求。limit为必填正安全整数，offset仅对本次新查询快照本地分页；上游仅读取全账号最多1000条通知形成的前缀，不是本群全部申请；未见不表示不存在，覆盖及缺字段情况未知，不承诺列尽。',
           parameters: schema(
             {
-              limit: { type: "integer", minimum: 1 },
-              offset: { type: "integer", minimum: 0 },
+              limit: { type: 'integer', minimum: 1 },
+              offset: { type: 'integer', minimum: 0 },
             },
-            ["limit"],
+            ['limit'],
           ),
         },
       },
       {
-        type: "function",
+        type: 'function',
         function: {
-          name: "respond_group_request",
+          name: 'respond_group_request',
           description:
-            "处理通过list_group_requests获得的本群申请handle；approve和reason都必填，同意时reason必须为空串，拒绝理由原样发送且最多512 UTF-8字节。重新核验本群申请仍待处理、申请人、Bot身份与管理员权限。依本群配置直接执行或等待主人确认；正常返回表示申请处理请求已提交，不代表已观察到成员加入，禁止重复或反向处理同一申请。异常导致结果未知时同样不自动重试，其他独立申请不受影响。",
+            '处理通过list_group_requests获得的本群申请handle；approve和reason都必填，同意时reason必须为空串，拒绝理由原样发送且最多512 UTF-8字节。重新核验本群申请仍待处理、申请人、Bot身份与管理员权限。依本群配置直接执行或等待主人确认；正常返回表示申请处理请求已提交，不代表已观察到成员加入，禁止重复或反向处理同一申请。异常导致结果未知时同样不自动重试，其他独立申请不受影响。',
           parameters: schema(
             {
-              request_handle: { type: "string", pattern: "^grq_[0-9a-f]{48}$" },
-              approve: { type: "boolean" },
-              reason: { type: "string", maxLength: 512 },
+              request_handle: { type: 'string', pattern: '^grq_[0-9a-f]{48}$' },
+              approve: { type: 'boolean' },
+              reason: { type: 'string', maxLength: 512 },
             },
-            ["request_handle", "approve", "reason"],
+            ['request_handle', 'approve', 'reason'],
           ),
         },
       },
     ];
     return list.filter((t) => this.enabled.has(t.function.name));
   }
-  private validate(name: string, value: unknown, context: TurnContext, generation: number, signal?: AbortSignal): {args: JsonObject; self: string} {
+
+  private validate(
+    name: string,
+    value: unknown,
+    context: TurnContext,
+    generation: number,
+    signal?: AbortSignal,
+  ): { args: JsonObject; self: string } {
     this.check(generation, signal);
-    if (!NAMES.has(name) || !this.enabled.has(name)) fail("tool_disabled");
-    if (!record(context) || context.groupId !== this.groupId) fail("forbidden_group");
-    if (typeof context.selfId !== "string" || id(context.selfId) !== context.selfId) fail("invalid_identity");
-    return {args: this.parse(name, value), self: context.selfId};
+    if (!NAMES.has(name) || !this.enabled.has(name)) {
+      fail('tool_disabled');
+    }
+    if (!record(context) || context.groupId !== this.groupId) {
+      fail('forbidden_group');
+    }
+    if (
+      typeof context.selfId !== 'string' ||
+      id(context.selfId) !== context.selfId
+    ) {
+      fail('invalid_identity');
+    }
+    return { args: this.parse(name, value), self: context.selfId };
   }
+
   /** Read-only current-request proof for an owner confirmation; flags never leave this class. */
-  async confirmationDetails(name: string, value: unknown, context: TurnContext, signal?: AbortSignal): Promise<string> {
+  async confirmationDetails(
+    name: string,
+    value: unknown,
+    context: TurnContext,
+    signal?: AbortSignal,
+  ): Promise<string> {
     const generation = this.epoch;
     try {
-      const {args, self} = this.validate(name, value, context, generation, signal);
-      if (name !== "respond_group_request") fail("invalid_arguments");
-      const {current} = await this.verifiedRequest(args, self, generation, signal);
-      return JSON.stringify({群号: this.groupId, 操作: args.approve ? "同意入群申请" : "拒绝入群申请", 申请人QQ: current.applicant, 拒绝理由: args.reason});
+      const { args, self } = this.validate(
+        name,
+        value,
+        context,
+        generation,
+        signal,
+      );
+      if (name !== 'respond_group_request') {
+        fail('invalid_arguments');
+      }
+      const { current } = await this.verifiedRequest(
+        args,
+        self,
+        generation,
+        signal,
+      );
+      return JSON.stringify({
+        群号: this.groupId,
+        操作: args.approve ? '同意入群申请' : '拒绝入群申请',
+        申请人QQ: current.applicant,
+        拒绝理由: args.reason,
+      });
     } catch (error) {
       fail(this.error(error, signal).error as string);
     }
   }
+
   async execute(
     name: string,
     value: unknown,
@@ -178,7 +251,13 @@ export class GroupRequestTools {
     const generation = this.epoch;
     let args: JsonObject, self: string;
     try {
-      ({args, self} = this.validate(name, value, context, generation, signal));
+      ({ args, self } = this.validate(
+        name,
+        value,
+        context,
+        generation,
+        signal,
+      ));
     } catch (error) {
       return this.error(error, signal);
     }
@@ -191,7 +270,7 @@ export class GroupRequestTools {
       await before;
       this.check(generation, signal);
       this.prune();
-      return name === "list_group_requests"
+      return name === 'list_group_requests'
         ? await this.list(args, self, generation, signal)
         : await this.respond(args, self, generation, signal);
     } catch (error) {
@@ -200,57 +279,73 @@ export class GroupRequestTools {
       release();
     }
   }
+
   private parse(name: string, value: unknown): JsonObject {
     const allowed =
-      name === "list_group_requests"
-        ? ["limit", "offset"]
-        : ["request_handle", "approve", "reason"];
-    if (!record(value) || Object.keys(value).some((k) => !allowed.includes(k)))
-      fail("invalid_arguments");
-    if (name === "list_group_requests") {
+      name === 'list_group_requests'
+        ? ['limit', 'offset']
+        : ['request_handle', 'approve', 'reason'];
+    if (
+      !record(value) ||
+      Object.keys(value).some((k) => !allowed.includes(k))
+    ) {
+      fail('invalid_arguments');
+    }
+    if (name === 'list_group_requests') {
       if (
-        !Object.hasOwn(value, "limit") ||
+        !Object.hasOwn(value, 'limit') ||
         !safeNatural(value.limit) ||
         value.limit === 0 ||
-        (Object.hasOwn(value, "offset") && !safeNatural(value.offset))
-      )
-        fail("invalid_arguments");
+        (Object.hasOwn(value, 'offset') && !safeNatural(value.offset))
+      ) {
+        fail('invalid_arguments');
+      }
       return { limit: value.limit, offset: value.offset ?? 0 };
     }
     if (
       Object.keys(value).length !== 3 ||
-      typeof value.request_handle !== "string" ||
+      typeof value.request_handle !== 'string' ||
       !/^grq_[0-9a-f]{48}$/.test(value.request_handle) ||
-      typeof value.approve !== "boolean" ||
-      typeof value.reason !== "string" ||
+      typeof value.approve !== 'boolean' ||
+      typeof value.reason !== 'string' ||
       Buffer.byteLength(value.reason) > 512 ||
       /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\p{Cs}]/u.test(
         value.reason,
       ) ||
-      (value.approve && value.reason !== "")
-    )
-      fail("invalid_arguments");
+      (value.approve && value.reason !== '')
+    ) {
+      fail('invalid_arguments');
+    }
     return {
       request_handle: value.request_handle,
       approve: value.approve,
       reason: value.reason,
     };
   }
+
   private check(generation: number, signal?: AbortSignal): void {
-    if (signal?.aborted) fail("cancelled");
-    if (generation !== this.epoch) fail("capabilities_revoked");
+    if (signal?.aborted) {
+      fail('cancelled');
+    }
+    if (generation !== this.epoch) {
+      fail('capabilities_revoked');
+    }
   }
+
   private error(error: unknown, signal?: AbortSignal): JsonObject {
     return {
-      status: "error",
+      status: 'error',
       error: signal?.aborted
-        ? "cancelled"
+        ? 'cancelled'
         : error instanceof Denied
           ? error.code
-          : "verification_failed",
-      ...(error instanceof Denied && error.code === 'request_already_submitted' ? {previous_submitted:true,dispatched:false} : {}),
+          : 'verification_failed',
+      ...(error instanceof Denied && error.code === 'request_already_submitted'
+        ? { previous_submitted: true, dispatched: false }
+        : {}),
     };
   }
+
   private async read(
     action: string,
     params: JsonObject,
@@ -263,20 +358,23 @@ export class GroupRequestTools {
       value = await this.api.call(action, params);
     } catch {
       this.check(generation, signal);
-      fail("verification_unavailable");
+      fail('verification_unavailable');
     }
     this.check(generation, signal);
     return value;
   }
+
   private async authorize(
     self: string,
     generation: number,
     signal?: AbortSignal,
   ): Promise<void> {
-    const login = await this.read("get_login_info", {}, generation, signal);
-    if (!record(login) || id(login.user_id) !== self) fail("identity_mismatch");
+    const login = await this.read('get_login_info', {}, generation, signal);
+    if (!record(login) || id(login.user_id) !== self) {
+      fail('identity_mismatch');
+    }
     const member = await this.read(
-      "get_group_member_info",
+      'get_group_member_info',
       { group_id: this.groupId, user_id: self, no_cache: true },
       generation,
       signal,
@@ -285,23 +383,27 @@ export class GroupRequestTools {
       !record(member) ||
       id(member.group_id) !== this.groupId ||
       id(member.user_id) !== self
-    )
-      fail("verification_failed");
-    if (member.role !== "admin" && member.role !== "owner")
-      fail("permission_denied");
+    ) {
+      fail('verification_failed');
+    }
+    if (member.role !== 'admin' && member.role !== 'owner') {
+      fail('permission_denied');
+    }
   }
+
   private key(self: string, nativeFlag: string): string {
-    return createHash("sha256")
+    return createHash('sha256')
       .update(JSON.stringify([self, this.groupId, nativeFlag]))
-      .digest("hex");
+      .digest('hex');
   }
+
   private async pending(
     self: string,
     generation: number,
     signal?: AbortSignal,
   ): Promise<Pending[]> {
     const raw = await this.read(
-      "get_group_system_msg",
+      'get_group_system_msg',
       { count: SOURCE_LIMIT },
       generation,
       signal,
@@ -310,8 +412,9 @@ export class GroupRequestTools {
       !record(raw) ||
       !Array.isArray(raw.join_requests) ||
       !Array.isArray(raw.invited_requests)
-    )
-      fail("invalid_response");
+    ) {
+      fail('invalid_response');
+    }
     const invitations = raw.invited_requests;
     // Compatibility alias is included for ambiguity checking, without counting
     // exact alias entries as duplicates. A different matching invite always blocks.
@@ -319,20 +422,25 @@ export class GroupRequestTools {
     if (
       raw.join_requests.length + invitations.length > SOURCE_LIMIT ||
       alias.length > SOURCE_LIMIT
-    )
-      fail("resource_limit");
+    ) {
+      fail('resource_limit');
+    }
     const seen = new Map<string, number>(),
       blocked = new Set<string>();
     for (const row of raw.join_requests) {
       if (record(row)) {
         const f = flag(row.request_id);
-        if (f) seen.set(f, (seen.get(f) ?? 0) + 1);
+        if (f) {
+          seen.set(f, (seen.get(f) ?? 0) + 1);
+        }
       }
     }
     for (const row of [...invitations, ...alias]) {
       if (record(row)) {
         const f = flag(row.request_id);
-        if (f) blocked.add(f);
+        if (f) {
+          blocked.add(f);
+        }
       }
     }
     const result: Pending[] = [];
@@ -341,8 +449,9 @@ export class GroupRequestTools {
         !record(row) ||
         id(row.group_id) !== this.groupId ||
         row.checked !== false
-      )
+      ) {
         continue;
+      }
       const nativeFlag = flag(row.request_id),
         applicant = id(row.invitor_uin);
       if (
@@ -350,8 +459,9 @@ export class GroupRequestTools {
         !applicant ||
         seen.get(nativeFlag) !== 1 ||
         blocked.has(nativeFlag)
-      )
+      ) {
         continue;
+      }
       result.push({
         key: this.key(self, nativeFlag),
         flag: nativeFlag,
@@ -361,17 +471,30 @@ export class GroupRequestTools {
     }
     return result;
   }
+
   private prune(): void {
     const now = Date.now();
-    for (const [token, h] of this.handles)
-      if (h.expires <= now) this.handles.delete(token);
+    for (const [token, h] of this.handles) {
+      if (h.expires <= now) {
+        this.handles.delete(token);
+      }
+    }
   }
+
   private issue(row: Pending, self: string): string {
-    for (const [token, h] of this.handles)
-      if (h.key === row.key && h.applicant === row.applicant && h.self === self)
+    for (const [token, h] of this.handles) {
+      if (
+        h.key === row.key &&
+        h.applicant === row.applicant &&
+        h.self === self
+      ) {
         return token;
-    if (this.handles.size >= CAPACITY) fail("handle_capacity");
-    const token = `grq_${randomBytes(24).toString("hex")}`;
+      }
+    }
+    if (this.handles.size >= CAPACITY) {
+      fail('handle_capacity');
+    }
+    const token = `grq_${randomBytes(24).toString('hex')}`;
     this.handles.set(token, {
       key: row.key,
       flag: row.flag,
@@ -381,6 +504,7 @@ export class GroupRequestTools {
     });
     return token;
   }
+
   private async list(
     args: JsonObject,
     self: string,
@@ -398,7 +522,7 @@ export class GroupRequestTools {
     const items: JsonObject[] = [];
     let index = offset,
       bytes = 0,
-      reason = "limit";
+      reason = 'limit';
     for (; index < end; index++) {
       const row = rows[index]!;
       const item: JsonObject = {
@@ -408,20 +532,31 @@ export class GroupRequestTools {
       };
       const message = text(row.raw.message),
         nickname = text(row.raw.requester_nick);
-      if (message !== undefined) item.message = message;
-      if (nickname !== undefined) item.applicant_nickname = nickname;
+      if (message !== undefined) {
+        item.message = message;
+      }
+      if (nickname !== undefined) {
+        item.applicant_nickname = nickname;
+      }
       if (
-        (typeof row.raw.message === "string" &&
+        (typeof row.raw.message === 'string' &&
           row.raw.message.length > 1024) ||
-        (typeof row.raw.requester_nick === "string" &&
+        (typeof row.raw.requester_nick === 'string' &&
           row.raw.requester_nick.length > 1024)
-      )
+      ) {
         item.content_truncated = true;
-      if (this.uncertain.has(row.key)) item.previous_outcome = "unknown";
-      else if (this.submitted.has(row.key)) item.previous_outcome = this.submitted.get(row.key)!.applicant === row.applicant ? 'submitted' : 'identity_conflict';
+      }
+      if (this.uncertain.has(row.key)) {
+        item.previous_outcome = 'unknown';
+      } else if (this.submitted.has(row.key)) {
+        item.previous_outcome =
+          this.submitted.get(row.key)!.applicant === row.applicant
+            ? 'submitted'
+            : 'identity_conflict';
+      }
       const size = Buffer.byteLength(JSON.stringify(item)) + 150;
       if (bytes + size > OUTPUT_LIMIT - 2000) {
-        reason = "output_limit";
+        reason = 'output_limit';
         break;
       }
       try {
@@ -430,9 +565,10 @@ export class GroupRequestTools {
         item.request_handle_expires_at =
           this.handles.get(token)!.expires / 1000;
       } catch (error) {
-        if (!(error instanceof Denied) || error.code !== "handle_capacity")
+        if (!(error instanceof Denied) || error.code !== 'handle_capacity') {
           throw error;
-        reason = "handle_capacity";
+        }
+        reason = 'handle_capacity';
         break;
       }
       items.push(item);
@@ -441,7 +577,7 @@ export class GroupRequestTools {
     this.check(generation, signal);
     const more = index < rows.length;
     const result: JsonObject = {
-      status: "ok",
+      status: 'ok',
       untrusted: true,
       group_id: this.groupId,
       queried_at: Date.now() / 1000,
@@ -452,31 +588,40 @@ export class GroupRequestTools {
       next_offset: more ? index : null,
       has_more: more,
       truncated: more || items.some((x) => x.content_truncated === true),
-      reason: more ? reason : "end_of_observed_requests",
+      reason: more ? reason : 'end_of_observed_requests',
       total: rows.length,
-      total_scope: "eligible_observed_current_group_requests",
-      completeness: "unknown_upstream_coverage_and_unverifiable_entries",
-      upstream_coverage: "bounded_account_prefix_missing_is_not_absence",
+      total_scope: 'eligible_observed_current_group_requests',
+      completeness: 'unknown_upstream_coverage_and_unverifiable_entries',
+      upstream_coverage: 'bounded_account_prefix_missing_is_not_absence',
       upstream_has_more: null,
-      pagination: "local_slice_of_fresh_response",
+      pagination: 'local_slice_of_fresh_response',
       handle_ttl_seconds: TTL_MS / 1000,
     };
-    if (Buffer.byteLength(JSON.stringify(result)) > OUTPUT_LIMIT)
-      fail("resource_limit");
+    if (Buffer.byteLength(JSON.stringify(result)) > OUTPUT_LIMIT) {
+      fail('resource_limit');
+    }
     return result;
   }
+
   private async verifiedRequest(
     args: JsonObject,
     self: string,
     generation: number,
     signal?: AbortSignal,
-  ): Promise<{handle: Handle; current: Pending}> {
+  ): Promise<{ handle: Handle; current: Pending }> {
     const handle = this.handles.get(args.request_handle as string);
-    if (!handle || handle.expires <= Date.now() || handle.self !== self)
-      fail("invalid_request_handle");
-    if (this.uncertain.has(handle.key)) fail("previous_result_unknown");
-    if (this.submitted.has(handle.key)) fail('request_already_submitted');
-    if (this.uncertain.size + this.submitted.size >= CAPACITY) fail("outcome_lock_capacity");
+    if (!handle || handle.expires <= Date.now() || handle.self !== self) {
+      fail('invalid_request_handle');
+    }
+    if (this.uncertain.has(handle.key)) {
+      fail('previous_result_unknown');
+    }
+    if (this.submitted.has(handle.key)) {
+      fail('request_already_submitted');
+    }
+    if (this.uncertain.size + this.submitted.size >= CAPACITY) {
+      fail('outcome_lock_capacity');
+    }
     await this.authorize(self, generation, signal);
     const rows = await this.pending(self, generation, signal);
     const current = rows.find(
@@ -485,54 +630,115 @@ export class GroupRequestTools {
         row.applicant === handle.applicant &&
         row.flag === handle.flag,
     );
-    if (!current) fail("request_not_pending_or_changed");
+    if (!current) {
+      fail('request_not_pending_or_changed');
+    }
     // List fetching can be slow. Refresh both account identity and authority
     // immediately before dispatch rather than reusing the pre-query role.
     await this.authorize(self, generation, signal);
     if (
       handle.expires <= Date.now() ||
       this.handles.get(args.request_handle as string) !== handle
-    )
-      fail("invalid_request_handle");
+    ) {
+      fail('invalid_request_handle');
+    }
     this.check(generation, signal);
-    if (this.uncertain.has(handle.key)) fail("previous_result_unknown");
-    if (this.submitted.has(handle.key)) fail('request_already_submitted');
-    return {handle, current};
+    if (this.uncertain.has(handle.key)) {
+      fail('previous_result_unknown');
+    }
+    if (this.submitted.has(handle.key)) {
+      fail('request_already_submitted');
+    }
+    return { handle, current };
   }
-  private async respond(args: JsonObject, self: string, generation: number, signal?: AbortSignal): Promise<JsonObject> {
+
+  private async respond(
+    args: JsonObject,
+    self: string,
+    generation: number,
+    signal?: AbortSignal,
+  ): Promise<JsonObject> {
     const token = this.handles.get(args.request_handle as string);
-    const intent = createHash('sha256').update(JSON.stringify([args.approve,args.reason])).digest('hex');
+    const intent = createHash('sha256')
+      .update(JSON.stringify([args.approve, args.reason]))
+      .digest('hex');
     if (token && token.self === self && token.expires > Date.now()) {
       const prior = this.submitted.get(token.key);
       if (prior) {
-        await this.authorize(self,generation,signal);
-        this.check(generation,signal);
-        if (this.handles.get(args.request_handle as string) !== token || token.expires <= Date.now()) fail('invalid_request_handle');
-        if (prior.applicant !== token.applicant) return {status:'error',error:'request_identity_changed',previous_submitted:true,dispatched:false};
+        await this.authorize(self, generation, signal);
+        this.check(generation, signal);
+        if (
+          this.handles.get(args.request_handle as string) !== token ||
+          token.expires <= Date.now()
+        ) {
+          fail('invalid_request_handle');
+        }
+        if (prior.applicant !== token.applicant) {
+          return {
+            status: 'error',
+            error: 'request_identity_changed',
+            previous_submitted: true,
+            dispatched: false,
+          };
+        }
         return prior.intent === intent
-          ? {...structuredClone(prior.result),cached:true,dispatched:false}
-          : {status:'error',error:'request_already_submitted',previous_submitted:true,dispatched:false};
+          ? {
+              ...structuredClone(prior.result),
+              cached: true,
+              dispatched: false,
+            }
+          : {
+              status: 'error',
+              error: 'request_already_submitted',
+              previous_submitted: true,
+              dispatched: false,
+            };
       }
     }
-    const {handle} = await this.verifiedRequest(args, self, generation, signal);
+    const { handle } = await this.verifiedRequest(
+      args,
+      self,
+      generation,
+      signal,
+    );
     this.uncertain.add(handle.key); // Reserve before external effects, including reset races.
     let result: JsonObject;
     try {
-      const value = await this.api.call("set_group_add_request", {
+      const value = await this.api.call('set_group_add_request', {
         flag: handle.flag,
         approve: args.approve,
         reason: args.reason,
         count: SOURCE_LIMIT,
       });
-      result = value === null
-        ? submittedResult({action:'respond_group_request',group_id:this.groupId})
-        : {status:'unknown',error:'operation_result_unknown',effect_unknown:true,retry_allowed:false};
-    } catch (error) { result = writeFailure(error,'operation_result_unknown'); }
-    result = afterDispatch(result, !!signal?.aborted || generation !== this.epoch);
+      result =
+        value === null
+          ? submittedResult({
+              action: 'respond_group_request',
+              group_id: this.groupId,
+            })
+          : {
+              status: 'unknown',
+              error: 'operation_result_unknown',
+              effect_unknown: true,
+              retry_allowed: false,
+            };
+    } catch (error) {
+      result = writeFailure(error, 'operation_result_unknown');
+    }
+    result = afterDispatch(
+      result,
+      !!signal?.aborted || generation !== this.epoch,
+    );
     if (result.status === 'ok') {
       this.uncertain.delete(handle.key);
-      this.submitted.set(handle.key,{intent,applicant:handle.applicant,result:structuredClone(result)});
-    } else if (result.dispatched === false) this.uncertain.delete(handle.key);
+      this.submitted.set(handle.key, {
+        intent,
+        applicant: handle.applicant,
+        result: structuredClone(result),
+      });
+    } else if (result.dispatched === false) {
+      this.uncertain.delete(handle.key);
+    }
     return result;
   }
 }

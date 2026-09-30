@@ -1,5 +1,10 @@
 <script setup lang="ts">
-defineProps<{ loading: boolean; error: string; empty?: boolean; stale?: boolean }>();
+defineProps<{
+  loading: boolean;
+  error: string;
+  empty?: boolean;
+  stale?: boolean;
+}>();
 defineEmits<{ retry: [] }>();
 </script>
 <template>

@@ -1,57 +1,595 @@
 import test from 'node:test';
-import type {ExecutionDiagnostic,ExecutionResult} from '../../../src/sandbox/protocol.ts';
+import type {
+  ExecutionDiagnostic,
+  ExecutionResult,
+} from '../../../src/sandbox/protocol.ts';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync} from 'node:fs';import {join} from 'node:path';
-import {SandboxJobStore,validateInput,type JobInput} from '../../../src/sandbox/store.ts';import {SandboxService} from '../../../src/sandbox/service.ts';
-const scope={selfId:'100',groupId:'200'};
-const diagnostic:ExecutionDiagnostic={kind:'guest_exception',phase:'execute',name:'ReferenceError',message:"'Intl' is not defined",stack:'at sandbox:3',truncated:false};
-test('diagnostics survive foreground, detached completion, query, cancel and reopen',async()=>{
- const f=fixture();const controls:Array<(r:ExecutionResult)=>void>=[];const s=new SandboxService({store:f.store,executor:()=>{let resolve!:(r:ExecutionResult)=>void;const result=new Promise<ExecutionResult>(r=>resolve=r);controls.push(resolve);return {result,cancel(){resolve({status:'cancelled',error:'cancelled',logs:[]});}};}});
- try{const front=s.execute({...scope,description:'front',code:'bad',mode:'sync',waitMs:1000});controls.shift()!({status:'failed',error:'execution_error',logs:['before'],diagnostic});const r=await front;assert.equal(r.status,'failed');assert.deepEqual('diagnostic'in r?r.diagnostic:undefined,diagnostic);
- const bg=await s.execute({...scope,description:'background',code:'bad',mode:'async'});assert.equal(bg.status,'pending');controls.shift()!({status:'failed',error:'execution_error',logs:[],diagnostic});await new Promise(r=>setImmediate(r));const j=s.pendingResults(scope.selfId).jobs[0]!;assert.deepEqual(j.diagnostic,diagnostic);assert.deepEqual(s.cancel(scope,j.job_id)?.diagnostic,diagnostic);assert.deepEqual(f.store.get(scope,j.job_id)?.diagnostic,diagnostic);const list=f.store.query(scope,{status:'failed'}) as {jobs:unknown[]};assert.ok(list.jobs.every(j=>!Object.hasOwn(j as object,'diagnostic')));await s.stop();f.store.close();const reopened=new SandboxJobStore({path:join(f.dir,'jobs.sqlite')});try{assert.deepEqual(reopened.get(scope,j.job_id)?.diagnostic,diagnostic);}finally{reopened.close();}
- }finally{await s.stop();f.store.close();rmSync(f.dir,{recursive:true,force:true});}
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  SandboxJobStore,
+  validateInput,
+  type JobInput,
+} from '../../../src/sandbox/store.ts';
+import { SandboxService } from '../../../src/sandbox/service.ts';
+
+const scope = { selfId: '100', groupId: '200' };
+const diagnostic: ExecutionDiagnostic = {
+  kind: 'guest_exception',
+  phase: 'execute',
+  name: 'ReferenceError',
+  message: "'Intl' is not defined",
+  stack: 'at sandbox:3',
+  truncated: false,
+};
+
+test('diagnostics survive foreground, detached completion, query, cancel and reopen', async () => {
+  const f = fixture();
+  const controls: Array<(r: ExecutionResult) => void> = [];
+  const s = new SandboxService({
+    store: f.store,
+    executor: () => {
+      let resolve!: (r: ExecutionResult) => void;
+      const result = new Promise<ExecutionResult>((r) => (resolve = r));
+      controls.push(resolve);
+      return {
+        result,
+        cancel() {
+          resolve({ status: 'cancelled', error: 'cancelled', logs: [] });
+        },
+      };
+    },
+  });
+  try {
+    const front = s.execute({
+      ...scope,
+      description: 'front',
+      code: 'bad',
+      mode: 'sync',
+      waitMs: 1000,
+    });
+    controls.shift()!({
+      status: 'failed',
+      error: 'execution_error',
+      logs: ['before'],
+      diagnostic,
+    });
+    const r = await front;
+    assert.equal(r.status, 'failed');
+    assert.deepEqual('diagnostic' in r ? r.diagnostic : undefined, diagnostic);
+    const bg = await s.execute({
+      ...scope,
+      description: 'background',
+      code: 'bad',
+      mode: 'async',
+    });
+    assert.equal(bg.status, 'pending');
+    controls.shift()!({
+      status: 'failed',
+      error: 'execution_error',
+      logs: [],
+      diagnostic,
+    });
+    await new Promise((r) => setImmediate(r));
+    const j = s.pendingResults(scope.selfId).jobs[0]!;
+    assert.deepEqual(j.diagnostic, diagnostic);
+    assert.deepEqual(s.cancel(scope, j.job_id)?.diagnostic, diagnostic);
+    assert.deepEqual(f.store.get(scope, j.job_id)?.diagnostic, diagnostic);
+    const list = f.store.query(scope, { status: 'failed' }) as {
+      jobs: unknown[];
+    };
+    assert.ok(
+      list.jobs.every((j) => !Object.hasOwn(j as object, 'diagnostic')),
+    );
+    await s.stop();
+    f.store.close();
+    const reopened = new SandboxJobStore({ path: join(f.dir, 'jobs.sqlite') });
+    try {
+      assert.deepEqual(reopened.get(scope, j.job_id)?.diagnostic, diagnostic);
+    } finally {
+      reopened.close();
+    }
+  } finally {
+    await s.stop();
+    f.store.close();
+    rmSync(f.dir, { recursive: true, force: true });
+  }
 });
-test('oversized and malformed executor diagnostics are replaced with a static failure',()=>{const f=fixture();try{for(const bad of [{...diagnostic,message:'x'.repeat(8192)},{...diagnostic,extra:'host stack'}, {...diagnostic,truncated:'no'}]){const j=f.store.create({...scope,description:'invalid diagnostic',code:'bad',mode:'async'});const r=f.store.settle(scope,j.job_id,{status:'failed',error:'execution_error',diagnostic:bad as ExecutionDiagnostic});assert.equal(r?.error,'invalid_executor_result');assert.equal(r?.diagnostic,undefined);}}finally{f.store.close();rmSync(f.dir,{recursive:true,force:true});}});
-test('waitMs is mandatory per foreground call and forbidden as an own async field',()=>{
- const base={...scope,description:'validate',code:'return "ok"'};
- for(const mode of ['sync','auto'] as const){
-  for(const waitMs of [undefined,null,0,-1,1.5,2147483648,NaN,Infinity,'1',true])assert.throws(()=>validateInput({...base,mode,waitMs} as JobInput),/invalid_arguments/);
-  assert.throws(()=>validateInput({...base,mode}),/invalid_arguments/);
-  assert.throws(()=>validateInput(Object.assign(Object.create({waitMs:1}),base,{mode})),/invalid_arguments/);
-  for(const waitMs of [1,2147483647])assert.doesNotThrow(()=>validateInput({...base,mode,waitMs}));
- }
- for(const waitMs of [undefined,1,2147483647])assert.throws(()=>validateInput({...base,mode:'async',waitMs}),/invalid_arguments/);
- assert.doesNotThrow(()=>validateInput({...base,mode:'async'}));
+
+test('oversized and malformed executor diagnostics are replaced with a static failure', () => {
+  const f = fixture();
+  try {
+    for (const bad of [
+      { ...diagnostic, message: 'x'.repeat(8192) },
+      { ...diagnostic, extra: 'host stack' },
+      { ...diagnostic, truncated: 'no' },
+    ]) {
+      const j = f.store.create({
+        ...scope,
+        description: 'invalid diagnostic',
+        code: 'bad',
+        mode: 'async',
+      });
+      const r = f.store.settle(scope, j.job_id, {
+        status: 'failed',
+        error: 'execution_error',
+        diagnostic: bad as ExecutionDiagnostic,
+      });
+      assert.equal(r?.error, 'invalid_executor_result');
+      assert.equal(r?.diagnostic, undefined);
+    }
+  } finally {
+    f.store.close();
+    rmSync(f.dir, { recursive: true, force: true });
+  }
 });
-test('same service respects independent per-call deadlines without timing executor lifetime',async()=>{
- const f=fixture();const handles:Array<{resolve:(r:any)=>void;killed:boolean}>=[];
- const s=new SandboxService({store:f.store,executor:()=>{let resolve!:(r:any)=>void;const result=new Promise<any>(r=>resolve=r);const h={resolve,killed:false};handles.push(h);return {result,cancel(){h.killed=true;resolve({status:'cancelled',error:'cancelled',logs:[]});}};}});
- try{
-  let longSettled=false;
-  const short=s.execute({...scope,description:'short',code:'wait',mode:'auto',waitMs:1});
-  const long=s.execute({...scope,description:'long',code:'wait',mode:'sync',waitMs:2147483647}).then(r=>{longSettled=true;return r;});
-  assert.equal((await short).status,'pending');assert.equal(longSettled,false);assert.equal(handles[0]!.killed,false);assert.equal(handles[1]!.killed,false);
-  handles[1]!.resolve({status:'completed',value:'long',logs:[]});assert.equal((await long).status,'completed');
-  handles[0]!.resolve({status:'completed',value:'short',logs:[]});await new Promise(r=>setImmediate(r));assert.equal(s.pendingResults(scope.selfId).jobs.length,1);
- }finally{await s.stop();f.store.close();rmSync(f.dir,{recursive:true,force:true});}
+
+test('waitMs is mandatory per foreground call and forbidden as an own async field', () => {
+  const base = { ...scope, description: 'validate', code: 'return "ok"' };
+  for (const mode of ['sync', 'auto'] as const) {
+    for (const waitMs of [
+      undefined,
+      null,
+      0,
+      -1,
+      1.5,
+      2147483648,
+      NaN,
+      Infinity,
+      '1',
+      true,
+    ]) {
+      assert.throws(
+        () => validateInput({ ...base, mode, waitMs } as JobInput),
+        /invalid_arguments/,
+      );
+    }
+    assert.throws(() => validateInput({ ...base, mode }), /invalid_arguments/);
+    assert.throws(
+      () =>
+        validateInput(
+          Object.assign(Object.create({ waitMs: 1 }), base, { mode }),
+        ),
+      /invalid_arguments/,
+    );
+    for (const waitMs of [1, 2147483647]) {
+      assert.doesNotThrow(() => validateInput({ ...base, mode, waitMs }));
+    }
+  }
+  for (const waitMs of [undefined, 1, 2147483647]) {
+    assert.throws(
+      () => validateInput({ ...base, mode: 'async', waitMs }),
+      /invalid_arguments/,
+    );
+  }
+  assert.doesNotThrow(() => validateInput({ ...base, mode: 'async' }));
 });
-function fixture(){const dir=mkdtempSync(join('/tmp','sandbox-jobs-'));const store=new SandboxJobStore({path:join(dir,'jobs.sqlite')});return {dir,store};}
-function fake(){return (o:any)=>{let done=false,resolve!: (r:any)=>void;const result=new Promise(r=>resolve=r);const timer=setTimeout(()=>{if(!done){done=true;resolve({status:'completed',value:'ok',logs:[]});}},o.timeoutMs===null?10:o.timeoutMs);return {result,cancel(){if(!done){done=true;clearTimeout(timer);resolve({status:'cancelled',error:'cancelled',logs:[]});}}};};}
-test('sync persists, returns string result, and scopes queries',async()=>{const f=fixture();try{const s=new SandboxService({store:f.store,executor:fake()});const r=await s.execute({...scope,description:'quick',code:'return "ok"',mode:'sync',waitMs:1000});assert.equal(r.status,'completed');assert.equal((r as any).value,'ok');const jobs=s.query(scope,{status:'completed'} ) as any;assert.equal(jobs.jobs.length,1);assert.equal(s.query({selfId:'100',groupId:'201'},{status:'completed'} as any).jobs.length,0);await s.stop();}finally{f.store.close();rmSync(f.dir,{recursive:true,force:true});}});
-test('auto detaches after foreground timeout and later result is pending',async()=>{const f=fixture();try{const s=new SandboxService({store:f.store,executor:(o:any)=>{let resolve!:any;const result=new Promise(r=>resolve=r);const timer=setTimeout(()=>resolve({status:'completed',value:'later',logs:[]}),40);return {result,cancel(){clearTimeout(timer);resolve({status:'cancelled',error:'cancelled',logs:[]});}};}});const r=await s.execute({...scope,description:'long',code:'return "later"',mode:'auto',waitMs:10});assert.equal(r.status,'pending');await new Promise(r=>setTimeout(r,60));const pending=s.pendingResults(scope.selfId).jobs;assert.equal(pending.length,1);assert.equal(pending[0]!.value,'later');assert.equal(s.ackResult(scope.selfId,scope.groupId,pending[0]!.job_id),true);await s.stop();}finally{f.store.close();rmSync(f.dir,{recursive:true,force:true});}});
-test('async is independent of caller abort and cancel is idempotent',async()=>{const f=fixture();try{const s=new SandboxService({store:f.store,executor:fake()});const ac=new AbortController();const r=await s.execute({...scope,description:'background',code:'return "ok"',mode:'async'},ac.signal);assert.equal(r.status,'pending');ac.abort();const id=(r as any).job_id;assert.ok(id);assert.equal(s.cancel(scope,id)?.status,'cancelled');assert.equal(s.cancel(scope,id)?.status,'cancelled');await s.stop();}finally{f.store.close();rmSync(f.dir,{recursive:true,force:true});}});
-test('sync timeout kills while auto caller abort detaches and stopped service recovers results',async()=>{
- const f=fixture();try{let kills=0;const controls:Array<(r:any)=>void>=[];const executor=()=>{let resolve!:any;const result=new Promise<any>(r=>resolve=r);controls.push(resolve);return {result,cancel(){kills++;resolve({status:'cancelled',error:'cancelled',logs:[]});}};};
- const s=new SandboxService({store:f.store,executor});const timeout=await s.execute({...scope,description:'timeout',code:'loop',mode:'sync',waitMs:5});assert.equal(timeout.status,'timeout');assert.equal(kills,1);assert.equal(s.pendingResults(scope.selfId).jobs.length,0);
- const ac=new AbortController();const pending=s.execute({...scope,description:'survive abort',code:'await',mode:'auto',waitMs:10},ac.signal);ac.abort();assert.equal((await pending).status,'pending');assert.equal(kills,1);controls.at(-1)!({status:'completed',value:'done',logs:[]});await new Promise(r=>setImmediate(r));assert.equal(s.pendingResults(scope.selfId).jobs[0]!.value,'done');
- const stopped=await s.execute({...scope,description:'stop',code:'await',mode:'async'});await s.stop();assert.equal(f.store.get(scope,stopped.job_id!)!.status,'interrupted');assert.equal(s.pendingResults(scope.selfId).jobs.length,2);
- }finally{f.store.close();rmSync(f.dir,{recursive:true,force:true});}
+
+test('same service respects independent per-call deadlines without timing executor lifetime', async () => {
+  const f = fixture();
+  const handles: Array<{ resolve: (r: any) => void; killed: boolean }> = [];
+  const s = new SandboxService({
+    store: f.store,
+    executor: () => {
+      let resolve!: (r: any) => void;
+      const result = new Promise<any>((r) => (resolve = r));
+      const h = { resolve, killed: false };
+      handles.push(h);
+      return {
+        result,
+        cancel() {
+          h.killed = true;
+          resolve({ status: 'cancelled', error: 'cancelled', logs: [] });
+        },
+      };
+    },
+  });
+  try {
+    let longSettled = false;
+    const short = s.execute({
+      ...scope,
+      description: 'short',
+      code: 'wait',
+      mode: 'auto',
+      waitMs: 1,
+    });
+    const long = s
+      .execute({
+        ...scope,
+        description: 'long',
+        code: 'wait',
+        mode: 'sync',
+        waitMs: 2147483647,
+      })
+      .then((r) => {
+        longSettled = true;
+        return r;
+      });
+    assert.equal((await short).status, 'pending');
+    assert.equal(longSettled, false);
+    assert.equal(handles[0]!.killed, false);
+    assert.equal(handles[1]!.killed, false);
+    handles[1]!.resolve({ status: 'completed', value: 'long', logs: [] });
+    assert.equal((await long).status, 'completed');
+    handles[0]!.resolve({ status: 'completed', value: 'short', logs: [] });
+    await new Promise((r) => setImmediate(r));
+    assert.equal(s.pendingResults(scope.selfId).jobs.length, 1);
+  } finally {
+    await s.stop();
+    f.store.close();
+    rmSync(f.dir, { recursive: true, force: true });
+  }
 });
-test('pre-aborted jobs never execute and queue is bounded without cross-account leakage',async()=>{const f=fixture();try{let runs=0;const executor=()=>{runs++;let resolve!:any;return {result:new Promise<any>(r=>resolve=r),cancel(){resolve({status:'cancelled',error:'cancelled',logs:[]});}};};const s=new SandboxService({store:f.store,maxConcurrent:1,maxQueued:1,executor});const ac=new AbortController();ac.abort();assert.equal((await s.execute({...scope,description:'abort',code:'secret',mode:'async'},ac.signal)).status,'cancelled');assert.equal(runs,0);
- const first=await s.execute({...scope,description:'first',code:'secret',mode:'async'});await s.execute({...scope,description:'queued',code:'secret',mode:'async'});assert.equal((await s.execute({...scope,description:'overflow',code:'secret',mode:'async'})).status,'failed');assert.equal(runs,1);assert.equal(s.cancel({selfId:'101',groupId:scope.groupId},first.job_id!),undefined);assert.equal(s.query({selfId:'101',groupId:scope.groupId},{jobId:first.job_id}),undefined);assert.equal(s.ackResult('101',scope.groupId,first.job_id!),false);await s.stop();
- }finally{f.store.close();rmSync(f.dir,{recursive:true,force:true});}});
-test('pending cursor survives ack deletion and paginates bounded summaries',()=>{const f=fixture();try{for(let i=0;i<105;i++){const j=f.store.create({selfId:scope.selfId,groupId:scope.groupId,description:`job-${i}-`+'x'.repeat(900),code:'return "x"',mode:'async'});f.store.settle(scope,j.job_id,{status:'completed',value:'x'});}
- const first=f.store.pendingResults(scope.selfId,10,0);assert.equal(first.jobs.length,10);const cursor=first.nextCursor!;assert.ok(cursor>0);assert.equal(f.store.markDelivered(scope,first.jobs[0]!.job_id),true);const second=f.store.pendingResults(scope.selfId,10,cursor);assert.equal(second.jobs.length,10);assert.ok(second.jobs.every(j=>j.job_id!==first.jobs[0]!.job_id));const page=f.store.query(scope,{limit:100}) as any;assert.ok(JSON.stringify(page).length<=25*1024);assert.equal(page.hasMore,true);}finally{f.store.close();rmSync(f.dir,{recursive:true,force:true});}});
-test('foreground completion is returned once and never becomes a pending notification',async()=>{const f=fixture();try{const s=new SandboxService({store:f.store,executor:fake()});const r=await s.execute({...scope,description:'foreground',code:'return "ok"',mode:'sync',waitMs:1000});assert.equal(r.status,'completed');assert.equal(s.pendingResults(scope.selfId).jobs.length,0);await s.stop();}finally{f.store.close();rmSync(f.dir,{recursive:true,force:true});}});
-test('completion and auto detach race chooses one delivery path',async()=>{const f=fixture();try{let resolve!:any;const s=new SandboxService({store:f.store,executor:()=>({result:new Promise(r=>resolve=r),cancel(){resolve({status:'cancelled',error:'cancelled',logs:[]});}})});const p=s.execute({...scope,description:'race',code:'return "race"',mode:'auto',waitMs:10});setTimeout(()=>resolve({status:'completed',value:'race',logs:[]}),10);const r=await p;assert.ok(r.status==='completed'||r.status==='pending');await new Promise(r=>setTimeout(r,20));const pending=s.pendingResults(scope.selfId).jobs;assert.equal(pending.length,r.status==='pending'?1:0);await s.stop();}finally{f.store.close();rmSync(f.dir,{recursive:true,force:true});}});
-test('restart marks active jobs interrupted without rerun',()=>{const f=fixture();try{const a=new SandboxJobStore({path:join(f.dir,'restart.sqlite')});const j=a.create({...scope,description:'queued',code:'return "x"',mode:'async'});a.start(scope,j.job_id);a.close();const b=new SandboxJobStore({path:join(f.dir,'restart.sqlite')});assert.equal(b.get(scope,j.job_id)?.status,'interrupted');b.close();}finally{f.store.close();rmSync(f.dir,{recursive:true,force:true});}});
+
+function fixture() {
+  const dir = mkdtempSync(join('/tmp', 'sandbox-jobs-'));
+  const store = new SandboxJobStore({ path: join(dir, 'jobs.sqlite') });
+  return { dir, store };
+}
+
+function fake() {
+  return (o: any) => {
+    let done = false,
+      resolve!: (r: any) => void;
+    const result = new Promise((r) => (resolve = r));
+    const timer = setTimeout(
+      () => {
+        if (!done) {
+          done = true;
+          resolve({ status: 'completed', value: 'ok', logs: [] });
+        }
+      },
+      o.timeoutMs === null ? 10 : o.timeoutMs,
+    );
+    return {
+      result,
+      cancel() {
+        if (!done) {
+          done = true;
+          clearTimeout(timer);
+          resolve({ status: 'cancelled', error: 'cancelled', logs: [] });
+        }
+      },
+    };
+  };
+}
+
+test('sync persists, returns string result, and scopes queries', async () => {
+  const f = fixture();
+  try {
+    const s = new SandboxService({ store: f.store, executor: fake() });
+    const r = await s.execute({
+      ...scope,
+      description: 'quick',
+      code: 'return "ok"',
+      mode: 'sync',
+      waitMs: 1000,
+    });
+    assert.equal(r.status, 'completed');
+    assert.equal((r as any).value, 'ok');
+    const jobs = s.query(scope, { status: 'completed' }) as any;
+    assert.equal(jobs.jobs.length, 1);
+    assert.equal(
+      s.query({ selfId: '100', groupId: '201' }, { status: 'completed' } as any)
+        .jobs.length,
+      0,
+    );
+    await s.stop();
+  } finally {
+    f.store.close();
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});
+
+test('auto detaches after foreground timeout and later result is pending', async () => {
+  const f = fixture();
+  try {
+    const s = new SandboxService({
+      store: f.store,
+      executor: (o: any) => {
+        let resolve!: any;
+        const result = new Promise((r) => (resolve = r));
+        const timer = setTimeout(
+          () => resolve({ status: 'completed', value: 'later', logs: [] }),
+          40,
+        );
+        return {
+          result,
+          cancel() {
+            clearTimeout(timer);
+            resolve({ status: 'cancelled', error: 'cancelled', logs: [] });
+          },
+        };
+      },
+    });
+    const r = await s.execute({
+      ...scope,
+      description: 'long',
+      code: 'return "later"',
+      mode: 'auto',
+      waitMs: 10,
+    });
+    assert.equal(r.status, 'pending');
+    await new Promise((r) => setTimeout(r, 60));
+    const pending = s.pendingResults(scope.selfId).jobs;
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0]!.value, 'later');
+    assert.equal(
+      s.ackResult(scope.selfId, scope.groupId, pending[0]!.job_id),
+      true,
+    );
+    await s.stop();
+  } finally {
+    f.store.close();
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});
+
+test('async is independent of caller abort and cancel is idempotent', async () => {
+  const f = fixture();
+  try {
+    const s = new SandboxService({ store: f.store, executor: fake() });
+    const ac = new AbortController();
+    const r = await s.execute(
+      {
+        ...scope,
+        description: 'background',
+        code: 'return "ok"',
+        mode: 'async',
+      },
+      ac.signal,
+    );
+    assert.equal(r.status, 'pending');
+    ac.abort();
+    const id = (r as any).job_id;
+    assert.ok(id);
+    assert.equal(s.cancel(scope, id)?.status, 'cancelled');
+    assert.equal(s.cancel(scope, id)?.status, 'cancelled');
+    await s.stop();
+  } finally {
+    f.store.close();
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});
+
+test('sync timeout kills while auto caller abort detaches and stopped service recovers results', async () => {
+  const f = fixture();
+  try {
+    let kills = 0;
+    const controls: Array<(r: any) => void> = [];
+    const executor = () => {
+      let resolve!: any;
+      const result = new Promise<any>((r) => (resolve = r));
+      controls.push(resolve);
+      return {
+        result,
+        cancel() {
+          kills++;
+          resolve({ status: 'cancelled', error: 'cancelled', logs: [] });
+        },
+      };
+    };
+    const s = new SandboxService({ store: f.store, executor });
+    const timeout = await s.execute({
+      ...scope,
+      description: 'timeout',
+      code: 'loop',
+      mode: 'sync',
+      waitMs: 5,
+    });
+    assert.equal(timeout.status, 'timeout');
+    assert.equal(kills, 1);
+    assert.equal(s.pendingResults(scope.selfId).jobs.length, 0);
+    const ac = new AbortController();
+    const pending = s.execute(
+      {
+        ...scope,
+        description: 'survive abort',
+        code: 'await',
+        mode: 'auto',
+        waitMs: 10,
+      },
+      ac.signal,
+    );
+    ac.abort();
+    assert.equal((await pending).status, 'pending');
+    assert.equal(kills, 1);
+    controls.at(-1)!({ status: 'completed', value: 'done', logs: [] });
+    await new Promise((r) => setImmediate(r));
+    assert.equal(s.pendingResults(scope.selfId).jobs[0]!.value, 'done');
+    const stopped = await s.execute({
+      ...scope,
+      description: 'stop',
+      code: 'await',
+      mode: 'async',
+    });
+    await s.stop();
+    assert.equal(f.store.get(scope, stopped.job_id!)!.status, 'interrupted');
+    assert.equal(s.pendingResults(scope.selfId).jobs.length, 2);
+  } finally {
+    f.store.close();
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});
+
+test('pre-aborted jobs never execute and queue is bounded without cross-account leakage', async () => {
+  const f = fixture();
+  try {
+    let runs = 0;
+    const executor = () => {
+      runs++;
+      let resolve!: any;
+      return {
+        result: new Promise<any>((r) => (resolve = r)),
+        cancel() {
+          resolve({ status: 'cancelled', error: 'cancelled', logs: [] });
+        },
+      };
+    };
+    const s = new SandboxService({
+      store: f.store,
+      maxConcurrent: 1,
+      maxQueued: 1,
+      executor,
+    });
+    const ac = new AbortController();
+    ac.abort();
+    assert.equal(
+      (
+        await s.execute(
+          { ...scope, description: 'abort', code: 'secret', mode: 'async' },
+          ac.signal,
+        )
+      ).status,
+      'cancelled',
+    );
+    assert.equal(runs, 0);
+    const first = await s.execute({
+      ...scope,
+      description: 'first',
+      code: 'secret',
+      mode: 'async',
+    });
+    await s.execute({
+      ...scope,
+      description: 'queued',
+      code: 'secret',
+      mode: 'async',
+    });
+    assert.equal(
+      (
+        await s.execute({
+          ...scope,
+          description: 'overflow',
+          code: 'secret',
+          mode: 'async',
+        })
+      ).status,
+      'failed',
+    );
+    assert.equal(runs, 1);
+    assert.equal(
+      s.cancel({ selfId: '101', groupId: scope.groupId }, first.job_id!),
+      undefined,
+    );
+    assert.equal(
+      s.query(
+        { selfId: '101', groupId: scope.groupId },
+        { jobId: first.job_id },
+      ),
+      undefined,
+    );
+    assert.equal(s.ackResult('101', scope.groupId, first.job_id!), false);
+    await s.stop();
+  } finally {
+    f.store.close();
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});
+
+test('pending cursor survives ack deletion and paginates bounded summaries', () => {
+  const f = fixture();
+  try {
+    for (let i = 0; i < 105; i++) {
+      const j = f.store.create({
+        selfId: scope.selfId,
+        groupId: scope.groupId,
+        description: `job-${i}-` + 'x'.repeat(900),
+        code: 'return "x"',
+        mode: 'async',
+      });
+      f.store.settle(scope, j.job_id, { status: 'completed', value: 'x' });
+    }
+    const first = f.store.pendingResults(scope.selfId, 10, 0);
+    assert.equal(first.jobs.length, 10);
+    const cursor = first.nextCursor!;
+    assert.ok(cursor > 0);
+    assert.equal(f.store.markDelivered(scope, first.jobs[0]!.job_id), true);
+    const second = f.store.pendingResults(scope.selfId, 10, cursor);
+    assert.equal(second.jobs.length, 10);
+    assert.ok(second.jobs.every((j) => j.job_id !== first.jobs[0]!.job_id));
+    const page = f.store.query(scope, { limit: 100 }) as any;
+    assert.ok(JSON.stringify(page).length <= 25 * 1024);
+    assert.equal(page.hasMore, true);
+  } finally {
+    f.store.close();
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});
+
+test('foreground completion is returned once and never becomes a pending notification', async () => {
+  const f = fixture();
+  try {
+    const s = new SandboxService({ store: f.store, executor: fake() });
+    const r = await s.execute({
+      ...scope,
+      description: 'foreground',
+      code: 'return "ok"',
+      mode: 'sync',
+      waitMs: 1000,
+    });
+    assert.equal(r.status, 'completed');
+    assert.equal(s.pendingResults(scope.selfId).jobs.length, 0);
+    await s.stop();
+  } finally {
+    f.store.close();
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});
+
+test('completion and auto detach race chooses one delivery path', async () => {
+  const f = fixture();
+  try {
+    let resolve!: any;
+    const s = new SandboxService({
+      store: f.store,
+      executor: () => ({
+        result: new Promise((r) => (resolve = r)),
+        cancel() {
+          resolve({ status: 'cancelled', error: 'cancelled', logs: [] });
+        },
+      }),
+    });
+    const p = s.execute({
+      ...scope,
+      description: 'race',
+      code: 'return "race"',
+      mode: 'auto',
+      waitMs: 10,
+    });
+    setTimeout(
+      () => resolve({ status: 'completed', value: 'race', logs: [] }),
+      10,
+    );
+    const r = await p;
+    assert.ok(r.status === 'completed' || r.status === 'pending');
+    await new Promise((r) => setTimeout(r, 20));
+    const pending = s.pendingResults(scope.selfId).jobs;
+    assert.equal(pending.length, r.status === 'pending' ? 1 : 0);
+    await s.stop();
+  } finally {
+    f.store.close();
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});
+
+test('restart marks active jobs interrupted without rerun', () => {
+  const f = fixture();
+  try {
+    const a = new SandboxJobStore({ path: join(f.dir, 'restart.sqlite') });
+    const j = a.create({
+      ...scope,
+      description: 'queued',
+      code: 'return "x"',
+      mode: 'async',
+    });
+    a.start(scope, j.job_id);
+    a.close();
+    const b = new SandboxJobStore({ path: join(f.dir, 'restart.sqlite') });
+    assert.equal(b.get(scope, j.job_id)?.status, 'interrupted');
+    b.close();
+  } finally {
+    f.store.close();
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});

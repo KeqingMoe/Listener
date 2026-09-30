@@ -32,31 +32,36 @@ const DEFINITIONS: Record<ArtifactToolName, ToolDefinition> = {
     offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 100 },
   } } } },
 };
+
 export function buildArtifactToolDefinitions(enabled: readonly string[]): ToolDefinition[] {
   return ARTIFACT_TOOL_NAMES.filter(name => enabled.includes(name)).map(name => structuredClone(DEFINITIONS[name]));
 }
 
 class InvalidArguments extends Error {}
 const invalid = (): never => { throw new InvalidArguments(); };
+
 function fields(args: unknown, required: readonly string[], optional: readonly string[]): Record<string, unknown> {
-  if (!args || typeof args !== 'object' || Array.isArray(args) || ![Object.prototype, null].includes(Object.getPrototypeOf(args))) invalid();
+  if (!args || typeof args !== 'object' || Array.isArray(args) || ![Object.prototype, null].includes(Object.getPrototypeOf(args))) {invalid();}
   const record = args as Record<string, unknown>;
-  for (const key of Object.keys(record)) if (!required.includes(key) && !optional.includes(key)) invalid();
-  for (const key of required) if (!Object.hasOwn(record, key)) invalid();
+  for (const key of Object.keys(record)) {if (!required.includes(key) && !optional.includes(key)) {invalid();}}
+  for (const key of required) {if (!Object.hasOwn(record, key)) {invalid();}}
   return record;
 }
+
 /** Byte fields: Uint8Array from sandbox code, or an integer array from direct calls. */
 export function byteField(value: unknown, max: number): Uint8Array {
-  if (value instanceof Uint8Array) { if (value.byteLength > max) throw new ArtifactError('artifact_too_large'); return value; }
-  if (!Array.isArray(value)) return invalid();
-  if (value.length > max) throw new ArtifactError('artifact_too_large');
+  if (value instanceof Uint8Array) { if (value.byteLength > max) {throw new ArtifactError('artifact_too_large');} return value; }
+  if (!Array.isArray(value)) {return invalid();}
+  if (value.length > max) {throw new ArtifactError('artifact_too_large');}
   const out = new Uint8Array(value.length);
-  for (let i = 0; i < value.length; i++) { const v = value[i]; if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > 255) invalid(); out[i] = v as number; }
+  for (let i = 0; i < value.length; i++) { const v = value[i]; if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > 255) {invalid();} out[i] = v as number; }
   return out;
 }
+
 export function artifactView(artifact: Artifact): JsonObject {
   return { artifact_id: artifact.artifactId, name: artifact.name, description: artifact.description, media_type: artifact.mediaType, size: artifact.size, sha256: artifact.sha256, created_at: new Date(artifact.createdAt).toISOString(), expires_at: new Date(artifact.expiresAt).toISOString() };
 }
+
 const integer = (value: unknown, min: number, max: number): number => typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max ? value : invalid();
 
 export class ArtifactTools {
@@ -64,24 +69,24 @@ export class ArtifactTools {
   async execute(name: string, args: unknown, context: TurnContext, signal?: AbortSignal): Promise<JsonObject> {
     const scope = { selfId: context.selfId, groupId: context.groupId };
     try {
-      if (signal?.aborted) return { status: 'error', error: 'cancelled' };
+      if (signal?.aborted) {return { status: 'error', error: 'cancelled' };}
       if (name === 'create_artifact') {
         const a = fields(args, ['name', 'description', 'ttl_ms', 'content'], ['media_type']);
         const bytes = typeof a.content === 'string' ? Buffer.from(a.content, 'utf8') : byteField(a.content, ARTIFACT_LIMITS.bytes);
-        if (a.media_type !== undefined && typeof a.media_type !== 'string') invalid();
+        if (a.media_type !== undefined && typeof a.media_type !== 'string') {invalid();}
         const artifact = await this.store.create({ ...scope, name: a.name as string, description: a.description as string, ttlMs: a.ttl_ms as number, mediaType: (a.media_type as string | undefined) ?? 'application/octet-stream', bytes });
         return { status: 'ok', ...artifactView(artifact) };
       }
       if (name === 'create_image') {
         const a = fields(args, ['name', 'description', 'ttl_ms', 'width', 'height', 'pixels', 'format'], []);
         const width = integer(a.width, 1, IMAGE_LIMITS.edge), height = integer(a.height, 1, IMAGE_LIMITS.edge);
-        if (!IMAGE_FORMATS.includes(a.format as typeof IMAGE_FORMATS[number])) invalid();
+        if (!IMAGE_FORMATS.includes(a.format as typeof IMAGE_FORMATS[number])) {invalid();}
         const pixels = byteField(a.pixels, IMAGE_LIMITS.edge * IMAGE_LIMITS.edge * 4);
-        if (pixels.byteLength !== width * height * 4) invalid();
+        if (pixels.byteLength !== width * height * 4) {invalid();}
         const format = a.format as typeof IMAGE_FORMATS[number];
         const image = sharp(Buffer.from(pixels.buffer, pixels.byteOffset, pixels.byteLength), { raw: { width, height, channels: 4 }, limitInputPixels: false });
         const encoded = format === 'png' ? await image.png().toBuffer() : format === 'jpeg' ? await image.flatten({ background: '#ffffff' }).jpeg({ quality: 90 }).toBuffer() : await image.webp({ quality: 90 }).toBuffer();
-        if (signal?.aborted) return { status: 'error', error: 'cancelled' };
+        if (signal?.aborted) {return { status: 'error', error: 'cancelled' };}
         const artifact = await this.store.create({ ...scope, name: a.name as string, description: a.description as string, ttlMs: a.ttl_ms as number, mediaType: `image/${format}`, bytes: encoded });
         return { status: 'ok', ...artifactView(artifact), width, height };
       }
@@ -92,8 +97,8 @@ export class ArtifactTools {
       }
       return { status: 'error', error: 'unknown_tool' };
     } catch (error) {
-      if (error instanceof InvalidArguments) return { status: 'error', error: 'invalid_arguments' };
-      if (error instanceof ArtifactError) return { status: 'error', error: error.message };
+      if (error instanceof InvalidArguments) {return { status: 'error', error: 'invalid_arguments' };}
+      if (error instanceof ArtifactError) {return { status: 'error', error: error.message };}
       return { status: 'error', error: 'artifact_failed' };
     }
   }

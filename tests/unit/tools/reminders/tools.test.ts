@@ -1,16 +1,255 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GroupReminderTools, buildReminderTools } from '../../../../src/tools/reminders/tools.ts';
+import {
+  GroupReminderTools,
+  buildReminderTools,
+} from '../../../../src/tools/reminders/tools.ts';
 import { ReminderStore } from '../../../../src/reminders/store.ts';
-const group='123456789', self='987654321', actor='111222333';
-const now=Date.parse('2026-01-01T00:00:00Z');
-const entry={messageId:'42',userId:actor,nickname:'u',text:'please remind me',time:now/1000};
-function setup(){const store=new ReminderStore({path:':memory:'});const calls:{action:string;params:any}[]=[];const api={async call(action:string,params:any){calls.push({action,params});if(action==='get_login_info')return{user_id:self};if(action==='get_msg')return{message_type:'group',group_id:group,message_id:'42',sender:{user_id:actor},message:[{type:'text',data:{text:'please remind me'}}]};throw new Error('unexpected');}} as any;const tools=new GroupReminderTools(api,{find:(id:string)=>id==='42'?entry:undefined,recent:()=>[entry]} as any,group,'999',store,['create_reminder','list_reminders','update_reminder','cancel_reminder'],()=>now);return{store,tools,calls};}
-const ctx={groupId:group,actorId:actor,selfId:self,messageId:'99'};
-const due='2026-01-02T09:00:00+09:00';
-test('schemas expose four reminder tools and only enabled names',()=>{assert.deepEqual(buildReminderTools(['list_reminders']).map(x=>x.function.name),['list_reminders']);assert.equal(buildReminderTools(['create_reminder','update_reminder','cancel_reminder']).length,3);});
-test('create verifies source provenance and stores reminder without delivery claim',async()=>{const s=setup();try{const r=await s.tools.execute('create_reminder',{source_message_id:'42',text:'call me',due_at:due,time_zone:'Asia/Tokyo'},ctx);assert.equal(r.status,'ok');assert.equal(r.stored,true);assert.equal(r.delivery_confirmed,false);const item=s.store.list(self,group,{limit:1})[0]!;assert.equal(item.creatorId,actor);assert.equal(item.text,'call me');assert.deepEqual(s.calls.map(x=>x.action),['get_login_info','get_msg']);}finally{s.store.close();}});
-test('list and output retain metadata while truncating oversized text',async()=>{const s=setup();try{s.store.create({selfId:self,groupId:group,creatorId:actor,sourceMessageId:'42',text:'x'.repeat(23900),dueAt:now+3600000,timeZone:'UTC'},now);const r=await s.tools.execute('list_reminders',{limit:10},ctx);assert.equal(r.status,'ok');const item=(r.items as any[])[0]!;assert.equal(item.state,'pending');assert.equal(item.text_truncated,true);assert.equal(item.id.startsWith('rem_'),true);}finally{s.store.close();}});
-test('update uses CAS and allows text-only update after due for catch-up',async()=>{const s=setup();try{const created=s.store.create({selfId:self,groupId:group,creatorId:actor,sourceMessageId:'42',text:'old',dueAt:now+1000,timeZone:'UTC'},now);const tools=new GroupReminderTools((s.tools as any).api,(s.tools as any).memory,group,'999',s.store, ['update_reminder'],()=>now+2000);const r=await tools.execute('update_reminder',{id:created.id,revision:created.revision,text:'new'},ctx);assert.equal(r.status,'ok');assert.equal(s.store.get(self,group,created.id)?.text,'new');}finally{s.store.close();}});
-test('update conflict and cancel are explicit',async()=>{const s=setup();try{const c=s.store.create({selfId:self,groupId:group,creatorId:actor,sourceMessageId:'42',text:'x',dueAt:now+1000,timeZone:'UTC'},now);assert.equal((await s.tools.execute('update_reminder',{id:c.id,revision:c.revision+1,text:'y'},ctx)).error,'not_pending_or_conflict');const fresh=s.store.get(self,group,c.id)!;assert.equal((await s.tools.execute('cancel_reminder',{id:fresh.id,revision:fresh.revision},ctx)).status,'ok');}finally{s.store.close();}});
-test('rejects untrusted source, malformed dates, and disabled tools',async()=>{const s=setup();try{assert.equal((await s.tools.execute('create_reminder',{source_message_id:'99',text:'x',due_at:due,time_zone:'Asia/Tokyo'},ctx)).error,'source_not_in_context');assert.equal((await s.tools.execute('create_reminder',{source_message_id:'42',text:'x',due_at:'2026-01-02T09:00:00',time_zone:'Asia/Tokyo'},ctx)).error,'invalid_time');const disabled=new GroupReminderTools((s.tools as any).api,(s.tools as any).memory,group,'999',s.store,['list_reminders'],()=>now);assert.equal((await disabled.execute('create_reminder',{},ctx)).error,'tool_disabled');}finally{s.store.close();}});
+
+const group = '123456789',
+  self = '987654321',
+  actor = '111222333';
+const now = Date.parse('2026-01-01T00:00:00Z');
+const entry = {
+  messageId: '42',
+  userId: actor,
+  nickname: 'u',
+  text: 'please remind me',
+  time: now / 1000,
+};
+
+function setup() {
+  const store = new ReminderStore({ path: ':memory:' });
+  const calls: { action: string; params: any }[] = [];
+  const api = {
+    async call(action: string, params: any) {
+      calls.push({ action, params });
+      if (action === 'get_login_info') {
+        return { user_id: self };
+      }
+      if (action === 'get_msg') {
+        return {
+          message_type: 'group',
+          group_id: group,
+          message_id: '42',
+          sender: { user_id: actor },
+          message: [{ type: 'text', data: { text: 'please remind me' } }],
+        };
+      }
+      throw new Error('unexpected');
+    },
+  } as any;
+  const tools = new GroupReminderTools(
+    api,
+    {
+      find: (id: string) => (id === '42' ? entry : undefined),
+      recent: () => [entry],
+    } as any,
+    group,
+    '999',
+    store,
+    ['create_reminder', 'list_reminders', 'update_reminder', 'cancel_reminder'],
+    () => now,
+  );
+  return { store, tools, calls };
+}
+
+const ctx = { groupId: group, actorId: actor, selfId: self, messageId: '99' };
+const due = '2026-01-02T09:00:00+09:00';
+
+test('schemas expose four reminder tools and only enabled names', () => {
+  assert.deepEqual(
+    buildReminderTools(['list_reminders']).map((x) => x.function.name),
+    ['list_reminders'],
+  );
+  assert.equal(
+    buildReminderTools([
+      'create_reminder',
+      'update_reminder',
+      'cancel_reminder',
+    ]).length,
+    3,
+  );
+});
+
+test('create verifies source provenance and stores reminder without delivery claim', async () => {
+  const s = setup();
+  try {
+    const r = await s.tools.execute(
+      'create_reminder',
+      {
+        source_message_id: '42',
+        text: 'call me',
+        due_at: due,
+        time_zone: 'Asia/Tokyo',
+      },
+      ctx,
+    );
+    assert.equal(r.status, 'ok');
+    assert.equal(r.stored, true);
+    assert.equal(r.delivery_confirmed, false);
+    const item = s.store.list(self, group, { limit: 1 })[0]!;
+    assert.equal(item.creatorId, actor);
+    assert.equal(item.text, 'call me');
+    assert.deepEqual(
+      s.calls.map((x) => x.action),
+      ['get_login_info', 'get_msg'],
+    );
+  } finally {
+    s.store.close();
+  }
+});
+
+test('list and output retain metadata while truncating oversized text', async () => {
+  const s = setup();
+  try {
+    s.store.create(
+      {
+        selfId: self,
+        groupId: group,
+        creatorId: actor,
+        sourceMessageId: '42',
+        text: 'x'.repeat(23900),
+        dueAt: now + 3600000,
+        timeZone: 'UTC',
+      },
+      now,
+    );
+    const r = await s.tools.execute('list_reminders', { limit: 10 }, ctx);
+    assert.equal(r.status, 'ok');
+    const item = (r.items as any[])[0]!;
+    assert.equal(item.state, 'pending');
+    assert.equal(item.text_truncated, true);
+    assert.equal(item.id.startsWith('rem_'), true);
+  } finally {
+    s.store.close();
+  }
+});
+
+test('update uses CAS and allows text-only update after due for catch-up', async () => {
+  const s = setup();
+  try {
+    const created = s.store.create(
+      {
+        selfId: self,
+        groupId: group,
+        creatorId: actor,
+        sourceMessageId: '42',
+        text: 'old',
+        dueAt: now + 1000,
+        timeZone: 'UTC',
+      },
+      now,
+    );
+    const tools = new GroupReminderTools(
+      (s.tools as any).api,
+      (s.tools as any).memory,
+      group,
+      '999',
+      s.store,
+      ['update_reminder'],
+      () => now + 2000,
+    );
+    const r = await tools.execute(
+      'update_reminder',
+      { id: created.id, revision: created.revision, text: 'new' },
+      ctx,
+    );
+    assert.equal(r.status, 'ok');
+    assert.equal(s.store.get(self, group, created.id)?.text, 'new');
+  } finally {
+    s.store.close();
+  }
+});
+
+test('update conflict and cancel are explicit', async () => {
+  const s = setup();
+  try {
+    const c = s.store.create(
+      {
+        selfId: self,
+        groupId: group,
+        creatorId: actor,
+        sourceMessageId: '42',
+        text: 'x',
+        dueAt: now + 1000,
+        timeZone: 'UTC',
+      },
+      now,
+    );
+    assert.equal(
+      (
+        await s.tools.execute(
+          'update_reminder',
+          { id: c.id, revision: c.revision + 1, text: 'y' },
+          ctx,
+        )
+      ).error,
+      'not_pending_or_conflict',
+    );
+    const fresh = s.store.get(self, group, c.id)!;
+    assert.equal(
+      (
+        await s.tools.execute(
+          'cancel_reminder',
+          { id: fresh.id, revision: fresh.revision },
+          ctx,
+        )
+      ).status,
+      'ok',
+    );
+  } finally {
+    s.store.close();
+  }
+});
+
+test('rejects untrusted source, malformed dates, and disabled tools', async () => {
+  const s = setup();
+  try {
+    assert.equal(
+      (
+        await s.tools.execute(
+          'create_reminder',
+          {
+            source_message_id: '99',
+            text: 'x',
+            due_at: due,
+            time_zone: 'Asia/Tokyo',
+          },
+          ctx,
+        )
+      ).error,
+      'source_not_in_context',
+    );
+    assert.equal(
+      (
+        await s.tools.execute(
+          'create_reminder',
+          {
+            source_message_id: '42',
+            text: 'x',
+            due_at: '2026-01-02T09:00:00',
+            time_zone: 'Asia/Tokyo',
+          },
+          ctx,
+        )
+      ).error,
+      'invalid_time',
+    );
+    const disabled = new GroupReminderTools(
+      (s.tools as any).api,
+      (s.tools as any).memory,
+      group,
+      '999',
+      s.store,
+      ['list_reminders'],
+      () => now,
+    );
+    assert.equal(
+      (await disabled.execute('create_reminder', {}, ctx)).error,
+      'tool_disabled',
+    );
+  } finally {
+    s.store.close();
+  }
+});

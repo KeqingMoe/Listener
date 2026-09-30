@@ -9,8 +9,10 @@
 export type ResourcePatch =
   | { op: 'add' | 'replace'; path: string; value: unknown }
   | { op: 'remove'; path: string };
+
 export type ResourceSyncResponse<T = unknown> =
   | { mode: 'snapshot'; cursor: string; data: T }
   | { mode: 'patch'; cursor: string; patch: ResourcePatch[] }
   | { mode: 'unchanged'; cursor: string };
+
 export const RESOURCE_SYNC_MAX_PAYLOAD_BYTES = 2 * 1024 * 1024;

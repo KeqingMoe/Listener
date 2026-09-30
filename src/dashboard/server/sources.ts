@@ -10,14 +10,18 @@ import type { GroupSource } from './repository.ts';
 export function dashboardGroupSources(app: AppConfig): GroupSource[] {
   try {
     const ids = new Set(app.configuredGroupIds);
-    for (const entry of readGroupRegistry(app)) ids.add(entry.groupId);
+    for (const entry of readGroupRegistry(app)) {
+      ids.add(entry.groupId);
+    }
     const groups: ResolvedGroupConfig[] = [];
     for (const id of ids) {
       const group = app.resolveGroup(id);
-      if (group.enabled) groups.push(group);
+      if (group.enabled) {
+        groups.push(group);
+      }
     }
     assertStoragePaths(app.storage, groups);
-    return groups.map(group => ({
+    return groups.map((group) => ({
       groupId: group.groupId,
       sessionPath: `${group.storage.databasePath}.session.sqlite`,
       worldPath: `${group.storage.databasePath}.events.sqlite`,

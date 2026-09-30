@@ -1,48 +1,49 @@
-import test, { after } from "node:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { ArtifactStore } from "../../../../src/artifacts/store.ts";
-import assert from "node:assert/strict";
+import test, { after } from 'node:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { ArtifactStore } from '../../../../src/artifacts/store.ts';
+import assert from 'node:assert/strict';
 import {
   GroupFileTools,
   GROUP_FILE_TOOL_NAMES,
-} from "../../../../src/tools/files/tools.ts";
-import { GroupRequestTools } from "../../../../src/tools/requests/tools.ts";
-import { OneBotError } from "../../../../src/onebot/client.ts";
-import type { Api } from "../../../../src/contracts/onebot.ts";
-import type { JsonObject } from "../../../../src/contracts/json.ts";
-import type { TurnContext } from "../../../../src/contracts/tools.ts";
+} from '../../../../src/tools/files/tools.ts';
+import { GroupRequestTools } from '../../../../src/tools/requests/tools.ts';
+import { OneBotError } from '../../../../src/onebot/client.ts';
+import type { Api } from '../../../../src/contracts/onebot.ts';
+import type { JsonObject } from '../../../../src/contracts/json.ts';
+import type { TurnContext } from '../../../../src/contracts/tools.ts';
 
-const artifactDir = mkdtempSync(join(tmpdir(), "file-request-outcomes-"));
+const artifactDir = mkdtempSync(join(tmpdir(), 'file-request-outcomes-'));
 const store = new ArtifactStore({
-  path: join(artifactDir, "a.sqlite"),
-  directory: join(artifactDir, "files"),
-  providerDirectory: "/napcat/artifacts",
+  path: join(artifactDir, 'a.sqlite'),
+  directory: join(artifactDir, 'files'),
+  providerDirectory: '/napcat/artifacts',
 });
 after(() => {
   store.close();
   rmSync(artifactDir, { recursive: true, force: true });
 });
-const art = async (name: string, content = "hi") =>
+const art = async (name: string, content = 'hi') =>
   (
     await store.create({
-      selfId: "456",
-      groupId: "123",
+      selfId: '456',
+      groupId: '123',
       name,
-      description: "测试产物",
-      mediaType: "text/plain",
+      description: '测试产物',
+      mediaType: 'text/plain',
       ttlMs: 60000,
       bytes: Buffer.from(content),
     })
   ).artifactId;
 
 const ctx: TurnContext = {
-  groupId: "123",
-  selfId: "456",
-  actorId: "789",
-  messageId: "1",
+  groupId: '123',
+  selfId: '456',
+  actorId: '789',
+  messageId: '1',
 };
+
 type Item = {
   native: string;
   name?: string;
@@ -51,17 +52,19 @@ type Item = {
   uploadedAt?: number;
   parent?: string;
 };
+
 const original = (): Item => ({
-  native: "native-one",
-  name: "report.txt",
+  native: 'native-one',
+  name: 'report.txt',
   size: 4,
-  uploader: "456",
+  uploader: '456',
   uploadedAt: 100,
 });
+
 function fixture() {
   const state = {
     items: [original()] as Item[],
-    role: "admin",
+    role: 'admin',
     write: undefined as unknown,
     fail: undefined as unknown,
     hook: undefined as ((action: string) => void) | undefined,
@@ -90,30 +93,40 @@ function fixture() {
     async call(action, params = {}) {
       calls.push({ action, params: structuredClone(params) });
       state.hook?.(action);
-      if (action === "get_login_info") return { user_id: 456 };
-      if (action === "get_group_member_info")
+      if (action === 'get_login_info') {
+        return { user_id: 456 };
+      }
+      if (action === 'get_group_member_info') {
         return { group_id: 123, user_id: 456, role: state.role };
-      if (action === "get_group_root_files")
+      }
+      if (action === 'get_group_root_files') {
         return {
           files: rows(),
           folders: [
-            { group_id: 123, folder_id: "folder-a", folder_name: "a" },
-            { group_id: 123, folder_id: "folder-b", folder_name: "b" },
+            { group_id: 123, folder_id: 'folder-a', folder_name: 'a' },
+            { group_id: 123, folder_id: 'folder-b', folder_name: 'b' },
           ],
         };
-      if (action === "get_group_files_by_folder")
+      }
+      if (action === 'get_group_files_by_folder') {
         return { files: rows(params.folder_id as string), folders: [] };
-      if (action === "get_group_file_url") return {};
-      if (state.fail) throw state.fail;
-      if (action === "delete_group_file") {
+      }
+      if (action === 'get_group_file_url') {
+        return {};
+      }
+      if (state.fail) {
+        throw state.fail;
+      }
+      if (action === 'delete_group_file') {
         const native = aliases.get(String(params.file_id));
-        if (!native || !state.items.some((x) => x.native === native))
-          throw new OneBotError("api_failed", 1200);
+        if (!native || !state.items.some((x) => x.native === native)) {
+          throw new OneBotError('api_failed', 1200);
+        }
         effects.push(native);
         return (
           state.write ?? {
             result: 0,
-            errMsg: "",
+            errMsg: '',
             transGroupFileResult: {
               result: {},
               successFileIdList: [native],
@@ -122,34 +135,37 @@ function fixture() {
           }
         );
       }
-      if (action === "create_group_file_folder")
+      if (action === 'create_group_file_folder') {
         return state.write ?? { result: {}, groupItem: {} };
-      if (action === "upload_group_file")
+      }
+      if (action === 'upload_group_file') {
         return state.write ?? { file_id: null };
-      if (action === "delete_group_folder")
+      }
+      if (action === 'delete_group_folder') {
         return state.write ?? { retCode: 0 };
-      throw new Error("Unexpected action");
+      }
+      throw new Error('Unexpected action');
     },
   };
   const tools = new GroupFileTools(api, ctx.groupId, GROUP_FILE_TOOL_NAMES, {
     downloader: async () => {
       downloads++;
-      return "text";
+      return 'text';
     },
     artifacts: store,
   });
   const run = (name: string, args: unknown, signal?: AbortSignal) =>
     tools.execute(name, args, ctx, signal);
   const list = async (folder_handle?: unknown) => {
-    const r = await run("list_group_files", {
+    const r = await run('list_group_files', {
       limit: 100,
       ...(folder_handle ? { folder_handle } : {}),
     });
-    assert.equal(r.status, "ok");
+    assert.equal(r.status, 'ok');
     return r.items as JsonObject[];
   };
   const handle = async (parent?: unknown) =>
-    (await list(parent)).find((x) => x.kind === "file")!.file_handle;
+    (await list(parent)).find((x) => x.kind === 'file')!.file_handle;
   return {
     state,
     calls,
@@ -163,36 +179,36 @@ function fixture() {
   };
 }
 
-test("random provider tokens are only consistency aliases: fresh validation never rebinds the execution target", async () => {
+test('random provider tokens are only consistency aliases: fresh validation never rebinds the execution target', async () => {
   const f = fixture(),
     token = await f.handle(),
     old = [...f.aliases.keys()][0]!;
   const before = await f.tools.confirmationDetails(
-    "delete_group_file",
+    'delete_group_file',
     { file_handle: token },
     ctx,
   );
   const after = await f.tools.confirmationDetails(
-    "delete_group_file",
+    'delete_group_file',
     { file_handle: token },
     ctx,
   );
   assert.equal(before, after);
   assert.ok(f.aliases.size >= 3);
   assert.doesNotMatch(before, /random-provider|native-one/);
-  const result = await f.run("delete_group_file", { file_handle: token });
+  const result = await f.run('delete_group_file', { file_handle: token });
   assert.equal(result.submitted, true);
   assert.equal(result.effect_confirmed, false);
-  assert.deepEqual(f.effects, ["native-one"]);
+  assert.deepEqual(f.effects, ['native-one']);
   assert.equal(
-    f.calls.find((c) => c.action === "delete_group_file")!.params.file_id,
+    f.calls.find((c) => c.action === 'delete_group_file')!.params.file_id,
     old,
   );
   assert.equal(result.deleted, undefined);
   assert.doesNotMatch(JSON.stringify(result), /native-one|random-provider/);
 });
 
-test("dynamic aliases require complete unique unchanged metadata, not a same-name guess", async () => {
+test('dynamic aliases require complete unique unchanged metadata, not a same-name guess', async () => {
   const mutations: ((f: ReturnType<typeof fixture>) => void)[] = [
     (f) => {
       delete f.state.items[0]!.uploadedAt;
@@ -210,29 +226,29 @@ test("dynamic aliases require complete unique unchanged metadata, not a same-nam
       f.state.items[0]!.name = '';
     },
     (f) => {
-      f.state.items[0]!.name = "changed.txt";
+      f.state.items[0]!.name = 'changed.txt';
     },
     (f) => {
       f.state.items[0]!.size = 8;
     },
     (f) => {
-      f.state.items[0]!.uploader = "999";
+      f.state.items[0]!.uploader = '999';
     },
     (f) => {
       f.state.items[0]!.uploadedAt = 101;
     },
     (f) => {
-      f.state.items.push({ ...original(), native: "duplicate" });
+      f.state.items.push({ ...original(), native: 'duplicate' });
     },
     (f) => {
       f.state.items = [
-        { ...original(), native: "replacement", uploadedAt: 101 },
+        { ...original(), native: 'replacement', uploadedAt: 101 },
       ];
     },
     (f) => {
       f.state.items = [
-        { ...original(), parent: "folder-b" },
-        { ...original(), native: "same-name-new", size: 8 },
+        { ...original(), parent: 'folder-b' },
+        { ...original(), native: 'same-name-new', size: 8 },
       ];
     },
   ];
@@ -242,93 +258,97 @@ test("dynamic aliases require complete unique unchanged metadata, not a same-nam
     mutate(f);
     await assert.rejects(
       f.tools.confirmationDetails(
-        "delete_group_file",
+        'delete_group_file',
         { file_handle: token },
         ctx,
       ),
       /resource_not_verified/,
     );
-    const result = await f.run("delete_group_file", { file_handle: token });
-    assert.equal(result.error, "resource_not_verified");
+    const result = await f.run('delete_group_file', { file_handle: token });
+    assert.equal(result.error, 'resource_not_verified');
     assert.equal(
-      f.calls.filter((x) => x.action === "delete_group_file").length,
+      f.calls.filter((x) => x.action === 'delete_group_file').length,
       0,
     );
   }
-  for (const missing of ["uploadedAt", "size", "uploader", "name"] as const) {
+  for (const missing of ['uploadedAt', 'size', 'uploader', 'name'] as const) {
     const f = fixture();
     delete f.state.items[0]![missing];
     const token = await f.handle();
     assert.equal(
-      (await f.run("delete_group_file", { file_handle: token })).error,
-      "resource_not_verified",
+      (await f.run('delete_group_file', { file_handle: token })).error,
+      'resource_not_verified',
     );
   }
 });
 
-test("even an indistinguishable replacement cannot change the native target or recover an expired provider token", async () => {
-  for (const change of ["replacement", "expired"]) {
+test('even an indistinguishable replacement cannot change the native target or recover an expired provider token', async () => {
+  for (const change of ['replacement', 'expired']) {
     const f = fixture(),
       token = await f.handle(),
       old = [...f.aliases.keys()][0]!;
-    if (change === "replacement")
-      f.state.items = [{ ...original(), native: "other-native" }];
-    else f.aliases.delete(old);
-    const result = await f.run("delete_group_file", { file_handle: token });
-    assert.equal(result.status, "unknown");
+    if (change === 'replacement') {
+      f.state.items = [{ ...original(), native: 'other-native' }];
+    } else {
+      f.aliases.delete(old);
+    }
+    const result = await f.run('delete_group_file', { file_handle: token });
+    assert.equal(result.status, 'unknown');
     assert.equal(result.provider_reported_failure, true);
     assert.deepEqual(f.effects, []);
     assert.equal(
-      f.calls.find((x) => x.action === "delete_group_file")!.params.file_id,
+      f.calls.find((x) => x.action === 'delete_group_file')!.params.file_id,
       old,
     );
     assert.equal(
-      f.calls.filter((x) => x.action === "delete_group_file").length,
+      f.calls.filter((x) => x.action === 'delete_group_file').length,
       1,
     );
   }
 });
 
-test("parent membership and current role are checked independently of dynamic alias matching", async () => {
+test('parent membership and current role are checked independently of dynamic alias matching', async () => {
   const f = fixture();
-  f.state.items[0]!.parent = "folder-a";
+  f.state.items[0]!.parent = 'folder-a';
   const root = await f.list(),
-    a = root.find((x) => x.name === "a")!.folder_handle;
+    a = root.find((x) => x.name === 'a')!.folder_handle;
   const token = await f.handle(a);
-  f.state.items[0]!.parent = "folder-b";
+  f.state.items[0]!.parent = 'folder-b';
   assert.equal(
-    (await f.run("delete_group_file", { file_handle: token })).error,
-    "resource_not_verified",
+    (await f.run('delete_group_file', { file_handle: token })).error,
+    'resource_not_verified',
   );
   assert.deepEqual(f.effects, []);
   const g = fixture(),
     other = await g.handle();
-  g.state.role = "member";
-  g.state.items[0]!.uploader = "999";
+  g.state.role = 'member';
+  g.state.items[0]!.uploader = '999';
   assert.equal(
-    (await g.run("delete_group_file", { file_handle: other })).error,
-    "resource_not_verified",
+    (await g.run('delete_group_file', { file_handle: other })).error,
+    'resource_not_verified',
   );
   assert.deepEqual(g.effects, []);
 });
 
-test("submitted and unknown locks survive dynamic aliases, renames and moves without freezing independent resources", async () => {
+test('submitted and unknown locks survive dynamic aliases, renames and moves without freezing independent resources', async () => {
   for (const unknown of [false, true]) {
     const f = fixture();
-    if (unknown) f.state.fail = new Error("untrusted private failure");
+    if (unknown) {
+      f.state.fail = new Error('untrusted private failure');
+    }
     const token = await f.handle();
-    const first = await f.run("delete_group_file", { file_handle: token });
-    assert.equal(first.status, unknown ? "unknown" : "ok");
+    const first = await f.run('delete_group_file', { file_handle: token });
+    assert.equal(first.status, unknown ? 'unknown' : 'ok');
     f.tools.resetWake();
     f.state.fail = undefined;
-    f.state.items[0]!.name = "renamed.txt";
-    f.state.items[0]!.parent = "folder-a";
-    const folder = (await f.list()).find((x) => x.name === "a")!.folder_handle,
+    f.state.items[0]!.name = 'renamed.txt';
+    f.state.items[0]!.parent = 'folder-a';
+    const folder = (await f.list()).find((x) => x.name === 'a')!.folder_handle,
       alias = await f.handle(folder);
-    const blocked = await f.run("delete_group_file", { file_handle: alias });
+    const blocked = await f.run('delete_group_file', { file_handle: alias });
     assert.equal(
       blocked.error,
-      unknown ? "target_result_unknown" : "target_already_submitted",
+      unknown ? 'target_result_unknown' : 'target_already_submitted',
     );
     if (!unknown) {
       assert.equal(blocked.previous_submitted, true);
@@ -336,102 +356,107 @@ test("submitted and unknown locks survive dynamic aliases, renames and moves wit
     }
     f.state.items.push({
       ...original(),
-      native: "independent",
-      name: "independent.txt",
+      native: 'independent',
+      name: 'independent.txt',
       uploadedAt: 200,
     });
     const independent = await f.handle();
     assert.equal(
-      (await f.run("delete_group_file", { file_handle: independent }))
+      (await f.run('delete_group_file', { file_handle: independent }))
         .submitted,
       true,
     );
     assert.equal(
-      f.calls.filter((x) => x.action === "delete_group_file").length,
+      f.calls.filter((x) => x.action === 'delete_group_file').length,
       2,
     );
   }
 });
 
-test("conservative immutable fingerprints can reject collisions but never authorize them", async () => {
+test('conservative immutable fingerprints can reject collisions but never authorize them', async () => {
   const f = fixture();
   const first = await f.handle();
   assert.equal(
-    (await f.run("delete_group_file", { file_handle: first })).submitted,
+    (await f.run('delete_group_file', { file_handle: first })).submitted,
     true,
   );
   f.tools.resetWake();
   f.state.items = [
-    { ...original(), native: "different-native", name: "different.txt" },
+    { ...original(), native: 'different-native', name: 'different.txt' },
   ];
   const collision = await f.handle();
   assert.equal(
-    (await f.run("delete_group_file", { file_handle: collision })).error,
-    "target_already_submitted",
+    (await f.run('delete_group_file', { file_handle: collision })).error,
+    'target_already_submitted',
   );
-  assert.deepEqual(f.effects, ["native-one"]);
+  assert.deepEqual(f.effects, ['native-one']);
 });
 
-test("documented successful writes preserve native outcomes and do not invent identities", async () => {
+test('documented successful writes preserve native outcomes and do not invent identities', async () => {
   const f = fixture();
-  const artifact_id = await art("note.txt");
-  const upload = await f.run("upload_group_file", { artifact_id });
+  const artifact_id = await art('note.txt');
+  const upload = await f.run('upload_group_file', { artifact_id });
   assert.equal(
-    f.calls.find((c) => c.action === "upload_group_file")!.params.file,
+    f.calls.find((c) => c.action === 'upload_group_file')!.params.file,
     `/napcat/artifacts/${artifact_id}`,
   );
   assert.equal(upload.uploaded, true);
   assert.equal(upload.effect_confirmed, true);
   assert.equal(upload.resource_id_available, false);
   assert.equal(upload.file_id, undefined);
-  const create = await f.run("create_group_folder", { name: "new" });
+  const create = await f.run('create_group_folder', { name: 'new' });
   assert.equal(create.submitted, true);
   assert.equal(create.effect_confirmed, false);
   f.tools.resetWake();
-  const duplicate = await f.run("create_group_folder", { name: "new" });
-  assert.equal(duplicate.error, "target_already_submitted");
+  const duplicate = await f.run('create_group_folder', { name: 'new' });
+  assert.equal(duplicate.error, 'target_already_submitted');
   assert.equal(duplicate.previous_submitted, true);
   assert.equal(
-    (await f.run("create_group_folder", { name: "another" })).submitted,
+    (await f.run('create_group_folder', { name: 'another' })).submitted,
     true,
   );
 });
 
-test('native file success lists do not require an unverified opaque auxiliary result field',async()=>{
- for(const successFileIdList of [[],['native-id-not-provider-token']]){
-  const f=fixture(), token=await f.handle();
-  f.state.write={result:0,transGroupFileResult:{successFileIdList,failFileIdList:[]}};
-  const result=await f.run('delete_group_file',{file_handle:token});
-  assert.equal(result.submitted,true);assert.equal(result.effect_confirmed,false);
- }
+test('native file success lists do not require an unverified opaque auxiliary result field', async () => {
+  for (const successFileIdList of [[], ['native-id-not-provider-token']]) {
+    const f = fixture(),
+      token = await f.handle();
+    f.state.write = {
+      result: 0,
+      transGroupFileResult: { successFileIdList, failFileIdList: [] },
+    };
+    const result = await f.run('delete_group_file', { file_handle: token });
+    assert.equal(result.submitted, true);
+    assert.equal(result.effect_confirmed, false);
+  }
 });
 
-test("known nonzero business codes including negatives are error, opaque result bodies are not invented ACKs", async () => {
+test('known nonzero business codes including negatives are error, opaque result bodies are not invented ACKs', async () => {
   for (const code of [-1, 1, 500]) {
     const f = fixture(),
       root = await f.list(),
-      folder = root.find((x) => x.kind === "folder")!.folder_handle;
-    f.state.write = { retCode: code, retMsg: "SECRET" };
+      folder = root.find((x) => x.kind === 'folder')!.folder_handle;
+    f.state.write = { retCode: code, retMsg: 'SECRET' };
     assert.equal(
-      (await f.run("delete_group_folder", { folder_handle: folder })).error,
-      "operation_rejected",
+      (await f.run('delete_group_folder', { folder_handle: folder })).error,
+      'operation_rejected',
     );
-    f.state.write = { result: code, errMsg: "SECRET" };
+    f.state.write = { result: code, errMsg: 'SECRET' };
     const file = await f.handle();
-    const result = await f.run("delete_group_file", { file_handle: file });
-    assert.equal(result.error, "operation_rejected");
+    const result = await f.run('delete_group_file', { file_handle: file });
+    assert.equal(result.error, 'operation_rejected');
     assert.doesNotMatch(JSON.stringify(result), /SECRET/);
   }
-  for (const data of [null, {}, false, { retCode: "0" }]) {
+  for (const data of [null, {}, false, { retCode: '0' }]) {
     const f = fixture(),
-      folder = (await f.list()).find((x) => x.kind === "folder")!.folder_handle;
+      folder = (await f.list()).find((x) => x.kind === 'folder')!.folder_handle;
     f.state.write = data === null ? undefined : data;
     if (data === null) {
-      f.state.fail = new Error("no trustworthy receipt");
+      f.state.fail = new Error('no trustworthy receipt');
     }
     assert.equal(
-      (await f.run("delete_group_folder", { folder_handle: folder })).status,
-      "unknown",
+      (await f.run('delete_group_folder', { folder_handle: folder })).status,
+      'unknown',
     );
   }
   const f = fixture(),
@@ -441,12 +466,12 @@ test("known nonzero business codes including negatives are error, opaque result 
     transGroupFileResult: {
       result: {},
       successFileIdList: [],
-      failFileIdList: ["native-one"],
+      failFileIdList: ['native-one'],
     },
   };
   assert.equal(
-    (await f.run("delete_group_file", { file_handle: token })).error,
-    "operation_rejected",
+    (await f.run('delete_group_file', { file_handle: token })).error,
+    'operation_rejected',
   );
   const mixed = fixture(),
     m = await mixed.handle();
@@ -454,50 +479,53 @@ test("known nonzero business codes including negatives are error, opaque result 
     result: 0,
     transGroupFileResult: {
       result: {},
-      successFileIdList: ["one"],
-      failFileIdList: ["two"],
+      successFileIdList: ['one'],
+      failFileIdList: ['two'],
     },
   };
   assert.equal(
-    (await mixed.run("delete_group_file", { file_handle: m }))
+    (await mixed.run('delete_group_file', { file_handle: m }))
       .provider_reported_partial,
     true,
   );
 });
 
-test("write exception classification distinguishes proven unsent calls from handler errors after possible effects", async () => {
+test('write exception classification distinguishes proven unsent calls from handler errors after possible effects', async () => {
   for (const [error, status] of [
-    [new OneBotError("unavailable"), "error"],
-    [new OneBotError("busy"), "error"],
-    [new OneBotError("api_failed", 1400), "error"],
-    [new OneBotError("api_failed", 1200), "unknown"],
-    [new OneBotError("timeout"), "unknown"],
+    [new OneBotError('unavailable'), 'error'],
+    [new OneBotError('busy'), 'error'],
+    [new OneBotError('api_failed', 1400), 'error'],
+    [new OneBotError('api_failed', 1200), 'unknown'],
+    [new OneBotError('timeout'), 'unknown'],
   ] as const) {
     const f = fixture();
     f.state.fail = error;
-    const result = await f.run("create_group_folder", { name: "one" });
+    const result = await f.run('create_group_folder', { name: 'one' });
     assert.equal(result.status, status);
-    if (status === "error") assert.equal(result.dispatched, false);
-    else assert.equal(result.effect_unknown, true);
+    if (status === 'error') {
+      assert.equal(result.dispatched, false);
+    } else {
+      assert.equal(result.effect_unknown, true);
+    }
   }
 });
 
-test("valid late file ACKs remain facts across cancellation and reset without resurrecting handles", async () => {
+test('valid late file ACKs remain facts across cancellation and reset without resurrecting handles', async () => {
   for (const action of [
-    "upload_group_file",
-    "create_group_folder",
-    "delete_group_file",
-    "delete_group_folder",
+    'upload_group_file',
+    'create_group_folder',
+    'delete_group_file',
+    'delete_group_folder',
   ]) {
     const f = fixture(),
       root = await f.list(),
-      file = root.find((x) => x.kind === "file")!.file_handle,
-      folder = root.find((x) => x.kind === "folder")!.folder_handle;
+      file = root.find((x) => x.kind === 'file')!.file_handle,
+      folder = root.find((x) => x.kind === 'folder')!.folder_handle;
     const native = {
-      upload_group_file: "upload_group_file",
-      create_group_folder: "create_group_file_folder",
-      delete_group_file: "delete_group_file",
-      delete_group_folder: "delete_group_folder",
+      upload_group_file: 'upload_group_file',
+      create_group_folder: 'create_group_file_folder',
+      delete_group_file: 'delete_group_file',
+      delete_group_folder: 'delete_group_folder',
     }[action]!;
     const controller = new AbortController();
     f.state.hook = (a) => {
@@ -507,46 +535,49 @@ test("valid late file ACKs remain facts across cancellation and reset without re
       }
     };
     const args =
-      action === "upload_group_file"
-        ? { artifact_id: await art("n.txt") }
-        : action === "create_group_folder"
-          ? { name: "d" }
-          : action === "delete_group_file"
+      action === 'upload_group_file'
+        ? { artifact_id: await art('n.txt') }
+        : action === 'create_group_folder'
+          ? { name: 'd' }
+          : action === 'delete_group_file'
             ? { file_handle: file }
             : { folder_handle: folder };
     const result = await f.run(action, args, controller.signal);
-    assert.equal(result.status, "ok");
+    assert.equal(result.status, 'ok');
     assert.equal(result.cancelled_after_dispatch, true);
     f.state.hook = undefined;
     assert.equal(
-      (await f.run("delete_group_file", { file_handle: file })).error,
-      "invalid_handle",
+      (await f.run('delete_group_file', { file_handle: file })).error,
+      'invalid_handle',
     );
   }
 });
 
-test("optional absent file URL means content unavailable, not fake empty content or arbitrary download", async () => {
+test('optional absent file URL means content unavailable, not fake empty content or arbitrary download', async () => {
   const f = fixture(),
     token = await f.handle();
-  const r = await f.run("read_group_text_file", {
+  const r = await f.run('read_group_text_file', {
     file_handle: token,
     max_bytes: 100,
   });
-  assert.equal(r.error, "file_url_unavailable");
+  assert.equal(r.error, 'file_url_unavailable');
   assert.equal(r.content, undefined);
   assert.equal(f.downloads(), 0);
 });
 
-test("request late submission survives reset as a dedup fact, while error and unknown remain distinct", async () => {
-  for (const mode of ["late", "bad", "schema", "timeout"]) {
+test('request late submission survives reset as a dedup fact, while error and unknown remain distinct', async () => {
+  for (const mode of ['late', 'bad', 'schema', 'timeout']) {
     let tool: GroupRequestTools;
     let writes = 0;
     const api: Api = {
       async call(action) {
-        if (action === "get_login_info") return { user_id: "456" };
-        if (action === "get_group_member_info")
-          return { group_id: "123", user_id: "456", role: "admin" };
-        if (action === "get_group_system_msg")
+        if (action === 'get_login_info') {
+          return { user_id: '456' };
+        }
+        if (action === 'get_group_member_info') {
+          return { group_id: '123', user_id: '456', role: 'admin' };
+        }
+        if (action === 'get_group_system_msg') {
           return {
             join_requests: [
               {
@@ -559,39 +590,44 @@ test("request late submission survives reset as a dedup fact, while error and un
             ],
             invited_requests: [],
           };
+        }
         writes++;
-        if (mode === "late") {
+        if (mode === 'late') {
           tool.reset();
           return null;
         }
-        if (mode === "bad") throw new OneBotError("api_failed", 1400);
-        if (mode === "timeout") throw new OneBotError("timeout");
+        if (mode === 'bad') {
+          throw new OneBotError('api_failed', 1400);
+        }
+        if (mode === 'timeout') {
+          throw new OneBotError('timeout');
+        }
         return {};
       },
     };
-    tool = new GroupRequestTools(api, "123", [
-      "list_group_requests",
-      "respond_group_request",
+    tool = new GroupRequestTools(api, '123', [
+      'list_group_requests',
+      'respond_group_request',
     ]);
     const list = async () => {
-      const r = await tool.execute("list_group_requests", { limit: 1 }, ctx);
+      const r = await tool.execute('list_group_requests', { limit: 1 }, ctx);
       return (r.items as JsonObject[])[0]!.request_handle;
     };
     const token = await list();
-    const args = { request_handle: token, approve: true, reason: "" };
-    const result = await tool.execute("respond_group_request", args, ctx);
+    const args = { request_handle: token, approve: true, reason: '' };
+    const result = await tool.execute('respond_group_request', args, ctx);
     assert.equal(
       result.status,
-      mode === "late" ? "ok" : mode === "bad" ? "error" : "unknown",
+      mode === 'late' ? 'ok' : mode === 'bad' ? 'error' : 'unknown',
     );
-    if (mode === "late") {
+    if (mode === 'late') {
       assert.equal(result.submitted, true);
       assert.equal(result.cancelled_after_dispatch, true);
       const fresh = await list();
       assert.equal(
         (
           await tool.execute(
-            "respond_group_request",
+            'respond_group_request',
             { ...args, request_handle: fresh },
             ctx,
           )

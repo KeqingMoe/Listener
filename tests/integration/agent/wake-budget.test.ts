@@ -5,27 +5,294 @@ import { Listener } from '../../../src/agent/listener.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
 import { LISTENER_GROUP } from '../../../src/contracts/identity.ts';
 import { type Api } from '../../../src/contracts/onebot.ts';
-import { type ChatMessage, type Completion, type Model } from '../../../src/contracts/model.ts';
-import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.ts';
-const self='900000001';
-const cfg:ListenerConfig={enabled:true,baseUrl:'https://example.invalid',apiKey:'x',model:'x',timeoutMs:5000,maxTokens:64,debounceMs:1,delayMaxMs:1,cooldownMs:1,memoryPath:':memory:',maxContextChars:8000,retentionDays:7,randomReplyProbability:1,randomCooldownMs:0,randomMaxPerMinute:10,maxToolCallsPerWake:96,wakeTimeoutMs:90000};
-class Mem implements Memory{rows:TimelineEntry[]=[];append(e:TimelineEntry){this.rows.push(e);return true;}recent(){return this.rows;}find(id:string){return this.rows.find(e=>e.messageId===id);}context(){return JSON.stringify(this.rows);}async compact(){}clear(){this.rows=[];}close(){}}
-const event=(id='1')=>({post_type:'message',message_type:'group',group_id:LISTENER_GROUP,self_id:self,user_id:'123',message_id:id,time:Math.floor(Date.now()/1000),sender:{nickname:'x'},message:[{type:'text',data:{text:'hello'}}]});
-const call=(name:string,args:unknown={})=>({id:`${name}-${Math.random()}`,type:'function' as const,function:{name,arguments:JSON.stringify(args)}});
-function setup(complete:(round:number,messages:ChatMessage[])=>Completion|Promise<Completion>,overrides:Partial<ListenerConfig>={}){const requests:ChatMessage[][]=[];const calls:string[]=[];const api:Api={async call(action){calls.push(action);if(action==='send_group_msg')return{message_id:String(calls.length)};return{};}};const memory=new Mem();const model:Model={async complete(messages){requests.push(structuredClone(messages));return complete(requests.length-1,messages);}};const bot=new Listener(api,model,memory,{...cfg,...overrides},()=>0);return{bot,requests,calls};}
-async function settle(s:ReturnType<typeof setup>){for(let i=0;i<1500;i++){if(!(s.bot as any).running&&s.requests.length)return;await delay(2);}assert.fail('wake did not settle');}
+import {
+  type ChatMessage,
+  type Completion,
+  type Model,
+} from '../../../src/contracts/model.ts';
+import {
+  type Memory,
+  type TimelineEntry,
+} from '../../../src/contracts/messages.ts';
 
-test('constructor rejects unsafe unified wake budgets',()=>{for(const key of ['maxToolCallsPerWake','wakeTimeoutMs'] as const)for(const value of [0,-1,1.5,NaN,Infinity,Number.MAX_SAFE_INTEGER+1,true,'96',null,...(key==='wakeTimeoutMs'?[600001]:[])])assert.throws(()=>new Listener({call:async()=>null},undefined,undefined,{...cfg,[key]:value} as any));assert.doesNotThrow(()=>new Listener({call:async()=>null},undefined,undefined,{...cfg,maxToolCallsPerWake:1,wakeTimeoutMs:1000}));});
+const self = '900000001';
+const cfg: ListenerConfig = {
+  enabled: true,
+  baseUrl: 'https://example.invalid',
+  apiKey: 'x',
+  model: 'x',
+  timeoutMs: 5000,
+  maxTokens: 64,
+  debounceMs: 1,
+  delayMaxMs: 1,
+  cooldownMs: 1,
+  memoryPath: ':memory:',
+  maxContextChars: 8000,
+  retentionDays: 7,
+  randomReplyProbability: 1,
+  randomCooldownMs: 0,
+  randomMaxPerMinute: 10,
+  maxToolCallsPerWake: 96,
+  wakeTimeoutMs: 90000,
+};
 
-test('wake dispatch passes the former 4096 call ceiling',async()=>{
- const s=setup(round=>round===0?{content:null,tool_calls:Array.from({length:4097},()=>call('get_group_members',{limit:1}))}:{content:null,tool_calls:[call('finish')]},{maxToolCallsPerWake:4098});
- try{await s.bot.receive(event(),self);await settle(s);assert.equal(s.calls.filter(x=>x==='get_group_member_list').length,4097);assert.equal(s.requests.length,2);}finally{await s.bot.stop();}
+class Mem implements Memory {
+  rows: TimelineEntry[] = [];
+  append(e: TimelineEntry) {
+    this.rows.push(e);
+    return true;
+  }
+
+  recent() {
+    return this.rows;
+  }
+
+  find(id: string) {
+    return this.rows.find((e) => e.messageId === id);
+  }
+
+  context() {
+    return JSON.stringify(this.rows);
+  }
+
+  async compact() {}
+  clear() {
+    this.rows = [];
+  }
+
+  close() {}
+}
+
+const event = (id = '1') => ({
+  post_type: 'message',
+  message_type: 'group',
+  group_id: LISTENER_GROUP,
+  self_id: self,
+  user_id: '123',
+  message_id: id,
+  time: Math.floor(Date.now() / 1000),
+  sender: { nickname: 'x' },
+  message: [{ type: 'text', data: { text: 'hello' } }],
+});
+const call = (name: string, args: unknown = {}) => ({
+  id: `${name}-${Math.random()}`,
+  type: 'function' as const,
+  function: { name, arguments: JSON.stringify(args) },
 });
 
-test('all tool calls share one budget and the model sees remaining values',async()=>{const s=setup((round,messages)=>round<7?{content:null,tool_calls:[call('get_group_members',{offset:round,limit:1})]}:{content:null,tool_calls:[call('finish')]},{maxToolCallsPerWake:8});try{await s.bot.receive(event(),self);await settle(s);assert.equal(s.requests.length,8);for(let i=1;i<s.requests.length;i++)assert.deepEqual(s.requests[i]!.slice(0,s.requests[i-1]!.length),s.requests[i-1]);assert.equal(s.requests.at(-1)!.filter(m=>m.role==='user').length,1);const budgets=s.requests.map(m=>JSON.parse(String((m.filter(x=>x.role==='tool').at(-1)??m[1])!.content)).wake_budget);assert.equal(budgets[0].used_tool_calls,0);assert.equal(budgets.at(-1)!.remaining_tool_calls,1);}finally{await s.bot.stop();}});
+function setup(
+  complete: (
+    round: number,
+    messages: ChatMessage[],
+  ) => Completion | Promise<Completion>,
+  overrides: Partial<ListenerConfig> = {},
+) {
+  const requests: ChatMessage[][] = [];
+  const calls: string[] = [];
+  const api: Api = {
+    async call(action) {
+      calls.push(action);
+      if (action === 'send_group_msg') {
+        return { message_id: String(calls.length) };
+      }
+      return {};
+    },
+  };
+  const memory = new Mem();
+  const model: Model = {
+    async complete(messages) {
+      requests.push(structuredClone(messages));
+      return complete(requests.length - 1, messages);
+    },
+  };
+  const bot = new Listener(
+    api,
+    model,
+    memory,
+    { ...cfg, ...overrides },
+    () => 0,
+  );
+  return { bot, requests, calls };
+}
 
-test('a response is truncated at the shared budget prefix',async()=>{const s=setup(()=>({content:null,tool_calls:[call('get_group_members',{limit:1}),call('get_group_members',{limit:1}),call('get_group_members',{limit:1})]}),{maxToolCallsPerWake:2});try{await s.bot.receive(event(),self);await settle(s);assert.equal(s.requests.length,1);assert.equal(s.calls.filter(x=>x==='get_group_member_list').length,2);}finally{await s.bot.stop();}});
+async function settle(s: ReturnType<typeof setup>) {
+  for (let i = 0; i < 1500; i++) {
+    if (!(s.bot as any).running && s.requests.length) {
+      return;
+    }
+    await delay(2);
+  }
+  assert.fail('wake did not settle');
+}
 
-test('invalid and disabled calls consume the same budget as valid calls',async()=>{const s=setup((round)=>round===0?{content:null,tool_calls:[{id:'bad',type:'function',function:{name:'not_a_tool',arguments:'{'}} as any,call('get_group_members',{limit:1})]}:{content:null,tool_calls:[call('finish')]},{maxToolCallsPerWake:2});try{await s.bot.receive(event(),self);await settle(s);assert.equal(s.requests.length,1);assert.equal(s.calls.filter(x=>x==='get_group_member_list').length,1);}finally{await s.bot.stop();}});
+test('constructor rejects unsafe unified wake budgets', () => {
+  for (const key of ['maxToolCallsPerWake', 'wakeTimeoutMs'] as const) {
+    for (const value of [
+      0,
+      -1,
+      1.5,
+      NaN,
+      Infinity,
+      Number.MAX_SAFE_INTEGER + 1,
+      true,
+      '96',
+      null,
+      ...(key === 'wakeTimeoutMs' ? [600001] : []),
+    ]) {
+      assert.throws(
+        () =>
+          new Listener({ call: async () => null }, undefined, undefined, {
+            ...cfg,
+            [key]: value,
+          } as any),
+      );
+    }
+  }
+  assert.doesNotThrow(
+    () =>
+      new Listener({ call: async () => null }, undefined, undefined, {
+        ...cfg,
+        maxToolCallsPerWake: 1,
+        wakeTimeoutMs: 1000,
+      }),
+  );
+});
 
-test('custom wake timeout is independent of model request timeout',async()=>{const s=setup(async()=>{await delay(20);return{content:null,tool_calls:[call('get_group_members',{limit:1})]};},{maxToolCallsPerWake:96,wakeTimeoutMs:1000,timeoutMs:5000});try{await s.bot.receive(event(),self);await settle(s);assert.ok(s.requests.length>=1);}finally{await s.bot.stop();}});
+test('wake dispatch passes the former 4096 call ceiling', async () => {
+  const s = setup(
+    (round) =>
+      round === 0
+        ? {
+            content: null,
+            tool_calls: Array.from({ length: 4097 }, () =>
+              call('get_group_members', { limit: 1 }),
+            ),
+          }
+        : { content: null, tool_calls: [call('finish')] },
+    { maxToolCallsPerWake: 4098 },
+  );
+  try {
+    await s.bot.receive(event(), self);
+    await settle(s);
+    assert.equal(
+      s.calls.filter((x) => x === 'get_group_member_list').length,
+      4097,
+    );
+    assert.equal(s.requests.length, 2);
+  } finally {
+    await s.bot.stop();
+  }
+});
+
+test('all tool calls share one budget and the model sees remaining values', async () => {
+  const s = setup(
+    (round, messages) =>
+      round < 7
+        ? {
+            content: null,
+            tool_calls: [
+              call('get_group_members', { offset: round, limit: 1 }),
+            ],
+          }
+        : { content: null, tool_calls: [call('finish')] },
+    { maxToolCallsPerWake: 8 },
+  );
+  try {
+    await s.bot.receive(event(), self);
+    await settle(s);
+    assert.equal(s.requests.length, 8);
+    for (let i = 1; i < s.requests.length; i++) {
+      assert.deepEqual(
+        s.requests[i]!.slice(0, s.requests[i - 1]!.length),
+        s.requests[i - 1],
+      );
+    }
+    assert.equal(s.requests.at(-1)!.filter((m) => m.role === 'user').length, 1);
+    const budgets = s.requests.map(
+      (m) =>
+        JSON.parse(
+          String((m.filter((x) => x.role === 'tool').at(-1) ?? m[1])!.content),
+        ).wake_budget,
+    );
+    assert.equal(budgets[0].used_tool_calls, 0);
+    assert.equal(budgets.at(-1)!.remaining_tool_calls, 1);
+  } finally {
+    await s.bot.stop();
+  }
+});
+
+test('a response is truncated at the shared budget prefix', async () => {
+  const s = setup(
+    () => ({
+      content: null,
+      tool_calls: [
+        call('get_group_members', { limit: 1 }),
+        call('get_group_members', { limit: 1 }),
+        call('get_group_members', { limit: 1 }),
+      ],
+    }),
+    { maxToolCallsPerWake: 2 },
+  );
+  try {
+    await s.bot.receive(event(), self);
+    await settle(s);
+    assert.equal(s.requests.length, 1);
+    assert.equal(
+      s.calls.filter((x) => x === 'get_group_member_list').length,
+      2,
+    );
+  } finally {
+    await s.bot.stop();
+  }
+});
+
+test('invalid and disabled calls consume the same budget as valid calls', async () => {
+  const s = setup(
+    (round) =>
+      round === 0
+        ? {
+            content: null,
+            tool_calls: [
+              {
+                id: 'bad',
+                type: 'function',
+                function: { name: 'not_a_tool', arguments: '{' },
+              } as any,
+              call('get_group_members', { limit: 1 }),
+            ],
+          }
+        : { content: null, tool_calls: [call('finish')] },
+    { maxToolCallsPerWake: 2 },
+  );
+  try {
+    await s.bot.receive(event(), self);
+    await settle(s);
+    assert.equal(s.requests.length, 1);
+    assert.equal(
+      s.calls.filter((x) => x === 'get_group_member_list').length,
+      1,
+    );
+  } finally {
+    await s.bot.stop();
+  }
+});
+
+test('custom wake timeout is independent of model request timeout', async () => {
+  const s = setup(
+    async () => {
+      await delay(20);
+      return {
+        content: null,
+        tool_calls: [call('get_group_members', { limit: 1 })],
+      };
+    },
+    { maxToolCallsPerWake: 96, wakeTimeoutMs: 1000, timeoutMs: 5000 },
+  );
+  try {
+    await s.bot.receive(event(), self);
+    await settle(s);
+    assert.ok(s.requests.length >= 1);
+  } finally {
+    await s.bot.stop();
+  }
+});

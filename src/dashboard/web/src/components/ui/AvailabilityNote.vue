@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { Availability } from "../../../../contracts/contracts";
+import type { Availability } from '../../../../contracts/contracts';
+
 defineProps<{ value: Availability }>();
 </script>
 <template>

@@ -1,100 +1,110 @@
-import test from "node:test";
-import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
-import { setTimeout as delay } from "node:timers/promises";
-import { Listener } from "../../../../src/agent/listener.ts";
-import { ModelSession } from "../../../../src/agent/session/store.ts";
-import { WorldEventStore } from "../../../../src/world/events.ts";
-import { SQLiteMemory } from "../../../../src/agent/memory.ts";
-import { LISTENER_GROUP } from "../../../../src/contracts/identity.ts";
-import { type Api } from "../../../../src/contracts/onebot.ts";
-import { type ChatMessage, type Completion } from "../../../../src/contracts/model.ts";
-import { type JsonObject } from "../../../../src/contracts/json.ts";
-import { type TimelineEntry } from "../../../../src/contracts/messages.ts";
-import type { ListenerConfig } from "../../../../src/config/listener.ts";
-import type { ExtendedToolsConfig } from "../../../../src/config/extended-tools.ts";
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { setTimeout as delay } from 'node:timers/promises';
+import { Listener } from '../../../../src/agent/listener.ts';
+import { ModelSession } from '../../../../src/agent/session/store.ts';
+import { WorldEventStore } from '../../../../src/world/events.ts';
+import { SQLiteMemory } from '../../../../src/agent/memory.ts';
+import { LISTENER_GROUP } from '../../../../src/contracts/identity.ts';
+import { type Api } from '../../../../src/contracts/onebot.ts';
+import {
+  type ChatMessage,
+  type Completion,
+} from '../../../../src/contracts/model.ts';
+import { type JsonObject } from '../../../../src/contracts/json.ts';
+import { type TimelineEntry } from '../../../../src/contracts/messages.ts';
+import type { ListenerConfig } from '../../../../src/config/listener.ts';
+import type { ExtendedToolsConfig } from '../../../../src/config/extended-tools.ts';
 
 const GROUP = LISTENER_GROUP,
-  SELF = "900000001",
-  ACTOR = "12345";
-const SECRET = "PRIVATE_NATIVE_URL_AND_RESOURCE_TOKEN";
-const DATA = "data:image/png;base64,aGVsbG8=";
-const imageArgs = { image_id: "img_1_2" },
-  forwardArgs = { message_id: "1" },
-  mergeArgs = { message_ids: ["1"] },
-  voiceArgs = { character_id: "voice_fixture", text: "fixture voice" };
+  SELF = '900000001',
+  ACTOR = '12345';
+const SECRET = 'PRIVATE_NATIVE_URL_AND_RESOURCE_TOKEN';
+const DATA = 'data:image/png;base64,aGVsbG8=';
+const imageArgs = { image_id: 'img_1_2' },
+  forwardArgs = { message_id: '1' },
+  mergeArgs = { message_ids: ['1'] },
+  voiceArgs = { character_id: 'voice_fixture', text: 'fixture voice' };
 const direct: ExtendedToolsConfig = {
-  send_group_image: "direct",
-  forward_message: "direct",
-  send_group_forward: "direct",
-  send_group_ai_voice: "direct",
+  send_group_image: 'direct',
+  forward_message: 'direct',
+  send_group_forward: 'direct',
+  send_group_ai_voice: 'direct',
 };
 const call = (id: string, name: string, args: unknown = {}) => ({
   id,
-  type: "function" as const,
+  type: 'function' as const,
   function: { name, arguments: JSON.stringify(args) },
 });
-const completion = (...tool_calls: Completion["tool_calls"]): Completion => ({
+const completion = (...tool_calls: Completion['tool_calls']): Completion => ({
   content: null,
   tool_calls,
 });
+
 function result(messages: ChatMessage[], id: string): JsonObject {
   const message = messages.find((m) => m.tool_call_id === id);
   assert.ok(message, `missing result ${id}`);
   return JSON.parse(String(message.content)) as JsonObject;
 }
+
 function gate() {
   let release!: () => void;
   const promise = new Promise<void>((resolve) => (release = resolve));
   return { promise, release };
 }
+
 function segments() {
   return [
-    { type: "at", data: { qq: SELF } },
-    { type: "text", data: { text: "SYNTHETIC_TRIGGER" } },
+    { type: 'at', data: { qq: SELF } },
+    { type: 'text', data: { text: 'SYNTHETIC_TRIGGER' } },
     {
-      type: "image",
+      type: 'image',
       data: { url: `https://gchat.qpic.cn/${SECRET}`, file: SECRET },
     },
-    { type: "forward", data: { id: SECRET } },
+    { type: 'forward', data: { id: SECRET } },
   ];
 }
+
 function event(group = GROUP) {
   return {
-    post_type: "message",
-    message_type: "group",
+    post_type: 'message',
+    message_type: 'group',
     group_id: group,
     self_id: SELF,
     user_id: ACTOR,
-    message_id: "1",
+    message_id: '1',
     time: Math.floor(Date.now() / 1000),
-    sender: { nickname: "fixture" },
+    sender: { nickname: 'fixture' },
     message: segments(),
   };
 }
+
 function source(id: string): JsonObject {
   return {
     message_id: id,
-    message_type: "group",
+    message_type: 'group',
     group_id: GROUP,
-    user_id: id === "1" ? ACTOR : SELF,
-    sender: { user_id: id === "1" ? ACTOR : SELF, nickname: "fixture" },
+    user_id: id === '1' ? ACTOR : SELF,
+    sender: { user_id: id === '1' ? ACTOR : SELF, nickname: 'fixture' },
     time: Math.floor(Date.now() / 1000),
     message:
-      id === "1"
+      id === '1'
         ? segments()
-        : [{ type: "image", data: { url: `https://gchat.qpic.cn/${SECRET}` } }],
+        : [{ type: 'image', data: { url: `https://gchat.qpic.cn/${SECRET}` } }],
   };
 }
+
 interface Ledger {
   call_id: string;
   name: string;
   state: string;
   result: JsonObject;
 }
+
 function fixture(options: {
   extended?: ExtendedToolsConfig;
   images?: boolean;
@@ -105,11 +115,11 @@ function fixture(options: {
   ) => Completion | Promise<Completion>;
   apiHook?: (action: string, params: JsonObject) => unknown | Promise<unknown>;
 }) {
-  const dir = mkdtempSync(join(tmpdir(), "media-real-integration-"));
+  const dir = mkdtempSync(join(tmpdir(), 'media-real-integration-'));
   const paths = {
-    session: join(dir, "session.sqlite"),
-    world: join(dir, "world.sqlite"),
-    memory: join(dir, "memory.sqlite"),
+    session: join(dir, 'session.sqlite'),
+    world: join(dir, 'world.sqlite'),
+    memory: join(dir, 'memory.sqlite'),
   };
   const session = new ModelSession({ path: paths.session, groupId: GROUP }),
     world = new WorldEventStore({ path: paths.world, groupId: GROUP }),
@@ -133,54 +143,68 @@ function fixture(options: {
       });
       if (options.apiHook) {
         const response = await options.apiHook(action, params);
-        if (response !== undefined) return response;
+        if (response !== undefined) {
+          return response;
+        }
       }
-      if (action === "get_login_info") return { user_id: SELF };
-      if (action === "get_group_member_info")
+      if (action === 'get_login_info') {
+        return { user_id: SELF };
+      }
+      if (action === 'get_group_member_info') {
         return {
           group_id: GROUP,
           user_id: params.user_id,
-          role: params.user_id === SELF ? "owner" : "member",
+          role: params.user_id === SELF ? 'owner' : 'member',
         };
-      if (action === "get_msg") return source(String(params.message_id));
-      if (action === "get_forward_msg")
+      }
+      if (action === 'get_msg') {
+        return source(String(params.message_id));
+      }
+      if (action === 'get_forward_msg') {
         return {
           messages: [
             {
-              sender: { user_id: ACTOR, nickname: "quoted" },
+              sender: { user_id: ACTOR, nickname: 'quoted' },
               time: 1,
               content: [
-                { type: "text", data: { text: "SYNTHETIC_QUOTED_TEXT" } },
+                { type: 'text', data: { text: 'SYNTHETIC_QUOTED_TEXT' } },
               ],
             },
           ],
         };
-      if (action === "get_ai_characters")
+      }
+      if (action === 'get_ai_characters') {
         return [
           {
-            type: "fixture",
+            type: 'fixture',
             characters: [
               {
-                character_id: "voice_fixture",
-                character_name: "fixture",
+                character_id: 'voice_fixture',
+                character_name: 'fixture',
                 preview_url: `https://example.invalid/${SECRET}`,
               },
             ],
           },
         ];
-      if (action === "send_group_msg" || action === "send_group_forward_msg")
+      }
+      if (action === 'send_group_msg' || action === 'send_group_forward_msg') {
         return { message_id: String(nextId++), res_id: SECRET };
-      if (action === "forward_group_single_msg") return null;
-      if (action === "send_group_ai_record") return { message_id: 0 };
-      throw Error("Unexpected fixture API " + action);
+      }
+      if (action === 'forward_group_single_msg') {
+        return null;
+      }
+      if (action === 'send_group_ai_record') {
+        return { message_id: 0 };
+      }
+      throw Error('Unexpected fixture API ' + action);
     },
   };
   const config: ListenerConfig = {
     enabled: true,
     groupId: GROUP,
-    baseUrl: "https://fixture.invalid",
-    apiKey: "fixture",
-    model: "fixture",
+    baseUrl: 'https://fixture.invalid',
+    apiKey: 'fixture',
+    model: 'fixture',
     timeoutMs: 1000,
     maxTokens: 128,
     debounceMs: 1,
@@ -189,9 +213,7 @@ function fixture(options: {
     maxContextChars: 8000,
     retentionDays: 7,
     randomReplyProbability: 0,
-    ...(options.images
-      ? { images: { enabled: true, maxDownloadMb: 10 } }
-      : {}),
+    ...(options.images ? { images: { enabled: true, maxDownloadMb: 10 } } : {}),
     ...(options.forward ? { forward: { enabled: true } } : {}),
     tools: {
       members: false,
@@ -199,10 +221,10 @@ function fixture(options: {
       reactions: false,
       extended: options.extended,
       moderation: {
-        mute: "off",
-        unmute: "off",
-        recall: "off",
-        memberCard: "off",
+        mute: 'off',
+        unmute: 'off',
+        recall: 'off',
+        memberCard: 'off',
         confirmationTtlSeconds: 60,
         maxMuteSeconds: 600,
       },
@@ -245,15 +267,17 @@ function fixture(options: {
     for (let i = 0; i < 1000; i++) {
       if (
         requests.length &&
-        rows("session", "SELECT wake_id FROM model_session_meta")[0]
+        rows('session', 'SELECT wake_id FROM model_session_meta')[0]
           ?.wake_id === null
       ) {
-        if (failures.length) throw failures[0];
+        if (failures.length) {
+          throw failures[0];
+        }
         return;
       }
       await delay(5);
     }
-    assert.fail("media integration did not settle");
+    assert.fail('media integration did not settle');
   }
   return {
     listener,
@@ -270,10 +294,10 @@ function fixture(options: {
     writes: () =>
       native.filter((c) =>
         [
-          "send_group_msg",
-          "send_group_forward_msg",
-          "forward_group_single_msg",
-          "send_group_ai_record",
+          'send_group_msg',
+          'send_group_forward_msg',
+          'forward_group_single_msg',
+          'send_group_ai_record',
         ].includes(c.action),
       ),
     async run() {
@@ -282,8 +306,8 @@ function fixture(options: {
     },
     ledger: (): Ledger[] =>
       rows(
-        "session",
-        "SELECT call_id,name,state,result FROM model_tool_ledger ORDER BY ordinal",
+        'session',
+        'SELECT call_id,name,state,result FROM model_tool_ledger ORDER BY ordinal',
       ).map((r) => ({
         call_id: String(r.call_id),
         name: String(r.name),
@@ -291,18 +315,18 @@ function fixture(options: {
         result: JSON.parse(String(r.result)) as JsonObject,
       })),
     worldEntries: (): TimelineEntry[] =>
-      rows("world", "SELECT entry FROM world_messages ORDER BY sequence").map(
+      rows('world', 'SELECT entry FROM world_messages ORDER BY sequence').map(
         (r) => JSON.parse(String(r.entry)) as TimelineEntry,
       ),
     memoryEntries: (): TimelineEntry[] =>
-      rows("memory", "SELECT entry FROM listener_messages ORDER BY seq").map(
+      rows('memory', 'SELECT entry FROM listener_messages ORDER BY seq').map(
         (r) => JSON.parse(String(r.entry)) as TimelineEntry,
       ),
     finishReason: () =>
       JSON.parse(
         String(
           rows(
-            "session",
+            'session',
             "SELECT payload FROM model_session_journal WHERE kind='wake_finish' ORDER BY seq DESC LIMIT 1",
           )[0]?.payload,
         ),
@@ -313,36 +337,38 @@ function fixture(options: {
     },
   };
 }
+
 function terminalLedger(f: ReturnType<typeof fixture>) {
   const rows = f.ledger();
   assert.ok(rows.length);
   assert.ok(
-    rows.every((r) => !["pending", "started"].includes(r.state)),
+    rows.every((r) => !['pending', 'started'].includes(r.state)),
     JSON.stringify(rows),
   );
   return rows;
 }
 
-test("real Listener sends normalized image and can read/forward its actual self ID within one persisted wake", async () => {
+test('real Listener sends normalized image and can read/forward its actual self ID within one persisted wake', async () => {
   const f = fixture({
-    extended: { send_group_image: "direct", forward_message: "direct" },
+    extended: { send_group_image: 'direct', forward_message: 'direct' },
     respond(messages, round) {
-      if (round === 1)
-        return completion(call("image", "send_group_image", imageArgs));
+      if (round === 1) {
+        return completion(call('image', 'send_group_image', imageArgs));
+      }
       if (round === 2) {
-        assert.equal(result(messages, "image").message_id, "9001");
+        assert.equal(result(messages, 'image').message_id, '9001');
         return completion(
-          call("read-self", "read_message", { message_id: "9001" }),
-          call("forward-self", "forward_message", { message_id: "9001" }),
+          call('read-self', 'read_message', { message_id: '9001' }),
+          call('forward-self', 'forward_message', { message_id: '9001' }),
         );
       }
       assert.equal(round, 3);
-      assert.equal(result(messages, "read-self").status, "ok");
-      assert.match(JSON.stringify(result(messages, "read-self")), /img_9001_0/);
-      assert.equal(result(messages, "forward-self").status, "executed");
+      assert.equal(result(messages, 'read-self').status, 'ok');
+      assert.match(JSON.stringify(result(messages, 'read-self')), /img_9001_0/);
+      assert.equal(result(messages, 'forward-self').status, 'executed');
       return completion(
-        call("done", "finish"),
-        call("never", "send_group_image", imageArgs),
+        call('done', 'finish'),
+        call('never', 'send_group_image', imageArgs),
       );
     },
   });
@@ -352,31 +378,31 @@ test("real Listener sends normalized image and can read/forward its actual self 
     assert.equal(f.downloads, 1);
     assert.deepEqual(
       f.writes().map((c) => c.action),
-      ["send_group_msg", "forward_group_single_msg"],
+      ['send_group_msg', 'forward_group_single_msg'],
     );
     assert.deepEqual(f.writes()[0]!.params, {
       group_id: GROUP,
-      message: [{ type: "image", data: { file: "base64://aGVsbG8=" } }],
+      message: [{ type: 'image', data: { file: 'base64://aGVsbG8=' } }],
     });
     assert.deepEqual(f.writes()[1]!.params, {
       group_id: GROUP,
-      message_id: "9001",
+      message_id: '9001',
     });
     assert.ok(
       f.writes()[1]!.at - f.writes()[0]!.at >= 430,
-      "shared send pacing must survive model round boundary",
+      'shared send pacing must survive model round boundary',
     );
     assert.ok(
       f.native.some(
-        (c) => c.action === "get_msg" && c.params.message_id === "9001",
+        (c) => c.action === 'get_msg' && c.params.message_id === '9001',
       ),
     );
     for (const entries of [f.worldEntries(), f.memoryEntries()]) {
-      const sent = entries.find((e) => e.messageId === "9001");
+      const sent = entries.find((e) => e.messageId === '9001');
       assert.ok(sent);
-      assert.deepEqual(sent.images, [{ id: "img_9001_0", index: 0 }]);
+      assert.deepEqual(sent.images, [{ id: 'img_9001_0', index: 0 }]);
       assert.deepEqual(sent.segments, [
-        { type: "image", image_id: "img_9001_0", content_status: "not_viewed" },
+        { type: 'image', image_id: 'img_9001_0', content_status: 'not_viewed' },
       ]);
       assert.doesNotMatch(
         JSON.stringify(entries),
@@ -385,14 +411,14 @@ test("real Listener sends normalized image and can read/forward its actual self 
     }
     const ledger = terminalLedger(f);
     assert.equal(
-      ledger.find((r) => r.call_id === "image")!.result.status,
-      "executed",
+      ledger.find((r) => r.call_id === 'image')!.result.status,
+      'executed',
     );
     assert.equal(
-      ledger.find((r) => r.call_id === "never")!.result.status,
-      "skipped",
+      ledger.find((r) => r.call_id === 'never')!.result.status,
+      'skipped',
     );
-    assert.equal(f.finishReason(), "replied");
+    assert.equal(f.finishReason(), 'replied');
     assert.equal(
       f.session.summarizeTools({ since: 0, until: Date.now() }).pending,
       0,
@@ -402,13 +428,13 @@ test("real Listener sends normalized image and can read/forward its actual self 
   }
 });
 
-test("merged ACK persists stable forward reference, not its native resource token", async () => {
+test('merged ACK persists stable forward reference, not its native resource token', async () => {
   const f = fixture({
-    extended: { send_group_forward: "direct" },
+    extended: { send_group_forward: 'direct' },
     respond: () =>
       completion(
-        call("merged", "send_group_forward", { message_ids: ["1", "1"] }),
-        call("done", "finish"),
+        call('merged', 'send_group_forward', { message_ids: ['1', '1'] }),
+        call('done', 'finish'),
       ),
   });
   try {
@@ -416,19 +442,19 @@ test("merged ACK persists stable forward reference, not its native resource toke
     assert.deepEqual(f.writes()[0]!.params, {
       group_id: GROUP,
       messages: [
-        { type: "node", data: { id: "1" } },
-        { type: "node", data: { id: "1" } },
+        { type: 'node', data: { id: '1' } },
+        { type: 'node', data: { id: '1' } },
       ],
     });
     for (const entries of [f.worldEntries(), f.memoryEntries()]) {
-      const sent = entries.find((e) => e.messageId === "9001");
+      const sent = entries.find((e) => e.messageId === '9001');
       assert.ok(sent);
-      assert.deepEqual(sent.forwards, [{ id: "fwd_9001_0", index: 0 }]);
+      assert.deepEqual(sent.forwards, [{ id: 'fwd_9001_0', index: 0 }]);
       assert.deepEqual(sent.segments, [
         {
-          type: "forward",
-          forward_id: "fwd_9001_0",
-          content_status: "not_read",
+          type: 'forward',
+          forward_id: 'fwd_9001_0',
+          content_status: 'not_read',
         },
       ]);
       assert.doesNotMatch(
@@ -436,42 +462,42 @@ test("merged ACK persists stable forward reference, not its native resource toke
         /PRIVATE_NATIVE_URL_AND_RESOURCE_TOKEN|res_id/,
       );
     }
-    assert.equal(terminalLedger(f)[0]!.result.status, "executed");
-    assert.equal(f.finishReason(), "replied");
+    assert.equal(terminalLedger(f)[0]!.result.status, 'executed');
+    assert.equal(f.finishReason(), 'replied');
   } finally {
     await f.close();
   }
 });
 
-test("single native forward null counts as replied but never creates an invented world/memory message", async () => {
+test('single native forward null counts as replied but never creates an invented world/memory message', async () => {
   const f = fixture({
-    extended: { forward_message: "direct" },
+    extended: { forward_message: 'direct' },
     respond: () =>
       completion(
-        call("single", "forward_message", forwardArgs),
-        call("done", "finish"),
+        call('single', 'forward_message', forwardArgs),
+        call('done', 'finish'),
       ),
   });
   try {
     await f.run();
     assert.equal(f.writes().length, 1);
-    assert.equal(f.writes()[0]!.action, "forward_group_single_msg");
+    assert.equal(f.writes()[0]!.action, 'forward_group_single_msg');
     assert.deepEqual(
       f.worldEntries().map((e) => e.messageId),
-      ["1"],
+      ['1'],
     );
     assert.deepEqual(
       f.memoryEntries().map((e) => e.messageId),
-      ["1"],
+      ['1'],
     );
     const ledger = terminalLedger(f);
-    assert.equal(ledger[0]!.result.status, "executed");
+    assert.equal(ledger[0]!.result.status, 'executed');
     assert.equal(ledger[0]!.result.message_id, null);
-    assert.equal(f.finishReason(), "replied");
+    assert.equal(f.finishReason(), 'replied');
     assert.equal(
       f.session
         .summarizeTools({ since: 0, until: Date.now() })
-        .byTool.find((t) => t.name === "forward_message")!.successes,
+        .byTool.find((t) => t.name === 'forward_message')!.successes,
       1,
     );
   } finally {
@@ -479,24 +505,24 @@ test("single native forward null counts as replied but never creates an invented
   }
 });
 
-for (const interruption of ["disconnect", "stop"] as const)
+for (const interruption of ['disconnect', 'stop'] as const) {
   test(`late image ACK after ${interruption} remains a world fact without memory resurrection or subsequent API work`, async () => {
     const entered = gate(),
       ack = gate();
     const f = fixture({
       extended: direct,
       apiHook: async (action) => {
-        if (action === "send_group_msg") {
+        if (action === 'send_group_msg') {
           entered.release();
           await ack.promise;
-          return { message_id: "9001", res_id: SECRET };
+          return { message_id: '9001', res_id: SECRET };
         }
       },
       respond: () =>
         completion(
-          call("late", "send_group_image", imageArgs),
-          call("never", "send_group_forward", mergeArgs),
-          call("done", "finish"),
+          call('late', 'send_group_image', imageArgs),
+          call('never', 'send_group_forward', mergeArgs),
+          call('done', 'finish'),
         ),
     });
     try {
@@ -504,32 +530,41 @@ for (const interruption of ["disconnect", "stop"] as const)
       await entered.promise;
       const before = f.native.length;
       let stopped: Promise<void> | undefined;
-      if (interruption === "stop") stopped = f.listener.stop();
-      else f.listener.setConnected(false);
+      if (interruption === 'stop') {
+        stopped = f.listener.stop();
+      } else {
+        f.listener.setConnected(false);
+      }
       f.memory.clear();
       ack.release();
-      if (stopped) await stopped;
+      if (stopped) {
+        await stopped;
+      }
       await f.settled();
       assert.equal(f.requests.length, 1);
       assert.equal(f.native.length, before);
       assert.equal(f.writes().length, 1);
-      const fact = f.worldEntries().find((e) => e.messageId === "9001");
+      const fact = f.worldEntries().find((e) => e.messageId === '9001');
       assert.ok(fact);
-      assert.deepEqual(fact.images, [{ id: "img_9001_0", index: 0 }]);
+      assert.deepEqual(fact.images, [{ id: 'img_9001_0', index: 0 }]);
       assert.deepEqual(f.memoryEntries(), []);
       const ledger = terminalLedger(f);
       assert.equal(
-        ledger.find((r) => r.call_id === "late")!.result.status,
-        "executed",
-      );
-      assert.equal(ledger.find((r)=>r.call_id==='late')!.result.cancelled_after_dispatch,true);
-      assert.equal(
-        ledger.find((r) => r.call_id === "never")!.result.status,
-        "skipped",
+        ledger.find((r) => r.call_id === 'late')!.result.status,
+        'executed',
       );
       assert.equal(
-        ledger.find((r) => r.call_id === "done")!.result.status,
-        "skipped",
+        ledger.find((r) => r.call_id === 'late')!.result
+          .cancelled_after_dispatch,
+        true,
+      );
+      assert.equal(
+        ledger.find((r) => r.call_id === 'never')!.result.status,
+        'skipped',
+      );
+      assert.equal(
+        ledger.find((r) => r.call_id === 'done')!.result.status,
+        'skipped',
       );
       assert.doesNotMatch(
         JSON.stringify([f.worldEntries(), ledger]),
@@ -540,44 +575,46 @@ for (const interruption of ["disconnect", "stop"] as const)
       await f.close();
     }
   });
+}
 
-for (const reading of ["view_images", "read_forward"] as const)
+for (const reading of ['view_images', 'read_forward'] as const) {
   test(`same-batch ${reading} prevents every media/voice write until the next model round`, async () => {
     const readingArgs =
-      reading === "view_images"
-        ? { image_ids: ["img_1_2"] }
-        : { forward_id: "fwd_1_3", start: 1, limit: 1 };
+      reading === 'view_images'
+        ? { image_ids: ['img_1_2'] }
+        : { forward_id: 'fwd_1_3', start: 1, limit: 1 };
     const actions = [
-      ["image", "send_group_image", imageArgs],
-      ["single", "forward_message", forwardArgs],
-      ["merged", "send_group_forward", mergeArgs],
-      ["voice", "send_group_ai_voice", voiceArgs],
+      ['image', 'send_group_image', imageArgs],
+      ['single', 'forward_message', forwardArgs],
+      ['merged', 'send_group_forward', mergeArgs],
+      ['voice', 'send_group_ai_voice', voiceArgs],
     ] as const;
     const f = fixture({
       extended: direct,
       images: true,
       forward: true,
       respond(messages, round) {
-        if (round === 1)
+        if (round === 1) {
           return completion(
             ...actions.map(([id, name, args]) =>
               call(`blocked-${id}`, name, args),
             ),
-            call("reading", reading, readingArgs),
+            call('reading', reading, readingArgs),
           );
+        }
         assert.equal(round, 2);
-        assert.equal(result(messages, "reading").status, "ok");
+        assert.equal(result(messages, 'reading').status, 'ok');
         assert.equal(f.writes().length, 0);
         for (const [id] of actions) {
           const blocked = result(messages, `blocked-${id}`);
-          assert.equal(blocked.status, "error");
+          assert.equal(blocked.status, 'error');
           assert.match(String(blocked.error), /下一轮/);
         }
         return completion(
           ...actions.map(([id, name, args]) =>
             call(`reviewed-${id}`, name, args),
           ),
-          call("done", "finish"),
+          call('done', 'finish'),
         );
       },
     });
@@ -587,54 +624,61 @@ for (const reading of ["view_images", "read_forward"] as const)
       assert.deepEqual(
         f.writes().map((c) => c.action),
         [
-          "send_group_msg",
-          "forward_group_single_msg",
-          "send_group_forward_msg",
-          "send_group_ai_record",
+          'send_group_msg',
+          'forward_group_single_msg',
+          'send_group_forward_msg',
+          'send_group_ai_record',
         ],
       );
       const ledger = terminalLedger(f);
-      for (const [id] of actions)
+      for (const [id] of actions) {
         assert.equal(
           ledger.find((r) => r.call_id === `blocked-${id}`)!.result.status,
-          "error",
+          'error',
         );
-      for (const id of ["image", "single", "merged"])
+      }
+      for (const id of ['image', 'single', 'merged']) {
         assert.equal(
           ledger.find((r) => r.call_id === `reviewed-${id}`)!.result.status,
-          "executed",
+          'executed',
         );
+      }
       assert.equal(
-        ledger.find((r) => r.call_id === "reviewed-voice")!.result.status,
-        "ok",
+        ledger.find((r) => r.call_id === 'reviewed-voice')!.result.status,
+        'ok',
       );
-      const voiceResult=ledger.find((r)=>r.call_id==='reviewed-voice')!.result;
-      assert.equal(voiceResult.submitted,true);assert.equal(voiceResult.effect_confirmed,false);assert.equal(voiceResult.message_id,null);
+      const voiceResult = ledger.find(
+        (r) => r.call_id === 'reviewed-voice',
+      )!.result;
+      assert.equal(voiceResult.submitted, true);
+      assert.equal(voiceResult.effect_confirmed, false);
+      assert.equal(voiceResult.message_id, null);
       assert.equal(f.worldEntries().filter((e) => e.userId === SELF).length, 2);
-      assert.equal(f.finishReason(), "replied");
+      assert.equal(f.finishReason(), 'replied');
     } finally {
       await f.close();
     }
   });
+}
 
-test("default-off capabilities and foreign native origins never dispatch media writes", async () => {
-  for (const mode of ["off", "foreign", "invalid"] as const) {
+test('default-off capabilities and foreign native origins never dispatch media writes', async () => {
+  for (const mode of ['off', 'foreign', 'invalid'] as const) {
     const f = fixture({
-      extended: mode === "off" ? undefined : direct,
+      extended: mode === 'off' ? undefined : direct,
       apiHook: (action) =>
-        action === "get_msg"
-          ? mode === "foreign"
-            ? { ...source("1"), group_id: "999999" }
-            : mode === "invalid"
-              ? { message_id: "1" }
+        action === 'get_msg'
+          ? mode === 'foreign'
+            ? { ...source('1'), group_id: '999999' }
+            : mode === 'invalid'
+              ? { message_id: '1' }
               : undefined
           : undefined,
       respond: () =>
         completion(
-          call("image", "send_group_image", imageArgs),
-          call("single", "forward_message", forwardArgs),
-          call("merged", "send_group_forward", mergeArgs),
-          call("done", "finish"),
+          call('image', 'send_group_image', imageArgs),
+          call('single', 'forward_message', forwardArgs),
+          call('merged', 'send_group_forward', mergeArgs),
+          call('done', 'finish'),
         ),
     });
     try {
@@ -643,14 +687,16 @@ test("default-off capabilities and foreign native origins never dispatch media w
       assert.equal(f.downloads, 0);
       assert.deepEqual(
         f.worldEntries().map((e) => e.messageId),
-        ["1"],
+        ['1'],
       );
       assert.ok(
         terminalLedger(f)
-          .filter((r) => r.name !== "finish")
-          .every((r) => r.result.status === "error"),
+          .filter((r) => r.name !== 'finish')
+          .every((r) => r.result.status === 'error'),
       );
-      if (mode === "off") assert.equal(f.native.length, 0);
+      if (mode === 'off') {
+        assert.equal(f.native.length, 0);
+      }
     } finally {
       await f.close();
     }
@@ -658,11 +704,11 @@ test("default-off capabilities and foreign native origins never dispatch media w
   const foreign = fixture({
     extended: direct,
     respond: () => {
-      assert.fail("foreign group must not wake model");
+      assert.fail('foreign group must not wake model');
     },
   });
   try {
-    await foreign.listener.receive(event("999999"), SELF);
+    await foreign.listener.receive(event('999999'), SELF);
     await delay(20);
     assert.equal(foreign.requests.length, 0);
     assert.equal(foreign.native.length, 0);
@@ -672,20 +718,23 @@ test("default-off capabilities and foreign native origins never dispatch media w
   }
 });
 
-test("uncertain media result and duplicate remain unknown in persisted tool ledger without replay", async () => {
+test('uncertain media result and duplicate remain unknown in persisted tool ledger without replay', async () => {
   const f = fixture({
-    extended: { send_group_forward: "direct" },
+    extended: { send_group_forward: 'direct' },
     apiHook: (action) => {
-      if (action === "send_group_forward_msg") throw Error(SECRET);
+      if (action === 'send_group_forward_msg') {
+        throw Error(SECRET);
+      }
     },
     respond(messages, round) {
-      if (round === 1)
-        return completion(call("first", "send_group_forward", mergeArgs));
+      if (round === 1) {
+        return completion(call('first', 'send_group_forward', mergeArgs));
+      }
       assert.equal(round, 2);
-      assert.equal(result(messages, "first").status, "unknown");
+      assert.equal(result(messages, 'first').status, 'unknown');
       return completion(
-        call("duplicate", "send_group_forward", mergeArgs),
-        call("done", "finish"),
+        call('duplicate', 'send_group_forward', mergeArgs),
+        call('done', 'finish'),
       );
     },
   });
@@ -694,15 +743,15 @@ test("uncertain media result and duplicate remain unknown in persisted tool ledg
     assert.equal(f.writes().length, 1);
     assert.deepEqual(
       f.worldEntries().map((e) => e.messageId),
-      ["1"],
+      ['1'],
     );
     assert.deepEqual(
       f.memoryEntries().map((e) => e.messageId),
-      ["1"],
+      ['1'],
     );
     const ledger = terminalLedger(f);
-    assert.equal(ledger[0]!.result.status, "unknown");
-    assert.equal(ledger[1]!.result.status, "unknown");
+    assert.equal(ledger[0]!.result.status, 'unknown');
+    assert.equal(ledger[1]!.result.status, 'unknown');
     assert.equal(ledger[1]!.result.cached, true);
     assert.doesNotMatch(
       JSON.stringify(ledger),

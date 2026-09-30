@@ -1,34 +1,70 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { OWNER_ID } from '../../../src/contracts/identity.ts';
-import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.ts';
+import {
+  type Memory,
+  type TimelineEntry,
+} from '../../../src/contracts/messages.ts';
 import { type Model } from '../../../src/contracts/model.ts';
-import { ReplyBatch, snapshotMemory, type BatchItem } from '../../../src/agent/reply-batch.ts';
+import {
+  ReplyBatch,
+  snapshotMemory,
+  type BatchItem,
+} from '../../../src/agent/reply-batch.ts';
 
-function item(sequence: number, trigger?: 'mention' | 'quote', received = sequence * 10): BatchItem {
+function item(
+  sequence: number,
+  trigger?: 'mention' | 'quote',
+  received = sequence * 10,
+): BatchItem {
   const id = String(sequence);
   return {
-    entry: { messageId: id, userId: `user${id}`, nickname: `name${id}`, text: `body${id}`, time: 1000 - sequence,
-      images: [{ id: `img_${id}_0`, index: 0 }] },
-    context: { groupId: 'group', actorId: `user${id}`, messageId: id, selfId: 'bot' },
-    sequence, received, ...(trigger ? { trigger } : {}),
+    entry: {
+      messageId: id,
+      userId: `user${id}`,
+      nickname: `name${id}`,
+      text: `body${id}`,
+      time: 1000 - sequence,
+      images: [{ id: `img_${id}_0`, index: 0 }],
+    },
+    context: {
+      groupId: 'group',
+      actorId: `user${id}`,
+      messageId: id,
+      selfId: 'bot',
+    },
+    sequence,
+    received,
+    ...(trigger ? { trigger } : {}),
   };
 }
 
-test('late classified earlier caller displaces newest direct when the roster is full',()=>{
- const batch=new ReplyBatch(item(2,'mention'),20);for(let seq=3;seq<=65;seq++)batch.add(item(seq,'mention'),20);
- batch.add(item(1,'quote'),20);
- assert.deepEqual(batch.direct.map(x=>x.sequence),Array.from({length:64},(_,i)=>i+1));
- assert.equal(batch.omittedDirect,1);assert.equal(batch.omittedMessages,1);
+test('late classified earlier caller displaces newest direct when the roster is full', () => {
+  const batch = new ReplyBatch(item(2, 'mention'), 20);
+  for (let seq = 3; seq <= 65; seq++) {
+    batch.add(item(seq, 'mention'), 20);
+  }
+  batch.add(item(1, 'quote'), 20);
+  assert.deepEqual(
+    batch.direct.map((x) => x.sequence),
+    Array.from({ length: 64 }, (_, i) => i + 1),
+  );
+  assert.equal(batch.omittedDirect, 1);
+  assert.equal(batch.omittedMessages, 1);
 });
 
 test('1000 ordinary arrivals retain 64, sort by arrival sequence rather than timestamp', () => {
   const batch = new ReplyBatch(item(0), 20);
-  for (let i = 1; i < 1000; i++) batch.add(item(i), 20);
+  for (let i = 1; i < 1000; i++) {
+    batch.add(item(i), 20);
+  }
   assert.equal(batch.items.length, 64);
   assert.equal(batch.omittedMessages, 936);
   assert.equal(batch.omittedDirect, 0);
-  assert.deepEqual(batch.items.map(x => x.sequence), Array.from({ length: 64 }, (_, i) => i + 936));
+  assert.deepEqual(
+    batch.items.map((x) => x.sequence),
+    Array.from({ length: 64 }, (_, i) => i + 936),
+  );
   assert.equal(batch.primary.sequence, 999);
   assert.equal(batch.readyAt, 20);
   assert.equal(batch.openedAt, 0);
@@ -38,15 +74,25 @@ test('1000 ordinary arrivals retain 64, sort by arrival sequence rather than tim
 
 test('direct requests evict ordinary entries and the first 64 direct requests stay pinned', () => {
   const batch = new ReplyBatch(item(0, 'mention'), 20);
-  for (let i = 1; i <= 63; i++) batch.add(item(i), 20);
+  for (let i = 1; i <= 63; i++) {
+    batch.add(item(i), 20);
+  }
   batch.add(item(64, 'quote'), 20);
-  assert.equal(batch.items.some(x => x.sequence === 1), false);
-  for (let i = 65; i <= 126; i++) batch.add(item(i, 'mention'), 20);
+  assert.equal(
+    batch.items.some((x) => x.sequence === 1),
+    false,
+  );
+  for (let i = 65; i <= 126; i++) {
+    batch.add(item(i, 'mention'), 20);
+  }
   assert.equal(batch.direct.length, 64);
-  const pinned = batch.items.map(x => x.entry.messageId);
+  const pinned = batch.items.map((x) => x.entry.messageId);
   batch.add(item(127), 20);
   batch.add(item(128, 'quote'), 20);
-  assert.deepEqual(batch.items.map(x => x.entry.messageId), pinned);
+  assert.deepEqual(
+    batch.items.map((x) => x.entry.messageId),
+    pinned,
+  );
   assert.equal(batch.omittedMessages, 65);
   assert.equal(batch.omittedDirect, 1);
   assert.equal(batch.kind, 'direct');
@@ -61,24 +107,39 @@ test('omitted non-owner caller provenance remains recorded independently of capa
     return value;
   };
   const batch = new ReplyBatch(owned(0), 0);
-  for (let i = 1; i < 64; i++) batch.add(owned(i), 0);
+  for (let i = 1; i < 64; i++) {
+    batch.add(owned(i), 0);
+  }
   assert.equal(batch.hasNonOwnerDirect, false);
   batch.add(item(64, 'quote'), 0);
   assert.equal(batch.hasNonOwnerDirect, true);
   assert.equal(batch.omittedDirect, 1);
-  assert.equal(batch.items.every(value => value.entry.userId === OWNER_ID), true);
+  assert.equal(
+    batch.items.every((value) => value.entry.userId === OWNER_ID),
+    true,
+  );
   batch.add(owned(65), 0);
   assert.equal(batch.hasNonOwnerDirect, true);
 });
 
 test('duplicate IDs do not grow counts, even after eviction or omission', () => {
   const batch = new ReplyBatch(item(0), 1);
-  for (let i = 1; i < 70; i++) batch.add(item(i, 'mention'), 1);
-  const before = [batch.omittedMessages, batch.omittedDirect, batch.readyAt, batch.openedAt];
+  for (let i = 1; i < 70; i++) {
+    batch.add(item(i, 'mention'), 1);
+  }
+  const before = [
+    batch.omittedMessages,
+    batch.omittedDirect,
+    batch.readyAt,
+    batch.openedAt,
+  ];
   batch.add(item(0, 'quote', -100), 1000);
   batch.add(item(69, 'quote', -100), 1000);
   batch.add(item(1, 'quote', -100), 1000);
-  assert.deepEqual([batch.omittedMessages, batch.omittedDirect, batch.readyAt, batch.openedAt], before);
+  assert.deepEqual(
+    [batch.omittedMessages, batch.omittedDirect, batch.readyAt, batch.openedAt],
+    before,
+  );
   assert.equal(batch.items.length, 64);
 });
 
@@ -93,7 +154,10 @@ test('promotion anchors first direct; older resolved quotes only move deadline e
   batch.add(item(5, 'quote', 50), 50);
   assert.equal(batch.readyAt, 100);
   assert.equal(batch.openedAt, 50);
-  assert.deepEqual(batch.items.map(x => x.sequence), [5, 10, 15, 20, 30]);
+  assert.deepEqual(
+    batch.items.map((x) => x.sequence),
+    [5, 10, 15, 20, 30],
+  );
   assert.equal(batch.randomSelected, true);
   assert.equal(batch.primary.sequence, 5);
   const next = new ReplyBatch(item(100), 50);
@@ -118,8 +182,14 @@ test('batches deep-copy inputs and payload results do not mutate the batch', () 
   const payload = batch.payload() as any;
   payload.current_batch.messages[0].text = 'mutated';
   payload.trusted_direct_requests[0].user_id = 'mutated';
-  assert.equal((batch.payload() as any).current_batch.messages[0].text, 'body1');
-  assert.equal((batch.payload() as any).trusted_direct_requests[0].user_id, 'user1');
+  assert.equal(
+    (batch.payload() as any).current_batch.messages[0].text,
+    'body1',
+  );
+  assert.equal(
+    (batch.payload() as any).trusted_direct_requests[0].user_id,
+    'user1',
+  );
 });
 
 test('payload retains full text when it fits, sanitizes names, and omits attachment duplication', () => {
@@ -134,7 +204,9 @@ test('payload retains full text when it fits, sanitizes names, and omits attachm
   assert.equal(message.replyTo, '42');
   assert.equal(message.images, undefined);
   assert.deepEqual(payload.current_batch.truncated_message_ids, []);
-  assert.deepEqual(payload.trusted_direct_requests, [{ message_id: '1', user_id: 'user1', trigger: 'quote' }]);
+  assert.deepEqual(payload.trusted_direct_requests, [
+    { message_id: '1', user_id: 'user1', trigger: 'quote' },
+  ]);
 });
 
 test('worst escaped bodies, names, and 32-digit provenance remain within 24000 serialized characters', () => {
@@ -148,7 +220,9 @@ test('worst escaped bodies, names, and 32-digit provenance remain within 24000 s
     return value;
   });
   const batch = new ReplyBatch(inputs[0]!, 0);
-  for (const value of inputs.slice(1)) batch.add(value, 0);
+  for (const value of inputs.slice(1)) {
+    batch.add(value, 0);
+  }
   const payload = batch.payload() as any;
   assert.ok(JSON.stringify(payload).length <= 24_000);
   assert.equal(payload.current_batch.messages.length, 64);
@@ -165,16 +239,32 @@ test('worst escaped bodies, names, and 32-digit provenance remain within 24000 s
   }
 });
 
-function source(entries: TimelineEntry[], context?: string): Memory & { writes: number } {
+function source(
+  entries: TimelineEntry[],
+  context?: string,
+): Memory & { writes: number } {
   return {
     writes: 0,
     recent: () => entries,
-    find: id => entries.find(x => x.messageId === id),
-    context: () => context ?? JSON.stringify({ messages: entries, summary: 'old summary' }),
-    append(entry) { this.writes++; entries.push(entry); return true; },
-    async compact() { this.writes++; entries.splice(0); },
-    clear() { this.writes++; entries.splice(0); },
-    close() { this.writes++; },
+    find: (id) => entries.find((x) => x.messageId === id),
+    context: () =>
+      context ?? JSON.stringify({ messages: entries, summary: 'old summary' }),
+    append(entry) {
+      this.writes++;
+      entries.push(entry);
+      return true;
+    },
+    async compact() {
+      this.writes++;
+      entries.splice(0);
+    },
+    clear() {
+      this.writes++;
+      entries.splice(0);
+    },
+    close() {
+      this.writes++;
+    },
   };
 }
 
@@ -190,7 +280,12 @@ test('snapshot freezes old context and arrivals, pins compacted batch and overri
   assert.equal(snapshot.find('1')!.text, 'body1');
   assert.equal(snapshot.find('349')!.text, 'trusted replacement');
   const frozenContext = snapshot.context();
-  assert.equal(JSON.parse(frozenContext).messages.some((x: TimelineEntry) => x.messageId === '348'), false);
+  assert.equal(
+    JSON.parse(frozenContext).messages.some(
+      (x: TimelineEntry) => x.messageId === '348',
+    ),
+    false,
+  );
   assert.equal(JSON.parse(frozenContext).messages.at(-1).text, 'body349');
   memory.append(item(1000).entry);
   await memory.compact({} as Model);
@@ -217,10 +312,24 @@ test('snapshot freezes old context and arrivals, pins compacted batch and overri
 
 test('snapshot filters array contexts and preserves legacy and other JSON context shapes', () => {
   const entries = [item(1).entry, item(2).entry];
-  const snapshot = snapshotMemory(source(entries, JSON.stringify(entries)), [], new Set(['2']));
-  assert.deepEqual(JSON.parse(snapshot.context()).map((x: TimelineEntry) => x.messageId), ['1']);
-  for (const context of ['legacy text', '{ "summary": "unchanged" }', '"legacy JSON string"']) {
-    assert.equal(snapshotMemory(source(entries, context), []).context(), context);
+  const snapshot = snapshotMemory(
+    source(entries, JSON.stringify(entries)),
+    [],
+    new Set(['2']),
+  );
+  assert.deepEqual(
+    JSON.parse(snapshot.context()).map((x: TimelineEntry) => x.messageId),
+    ['1'],
+  );
+  for (const context of [
+    'legacy text',
+    '{ "summary": "unchanged" }',
+    '"legacy JSON string"',
+  ]) {
+    assert.equal(
+      snapshotMemory(source(entries, context), []).context(),
+      context,
+    );
   }
 });
 

@@ -1,17 +1,21 @@
-import type { ModelRequestDiagnostics } from "../../observability/model-diagnostics.ts";
-import type { RequestOutcome, ToolOutcome } from "./outcomes.ts";
+import type { ModelRequestDiagnostics } from '../../observability/model-diagnostics.ts';
+import type { RequestOutcome, ToolOutcome } from './outcomes.ts';
 import type { CacheMetrics } from './metrics.ts';
+
 export interface Range {
   since: number;
   until: number;
 }
+
 export interface Availability {
   telemetry: boolean;
   sessions: Array<{ groupId: string; available: boolean }>;
 }
+
 export interface GroupMeta {
   groupId: string;
 }
+
 export interface MetaResponse {
   groups: GroupMeta[];
   readOnly: true;
@@ -19,6 +23,7 @@ export interface MetaResponse {
   now: number;
   availability: Availability;
 }
+
 export interface UsageSummary {
   performance: import('./metrics.ts').PerformanceMetrics;
   requests: number;
@@ -40,6 +45,7 @@ export interface UsageSummary {
   tps: number | null;
   ttftMs: number | null;
 }
+
 export interface OverviewResponse {
   range: Range;
   availability: Availability;
@@ -47,6 +53,7 @@ export interface OverviewResponse {
   series: Array<UsageSummary & { bucketStart: number }>;
   groups: Array<UsageSummary & { groupId: string }>;
 }
+
 export interface WakeItem extends CacheMetrics {
   performance: import('./metrics.ts').PerformanceMetrics;
   tps: number | null;
@@ -69,12 +76,14 @@ export interface WakeItem extends CacheMetrics {
   cachedInputTokens?: number | null;
   outputTokens: number | null;
 }
+
 export interface WakesResponse {
   range: Range;
   availability: Availability;
   items: WakeItem[];
   nextCursor: string | null;
 }
+
 export interface RequestItem extends CacheMetrics {
   performance: import('./metrics.ts').PerformanceMetrics;
   tps: number | null;
@@ -83,16 +92,17 @@ export interface RequestItem extends CacheMetrics {
   startedAt: number;
   endedAt: number;
   durationMs: number;
-  status: "success" | "error" | "unknown";
+  status: 'success' | 'error' | 'unknown';
   outcome: RequestOutcome;
   errorCode: string | null;
   httpStatus: number | null;
   diagnostics: ModelRequestDiagnostics | null;
-  transport: "chat" | "responses" | "unknown";
+  transport: 'chat' | 'responses' | 'unknown';
   inputTokens: number | null;
   outputTokens: number | null;
   cachedInputTokens: number | null;
 }
+
 export interface ToolItem {
   ordinal: number;
   name: string;
@@ -105,6 +115,7 @@ export interface ToolItem {
   outcome: ToolOutcome;
   reasonCode: string | null;
 }
+
 export interface WakeDetailResponse {
   wake: WakeItem;
   requests: RequestItem[];
@@ -112,6 +123,7 @@ export interface WakeDetailResponse {
   truncated: boolean;
   availability: Availability;
 }
+
 export interface ToolSummary {
   name: string;
   calls: number;
@@ -128,18 +140,20 @@ export interface ToolSummary {
   durationP50Ms: number | null;
   durationP95Ms: number | null;
 }
+
 export interface ToolsResponse {
   range: Range;
   availability: Availability;
   items: ToolSummary[];
 }
+
 export interface ApiError {
   error:
-    | "invalid_query"
-    | "forbidden"
-    | "not_found"
-    | "unavailable"
-    | "internal_error";
+    | 'invalid_query'
+    | 'forbidden'
+    | 'not_found'
+    | 'unavailable'
+    | 'internal_error';
   message: string;
 }
 // GET /api/meta
