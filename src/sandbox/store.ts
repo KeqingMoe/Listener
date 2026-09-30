@@ -10,7 +10,7 @@ import {
 import { DatabaseSync } from 'node:sqlite';
 import { isExecutionDiagnostic, type ExecutionDiagnostic } from './protocol.ts';
 
-export type JobMode = 'sync' | 'async' | 'auto';
+type JobMode = 'sync' | 'async' | 'auto';
 
 export type JobStatus =
   | 'queued'
@@ -50,7 +50,7 @@ export interface Job extends JobScope {
   diagnostic?: ExecutionDiagnostic;
 }
 
-export type JobSummary = Omit<
+type JobSummary = Omit<
   Job,
   'value' | 'error' | 'logs' | 'diagnostic' | 'toolCalls'
 >;
@@ -65,7 +65,7 @@ export interface JobQuery {
 export type ToolCallStatus =
   'ok' | 'error' | 'unknown' | 'confirmation_required';
 
-export interface ToolCallRecord {
+interface ToolCallRecord {
   seq: number;
   tool: string;
   status: ToolCallStatus;
@@ -225,7 +225,7 @@ function readDiagnostic(encoded: unknown): ExecutionDiagnostic {
   return value;
 }
 
-export function jobSummary(job: Job): JobSummary {
+function jobSummary(job: Job): JobSummary {
   const { value, error, logs, diagnostic, toolCalls, ...summary } = job;
   return summary;
 }

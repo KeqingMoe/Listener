@@ -34,7 +34,7 @@ export interface GroupHandler {
   stop(): Promise<void>;
 }
 
-export interface DynamicGroupRouting {
+interface DynamicGroupRouting {
   enabled(groupId: string): boolean;
   create(groupId: string): Promise<GroupHandler>;
   listGroups(): Promise<unknown>;

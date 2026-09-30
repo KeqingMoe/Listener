@@ -10,7 +10,7 @@ import {
 
 export const RESOURCE_SYNC_TTL_MS = 5 * 60_000;
 export const RESOURCE_SYNC_MAX_ENTRIES = 64;
-export const RESOURCE_SYNC_MAX_CACHE_BYTES = 16 * 1024 * 1024;
+const RESOURCE_SYNC_MAX_CACHE_BYTES = 16 * 1024 * 1024;
 
 type State = {
   session: string;

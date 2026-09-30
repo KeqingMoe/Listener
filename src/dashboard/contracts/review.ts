@@ -53,7 +53,7 @@ export interface ReviewTool {
   result: unknown;
 }
 
-export interface RequestLink {
+interface RequestLink {
   requestId: string;
   groupId: string;
   wakeId: string | null;

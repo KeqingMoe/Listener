@@ -87,7 +87,7 @@ function privateFile(path: string, optional = false) {
   return stat;
 }
 
-export interface AuthOptions {
+interface AuthOptions {
   path: string;
   /** 进程启动时读取的DASHBOARD_PASSWORD快照；密码本身从不从数据库读取。 */
   password?: string;
@@ -95,7 +95,7 @@ export interface AuthOptions {
   now?: () => number;
 }
 
-export type LoginResult =
+type LoginResult =
   | { status: 'ok'; token: string }
   | {
       status:

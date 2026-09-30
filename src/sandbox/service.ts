@@ -19,7 +19,7 @@ import {
   type ToolCallStatus,
 } from './store.ts';
 
-export type JobResponse =
+type JobResponse =
   | { status: 'pending'; job_id: string }
   | {
       status: 'completed';
@@ -39,13 +39,13 @@ export type JobResponse =
     };
 
 /** 发起任务的人。只存在内存中：任务不会跨重启继续执行。 */
-export interface JobCaller {
+interface JobCaller {
   actorId: string;
   messageId: string;
 }
 
 /** guest代码可调用的host工具。鉴权在call()内部、按调用时刻进行。 */
-export interface SandboxToolBridge {
+interface SandboxToolBridge {
   names(scope: JobScope): readonly string[];
   call(
     scope: JobScope & JobCaller,

@@ -4,7 +4,6 @@ import {
   Moderation,
   buildModerationTools,
   MODERATION_TOOLS,
-  HELP,
 } from '../../../../src/tools/management/moderation.ts';
 import { MAX_MUTE_SECONDS } from '../../../../src/contracts/tool-limits.ts';
 import type {
@@ -118,8 +117,6 @@ test('all four capabilities default off in executor and model schema', async () 
     );
   }
   assert.equal(api.calls.length, 0);
-  assert.match(HELP, /off.*confirm.*direct/);
-  assert.match(HELP, /autonomously/);
 });
 
 for (const item of cases) {

@@ -30,7 +30,7 @@ type Pending = {
   timer: NodeJS.Timeout;
 };
 
-export type ClientOptions = Pick<
+type ClientOptions = Pick<
   Config,
   | 'url'
   | 'token'

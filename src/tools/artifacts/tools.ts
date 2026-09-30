@@ -8,14 +8,14 @@ import {
   type ArtifactStore,
 } from '../../artifacts/store.ts';
 
-export const ARTIFACT_TOOL_NAMES = [
+const ARTIFACT_TOOL_NAMES = [
   'create_artifact',
   'create_image',
   'list_artifacts',
 ] as const;
 
-export type ArtifactToolName = (typeof ARTIFACT_TOOL_NAMES)[number];
-export const IMAGE_LIMITS = { edge: 8192 } as const;
+type ArtifactToolName = (typeof ARTIFACT_TOOL_NAMES)[number];
+const IMAGE_LIMITS = { edge: 8192 } as const;
 const IMAGE_FORMATS = ['png', 'jpeg', 'webp'] as const;
 const MB = ARTIFACT_LIMITS.bytes / 1024 / 1024;
 
@@ -159,7 +159,7 @@ function fields(
 }
 
 /** 字节字段：沙箱代码传入Uint8Array，直接调用时传入整数数组。 */
-export function byteField(value: unknown, max: number): Uint8Array {
+function byteField(value: unknown, max: number): Uint8Array {
   if (value instanceof Uint8Array) {
     if (value.byteLength > max) {
       throw new ArtifactError('artifact_too_large');
@@ -183,7 +183,7 @@ export function byteField(value: unknown, max: number): Uint8Array {
   return out;
 }
 
-export function artifactView(artifact: Artifact): JsonObject {
+function artifactView(artifact: Artifact): JsonObject {
   return {
     artifact_id: artifact.artifactId,
     name: artifact.name,

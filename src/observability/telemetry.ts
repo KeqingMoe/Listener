@@ -13,7 +13,7 @@ import {
 import { sanitizeInspection } from './request-inspection.ts';
 import { installRequestChangeLog } from './request-change-log.ts';
 
-export interface TelemetryContext {
+interface TelemetryContext {
   groupId?: string | null;
   turnId?: string | null;
   wakeId?: string | null;
@@ -22,7 +22,7 @@ export interface TelemetryContext {
 
 export interface TelemetryRecord extends ModelRequestRecord, TelemetryContext {}
 
-export interface TelemetrySummary {
+interface TelemetrySummary {
   requests: number;
   successes: number;
   errors: number;

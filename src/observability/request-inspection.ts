@@ -1,7 +1,7 @@
 import type { ModelRequestInspection } from './model-usage.ts';
 
 // 这里处理的都是私有诊断材料，绝不能传给公开logger。
-export const INSPECTION_FIELD_BYTES = 64 * 1024;
+const INSPECTION_FIELD_BYTES = 64 * 1024;
 const credentialKey =
   /^(?:authorization|proxy[-_]?authorization|cookie|set[-_]?cookie|api[-_]?key|password|passwd|secret|token|secret[-_]?key|client[-_]?secret|access[-_]?token|refresh[-_]?token|confirmation[-_]?code|confirm[-_]?code|authorization[-_]?code|auth[-_]?code)$/i;
 

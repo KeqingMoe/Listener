@@ -2,7 +2,7 @@ import { types } from 'node:util';
 import type { JsonObject } from '../contracts/json.ts';
 
 /** 仅限本地定义的原因码，绝不持久化任意异常或provider返回的文本。 */
-export const WAKE_REASON_CODES = [
+const WAKE_REASON_CODES = [
   'turn_timeout',
   'disconnected',
   'reset',

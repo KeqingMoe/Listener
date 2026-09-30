@@ -21,13 +21,13 @@ import {
 import { type JsonObject } from '../../contracts/json.ts';
 import { type ToolDefinition } from '../../contracts/tools.ts';
 
-export interface ModelSessionOptions {
+interface ModelSessionOptions {
   path: string;
   groupId?: string;
   maxTranscriptBytes?: number;
 }
 
-export interface ModelSessionState {
+interface ModelSessionState {
   sessionId: string;
   generation: number;
   wakeId?: string;
@@ -40,19 +40,19 @@ export interface ModelSessionScope {
   wakeId?: string;
 }
 
-export interface AssistantCheckpoint {
+interface AssistantCheckpoint {
   assistantSeq: number;
   callIds: string[];
 }
 
-export interface ToolWindow {
+interface ToolWindow {
   since: number;
   until: number;
   wakeId?: string;
   sessionId?: string;
 }
 
-export interface ToolCounts {
+interface ToolCounts {
   invocations: number;
   started: number;
   completed: number;
@@ -67,7 +67,7 @@ export interface ToolCounts {
   externalRequests: null;
 }
 
-export interface ToolSummary extends ToolCounts {
+interface ToolSummary extends ToolCounts {
   byTool: Array<ToolCounts & { name: string }>;
   toolExposureCounts: Array<{ name: string; wakes: number }>;
 }

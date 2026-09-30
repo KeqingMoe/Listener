@@ -147,15 +147,6 @@ export interface ToolsResponse {
   items: ToolSummary[];
 }
 
-export interface ApiError {
-  error:
-    | 'invalid_query'
-    | 'forbidden'
-    | 'not_found'
-    | 'unavailable'
-    | 'internal_error';
-  message: string;
-}
 // 元数据API约定：
 // GET /api/meta
 // GET /api/overview|wakes|tools?since=<epoch ms>&until=<epoch ms>&groupId=<可选，已启用的群>

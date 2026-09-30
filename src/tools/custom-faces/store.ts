@@ -36,20 +36,20 @@ export interface CustomFaceRecord {
   retired: boolean;
 }
 
-export interface CustomFaceListItem {
+interface CustomFaceListItem {
   face_ref: string;
   description: string;
   tags: string[];
   revision: number;
 }
 
-export interface CustomFaceListOptions {
+interface CustomFaceListOptions {
   query?: string;
   limit?: number;
   cursor?: string;
 }
 
-export interface CustomFacePage {
+interface CustomFacePage {
   items: CustomFaceListItem[];
   coverage: 'observed_prefix';
   /** 本地快照中的数量，不是QQ账号的总数。 */

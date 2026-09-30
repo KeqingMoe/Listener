@@ -10,7 +10,7 @@ import {
 } from './protocol.ts';
 
 /** 把guest传来的{"$bytes":i}占位符还原成Buffer；每个附件必须恰好被引用一次。 */
-export function decodeToolValue(
+function decodeToolValue(
   json: string,
   attachments: readonly Uint8Array[],
 ): unknown {

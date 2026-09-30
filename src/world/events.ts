@@ -30,23 +30,23 @@ export const WORLD_EVENT_TYPES = [
 export type WorldEventType = (typeof WORLD_EVENT_TYPES)[number];
 export type EventSource = 'onebot' | 'tool' | 'migration';
 
-export interface EventProvenance {
+interface EventProvenance {
   source: EventSource;
   verified: boolean;
 }
 
-export interface MessageCreatedPayload {
+interface MessageCreatedPayload {
   kind: 'message';
   message: TimelineEntry;
 }
 
-export interface MessageRecalledPayload {
+interface MessageRecalledPayload {
   kind: 'message_recalled';
   message_id: string;
   recalled_by?: string;
 }
 
-export interface ReactionChangedPayload {
+interface ReactionChangedPayload {
   kind: 'reaction';
   message_id: string;
   emoji_id?: string;
@@ -55,19 +55,19 @@ export interface ReactionChangedPayload {
   user_id?: string;
 }
 
-export interface PokeCreatedPayload {
+interface PokeCreatedPayload {
   kind: 'poke';
   user_id: string;
 }
 
-export interface MemberJoinedPayload {
+interface MemberJoinedPayload {
   kind: 'member_joined';
   user_id: string;
   sub_type: 'approve' | 'invite';
   operator_id?: string;
 }
 
-export interface MemberLeftPayload {
+interface MemberLeftPayload {
   kind: 'member_left';
   user_id: string;
   sub_type: 'leave' | 'kick' | 'kick_me' | 'disband';
@@ -75,7 +75,7 @@ export interface MemberLeftPayload {
 }
 
 /** 即使duration与sub_type看起来矛盾，也保留上游的分类。user_id=0是上游表示全群禁言的哨兵值。 */
-export interface GroupBanPayload {
+interface GroupBanPayload {
   kind: 'group_ban';
   user_id: string;
   sub_type: 'ban' | 'lift_ban';
@@ -84,20 +84,20 @@ export interface GroupBanPayload {
 }
 
 /** 仅为元数据：这个payload及其群subject都不授予读取文件的能力。 */
-export interface FileUploadedPayload {
+interface FileUploadedPayload {
   kind: 'file_uploaded';
   user_id: string;
   name: string;
   size: number;
 }
 
-export interface GroupNamePayload {
+interface GroupNamePayload {
   kind: 'group_name';
   name: string;
   user_id?: string;
 }
 
-export type WorldEventPayload =
+type WorldEventPayload =
   | MessageCreatedPayload
   | MessageRecalledPayload
   | ReactionChangedPayload
@@ -108,7 +108,7 @@ export type WorldEventPayload =
   | FileUploadedPayload
   | GroupNamePayload;
 
-export interface WorldEvent {
+interface WorldEvent {
   eventId: string;
   sequence: number;
   type: WorldEventType;
@@ -144,7 +144,7 @@ export interface ReadEventsInput {
   until?: number;
 }
 
-export interface EventPage {
+interface EventPage {
   events: ProjectedWorldEvent[];
   requested: number;
   returned: number;
@@ -164,7 +164,7 @@ export interface MessageView extends TimelineEntry {
   omission_reason?: 'output_limit';
 }
 
-export interface MessagePage {
+interface MessagePage {
   messages: MessageView[];
   requested: number;
   returned: number;
@@ -176,7 +176,7 @@ export interface MessagePage {
   queriedAt: number;
 }
 
-export interface WorldState {
+interface WorldState {
   groupId: string;
   latestSequence: number;
   unreadEvents: number;

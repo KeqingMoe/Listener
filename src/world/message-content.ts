@@ -7,7 +7,7 @@ import type { JsonObject } from '../contracts/json.ts';
 import type { ForwardReference } from '../contracts/messages.ts';
 import { FACE_CATALOG } from '../onebot/catalog/faces.ts';
 
-export interface MessageContent {
+interface MessageContent {
   segments: MessageSegment[];
   segments_omitted?: number;
   content_truncated?: boolean;

@@ -77,7 +77,7 @@ export const EXTENDED_READ_ONLY_TOOLS: readonly ExtendedToolName[] = [
   'view_custom_face',
 ];
 
-export type ExtendedToolMode = 'off' | 'confirm' | 'direct';
+type ExtendedToolMode = 'off' | 'confirm' | 'direct';
 
 export type ExtendedToolsConfig = Partial<
   Record<ExtendedToolName, ExtendedToolMode>

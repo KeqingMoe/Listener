@@ -4,7 +4,7 @@ export class SseError extends Error {
   }
 }
 
-export interface SseOptions {
+interface SseOptions {
   maxBytes: number;
   signal?: AbortSignal;
   onBytes?: (bytes: Uint8Array) => void;

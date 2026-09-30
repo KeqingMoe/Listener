@@ -24,7 +24,7 @@ export const GROUP_FILE_TOOL_NAMES = [
   'delete_group_folder',
 ] as const;
 
-export type GroupFileToolName = (typeof GROUP_FILE_TOOL_NAMES)[number];
+type GroupFileToolName = (typeof GROUP_FILE_TOOL_NAMES)[number];
 
 const WRITES = new Set<string>([
   'upload_group_file',
@@ -213,7 +213,7 @@ interface Listed {
   view: JsonObject;
 }
 
-export interface GroupFileToolsOptions {
+interface GroupFileToolsOptions {
   downloader?: GroupTextDownloader;
   artifacts?: ArtifactStore;
 }

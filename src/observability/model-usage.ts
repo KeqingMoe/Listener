@@ -10,7 +10,7 @@ export interface ModelUsage {
   reasoningTokens?: number | null;
 }
 
-export type RequestErrorCode =
+type RequestErrorCode =
   | 'cancelled'
   | 'timeout'
   | 'http_error'

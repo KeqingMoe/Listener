@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   safetyRules,
-  SAFETY_RULES,
   buildSystemPrompt,
   observedSystemPrompt,
 } from '../../../src/agent/prompts.ts';
@@ -21,7 +20,6 @@ import {
   type ToolName,
   type ToolPolicy,
 } from '../../../src/config/tool-policy.ts';
-import { LISTENER_GROUP } from '../../../src/contracts/identity.ts';
 import type { ToolDefinition } from '../../../src/contracts/tools.ts';
 import { VIEW_IMAGES_TOOL } from '../../../src/tools/images/tools.ts';
 import { READ_FORWARD_TOOL } from '../../../src/tools/forwards/tools.ts';
@@ -412,7 +410,6 @@ test('identity and persona are scoped per prompt, preserve escaping, and never c
       `性格与表达：\n${input.persona}\n\n${safetyRules(input.groupId)}`,
     ),
   );
-  assert.equal(SAFETY_RULES, safetyRules(LISTENER_GROUP));
   const other = buildSystemPrompt(
     freeze({ ...input, groupId: '9988776', ownerId: '8877665' }),
   );

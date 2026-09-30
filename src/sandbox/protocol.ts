@@ -1,4 +1,4 @@
-export type DiagnosticKind = 'guest_exception' | 'contract_error';
+type DiagnosticKind = 'guest_exception' | 'contract_error';
 export type DiagnosticPhase = 'compile' | 'execute' | 'result';
 
 export interface ExecutionDiagnostic {
@@ -55,7 +55,7 @@ export function isExecutionDiagnostic(
 }
 
 /** guest调用`tools.<name>(args)`在host侧的实现。参数和结果都是JSON值，其中字节字段为Uint8Array。 */
-export type ToolCaller = (
+type ToolCaller = (
   name: string,
   args: unknown,
   signal: AbortSignal,
@@ -89,7 +89,7 @@ export type ExecutionResult =
       diagnostic?: ExecutionDiagnostic;
     };
 
-export interface ExecutionLimits {
+interface ExecutionLimits {
   timeoutMs: number | null;
   memoryBytes: number;
   stackBytes: number;
@@ -98,7 +98,7 @@ export interface ExecutionLimits {
   logBytes: number;
 }
 
-export const DEFAULT_LIMITS: ExecutionLimits = {
+const DEFAULT_LIMITS: ExecutionLimits = {
   timeoutMs: null,
   memoryBytes: 64 * 1024 * 1024,
   stackBytes: 1024 * 1024,

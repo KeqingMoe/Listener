@@ -58,17 +58,14 @@ export interface ResponsesModelOptions extends OpenAIModelOptions {
 }
 
 /** 包含对话内容，按隐私数据处理，不要写进日志。 */
-export interface ResponsesCheckpoint {
+interface ResponsesCheckpoint {
   responseId: string;
   baselineMessages: ChatMessage[];
   headerHash: string;
   outputItems: unknown[];
 }
 
-export interface ResponsesContinuationCheckpoint extends Record<
-  string,
-  unknown
-> {
+interface ResponsesContinuationCheckpoint extends Record<string, unknown> {
   version: 1;
   responseId: string;
   headerHash: string;

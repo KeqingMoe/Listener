@@ -27,8 +27,8 @@ type Snapshot = {
 };
 
 export const TREND_SYNC_TTL_MS = 5 * 60_000;
-export const TREND_SYNC_MAX_SNAPSHOTS = 32;
-export const TREND_SYNC_MAX_CACHED_POINTS = 100_000;
+const TREND_SYNC_MAX_SNAPSHOTS = 32;
+const TREND_SYNC_MAX_CACHED_POINTS = 100_000;
 const key = (group: string, request: string) =>
   JSON.stringify([group, request]);
 

@@ -37,7 +37,7 @@ export interface CacheMetrics {
   cacheHitRate: number | null;
 }
 
-export interface MetricRequest {
+interface MetricRequest {
   started_at?: unknown;
   ended_at?: unknown;
   duration_ms?: unknown;
@@ -54,7 +54,7 @@ export interface MetricTool {
   finished_at?: unknown;
 }
 
-export const metricNumber = (v: unknown): number | null =>
+const metricNumber = (v: unknown): number | null =>
   typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null;
 
 export function intervalDuration(start: unknown, end: unknown): number | null {

@@ -9,7 +9,7 @@ export interface FaceCatalogEntry {
   readonly animated: boolean;
 }
 
-export interface FaceCatalogData {
+interface FaceCatalogData {
   version: string;
   faces: readonly FaceCatalogEntry[];
 }

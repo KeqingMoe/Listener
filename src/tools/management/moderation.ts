@@ -93,8 +93,6 @@ export const MODERATION_TOOLS: ToolDefinition[] = [
     },
   },
 ];
-export const HELP =
-  'Management capabilities are independently configured as off (disabled by default), confirm (the bot may autonomously request an operation; only the owner can /confirm CODE), or direct (the bot may autonomously execute). Mute and unmute are separate capabilities. Confirmation codes are scoped, expiring and single-use. Group, identity and actual QQ permissions always apply; owner and bot identities do not have special target immunity.';
 
 type Action =
   | { name: 'mute_member'; user_id: string; seconds: number }

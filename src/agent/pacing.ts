@@ -7,7 +7,7 @@ export const SIDE_EFFECT_PACING = {
   minIntervalMs: 100,
 } as const;
 
-export interface PacerClock {
+interface PacerClock {
   now(): number;
   sleep(ms: number, signal: AbortSignal): Promise<void>;
 }

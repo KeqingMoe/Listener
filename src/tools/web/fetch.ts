@@ -19,7 +19,7 @@ export const FETCH_LIMITS = {
 } as const;
 const USER_AGENT = 'Mozilla/5.0 (compatible; qqbot-listener/1.0; +web_fetch)';
 
-export type FetchKind = 'html' | 'text' | 'json' | 'xml';
+type FetchKind = 'html' | 'text' | 'json' | 'xml';
 
 export type FetchOutcome =
   | {

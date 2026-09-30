@@ -139,7 +139,7 @@ interface Cached {
   nodes: unknown[];
 }
 
-export interface ForwardTurnState {
+interface ForwardTurnState {
   returned: number;
   outputChars: number;
   cachedBytes: number;

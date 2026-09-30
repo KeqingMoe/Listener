@@ -1,5 +1,5 @@
 // 诊断分类不会改变模型/工具协议层面的状态，也不能证明外部副作用已发生。
-export const REQUEST_REASONS = [
+const REQUEST_REASONS = [
   'cancelled',
   'timeout',
   'http_error',
@@ -8,7 +8,7 @@ export const REQUEST_REASONS = [
   'invalid_response',
   'truncated_response',
 ] as const;
-export const REASONS = [
+const REASONS = [
   ...REQUEST_REASONS,
   'image_first',
   'forward_first',
@@ -117,8 +117,7 @@ const safe = (value: unknown, values: readonly string[]) =>
   typeof value === 'string' && values.includes(value) ? value : null;
 export const requestReason = (value: unknown): string | null =>
   safe(value, REQUEST_REASONS);
-export const reasonCode = (value: unknown): string | null =>
-  safe(value, REASONS);
+const reasonCode = (value: unknown): string | null => safe(value, REASONS);
 
 export type RequestOutcome =
   'success' | 'failed' | 'cancelled' | 'timeout' | 'unknown';

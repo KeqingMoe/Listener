@@ -80,7 +80,7 @@ function fields(value: unknown, allowed: string[]): Record<string, unknown> {
   return value;
 }
 
-export interface WebToolsOptions {
+interface WebToolsOptions {
   search?: WebSearchBackend;
   fetcher?: (url: unknown, signal?: AbortSignal) => Promise<FetchOutcome>;
 }

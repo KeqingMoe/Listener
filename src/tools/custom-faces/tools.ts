@@ -1,3 +1,4 @@
+import type { CustomFaceStager } from './staging.ts';
 import { createHash } from 'node:crypto';
 import { types } from 'node:util';
 import { resolveGroupId } from '../../contracts/identity.ts';
@@ -56,13 +57,6 @@ const SAFE_STORAGE_ERRORS = new Set([
   'storage_capacity',
   'storage_invalid_image',
 ]);
-
-export interface CustomFaceStager {
-  stage(
-    bytes: Buffer,
-    format: 'jpeg' | 'png' | 'gif' | 'webp',
-  ): Promise<{ providerPath: string; digest: string }>;
-}
 
 export interface CustomFaceOptions extends Pick<
   GroupMediaOptions,

@@ -14,7 +14,7 @@ export const ARTIFACT_LIMITS = {
   mediaType: 128,
 } as const;
 
-export interface ArtifactScope {
+interface ArtifactScope {
   selfId: string;
   groupId: string;
 }
@@ -40,7 +40,7 @@ const MEDIA =
   /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,63}$/;
 
 /** 校验显示名称：它也是上传到QQ时的文件名，所以不能含路径结构或控制字符。 */
-export function validArtifactName(value: unknown): value is string {
+function validArtifactName(value: unknown): value is string {
   return (
     typeof value === 'string' &&
     value.trim() === value &&
@@ -52,11 +52,11 @@ export function validArtifactName(value: unknown): value is string {
   );
 }
 
-export function validMediaType(value: unknown): value is string {
+function validMediaType(value: unknown): value is string {
   return typeof value === 'string' && MEDIA.test(value);
 }
 
-export interface ArtifactInput extends ArtifactScope {
+interface ArtifactInput extends ArtifactScope {
   name: string;
   description: string;
   mediaType: string;

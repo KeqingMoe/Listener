@@ -7,7 +7,7 @@ export interface WebSource {
   published_at?: string;
 }
 
-export interface WebSearchResult {
+interface WebSearchResult {
   sources: WebSource[];
   truncated: boolean;
   failed_queries: number;

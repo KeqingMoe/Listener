@@ -21,7 +21,7 @@ export type ReminderState =
   | 'cancelled'
   | 'expired';
 
-export type ReminderReason =
+type ReminderReason =
   | 'restart_during_send'
   | 'dispatch_unknown'
   | 'not_dispatched'
@@ -32,7 +32,7 @@ export type DeliveryOutcome =
   | { state: 'sent'; messageId: string }
   | { state: 'unknown' | 'failed'; reason?: ReminderReason };
 
-export interface ReminderInput {
+interface ReminderInput {
   selfId: string;
   groupId: string;
   creatorId: string;
@@ -53,14 +53,14 @@ export interface Reminder extends ReminderInput {
   reason?: ReminderReason;
 }
 
-export interface ReminderScope {
+interface ReminderScope {
   selfId: string;
   groupId: string;
   id: string;
   expectedRevision: number;
 }
 
-export type ReminderPatch = Partial<
+type ReminderPatch = Partial<
   Pick<ReminderInput, 'text' | 'dueAt' | 'timeZone'>
 >;
 

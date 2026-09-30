@@ -15,14 +15,14 @@ import {
   type WorldEventType,
 } from '../../world/events.ts';
 
-export interface WakeMetadata {
+interface WakeMetadata {
   wakeId?: string;
   startedAt?: number;
   trigger?: unknown;
   [key: string]: unknown;
 }
 
-export interface WorldToolsOptions {
+interface WorldToolsOptions {
   store: WorldEventStore;
   groupId: string;
   selfId: string;

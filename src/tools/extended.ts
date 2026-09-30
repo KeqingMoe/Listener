@@ -53,7 +53,7 @@ import {
   type CustomFaceOptions,
 } from './custom-faces/tools.ts';
 
-export interface ExtendedToolOptions {
+interface ExtendedToolOptions {
   downloader?: ImageDownloader;
   reminders?: ReminderStore;
   sandbox?: SandboxService;

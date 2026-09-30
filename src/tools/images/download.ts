@@ -8,7 +8,7 @@ import sharp from 'sharp';
 import { MODEL_IMAGE_MAX_EDGE } from '../../contracts/tool-limits.ts';
 import { log } from '../../observability/logger.ts';
 
-export interface DownloadedImage {
+interface DownloadedImage {
   dataUrl: string;
   width: number;
   height: number;
@@ -526,7 +526,7 @@ export function createSendImageDownloader(
 
 export const downloadSendImage: ImageDownloader = createSendImageDownloader();
 
-export interface OriginalImage {
+interface OriginalImage {
   bytes: Buffer;
   md5: string;
   format: 'jpeg' | 'png' | 'gif' | 'webp';

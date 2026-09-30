@@ -40,7 +40,7 @@ export type ResolvedToolPolicies = {
           : unknown);
 };
 
-export interface ToolCapability {
+interface ToolCapability {
   defaultMode: ToolMode;
   confirm: boolean;
   options: Readonly<

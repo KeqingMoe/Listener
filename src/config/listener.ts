@@ -19,7 +19,7 @@ export interface ModerationPolicy {
   maxMuteSeconds: number;
 }
 
-export interface ToolsConfig {
+interface ToolsConfig {
   members: boolean;
   mention: boolean;
   reactions?: boolean;

@@ -16,7 +16,7 @@ import type { AppConfig, ResolvedGroupConfig } from './app.ts';
 import { assertStoragePaths } from './loader.ts';
 import { resolveGroupId } from '../contracts/identity.ts';
 
-export interface RegisteredGroup {
+interface RegisteredGroup {
   groupId: string;
   databasePath: string;
 }
