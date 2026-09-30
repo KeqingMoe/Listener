@@ -993,11 +993,15 @@ test('reaction ledger is bounded to128 entries across many normally completed ba
     assert.equal(mutations(s).length, 150);
     assert.equal((s.bot as any).recentReactions.size, 128);
     await wakeWith(s, event('6'));
-    // get_wake_state的输出上限为10KB：保留账本最早的前缀，并明确计数省略的条目。
+    // get_wake_state的输出上限为10KB：丢弃最旧的账本条目，保留最近的反应并明确计数省略。
     const current = state(s);
     assert.equal(current.details_truncated, true);
     assert.equal(current.recent.length + current.omitted_items, 128);
-    assert.equal(current.recent[0].message_id, '1022');
+    assert.equal(current.recent.at(-1).message_id, '1149');
+    assert.equal(
+      current.recent[0].message_id,
+      String(1022 + current.omitted_items),
+    );
     assert.equal(s.memory.rows.filter((e) => e.bot).length, 0);
   } finally {
     await s.close();

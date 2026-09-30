@@ -378,17 +378,21 @@ function runtimeState(source: unknown): JsonObject {
         };
       }
     } else {
-      out.recent = list(raw.recent, 128, (item) =>
-        project(item, [
-          'message_id',
-          'emoji_id',
-          'action',
-          'status',
-          'at',
-          'error',
-          'submitted',
-          'effect_confirmed',
-        ]),
+      // 反应账本按时间从旧到新，只保留最近的128条。
+      out.recent = list(
+        Array.isArray(raw.recent) ? raw.recent.slice(-128) : raw.recent,
+        128,
+        (item) =>
+          project(item, [
+            'message_id',
+            'emoji_id',
+            'action',
+            'status',
+            'at',
+            'error',
+            'submitted',
+            'effect_confirmed',
+          ]),
       );
       if (isDataObject(raw.last_turn)) {
         out.last_turn = {
@@ -416,7 +420,8 @@ function runtimeState(source: unknown): JsonObject {
         omitted += original.length - items.length;
       }
     }
-    // 保留有用的前缀，并明确计数每个被丢弃的顶层条目。
+    // 超限时逐条丢弃并明确计数。反应账本按时间从旧到新，丢最旧的以保留最近记录；
+    // 关注计划与命中保留前缀。
     while (Buffer.byteLength(JSON.stringify(out)) > 10000) {
       const items = (
         name === 'attention_state'
@@ -433,7 +438,11 @@ function runtimeState(source: unknown): JsonObject {
         };
         break;
       }
-      items.pop();
+      if (name === 'reaction_state') {
+        items.shift();
+      } else {
+        items.pop();
+      }
       omitted++;
     }
     if (!result[name]) {

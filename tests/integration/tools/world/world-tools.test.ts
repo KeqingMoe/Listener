@@ -118,6 +118,12 @@ test('oversized runtime metadata returns a bounded prefix with honest omissions'
       assert.equal(state.omitted_items + state[key!].length, 1000);
       assert.ok(state[key!].length > 0);
     }
+    // 关注计划保留前缀；反应账本保留最近（末尾）的条目。
+    assert.equal(
+      (value.attention_state as any).active_plans[0].plan_id,
+      'att_0',
+    );
+    assert.equal((value.reaction_state as any).recent.at(-1).message_id, '999');
     assert.equal(plans.length, 1000);
   } finally {
     store.close();
