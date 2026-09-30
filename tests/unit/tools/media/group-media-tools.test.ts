@@ -57,6 +57,7 @@ function fixture(
     login?: unknown;
     send?: (action: string, params: JsonObject) => Promise<unknown> | unknown;
     download?: ImageDownloader;
+    maxDownloadMb?: number;
     onSent?: (entry: TimelineEntry) => void;
   } = {},
 ) {
@@ -112,6 +113,7 @@ function fixture(
     memory,
     {
       downloader,
+      maxDownloadMb: options.maxDownloadMb,
       onSent(e) {
         sent.push(structuredClone(e));
         options.onSent?.(e);
@@ -421,6 +423,24 @@ test('image send verifies origin, downloads normalized bytes and persists only s
   );
   assert.equal(f.downloads, 2);
   assert.equal(f.writes().length, 2);
+});
+
+test('image send uses the configured download limit', async () => {
+  let limit = 0;
+  const f = fixture({
+    maxDownloadMb: 3,
+    download: async (_url, maxBytes) => {
+      limit = maxBytes;
+      return { dataUrl: DATA, width: 1, height: 1, firstFrameOnly: false };
+    },
+  });
+  const r = await f.tools.execute(
+    'send_group_image',
+    { image_id: 'img_1_0' },
+    ctx,
+  );
+  assert.equal(r.status, 'executed');
+  assert.equal(limit, 3 * 1024 * 1024);
 });
 
 test('image source verification precedes downloader and rejects arbitrary content', async () => {

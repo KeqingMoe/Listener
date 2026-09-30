@@ -55,6 +55,7 @@ import {
 
 interface ExtendedToolOptions {
   downloader?: ImageDownloader;
+  maxDownloadMb?: number;
   reminders?: ReminderStore;
   sandbox?: SandboxService;
   web?: WebTools;
@@ -165,6 +166,7 @@ export function createExtendedTools(
     memory,
     {
       downloader: options.downloader,
+      maxDownloadMb: options.maxDownloadMb,
       artifacts: options.artifacts,
       beforeSend: options.beforeSend,
       onSent: options.onSent,

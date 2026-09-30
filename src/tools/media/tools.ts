@@ -36,6 +36,8 @@ export interface SendReceiptSnapshot {
 
 export interface GroupMediaOptions {
   downloader?: ImageDownloader;
+  /** 转发群图片时的下载上限，与view_images的max_download_mb一致。 */
+  maxDownloadMb?: number;
   artifacts?: ArtifactStore;
   beforeSend?: () => SendReceiptSnapshot;
   onSent?: (entry: TimelineEntry, receipt?: SendReceiptSnapshot) => void;
@@ -416,7 +418,7 @@ export class GroupMediaTools {
         const image = new ImageTools(
           this.api,
           this.memory,
-          { enabled: true, maxDownloadMb: 10 },
+          { enabled: true, maxDownloadMb: this.options.maxDownloadMb ?? 10 },
           this.options.downloader ?? downloadSendImage,
           this.groupId,
         );

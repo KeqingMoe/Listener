@@ -1299,6 +1299,7 @@ export class Listener {
                   files: this.groupFiles,
                   requests: this.groupRequests,
                   downloader: this.imageDownloader,
+                  maxDownloadMb: this.config.images?.maxDownloadMb,
                   customFaces: this.customFaces
                     ? {
                         ...this.customFaces,
@@ -2128,6 +2129,7 @@ export class Listener {
       this.config.tools?.extended,
       {
         downloader: this.imageDownloader,
+        maxDownloadMb: this.config.images?.maxDownloadMb,
         files: this.groupFiles,
         requests: this.groupRequests,
         reminders: this.runtime.reminders,
