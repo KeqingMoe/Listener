@@ -294,7 +294,11 @@ test('e2e: model raytraces in the sandbox, encodes with create_image and sends t
       groupId: GROUP,
       retentionDays: 7,
     }),
-    session = new ModelSession({ path: ':memory:', groupId: GROUP });
+    session = new ModelSession({
+      model: 'main',
+      path: ':memory:',
+      groupId: GROUP,
+    });
   let toolResult: JsonObject | undefined;
   const model: Model = {
     async complete(messages: ChatMessage[]) {

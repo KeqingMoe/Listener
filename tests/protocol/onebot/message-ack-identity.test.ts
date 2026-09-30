@@ -172,6 +172,7 @@ async function fixture(
     groupId: GROUP,
   });
   const session = new ModelSession({
+    model: 'main',
     path: join(dir, 'session.sqlite'),
     groupId: GROUP,
   });

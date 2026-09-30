@@ -102,7 +102,11 @@ async function settled(session: ModelSession, check: () => boolean) {
 test('integrated session starts metadata-only, reads live arrivals, checkpoints calls and reopens its prefix', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'listener-session-')),
     path = join(dir, 'session.db');
-  let session = new ModelSession({ path, groupId: LISTENER_GROUP });
+  let session = new ModelSession({
+    model: 'main',
+    path,
+    groupId: LISTENER_GROUP,
+  });
   const world = new WorldEventStore({
     path: ':memory:',
     groupId: LISTENER_GROUP,
@@ -204,7 +208,11 @@ test('integrated session starts metadata-only, reads live arrivals, checkpoints 
     assert.equal(counts.skipped, 1);
     assert.equal(counts.modelRequests, 4);
     await listener.stop();
-    session = new ModelSession({ path, groupId: LISTENER_GROUP });
+    session = new ModelSession({
+      model: 'main',
+      path,
+      groupId: LISTENER_GROUP,
+    });
     assert.deepEqual(session.messages(), prefix);
     const nextWorld = new WorldEventStore({
       path: ':memory:',
@@ -248,6 +256,7 @@ test('live attention metadata survives session rotation and remains absent from 
   const emojiId = '76';
   let reactionWrites = 0;
   const session = new ModelSession({
+      model: 'main',
       path: ':memory:',
       groupId: LISTENER_GROUP,
     }),
@@ -375,6 +384,7 @@ test('live attention metadata survives session rotation and remains absent from 
 
 test('late valid send ACK remains a world fact without resuming cancelled execution', async () => {
   const session = new ModelSession({
+      model: 'main',
       path: ':memory:',
       groupId: LISTENER_GROUP,
     }),
@@ -437,6 +447,7 @@ test('late valid send ACK remains a world fact without resuming cancelled execut
 for (const repeated of [false, true]) {
   test(`expired response state has one fresh recovery, repeated=${repeated}`, async () => {
     const session = new ModelSession({
+        model: 'main',
         path: ':memory:',
         groupId: LISTENER_GROUP,
       }),
@@ -487,6 +498,7 @@ for (const repeated of [false, true]) {
 for (const mode of ['budget', 'failure', 'cancel'] as const) {
   test(`session resolves pending calls on ${mode}`, async () => {
     const session = new ModelSession({
+        model: 'main',
         path: ':memory:',
         groupId: LISTENER_GROUP,
       }),

@@ -125,6 +125,7 @@ async function fixture(
     requests: ChatMessage[][] = [],
     failures: unknown[] = [];
   const session = new ModelSession({
+      model: 'main',
       path: join(dir, 'session.sqlite'),
       groupId: GROUP,
     }),

@@ -39,6 +39,7 @@ const records: ModelRequestRecord[] = [];
 const session = new ModelSession({
   path: join(directory, 'session.sqlite'),
   groupId,
+  model: selected,
 });
 const world = new WorldEventStore({
   path: join(directory, 'events.sqlite'),

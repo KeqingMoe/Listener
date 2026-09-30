@@ -48,7 +48,11 @@ function clean(x: { dir: string }) {
 test('weighted durations, unknown and cached results are classified without claiming native RPCs', (t) => {
   let now = 100;
   t.mock.method(Date, 'now', () => now);
-  const s = new ModelSession({ groupId: LISTENER_GROUP, path: ':memory:' });
+  const s = new ModelSession({
+    model: 'main',
+    groupId: LISTENER_GROUP,
+    path: ':memory:',
+  });
   s.beginWake('i', tools);
   const wake = s.state().wakeId!;
   s.appendAssistant(
@@ -88,7 +92,11 @@ test('weighted durations, unknown and cached results are classified without clai
 test('analytics aggregates outcomes, durations, exposure and keeps private args out', () => {
   const x = make();
   try {
-    const s = new ModelSession({ path: x.path, groupId: '123456789' });
+    const s = new ModelSession({
+      model: 'main',
+      path: x.path,
+      groupId: '123456789',
+    });
     s.beginWake('instructions', tools, { trigger: 'a' });
     s.appendAssistant(completion(call('ok')), 'request-a');
     assert.equal(s.startTool('ok'), true);
@@ -130,7 +138,11 @@ test('analytics aggregates outcomes, durations, exposure and keeps private args 
 test('analytics filters validate scope, inclusive time and limits', () => {
   const x = make();
   try {
-    const s = new ModelSession({ groupId: LISTENER_GROUP, path: x.path });
+    const s = new ModelSession({
+      model: 'main',
+      groupId: LISTENER_GROUP,
+      path: x.path,
+    });
     s.beginWake('i', tools);
     s.appendAssistant(completion(call('a')));
     assert.throws(() => s.summarizeTools({ since: -1, until: 2 }), /window/);
@@ -147,18 +159,23 @@ test('analytics filters validate scope, inclusive time and limits', () => {
 test('analytics survives reopen and keeps group boundary', () => {
   const x = make();
   try {
-    let s = new ModelSession({ path: x.path, groupId: '123456789' });
+    let s = new ModelSession({
+      model: 'main',
+      path: x.path,
+      groupId: '123456789',
+    });
     s.beginWake('i', tools);
     s.appendAssistant(completion(call('a')));
     s.finishWake();
     s.close();
-    s = new ModelSession({ path: x.path, groupId: '123456789' });
+    s = new ModelSession({ model: 'main', path: x.path, groupId: '123456789' });
     assert.equal(
       s.summarizeTools({ since: 0, until: Date.now() }).invocations,
       1,
     );
     assert.throws(
-      () => new ModelSession({ path: x.path, groupId: '100000002' }),
+      () =>
+        new ModelSession({ model: 'main', path: x.path, groupId: '100000002' }),
       /group/,
     );
     s.close();

@@ -96,7 +96,11 @@ function host(cfg = config()) {
     },
   };
   const mem = memory(),
-    session = new ModelSession({ path: ':memory:', groupId: group }),
+    session = new ModelSession({
+      model: 'main',
+      path: ':memory:',
+      groupId: group,
+    }),
     world = new WorldEventStore({ path: ':memory:', groupId: group });
   const { pacer } = virtualPacer();
   const bot = new Listener(
@@ -409,7 +413,11 @@ test('sandbox code creates image artifacts from Uint8Array pixels', async () => 
   });
   const cfg = config({ create_image: 'direct', list_artifacts: 'direct' });
   const mem = memory(),
-    session = new ModelSession({ path: ':memory:', groupId: group }),
+    session = new ModelSession({
+      model: 'main',
+      path: ':memory:',
+      groupId: group,
+    }),
     world = new WorldEventStore({ path: ':memory:', groupId: group });
   const bot = new Listener(
     {

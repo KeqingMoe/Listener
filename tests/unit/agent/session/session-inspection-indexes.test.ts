@@ -64,7 +64,11 @@ test('diagnostic metadata indexes target requests, wakes and physical turns with
 });
 
 test('ModelSession still preserves primary wake and ledger behavior with inspection indexes', () => {
-  const session = new ModelSession({ path: ':memory:', groupId: '123456789' });
+  const session = new ModelSession({
+    model: 'main',
+    path: ':memory:',
+    groupId: '123456789',
+  });
   try {
     session.beginWake('system', [], { wake_id: 't_1234567890abcdef' });
     assert.ok(session.state().wakeId);

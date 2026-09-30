@@ -25,6 +25,8 @@ import { immediate } from '../../storage/transaction.ts';
 interface ModelSessionOptions {
   path: string;
   groupId: string;
+  /** 所用具名模型的配置名；参与配置指纹，换模型即开新会话。 */
+  model: string;
   maxTranscriptBytes?: number;
 }
 
@@ -214,6 +216,7 @@ export class ModelSession {
   private readonly db: DatabaseSync;
   private readonly maxBytes: number;
   private readonly groupId: string;
+  private readonly model: string;
   private stateValue!: ModelSessionState;
   private readonly images = new Map<number, ChatMessage>();
   private closed = false;
@@ -222,6 +225,10 @@ export class ModelSession {
       throw new Error('invalid_session_options');
     }
     this.groupId = resolveGroupId(options.groupId);
+    if (typeof options.model !== 'string' || !options.model) {
+      throw new Error('invalid_session_options');
+    }
+    this.model = options.model;
     this.maxBytes = options.maxTranscriptBytes ?? DEFAULT_MAX;
     if (
       !Number.isSafeInteger(this.maxBytes) ||
@@ -576,7 +583,7 @@ export class ModelSession {
   }
 
   /**
-   * 系统指令和工具定义按指纹比对，不会修补进已有前缀。wake元数据为空时不追加占位输入。
+   * 系统指令、工具定义和模型名按指纹比对，不会修补进已有前缀。wake元数据为空时不追加占位输入。
    * 因资源或配置变化而reset时，追加明确的恢复提示让模型重新阅读工具，而不是编造摘要。
    */
   beginWake(
@@ -598,7 +605,7 @@ export class ModelSession {
     encode({ system, tools }, this.maxBytes);
     encode(wakeMeta, 65536);
     const fingerprint = createHash('sha256')
-      .update(canonical({ system, tools }))
+      .update(canonical({ system, tools, model: this.model }))
       .digest('hex');
     const oldSession = this.stateValue.sessionId;
     this.transaction(() => {

@@ -16,6 +16,7 @@ for (const transport of ['chat', 'responses'] as const) {
   test(`${transport}: always versioned UA, optional dynamic persisted session headers`, async () => {
     const dir = mkdtempSync(join(tmpdir(), 'headers-'));
     let session = new ModelSession({
+      model: 'main',
       path: join(dir, 'session.sqlite'),
       groupId: '22',
       maxTranscriptBytes: 524288,
@@ -92,6 +93,7 @@ for (const transport of ['chat', 'responses'] as const) {
       await model.complete([]);
       session.close();
       session = new ModelSession({
+        model: 'main',
         path: join(dir, 'session.sqlite'),
         groupId: '22',
         maxTranscriptBytes: 524288,

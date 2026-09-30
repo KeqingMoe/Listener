@@ -167,6 +167,7 @@ async function fixture(
   });
   const world = new WorldEventStore({ path: paths.world, groupId: group });
   const session = new ModelSession({
+    model: 'main',
     path: paths.session,
     groupId: group,
     maxTranscriptBytes: 512 * 1024,

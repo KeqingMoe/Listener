@@ -91,10 +91,18 @@ test('full mode preserves all native outputs in order with tool results, persist
     const cp = model.getContinuationCheckpoint()!;
     assert.equal(JSON.stringify(cp).includes('user-input'), false);
     assert.equal(JSON.stringify(cp).includes('tool-result'), false);
-    let session = new ModelSession({ groupId: LISTENER_GROUP, path });
+    let session = new ModelSession({
+      model: 'main',
+      groupId: LISTENER_GROUP,
+      path,
+    });
     session.setTransportCheckpoint(cp);
     session.close();
-    session = new ModelSession({ groupId: LISTENER_GROUP, path });
+    session = new ModelSession({
+      model: 'main',
+      groupId: LISTENER_GROUP,
+      path,
+    });
     const restored = new ResponsesModel(options);
     restored.restoreContinuationCheckpoint(session.getTransportCheckpoint());
     session.close();
@@ -277,6 +285,7 @@ test('removed middle native mapping fails closed before any request', async (t) 
 
 test('full checkpoint resource limit rotates before tool dispatch rather than retaining stale checkpoint', () => {
   const session = new ModelSession({
+    model: 'main',
     groupId: LISTENER_GROUP,
     path: ':memory:',
   });

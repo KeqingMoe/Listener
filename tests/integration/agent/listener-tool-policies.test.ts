@@ -271,7 +271,7 @@ async function run(
       })
     : undefined;
   const session = worldEnabled
-    ? new ModelSession({ path: ':memory:', groupId: GROUP })
+    ? new ModelSession({ model: 'main', path: ':memory:', groupId: GROUP })
     : undefined;
   const model: Model = {
     async complete(messages: ChatMessage[]) {

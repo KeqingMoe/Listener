@@ -247,6 +247,7 @@ async function main(): Promise<void> {
         session = new ModelSession({
           path: `${policy.storage.databasePath}.session.sqlite`,
           groupId,
+          model: policy.model,
           maxTranscriptBytes: policy.session.maxTranscriptBytes,
         });
         if (model instanceof ResponsesModel) {

@@ -159,6 +159,7 @@ async function fixture(options: {
 }) {
   const dir = mkdtempSync(join(tmpdir(), 'extended-integration-'));
   const session = new ModelSession({
+      model: 'main',
       path: join(dir, 'session.sqlite'),
       groupId,
     }),

@@ -113,6 +113,7 @@ for (const scenario of scenarios) {
         failures: unknown[] = [];
       let listener: Listener | undefined, client: OneBotClient | undefined;
       const session = new ModelSession({
+        model: 'main',
         path: join(dir, 'session.sqlite'),
         groupId: GROUP,
       });

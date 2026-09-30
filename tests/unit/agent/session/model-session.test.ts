@@ -53,7 +53,11 @@ function cleanup(x: { dir: string }) {
 test('images remain transient, recovered session rotates explicitly and clears transport chain', () => {
   const x = file();
   try {
-    let s = new ModelSession({ groupId: LISTENER_GROUP, path: x.path });
+    let s = new ModelSession({
+      model: 'main',
+      groupId: LISTENER_GROUP,
+      path: x.path,
+    });
     s.beginWake('instructions', [tool]);
     const old = s.state();
     const image = 'data:image/jpeg;base64,PRIVATE_IMAGE_BYTES_DO_NOT_PERSIST';
@@ -66,7 +70,11 @@ test('images remain transient, recovered session rotates explicitly and clears t
     s.finishWake();
     s.close();
     assert.equal(readFileSync(x.path).includes(Buffer.from(image)), false);
-    s = new ModelSession({ groupId: LISTENER_GROUP, path: x.path });
+    s = new ModelSession({
+      model: 'main',
+      groupId: LISTENER_GROUP,
+      path: x.path,
+    });
     assert.notEqual(s.state().sessionId, old.sessionId);
     assert.equal(s.state().resetReason, 'transient_images_lost');
     assert.equal(s.getTransportCheckpoint(), undefined);
@@ -85,6 +93,7 @@ test('transcript limits fail closed and rotate explicitly while preserving old l
   const x = file();
   try {
     let s = new ModelSession({
+      model: 'main',
       groupId: LISTENER_GROUP,
       path: x.path,
       maxTranscriptBytes: 4096,
@@ -108,6 +117,7 @@ test('transcript limits fail closed and rotate explicitly while preserving old l
     );
     s.close();
     s = new ModelSession({
+      model: 'main',
       groupId: LISTENER_GROUP,
       path: x.path,
       maxTranscriptBytes: 4096,
@@ -141,7 +151,11 @@ test('transcript limits fail closed and rotate explicitly while preserving old l
 });
 
 test('returned snapshots are immutable and request/call IDs are scoped to assistant checkpoints', () => {
-  const s = new ModelSession({ groupId: LISTENER_GROUP, path: ':memory:' });
+  const s = new ModelSession({
+    model: 'main',
+    groupId: LISTENER_GROUP,
+    path: ':memory:',
+  });
   s.beginWake('stable', [second]);
   const output = completion(call('reuse', 'send_message', '{invalid json'));
   const a = s.appendAssistant(output, 'request');
@@ -169,7 +183,11 @@ test('returned snapshots are immutable and request/call IDs are scoped to assist
 test('reopen preserves stable system/transcript prefix and group isolation', () => {
   const x = file();
   try {
-    let s = new ModelSession({ path: x.path, groupId: '123456789' });
+    let s = new ModelSession({
+      model: 'main',
+      path: x.path,
+      groupId: '123456789',
+    });
     const first = s.beginWake('stable instructions', [tool], {
       reason: 'test',
     });
@@ -179,13 +197,14 @@ test('reopen preserves stable system/transcript prefix and group isolation', () 
     s.finishTool('c1', { status: 'ok' });
     s.finishWake();
     s.close();
-    s = new ModelSession({ path: x.path, groupId: '123456789' });
+    s = new ModelSession({ model: 'main', path: x.path, groupId: '123456789' });
     assert.equal(s.messages()[0]!.content, 'stable instructions');
     assert.ok(
       s.messages().some((m) => m.role === 'tool' && m.tool_call_id === 'c1'),
     );
     assert.throws(
-      () => new ModelSession({ path: x.path, groupId: '100000002' }),
+      () =>
+        new ModelSession({ model: 'main', path: x.path, groupId: '100000002' }),
       /group/,
     );
     s.close();
@@ -198,7 +217,11 @@ test('reopen preserves stable system/transcript prefix and group isolation', () 
 test('configuration fingerprint rotates current projection but keeps audit journal', () => {
   const x = file();
   try {
-    const s = new ModelSession({ groupId: LISTENER_GROUP, path: x.path });
+    const s = new ModelSession({
+      model: 'main',
+      groupId: LISTENER_GROUP,
+      path: x.path,
+    });
     s.beginWake('a', [tool]);
     s.finishWake();
     const old = s.state().sessionId;
@@ -214,12 +237,20 @@ test('configuration fingerprint rotates current projection but keeps audit journ
 test('ledger intent is durable, crash recovery marks started unknown and never replays', () => {
   const x = file();
   try {
-    let s = new ModelSession({ groupId: LISTENER_GROUP, path: x.path });
+    let s = new ModelSession({
+      model: 'main',
+      groupId: LISTENER_GROUP,
+      path: x.path,
+    });
     s.beginWake('instructions', [tool]);
     s.appendAssistant(completion(call('write', 'send_message', '{}')));
     assert.equal(s.startTool('write'), true);
     s.close();
-    s = new ModelSession({ groupId: LISTENER_GROUP, path: x.path });
+    s = new ModelSession({
+      model: 'main',
+      groupId: LISTENER_GROUP,
+      path: x.path,
+    });
     const rows = s.messages();
     const result = rows.find(
       (m) => m.role === 'tool' && m.tool_call_id === 'write',
@@ -236,7 +267,11 @@ test('ledger intent is durable, crash recovery marks started unknown and never r
 test('unstarted calls are skipped and duplicate result never overwrites', () => {
   const x = file();
   try {
-    const s = new ModelSession({ groupId: LISTENER_GROUP, path: x.path });
+    const s = new ModelSession({
+      model: 'main',
+      groupId: LISTENER_GROUP,
+      path: x.path,
+    });
     s.beginWake('instructions', [tool, second]);
     s.appendAssistant(
       completion(call('a', 'send_message', '{}'), call('b', 'finish', '{}')),
@@ -257,7 +292,11 @@ test('unstarted calls are skipped and duplicate result never overwrites', () => 
 test('finish result closes pending trailing calls with explicit skipped results', () => {
   const x = file();
   try {
-    const s = new ModelSession({ groupId: LISTENER_GROUP, path: x.path });
+    const s = new ModelSession({
+      model: 'main',
+      groupId: LISTENER_GROUP,
+      path: x.path,
+    });
     s.beginWake('instructions', [tool]);
     s.appendAssistant(
       completion(
@@ -279,7 +318,11 @@ test('finish result closes pending trailing calls with explicit skipped results'
 test('transport checkpoint is bounded and reset clears it', () => {
   const x = file();
   try {
-    const s = new ModelSession({ groupId: LISTENER_GROUP, path: x.path });
+    const s = new ModelSession({
+      model: 'main',
+      groupId: LISTENER_GROUP,
+      path: x.path,
+    });
     s.setTransportCheckpoint({ response_id: 'private' });
     assert.deepEqual(s.getTransportCheckpoint(), { response_id: 'private' });
     assert.throws(
@@ -301,7 +344,12 @@ test('symlink database is refused before opening', () => {
     writeFileSync(x.path, 'not sqlite');
     symlinkSync(x.path, link);
     assert.throws(
-      () => new ModelSession({ groupId: LISTENER_GROUP, path: link }),
+      () =>
+        new ModelSession({
+          model: 'main',
+          groupId: LISTENER_GROUP,
+          path: link,
+        }),
       /symlink|file/,
     );
   } finally {
@@ -309,5 +357,59 @@ test('symlink database is refused before opening', () => {
     try {
       rmSync(link);
     } catch {}
+  }
+});
+
+test('switching the configured model name starts a new session and drops the transport chain', () => {
+  const x = file();
+  try {
+    let s = new ModelSession({
+      model: 'opencode_go',
+      groupId: LISTENER_GROUP,
+      path: x.path,
+    });
+    s.beginWake('instructions', [tool]);
+    const first = s.state().sessionId;
+    s.setTransportCheckpoint({ response_id: 'provider_a_response' });
+    s.finishWake();
+    s.close();
+    // 同名模型重启后继续同一会话。
+    s = new ModelSession({
+      model: 'opencode_go',
+      groupId: LISTENER_GROUP,
+      path: x.path,
+    });
+    s.beginWake('instructions', [tool]);
+    assert.equal(s.state().sessionId, first);
+    s.finishWake();
+    s.close();
+    // 同样的指令和工具，换成另一个模型名即轮换。
+    s = new ModelSession({
+      model: 'qunyou_model',
+      groupId: LISTENER_GROUP,
+      path: x.path,
+    });
+    s.beginWake('instructions', [tool]);
+    assert.notEqual(s.state().sessionId, first);
+    assert.equal(s.state().resetReason, 'configuration_changed');
+    assert.equal(s.getTransportCheckpoint(), undefined);
+    s.finishWake();
+    s.close();
+  } finally {
+    cleanup(x);
+  }
+});
+
+test('the model name is a required session option', () => {
+  for (const model of [undefined, '', 1]) {
+    assert.throws(
+      () =>
+        new ModelSession({
+          model: model as string,
+          groupId: LISTENER_GROUP,
+          path: ':memory:',
+        }),
+      /invalid_session_options/,
+    );
   }
 });

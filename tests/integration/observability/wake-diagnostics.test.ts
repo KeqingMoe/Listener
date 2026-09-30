@@ -88,6 +88,7 @@ test('wake diagnostics allow only finite local codes and numeric counters withou
 
 test('wake outcome stays compatible while actual cause and facts are independently persisted', () => {
   const session = new ModelSession({
+    model: 'main',
     path: ':memory:',
     groupId: LISTENER_GROUP,
   });
@@ -119,6 +120,7 @@ test('wake outcome stays compatible while actual cause and facts are independent
 
 test('terminal cancellation cause reaches both started and not-started tool intents without claiming either succeeded', () => {
   const session = new ModelSession({
+    model: 'main',
     path: ':memory:',
     groupId: LISTENER_GROUP,
   });
@@ -170,6 +172,7 @@ async function until(check: () => boolean) {
 
 function fixture(mode: 'timeout' | 'disconnect' | 'reset') {
   const session = new ModelSession({
+      model: 'main',
       path: ':memory:',
       groupId: LISTENER_GROUP,
     }),
@@ -301,6 +304,7 @@ for (const mode of ['timeout', 'disconnect'] as const) {
 
 test('a late old-scope completion cannot finish or settle tools in a new wake', () => {
   const session = new ModelSession({
+    model: 'main',
     path: ':memory:',
     groupId: LISTENER_GROUP,
   });
@@ -358,6 +362,7 @@ test('a late old-scope completion cannot finish or settle tools in a new wake', 
 
 test('owner reset during send preserves a late ACK as a world fact without finishing the new session', async () => {
   const session = new ModelSession({
+      model: 'main',
       path: ':memory:',
       groupId: LISTENER_GROUP,
     }),

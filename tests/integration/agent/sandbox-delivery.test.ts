@@ -62,7 +62,7 @@ function fixture(
   path = ':memory:',
   respond?: (messages: ChatMessage[]) => Promise<Completion>,
 ) {
-  const session = new ModelSession({ path, groupId: group }),
+  const session = new ModelSession({ model: 'main', path, groupId: group }),
     world = new WorldEventStore({ path: ':memory:', groupId: group }),
     requests: ChatMessage[][] = [];
   const bot = new Listener(
@@ -228,7 +228,7 @@ test('busy listener queues completion until next wake boundary without duplicate
 test('persisted unprojected inbox reopens cold group and repeated dispatch does not wake again', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'sandbox-delivery-')),
     path = join(dir, 'session.sqlite');
-  const initial = new ModelSession({ path, groupId: group });
+  const initial = new ModelSession({ model: 'main', path, groupId: group });
   initial.receiveExternalEvent(`${self}:job_test`, self, {
     job_id: 'job_test',
     description: 'restart',

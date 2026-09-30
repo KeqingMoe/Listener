@@ -125,7 +125,11 @@ function fixture(options: {
     world: join(dir, 'world.sqlite'),
     memory: join(dir, 'memory.sqlite'),
   };
-  const session = new ModelSession({ path: paths.session, groupId: GROUP }),
+  const session = new ModelSession({
+      model: 'main',
+      path: paths.session,
+      groupId: GROUP,
+    }),
     world = new WorldEventStore({ path: paths.world, groupId: GROUP }),
     memory = new SQLiteMemory({
       path: paths.memory,
