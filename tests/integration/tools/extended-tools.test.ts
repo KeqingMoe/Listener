@@ -6,7 +6,10 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { ToolRegistry } from '../../../src/tools/registry.ts';
 import { loadAppConfig } from '../../../src/config/loader.ts';
-import { toListenerConfig } from '../../../src/config/runtime.ts';
+import {
+  applyToolPolicies,
+  toListenerConfig,
+} from '../../../src/config/runtime.ts';
 import {
   createExtendedTools,
   buildExtendedToolDefinitions,
@@ -38,6 +41,10 @@ import {
   type ToolDefinition,
   type TurnContext,
 } from '../../../src/contracts/tools.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const self = '900000001',
   actor = '12345',
@@ -49,6 +56,7 @@ const context: TurnContext = {
   messageId: '1',
 };
 const base: ListenerConfig = {
+  toolPermissions: toolPermissions(MEMBER_TOOLS),
   groupId: LISTENER_GROUP,
   ownerId: OWNER_ID,
   enabled: true,
@@ -90,20 +98,12 @@ function memory(): Memory {
 function config(extended?: ExtendedToolsConfig): ListenerConfig {
   return {
     ...base,
-    tools: {
-      members: false,
-      mention: false,
-      reactions: false,
-      extended,
-      moderation: {
-        mute: 'off',
-        unmute: 'off',
-        recall: 'off',
-        memberCard: 'off',
-        confirmationTtlSeconds: 60,
-        maxMuteSeconds: 600,
-      },
-    },
+    toolPermissions: toolPermissions({
+      ...extended,
+      mute_member: { mode: 'off', maxSeconds: 600 },
+    }),
+    messageMentions: false,
+    confirmationTtlSeconds: 60,
   };
 }
 
@@ -410,7 +410,8 @@ test('loaded TOML is the source of per-group registration without capability lea
   });
   assert.deepEqual(
     enabledExtendedTools(
-      toListenerConfig(loaded, loaded.resolveGroup('333')).tools?.extended,
+      applyToolPolicies(toListenerConfig(loaded, loaded.resolveGroup('333')))
+        .tools.extended,
     ),
     [],
   );
@@ -428,7 +429,7 @@ test('loaded TOML is the source of per-group registration without capability lea
       api,
       memory(),
       group.groupId!,
-      group.tools?.extended,
+      applyToolPolicies(group).tools.extended,
     );
     assert.deepEqual(
       registry.definitions().map((d) => d.function.name),

@@ -19,6 +19,10 @@ import {
 } from '../../../src/contracts/messages.ts';
 import { type ToolDefinition } from '../../../src/contracts/tools.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const GROUP = '22',
   SELF = '99999',
@@ -35,7 +39,10 @@ const base: ListenerConfig = {
   randomReplyProbability: 0,
   randomCooldownMs: 0,
   randomMaxPerMinute: 10,
-  attention: { enabled: true, maxPlans: 16 },
+  toolPermissions: toolPermissions({
+    ...MEMBER_TOOLS,
+    manage_attention: { mode: 'direct', maxPlans: 16 },
+  }),
 };
 
 function gate<T>() {
@@ -238,18 +245,15 @@ const settled = async (s: ReturnType<typeof setup>, count: number) =>
 test('two plans after a send coexist, member A consumes only its plan and member B remains awaited', async () => {
   const s = setup({
     settings: {
-      tools: {
-        members: true,
-        mention: true,
-        moderation: {
-          mute: 'confirm',
-          unmute: 'confirm',
-          recall: 'confirm',
-          memberCard: 'confirm',
-          confirmationTtlSeconds: 60,
-          maxMuteSeconds: 600,
-        },
-      },
+      toolPermissions: toolPermissions({
+        ...MEMBER_TOOLS,
+        manage_attention: { mode: 'direct', maxPlans: 16 },
+        mute_member: { mode: 'confirm', maxSeconds: 600 },
+        unmute_member: 'confirm',
+        recall_message: 'confirm',
+        set_member_card: 'confirm',
+      }),
+      confirmationTtlSeconds: 60,
     },
     respond: (r) =>
       r.index === 0
@@ -540,18 +544,15 @@ for (const failure of ['model', 'send', 'reset', 'timeout'] as const) {
 test('finish stops trailing attention, extra send, reads and moderation after an earlier send', async () => {
   const s = setup({
     settings: {
-      tools: {
-        members: true,
-        mention: true,
-        moderation: {
-          mute: 'confirm',
-          unmute: 'off',
-          recall: 'off',
-          memberCard: 'off',
-          confirmationTtlSeconds: 60,
-          maxMuteSeconds: 600,
-        },
-      },
+      toolPermissions: toolPermissions({
+        ...MEMBER_TOOLS,
+        manage_attention: { mode: 'direct', maxPlans: 16 },
+        mute_member: { mode: 'confirm', maxSeconds: 600 },
+        unmute_member: 'off',
+        recall_message: 'off',
+        set_member_card: 'off',
+      }),
+      confirmationTtlSeconds: 60,
     },
     respond: () =>
       complete(
@@ -701,18 +702,15 @@ test('random participation remains independent, while disconnect and reset clear
   const s = setup({
     settings: {
       randomReplyProbability: 1,
-      tools: {
-        members: true,
-        mention: true,
-        moderation: {
-          mute: 'confirm',
-          unmute: 'off',
-          recall: 'direct',
-          memberCard: 'off',
-          confirmationTtlSeconds: 60,
-          maxMuteSeconds: 600,
-        },
-      },
+      toolPermissions: toolPermissions({
+        ...MEMBER_TOOLS,
+        manage_attention: { mode: 'direct', maxPlans: 16 },
+        mute_member: { mode: 'confirm', maxSeconds: 600 },
+        unmute_member: 'off',
+        recall_message: 'direct',
+        set_member_card: 'off',
+      }),
+      confirmationTtlSeconds: 60,
     },
     respond: (r) =>
       r.index === 0 ? complete(member(B), silent()) : complete(silent()),

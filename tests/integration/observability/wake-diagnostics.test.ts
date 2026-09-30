@@ -13,6 +13,10 @@ import {
 } from '../../../src/contracts/messages.ts';
 import { type Completion } from '../../../src/contracts/model.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const call = (id: string, name: string, args: unknown = {}) => ({
   id,
@@ -143,6 +147,7 @@ test('terminal cancellation cause reaches both started and not-started tool inte
 });
 
 const config: ListenerConfig = {
+  toolPermissions: toolPermissions(MEMBER_TOOLS),
   groupId: LISTENER_GROUP,
   enabled: true,
   debounceMs: 1,

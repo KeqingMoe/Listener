@@ -5,10 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { withFixtureModel } from '../../support/config-fixture.ts';
 import { ConfigError, loadAppConfig } from '../../../src/config/loader.ts';
-import {
-  toListenerConfig,
-  applyToolPolicies,
-} from '../../../src/config/runtime.ts';
+import { toListenerConfig } from '../../../src/config/runtime.ts';
 import { buildToolDefinitions } from '../../../src/agent/tool-definitions.ts';
 import { buildSystemPrompt } from '../../../src/agent/prompts.ts';
 
@@ -132,25 +129,4 @@ test('without a search backend web_search is absent from tools and prompt; web_f
     !off.tools.includes('web_search') && !off.tools.includes('web_fetch'),
   );
   assert.doesNotMatch(off.prompt, /联网资料/);
-});
-
-test('low-level configs without resolved policies also hide web_search when no backend exists', (t) => {
-  const { config } = names('', t);
-  const lowLevel = {
-    ...config,
-    toolPermissions: undefined,
-    tools: {
-      ...applyToolPolicies(config).tools!,
-      extended: { web_search: 'direct' as const, web_fetch: 'direct' as const },
-    },
-  };
-  const tools = buildToolDefinitions(lowLevel).map((d) => d.function.name);
-  assert.ok(!tools.includes('web_search'));
-  assert.ok(tools.includes('web_fetch'));
-  assert.ok(
-    buildToolDefinitions({
-      ...lowLevel,
-      webSearch: { type: 'searxng', url: 'http://127.0.0.1:8888' },
-    }).some((d) => d.function.name === 'web_search'),
-  );
 });

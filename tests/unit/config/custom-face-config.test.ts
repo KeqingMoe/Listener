@@ -13,7 +13,10 @@ import {
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { loadAppConfig } from '../../../src/config/loader.ts';
-import { toListenerConfig } from '../../../src/config/runtime.ts';
+import {
+  applyToolPolicies,
+  toListenerConfig,
+} from '../../../src/config/runtime.ts';
 import { inspectGroupConfig } from '../../../src/config/inspect.ts';
 import { buildToolDefinitions } from '../../../src/agent/tool-definitions.ts';
 import { buildCustomFaceToolDefinitions } from '../../../src/tools/custom-faces/tools.ts';
@@ -180,13 +183,17 @@ test('favorite view permission is independent while the existing image parameter
   const configured = fixture(t, {
     defaults: 'tools.view_images={mode="direct",max_download_mb=2}',
   }).load();
-  const first = toListenerConfig(configured, configured.resolveGroup(GROUP));
-  assert.equal(first.images?.maxDownloadMb, 2);
-  assert.equal(first.tools?.extended?.view_custom_face, 'direct');
+  const first = applyToolPolicies(
+    toListenerConfig(configured, configured.resolveGroup(GROUP)),
+  );
+  assert.equal(first.images.maxDownloadMb, 2);
+  assert.equal(first.tools.extended?.view_custom_face, 'direct');
   const disabled = fixture(t, { defaults: 'tools.view_images="off"' }).load();
-  const second = toListenerConfig(disabled, disabled.resolveGroup(GROUP));
-  assert.equal(second.images?.enabled, false);
-  assert.equal(second.images?.maxDownloadMb, 10);
+  const second = applyToolPolicies(
+    toListenerConfig(disabled, disabled.resolveGroup(GROUP)),
+  );
+  assert.equal(second.images.enabled, false);
+  assert.equal(second.images.maxDownloadMb, 10);
   const names = buildToolDefinitions(second, true).map(
     (tool) => tool.function.name,
   );

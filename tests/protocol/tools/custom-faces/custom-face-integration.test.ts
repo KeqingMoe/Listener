@@ -43,6 +43,7 @@ import type {
   ToolDefinition,
 } from '../../../../src/contracts/tools.ts';
 import { LISTENER_GROUP } from '../../../../src/contracts/identity.ts';
+import { toolPermissions } from '../../../support/tool-permissions.ts';
 
 const SELF = '100000001',
   OWNER = '100000002',
@@ -351,21 +352,16 @@ async function fixture(
     cooldownMs: 0,
     retentionDays: 7,
     randomReplyProbability: 0,
-    images: { enabled: options.imagesEnabled ?? true, maxDownloadMb: 2 },
-    tools: {
-      members: false,
-      mention: false,
-      reactions: false,
-      extended: options.extended ?? direct,
-      moderation: {
-        mute: 'off',
-        unmute: 'off',
-        recall: 'off',
-        memberCard: 'off',
-        maxMuteSeconds: 600,
-        confirmationTtlSeconds: 60,
+    toolPermissions: toolPermissions({
+      ...(options.extended ?? direct),
+      mute_member: { mode: 'off', maxSeconds: 600 },
+      view_images: {
+        mode: (options.imagesEnabled ?? true) ? 'direct' : 'off',
+        maxDownloadMb: 2,
       },
-    },
+    }),
+    messageMentions: false,
+    confirmationTtlSeconds: 60,
   };
   const listener = new Listener(
     api,

@@ -4,7 +4,10 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { Listener } from '../../../src/agent/listener.ts';
 import { buildToolDefinitions } from '../../../src/agent/tool-definitions.ts';
 import { buildSystemPrompt } from '../../../src/agent/prompts.ts';
-import { toListenerConfig } from '../../../src/config/runtime.ts';
+import {
+  applyToolPolicies,
+  toListenerConfig,
+} from '../../../src/config/runtime.ts';
 import {
   TOOL_NAMES,
   TOOL_CAPABILITIES,
@@ -322,10 +325,11 @@ test('unique adapter combines app credentials and group policy without leaking s
   assert.equal('apiKey' in config, false);
   assert.equal(config.ownerId, OWNER);
   assert.equal(config.persona, group.persona);
-  assert.equal(config.tools?.moderation.maxMuteSeconds, 45);
-  assert.equal(config.tools?.moderation.confirmationTtlSeconds, 37);
-  assert.deepEqual(config.images, { enabled: true, maxDownloadMb: 4 });
-  assert.deepEqual(config.attention, { enabled: true, maxPlans: 5 });
+  const projected = applyToolPolicies(config);
+  assert.equal(projected.tools.moderation.maxMuteSeconds, 45);
+  assert.equal(projected.tools.moderation.confirmationTtlSeconds, 37);
+  assert.deepEqual(projected.images, { enabled: true, maxDownloadMb: 4 });
+  assert.deepEqual(projected.attention, { enabled: true, maxPlans: 5 });
   assert.equal('apiKey' in group, false);
   group.tools.mute_member.mode = 'off';
   assert.equal(config.toolPermissions?.mute_member.mode, 'confirm');
@@ -365,22 +369,25 @@ test('every optional tool exposes only its explicit policy; required tools stay 
     }
   }
   const { config } = fixture();
-  config.tools = {
-    members: true,
-    mention: true,
-    reactions: true,
-    moderation: {
-      mute: 'direct',
-      unmute: 'direct',
-      recall: 'direct',
-      memberCard: 'direct',
-      confirmationTtlSeconds: 60,
-      maxMuteSeconds: 600,
+  // 混入的旧版模块字段不能绕过toolPermissions打开任何工具。
+  Object.assign(config, {
+    tools: {
+      members: true,
+      mention: true,
+      reactions: true,
+      moderation: {
+        mute: 'direct',
+        unmute: 'direct',
+        recall: 'direct',
+        memberCard: 'direct',
+        confirmationTtlSeconds: 60,
+        maxMuteSeconds: 600,
+      },
+      extended: { kick_member: 'direct' },
     },
-    extended: { kick_member: 'direct' },
-  };
-  config.images = { enabled: true, maxDownloadMb: 10 };
-  config.attention = { enabled: true, maxPlans: 16 };
+    images: { enabled: true, maxDownloadMb: 10 },
+    attention: { enabled: true, maxPlans: 16 },
+  });
   assert.deepEqual(
     TOOL_NAMES.filter((n) =>
       buildToolDefinitions(config, true).some((t) => t.function.name === n),
@@ -589,7 +596,7 @@ test('resolved view_images options enforce only the per-image downloader byte bu
   const images = new ImageTools(
     api,
     memory,
-    config.images!,
+    applyToolPolicies(config).images,
     async (_url, limit) => {
       limits.push(limit);
       return {

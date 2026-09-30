@@ -20,12 +20,17 @@ import {
 } from '../../../src/contracts/messages.ts';
 import { type ToolDefinition } from '../../../src/contracts/tools.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const SELF = '99999';
 const A = '22',
   B = '33',
   C = '44';
 const config: ListenerConfig = {
+  toolPermissions: toolPermissions(MEMBER_TOOLS),
   groupId: LISTENER_GROUP,
   ownerId: OWNER_ID,
   enabled: true,
@@ -357,21 +362,17 @@ test('each group keeps its own persona, schemas and pending batch', async () => 
     settings: {
       [A]: {
         persona: 'STYLE_A',
-        forward: { enabled: true },
-        tools: {
-          members: false,
-          mention: false,
-          moderation: {
-            mute: 'off',
-            unmute: 'off',
-            recall: 'off',
-            memberCard: 'off',
-            confirmationTtlSeconds: 10,
-            maxMuteSeconds: 10,
-          },
-        },
+        toolPermissions: toolPermissions({
+          read_forward: 'direct',
+          mute_member: { mode: 'off', maxSeconds: 10 },
+        }),
+        messageMentions: false,
+        confirmationTtlSeconds: 10,
       },
-      [B]: { persona: 'STYLE_B', forward: { enabled: false } },
+      [B]: {
+        persona: 'STYLE_B',
+        toolPermissions: toolPermissions(MEMBER_TOOLS),
+      },
     },
     complete: (r) =>
       r.index === 0

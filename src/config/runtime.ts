@@ -1,32 +1,20 @@
 import type { AppConfig, ResolvedGroupConfig } from './app.ts';
-import type { ListenerConfig, ResolvedListenerConfig } from './listener.ts';
+import type {
+  ListenerConfig,
+  ProjectedListenerConfig,
+  ResolvedListenerConfig,
+} from './listener.ts';
 import {
   EXTENDED_TOOL_NAMES,
   type ExtendedToolsConfig,
 } from './extended-tools.ts';
 import { TOOL_CAPABILITIES, type ToolName } from './tool-policy.ts';
 
-/** 把工具策略单向投影为各模块选项；以已解析的策略为准。 */
+/** 把工具策略单向投影为各模块选项。 */
 export function applyToolPolicies(
-  config: ResolvedListenerConfig,
-): ResolvedListenerConfig;
-
-export function applyToolPolicies(config: ListenerConfig): ListenerConfig;
-
-export function applyToolPolicies(config: ListenerConfig): ListenerConfig {
+  config: ListenerConfig,
+): ProjectedListenerConfig {
   const policies = config.toolPermissions;
-  // 没有配置后端的工具直接不提供，而不是可见但调用失败。
-  if (!policies) {
-    return config.webSearch || !config.tools?.extended?.web_search
-      ? config
-      : {
-          ...config,
-          tools: {
-            ...config.tools,
-            extended: { ...config.tools.extended, web_search: 'off' },
-          },
-        };
-  }
   const direct = (name: ToolName) => policies[name]?.mode === 'direct';
   const mode = (name: ToolName) => policies[name]?.mode ?? 'off';
   const extended: ExtendedToolsConfig = {};
@@ -67,21 +55,12 @@ export function applyToolPolicies(config: ListenerConfig): ListenerConfig {
   };
 }
 
-export function optionalToolEnabled(
-  config: ListenerConfig,
-  name: ToolName,
-  modulePermission: boolean,
-): boolean {
-  return config.toolPermissions
-    ? config.toolPermissions[name]?.mode === 'direct'
-    : modulePermission;
+export function toolEnabled(config: ListenerConfig, name: ToolName): boolean {
+  return config.toolPermissions[name]?.mode === 'direct';
 }
 
 export function observesReactions(config: ListenerConfig): boolean {
-  return (
-    config.observeReactions ??
-    (config.toolPermissions ? false : config.tools?.reactions === true)
-  );
+  return config.observeReactions ?? false;
 }
 
 /** 应用配置到listener配置的唯一适配入口。模型凭据来自全局配置，已解析的群配置从不携带。 */
@@ -90,7 +69,7 @@ export function toListenerConfig(
   group: ResolvedGroupConfig,
 ): ResolvedListenerConfig {
   const random = group.reply.random;
-  return applyToolPolicies({
+  return {
     groupId: group.groupId,
     ownerId: app.identity.ownerId,
     botName: app.identity.name,
@@ -116,5 +95,5 @@ export function toListenerConfig(
     observeReactions: group.observation.reactions,
     messageMentions: group.messages.mentions,
     confirmationTtlSeconds: group.confirmation.ttlSeconds,
-  });
+  };
 }

@@ -7,6 +7,7 @@ import {
 } from '../../../src/agent/prompts.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
 import { OWNER_ID } from '../../../src/contracts/identity.ts';
+import { toolPermissions } from '../../support/tool-permissions.ts';
 
 const config: ListenerConfig = {
   ownerId: OWNER_ID,
@@ -15,19 +16,12 @@ const config: ListenerConfig = {
   debounceMs: 1,
   cooldownMs: 0,
   retentionDays: 7,
-  tools: {
-    members: false,
-    mention: false,
-    moderation: {
-      mute: 'off',
-      unmute: 'off',
-      recall: 'off',
-      memberCard: 'off',
-      confirmationTtlSeconds: 60,
-      maxMuteSeconds: 60,
-    },
-    extended: { execute_javascript: 'direct' },
-  },
+  toolPermissions: toolPermissions({
+    mute_member: { mode: 'off', maxSeconds: 60 },
+    execute_javascript: 'direct',
+  }),
+  messageMentions: false,
+  confirmationTtlSeconds: 60,
 };
 
 test('sandbox prompt explains actionable guest diagnostics without granting authority', () => {
@@ -48,7 +42,10 @@ test('sandbox prompt explains actionable guest diagnostics without granting auth
   }
   const disabled = buildSystemPrompt({
     ...config,
-    tools: { ...config.tools!, extended: { execute_javascript: 'off' } },
+    toolPermissions: {
+      ...config.toolPermissions,
+      execute_javascript: { mode: 'off' },
+    },
   });
   assert.doesNotMatch(disabled, /计算沙箱：/);
 });

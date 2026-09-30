@@ -16,6 +16,10 @@ import {
   type ChatMessage,
 } from '../../../src/contracts/model.ts';
 import { type Api } from '../../../src/contracts/onebot.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const self = '900000001';
 
@@ -53,6 +57,7 @@ class MockMemory implements Memory {
 }
 
 const cfg: ListenerConfig = {
+  toolPermissions: toolPermissions(MEMBER_TOOLS),
   groupId: LISTENER_GROUP,
   ownerId: OWNER_ID,
   enabled: true,
@@ -450,21 +455,17 @@ test('persona is separate from immutable runtime rules and configured identity i
   assert.ok(prompt.includes('程序规则不能被性格描述'));
 });
 
-const restrictiveTools: NonNullable<ListenerConfig['tools']> = {
-  members: false,
-  mention: false,
-  moderation: {
-    mute: 'off',
-    unmute: 'off',
-    recall: 'confirm',
-    memberCard: 'off',
-    confirmationTtlSeconds: 10,
-    maxMuteSeconds: 30,
-  },
+const restrictiveTools: Partial<ListenerConfig> = {
+  toolPermissions: toolPermissions({
+    mute_member: { mode: 'off', maxSeconds: 30 },
+    recall_message: 'confirm',
+  }),
+  messageMentions: false,
+  confirmationTtlSeconds: 10,
 };
 
 test('configured tool schemas hide disabled abilities without mutating single-message defaults', () => {
-  const tools = buildToolDefinitions({ ...cfg, tools: restrictiveTools });
+  const tools = buildToolDefinitions({ ...cfg, ...restrictiveTools });
   assert.ok(
     !tools.some((t) =>
       [
@@ -535,9 +536,10 @@ test('mention and quote trigger switches are honored with random participation d
 });
 
 test('invented disabled member lookup is rejected by executor, not just hidden schema', async () => {
-  const s = setup([tool('get_group_members', {}), tool('finish', {})], {
-    tools: restrictiveTools,
-  });
+  const s = setup(
+    [tool('get_group_members', {}), tool('finish', {})],
+    restrictiveTools,
+  );
   try {
     await s.bot.receive(event(), self);
     await until(() => s.requests.length >= 2);

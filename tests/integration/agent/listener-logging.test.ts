@@ -19,10 +19,15 @@ import {
 import { type Model, type Completion } from '../../../src/contracts/model.ts';
 import { type Api } from '../../../src/contracts/onebot.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const secret = 'NEVER_LOG_CHAT_BODY_OR_ARGUMENTS';
 const self = '999';
 const cfg: ListenerConfig = {
+  toolPermissions: toolPermissions(MEMBER_TOOLS),
   groupId: LISTENER_GROUP,
   ownerId: OWNER_ID,
   enabled: true,

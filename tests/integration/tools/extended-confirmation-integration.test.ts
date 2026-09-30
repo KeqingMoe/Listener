@@ -17,6 +17,10 @@ import {
 import { type JsonObject } from '../../../src/contracts/json.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
 import type { ExtendedToolsConfig } from '../../../src/config/extended-tools.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const GROUP = '123456',
   SELF = '999',
@@ -182,20 +186,15 @@ function setup(
     cooldownMs: 0,
     retentionDays: 7,
     randomReplyProbability: 0,
-    tools: {
-      members: true,
-      mention: true,
-      reactions: true,
-      moderation: {
-        mute: 'off',
-        unmute: 'off',
-        recall: 'off',
-        memberCard: 'off',
-        confirmationTtlSeconds: 60,
-        maxMuteSeconds: 600,
-      },
-      extended,
-    },
+    toolPermissions: toolPermissions({
+      ...MEMBER_TOOLS,
+      react_message: 'direct',
+      get_reaction_users: 'direct',
+      mute_member: { mode: 'off', maxSeconds: 600 },
+      ...extended,
+    }),
+    observeReactions: true,
+    confirmationTtlSeconds: 60,
     ...overrides,
   };
   const bot = new Listener(api, model, memory, config, () => 0);

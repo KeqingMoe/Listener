@@ -12,10 +12,15 @@ import type { ChatMessage, Completion } from '../../../src/contracts/model.ts';
 import type { Memory } from '../../../src/contracts/messages.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
 import { OWNER_ID } from '../../../src/contracts/identity.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const group = '123456',
   self = '999';
 const config: ListenerConfig = {
+  toolPermissions: toolPermissions(MEMBER_TOOLS),
   ownerId: OWNER_ID,
   groupId: group,
   enabled: true,

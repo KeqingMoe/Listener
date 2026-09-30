@@ -14,6 +14,7 @@ import {
 import { type Model, type Completion } from '../../../src/contracts/model.ts';
 import { type JsonObject } from '../../../src/contracts/json.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
+import { toolPermissions } from '../../support/tool-permissions.ts';
 
 const OWNER_A = '778899',
   OWNER_B = '889900',
@@ -29,18 +30,11 @@ const config: ListenerConfig = {
   cooldownMs: 0,
   retentionDays: 7,
   randomReplyProbability: 0,
-  tools: {
-    members: false,
-    mention: false,
-    moderation: {
-      mute: 'confirm',
-      unmute: 'off',
-      recall: 'off',
-      memberCard: 'off',
-      confirmationTtlSeconds: 60,
-      maxMuteSeconds: 600,
-    },
-  },
+  toolPermissions: toolPermissions({
+    mute_member: { mode: 'confirm', maxSeconds: 600 },
+  }),
+  messageMentions: false,
+  confirmationTtlSeconds: 60,
 };
 
 class TestMemory implements Memory {

@@ -23,6 +23,10 @@ import {
   type TimelineEntry,
 } from '../../../src/contracts/messages.ts';
 import { type ToolCall } from '../../../src/contracts/tools.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const self = '900000001',
   resource = 'PRIVATE_FORWARD_RESOURCE+/=',
@@ -36,7 +40,7 @@ const cfg: ListenerConfig = {
   cooldownMs: 0,
   retentionDays: 7,
   randomReplyProbability: 0,
-  forward: { enabled: true },
+  toolPermissions: toolPermissions({ ...MEMBER_TOOLS, read_forward: 'direct' }),
 };
 const text = (value: string) => ({ type: 'text', data: { text: value } });
 const native = (id = resource, content?: unknown[]) => ({
@@ -298,7 +302,7 @@ test('enabled forward executes then sends, tool content never enters timeline me
 
 test('disabled forwards omit tool schema and forged calls cause no API calls', async () => {
   const s = setup([complete(read()), silent()], {
-    forward: { enabled: false },
+    toolPermissions: { ...cfg.toolPermissions, read_forward: { mode: 'off' } },
   });
   try {
     await s.bot.receive(event(), self);
@@ -306,7 +310,8 @@ test('disabled forwards omit tool schema and forged calls cause no API calls', a
     assert.ok(s.schemas.every((names) => !names.includes('read_forward')));
     assert.equal(s.apiCalls.length, 0);
     const { wake_budget, ...result } = toolResult(s.requests[1]!);
-    assert.deepEqual(result, { status: 'error', error: 'forward_disabled' });
+    // 统一的工具授权闸门先于转发模块拒绝调用。
+    assert.deepEqual(result, { status: 'error', error: 'tool_disabled' });
     assert.equal(wake_budget.used_tool_calls, 1);
     assert.equal(wake_budget.remaining_tool_calls, 95);
   } finally {

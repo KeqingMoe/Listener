@@ -20,23 +20,24 @@ import {
 } from '../../../src/contracts/messages.ts';
 import { type ToolDefinition } from '../../../src/contracts/tools.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const GROUP = '22',
   SELF = '99999',
   A = '111';
-const tools: NonNullable<ListenerConfig['tools']> = {
-  members: true,
-  mention: true,
-  reactions: true,
-  moderation: {
-    mute: 'confirm',
-    unmute: 'confirm',
-    recall: 'confirm',
-    memberCard: 'confirm',
-    confirmationTtlSeconds: 60,
-    maxMuteSeconds: 600,
-  },
-};
+const permissions = toolPermissions({
+  ...MEMBER_TOOLS,
+  react_message: 'direct',
+  get_reaction_users: 'direct',
+  mute_member: { mode: 'confirm', maxSeconds: 600 },
+  unmute_member: 'confirm',
+  recall_message: 'confirm',
+  set_member_card: 'confirm',
+  manage_attention: { mode: 'direct', maxPlans: 16 },
+});
 const base: ListenerConfig = {
   ownerId: OWNER_ID,
   groupId: GROUP,
@@ -46,8 +47,9 @@ const base: ListenerConfig = {
   cooldownMs: 0,
   retentionDays: 7,
   randomReplyProbability: 0,
-  attention: { enabled: true, maxPlans: 16 },
-  tools,
+  toolPermissions: permissions,
+  observeReactions: true,
+  confirmationTtlSeconds: 60,
 };
 const text = (value: string) => ({ type: 'text', data: { text: value } });
 
@@ -550,7 +552,16 @@ test('native writes make old counters stale without optimistic increments and a 
 });
 
 test('disabled reactions never prefetch and do not decorate any model context', async () => {
-  const s = setup({ settings: { tools: { ...tools, reactions: false } } });
+  const s = setup({
+    settings: {
+      toolPermissions: {
+        ...permissions,
+        react_message: { mode: 'off' },
+        get_reaction_users: { mode: 'off' },
+      },
+      observeReactions: false,
+    },
+  });
   try {
     await s.receive(event('1'));
     await settled(s, 1);

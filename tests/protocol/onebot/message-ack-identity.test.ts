@@ -26,6 +26,10 @@ import {
 import { type TurnContext } from '../../../src/contracts/tools.ts';
 import { type JsonObject } from '../../../src/contracts/json.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const GROUP = '123456',
   SELF = '999',
@@ -198,6 +202,7 @@ async function fixture(
       heartbeatMs: 10000,
     });
     const config: ListenerConfig = {
+      toolPermissions: toolPermissions(MEMBER_TOOLS),
       ownerId: OWNER_ID,
       groupId: GROUP,
       enabled: true,

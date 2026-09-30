@@ -14,9 +14,14 @@ import {
   type Memory,
   type TimelineEntry,
 } from '../../../src/contracts/messages.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const self = '900000001';
 const config: ListenerConfig = {
+  toolPermissions: toolPermissions(MEMBER_TOOLS),
   groupId: LISTENER_GROUP,
   ownerId: OWNER_ID,
   enabled: true,

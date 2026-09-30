@@ -12,6 +12,10 @@ import {
   type TimelineEntry,
 } from '../../../src/contracts/messages.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const self = '999',
   actor = '123';
@@ -94,6 +98,7 @@ async function run(maxToolCallsPerWake: number) {
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
   const config: ListenerConfig = {
+    toolPermissions: toolPermissions(MEMBER_TOOLS),
     groupId: LISTENER_GROUP,
     ownerId: OWNER_ID,
     enabled: true,

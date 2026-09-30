@@ -22,6 +22,7 @@ import type {
   TimelineEntry,
 } from '../../../../src/contracts/messages.ts';
 import { OWNER_ID } from '../../../../src/contracts/identity.ts';
+import { toolPermissions } from '../../../support/tool-permissions.ts';
 
 const GROUP = '123456',
   SELF = '999',
@@ -198,20 +199,12 @@ for (const scenario of scenarios) {
           retentionDays: 7,
           randomReplyProbability: 0,
           maxToolCallsPerWake: 96,
-          tools: {
-            members: false,
-            mention: false,
-            reactions: false,
-            extended: { poke_member: 'direct' },
-            moderation: {
-              mute: 'off',
-              unmute: 'off',
-              recall: 'off',
-              memberCard: 'off',
-              confirmationTtlSeconds: 60,
-              maxMuteSeconds: 600,
-            },
-          },
+          toolPermissions: toolPermissions({
+            poke_member: 'direct',
+            mute_member: { mode: 'off', maxSeconds: 600 },
+          }),
+          messageMentions: false,
+          confirmationTtlSeconds: 60,
         };
         listener = new Listener(
           client,

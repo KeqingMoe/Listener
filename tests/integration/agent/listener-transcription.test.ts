@@ -12,6 +12,10 @@ import type {
 import type { Memory, TimelineEntry } from '../../../src/contracts/messages.ts';
 import type { ToolCall } from '../../../src/contracts/tools.ts';
 import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const self = '900000001',
   actor = '12345';
@@ -29,7 +33,10 @@ const cfg: ListenerConfig = {
   retentionDays: 7,
   randomReplyProbability: 0,
   maxToolCallsPerWake: 10,
-  tools: { extended: { transcribe_voice: 'direct' } },
+  toolPermissions: toolPermissions({
+    ...MEMBER_TOOLS,
+    transcribe_voice: 'direct',
+  }),
 };
 
 class Mem implements Memory {
@@ -152,11 +159,10 @@ function setup(
     memory,
     {
       ...cfg,
-      tools: {
-        members: true,
-        mention: true,
-        extended: { transcribe_voice: options.off ? 'off' : 'direct' },
-      },
+      toolPermissions: toolPermissions({
+        ...MEMBER_TOOLS,
+        transcribe_voice: options.off ? 'off' : 'direct',
+      }),
     },
     () => 1,
   );

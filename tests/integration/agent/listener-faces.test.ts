@@ -20,9 +20,14 @@ import {
   type Completion,
   type ChatMessage,
 } from '../../../src/contracts/model.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const self = '900000001';
 const config: ListenerConfig = {
+  toolPermissions: toolPermissions(MEMBER_TOOLS),
   groupId: LISTENER_GROUP,
   ownerId: OWNER_ID,
   enabled: true,
@@ -131,18 +136,7 @@ test('super face layout guidance survives both mention modes without restricting
   for (const mention of [true, false]) {
     const cfg: ListenerConfig = {
       ...config,
-      tools: {
-        members: true,
-        mention,
-        moderation: {
-          mute: 'off',
-          unmute: 'off',
-          recall: 'off',
-          memberCard: 'off',
-          confirmationTtlSeconds: 60,
-          maxMuteSeconds: 600,
-        },
-      },
+      messageMentions: mention,
     };
     const send = buildToolDefinitions(cfg).find(
       (t) => t.function.name === 'send_message',
@@ -185,18 +179,8 @@ test('send tool includes strict ordinary and animated face choices without addin
 
 test('mention-disabled tool schema keeps face variant and removes only at', () => {
   const { variants, face } = faceSchema({
-    tools: {
-      members: false,
-      mention: false,
-      moderation: {
-        mute: 'off',
-        unmute: 'off',
-        recall: 'off',
-        memberCard: 'off',
-        confirmationTtlSeconds: 60,
-        maxMuteSeconds: 600,
-      },
-    },
+    toolPermissions: toolPermissions(),
+    messageMentions: false,
   });
   assert.ok(face);
   assert.ok(face.properties.id.enum.includes('375'));

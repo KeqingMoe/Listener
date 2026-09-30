@@ -16,6 +16,10 @@ import {
   type TimelineEntry,
 } from '../../../src/contracts/messages.ts';
 import { type ToolCall } from '../../../src/contracts/tools.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const self = '900000001';
 const transportUrl = 'https://example.invalid/image?private-key=secret';
@@ -31,7 +35,10 @@ const cfg: ListenerConfig = {
   debounceMs: 5,
   cooldownMs: 5,
   retentionDays: 7,
-  images: { enabled: true, maxDownloadMb: 10 },
+  toolPermissions: toolPermissions({
+    ...MEMBER_TOOLS,
+    view_images: { mode: 'direct', maxDownloadMb: 10 },
+  }),
 };
 
 class MockMemory implements Memory {
@@ -317,7 +324,12 @@ test('quoted image is discovered through read_message then remotely verified bef
 test('disabled images hide schema and reject forged view calls without API or downloader', async () => {
   const s = setup(
     [completion(view()), completion(call('silent', 'finish', {}))],
-    { images: { ...cfg.images!, enabled: false } },
+    {
+      toolPermissions: {
+        ...cfg.toolPermissions,
+        view_images: { ...cfg.toolPermissions.view_images, mode: 'off' },
+      },
+    },
   );
   try {
     await s.bot.receive(event(), self);

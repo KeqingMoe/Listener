@@ -28,6 +28,10 @@ import { MANAGE_ATTENTION_TOOL } from '../../../src/agent/attention.ts';
 import { buildModerationTools } from '../../../src/tools/management/moderation.ts';
 import { buildExtendedToolDefinitions } from '../../../src/tools/extended.ts';
 import { buildWorldTools } from '../../../src/tools/world/tools.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 function freeze<T>(value: T): T {
   if (value && typeof value === 'object') {
@@ -56,14 +60,21 @@ function config(overrides: Partial<ListenerConfig> = {}): ListenerConfig {
     debounceMs: 1,
     cooldownMs: 0,
     retentionDays: 7,
-    tools: {
-      members: true,
-      mention: true,
-      reactions: false,
-      moderation: { ...offModeration },
-    },
+    toolPermissions: permissions(),
+    confirmationTtlSeconds: 30,
     ...overrides,
   };
+}
+
+/** 成员查询默认开启、禁言上限120秒，其余工具关闭。 */
+function permissions(
+  overrides: Parameters<typeof toolPermissions>[0] = {},
+): ResolvedToolPolicies {
+  return toolPermissions({
+    ...MEMBER_TOOLS,
+    mute_member: { mode: 'off', maxSeconds: 120 },
+    ...overrides,
+  });
 }
 
 function policies(
@@ -120,17 +131,14 @@ for (let mask = 0; mask < 8; mask++) {
   const mention = Boolean(mask & 1),
     images = Boolean(mask & 2),
     forward = Boolean(mask & 4);
-  test(`legacy construction independently selects mention=${mention}, images=${images}, forward=${forward}`, () => {
+  test(`construction independently selects mention=${mention}, images=${images}, forward=${forward}`, () => {
     const input = freeze(
       config({
-        tools: {
-          members: true,
-          mention,
-          reactions: false,
-          moderation: { ...offModeration },
-        },
-        images: { enabled: images, maxDownloadMb: 1 },
-        forward: { enabled: forward },
+        toolPermissions: permissions({
+          view_images: { mode: images ? 'direct' : 'off', maxDownloadMb: 1 },
+          read_forward: forward ? 'direct' : 'off',
+        }),
+        messageMentions: mention,
       }),
     );
     const before = structuredClone(input),
@@ -198,23 +206,12 @@ for (let mask = 0; mask < 8; mask++) {
   });
 }
 
-test('legacy reaction fallback enables query and observation, while resolved policy defaults observation off', () => {
-  const legacy = freeze(
+test('resolved react permission alone neither exposes reaction query nor enables observation', () => {
+  const resolved = freeze(
     config({
-      tools: {
-        members: false,
-        mention: false,
-        reactions: true,
-        moderation: { ...offModeration },
-      },
+      toolPermissions: policies({ react_message: { mode: 'direct' } }),
     }),
   );
-  assert.ok(names(buildToolDefinitions(legacy)).includes('get_reaction_users'));
-  assert.ok(buildSystemPrompt(legacy).includes('\n反应观察：'));
-  const resolved = freeze({
-    ...legacy,
-    toolPermissions: policies({ react_message: { mode: 'direct' } }),
-  });
   assert.ok(names(buildToolDefinitions(resolved)).includes('react_message'));
   assert.ok(
     !names(buildToolDefinitions(resolved)).includes('get_reaction_users'),
@@ -222,19 +219,23 @@ test('legacy reaction fallback enables query and observation, while resolved pol
   assert.ok(!buildSystemPrompt(resolved).includes('\n反应观察：'));
 });
 
-test('resolved off permissions override every enabled legacy projection without altering frozen input', () => {
+test('resolved off permissions ignore stray enabled legacy module fields without altering frozen input', () => {
+  // 旧版模块字段已不属于ListenerConfig；即使未经类型检查混入也不能打开工具。
+  const stray = {
+    tools: {
+      members: true,
+      mention: true,
+      reactions: true,
+      moderation: { ...offModeration, mute: 'direct' },
+      extended: { poke_member: 'direct', list_custom_faces: 'direct' },
+    },
+    images: { enabled: true, maxDownloadMb: 10 },
+    forward: { enabled: true },
+    attention: { enabled: true, maxPlans: 16 },
+  } as Partial<ListenerConfig>;
   const input = freeze(
     config({
-      tools: {
-        members: true,
-        mention: true,
-        reactions: true,
-        moderation: { ...offModeration, mute: 'direct' },
-        extended: { poke_member: 'direct', list_custom_faces: 'direct' },
-      },
-      images: { enabled: true, maxDownloadMb: 10 },
-      forward: { enabled: true },
-      attention: { enabled: true, maxPlans: 16 },
+      ...stray,
       toolPermissions: policies(),
       messageMentions: false,
     }),
@@ -258,18 +259,9 @@ test('resolved off permissions override every enabled legacy projection without 
   assert.deepEqual(input, before);
 });
 
-test('resolved selections override disabled legacy flags and preserve shared schema ordering and limits', () => {
+test('resolved selections preserve shared schema ordering and limits', () => {
   const input = freeze(
     config({
-      tools: {
-        members: false,
-        mention: false,
-        reactions: false,
-        moderation: { ...offModeration },
-      },
-      images: { enabled: false, maxDownloadMb: 10 },
-      forward: { enabled: false },
-      attention: { enabled: false, maxPlans: 16 },
       messageMentions: true,
       confirmationTtlSeconds: 17,
       toolPermissions: policies({
@@ -339,20 +331,19 @@ test('resolved selections override disabled legacy flags and preserve shared sch
 test('returned definitions are deeply independent across repeats, option changes, and shared templates', () => {
   const input = freeze(
     config({
-      tools: {
-        members: true,
-        mention: true,
-        reactions: true,
-        moderation: { ...offModeration, mute: 'confirm', recall: 'direct' },
-        extended: {
-          poke_member: 'confirm',
-          list_custom_faces: 'direct',
-          send_custom_face: 'direct',
-        },
-      },
-      images: { enabled: true, maxDownloadMb: 1 },
-      forward: { enabled: true },
-      attention: { enabled: true, maxPlans: 2 },
+      toolPermissions: permissions({
+        react_message: 'direct',
+        get_reaction_users: 'direct',
+        mute_member: { mode: 'confirm', maxSeconds: 120 },
+        recall_message: 'direct',
+        poke_member: 'confirm',
+        list_custom_faces: 'direct',
+        send_custom_face: 'direct',
+        view_images: { mode: 'direct', maxDownloadMb: 1 },
+        read_forward: 'direct',
+        manage_attention: { mode: 'direct', maxPlans: 2 },
+      }),
+      observeReactions: true,
     }),
   );
   const templates = [
@@ -370,13 +361,12 @@ test('returned definitions are deeply independent across repeats, option changes
   assert.deepEqual(buildToolDefinitions(input, true), baseline);
   const reduced = freeze(
     config({
-      tools: {
-        members: false,
-        mention: false,
-        reactions: false,
-        moderation: { ...offModeration },
-      },
-      images: { enabled: true, maxDownloadMb: 1 },
+      toolPermissions: permissions({
+        get_group_members: 'off',
+        get_member_info: 'off',
+        view_images: { mode: 'direct', maxDownloadMb: 1 },
+      }),
+      messageMentions: false,
     }),
   );
   assert.ok(!segmentKinds(buildToolDefinitions(reduced)).includes('at'));
@@ -418,7 +408,9 @@ test('observed prompts replace only observation framing and use the explicit gro
   const input = freeze(
     config({
       observeReactions: true,
-      attention: { enabled: true, maxPlans: 2 },
+      toolPermissions: permissions({
+        manage_attention: { mode: 'direct', maxPlans: 2 },
+      }),
     }),
   );
   const before = structuredClone(input),

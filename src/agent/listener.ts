@@ -12,7 +12,7 @@ import { imagePixels } from '../tools/images/download.ts';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
   applyToolPolicies,
-  optionalToolEnabled,
+  toolEnabled,
   observesReactions,
 } from '../config/runtime.ts';
 import { TOOL_NAMES } from '../config/tool-policy.ts';
@@ -32,7 +32,10 @@ import {
   MODERATION_TOOLS,
   buildModerationTools,
 } from '../tools/management/moderation.ts';
-import type { ListenerConfig } from '../config/listener.ts';
+import type {
+  ListenerConfig,
+  ProjectedListenerConfig,
+} from '../config/listener.ts';
 import {
   GroupTools,
   GROUP_TOOLS,
@@ -420,11 +423,12 @@ export class Listener {
   private worldState: () => JsonObject = () => ({});
   private lastRandomAt = -Infinity;
   private randomAttempts: number[] = [];
+  private readonly config: ProjectedListenerConfig;
   constructor(
     private api: Api,
     private model: Model | undefined,
     private memory: Memory | undefined,
-    private config: ListenerConfig,
+    input: ListenerConfig,
     private random: () => number = Math.random,
     private imageDownloader?: ImageDownloader,
     private turnScheduler?: TurnAdmission,
@@ -434,7 +438,7 @@ export class Listener {
       ['maxToolCallsPerWake', 1, Number.MAX_SAFE_INTEGER],
       ['wakeTimeoutMs', 1000, 600000],
     ] as const) {
-      const value = config[key];
+      const value = input[key];
       if (
         value !== undefined &&
         (!Number.isSafeInteger(value) || value < min || value > max)
@@ -442,13 +446,13 @@ export class Listener {
         throw new Error('Invalid wake budget configuration');
       }
     }
-    config = applyToolPolicies(config);
+    const config = applyToolPolicies(input);
     this.config = structuredClone(config);
     this.groupId = resolveGroupId(config.groupId);
     this.ownerId = resolveOwnerId(this.config.ownerId);
     this.config.ownerId = this.ownerId;
     const enabled = new Set<string>(
-      enabledExtendedTools(this.config.tools?.extended),
+      enabledExtendedTools(this.config.tools.extended),
     );
     this.groupFiles = new GroupFileTools(
       api,
@@ -478,7 +482,7 @@ export class Listener {
             coordinator: new CustomFaceCoordinator(),
           }
         : undefined);
-    if (config.attention?.enabled && config.enabled && model && memory) {
+    if (config.attention.enabled && config.enabled && model && memory) {
       this.attention = new AttentionEngine(config.attention, random);
     }
     if (observesReactions(config) && config.enabled && model && memory) {
@@ -491,7 +495,7 @@ export class Listener {
     this.moderation = new Moderation(
       api,
       Date.now,
-      config.tools?.moderation,
+      config.tools.moderation,
       this.groupId,
       this.ownerId,
     );
@@ -674,7 +678,7 @@ export class Listener {
     this.moderation = new Moderation(
       this.api,
       Date.now,
-      this.config.tools?.moderation,
+      this.config.tools.moderation,
       this.groupId,
       this.ownerId,
     );
@@ -1249,7 +1253,7 @@ export class Listener {
           execute: async (approved, approvalSignal) => {
             try {
               if (
-                this.config.tools?.extended?.[name as ExtendedToolName] !==
+                this.config.tools.extended?.[name as ExtendedToolName] !==
                 'confirm'
               ) {
                 return { status: 'error', error: 'tool_disabled' };
@@ -1276,16 +1280,16 @@ export class Listener {
                 this.api,
                 memory,
                 this.groupId,
-                { ...this.config.tools?.extended, [name]: 'direct' },
+                { ...this.config.tools.extended, [name]: 'direct' },
                 {
                   files: this.groupFiles,
                   requests: this.groupRequests,
                   downloader: this.imageDownloader,
-                  maxDownloadMb: this.config.images?.maxDownloadMb,
+                  maxDownloadMb: this.config.images.maxDownloadMb,
                   customFaces: this.customFaces
                     ? {
                         ...this.customFaces,
-                        maxDownloadMb: this.config.images?.maxDownloadMb ?? 10,
+                        maxDownloadMb: this.config.images.maxDownloadMb,
                       }
                     : undefined,
                   beforeSend: () => this.captureSendReceipt(),
@@ -1493,7 +1497,7 @@ export class Listener {
         this.stopped ||
         !this.connected ||
         reminder.groupId !== this.groupId ||
-        this.config.tools?.extended?.create_reminder !== 'direct'
+        this.config.tools.extended?.create_reminder !== 'direct'
       ) {
         throw new Error('reminder_unavailable');
       }
@@ -2058,24 +2062,12 @@ export class Listener {
       : this.api;
     const groupTools = new GroupTools(turnApi, workingMemory, {
       groupId: this.groupId,
-      ...(this.config.tools
-        ? {
-            members: this.config.tools.members,
-            mention: this.config.tools.mention,
-          }
-        : {}),
-      getGroupMembers: optionalToolEnabled(
-        this.config,
-        'get_group_members',
-        this.config.tools?.members !== false,
-      ),
-      getMemberInfo: optionalToolEnabled(
-        this.config,
-        'get_member_info',
-        this.config.tools?.members !== false,
-      ),
+      members: this.config.tools.members,
+      mention: this.config.tools.mention,
+      getGroupMembers: toolEnabled(this.config, 'get_group_members'),
+      getMemberInfo: toolEnabled(this.config, 'get_member_info'),
     });
-    const imageTools = this.config.images?.enabled
+    const imageTools = this.config.images.enabled
       ? new ImageTools(
           this.api,
           workingMemory,
@@ -2088,7 +2080,7 @@ export class Listener {
     const imageState = imageTools?.createTurn() ?? {
       loadedIds: new Set<string>(),
     };
-    const forwardTools = this.config.forward?.enabled
+    const forwardTools = this.config.forward.enabled
       ? new ForwardTools(
           this.api,
           workingMemory,
@@ -2096,24 +2088,20 @@ export class Listener {
           this.groupId,
         )
       : undefined;
-    const reactionTools = this.config.tools?.reactions
+    const reactionTools = this.config.tools.reactions
       ? new ReactionTools(turnApi, workingMemory, this.groupId)
       : undefined;
-    const reactionUsers = optionalToolEnabled(
-      this.config,
-      'get_reaction_users',
-      this.config.tools?.reactions === true,
-    )
+    const reactionUsers = toolEnabled(this.config, 'get_reaction_users')
       ? new ReactionUserTools(turnApi, workingMemory, this.groupId)
       : undefined;
     const extendedTools = createExtendedTools(
       turnApi,
       workingMemory,
       this.groupId,
-      this.config.tools?.extended,
+      this.config.tools.extended,
       {
         downloader: this.imageDownloader,
-        maxDownloadMb: this.config.images?.maxDownloadMb,
+        maxDownloadMb: this.config.images.maxDownloadMb,
         files: this.groupFiles,
         requests: this.groupRequests,
         reminders: this.runtime.reminders,
@@ -2125,7 +2113,7 @@ export class Listener {
           ? {
               ...this.customFaces,
               imageState,
-              maxDownloadMb: this.config.images?.maxDownloadMb ?? 10,
+              maxDownloadMb: this.config.images.maxDownloadMb,
               onVisualContent: (parts) => {
                 if (valid()) {
                   options.onVisualContent?.(parts);
@@ -2333,7 +2321,7 @@ export class Listener {
           return frozen.context();
         },
       };
-      const moderationPolicy = this.config.tools?.moderation;
+      const moderationPolicy = this.config.tools.moderation;
       const moderationCapabilities = {
         mute: moderationPolicy?.mute ?? 'off',
         unmute: moderationPolicy?.unmute ?? 'off',
@@ -2443,7 +2431,7 @@ export class Listener {
           ...(this.attention && batch instanceof ReplyBatch
             ? { attention_state: this.attentionContext(batch) }
             : {}),
-          ...(this.config.tools?.reactions
+          ...(this.config.tools.reactions
             ? { reaction_state: this.reactionContext(workingMemory) }
             : {}),
         });
@@ -2708,7 +2696,6 @@ export class Listener {
             continue;
           }
           if (
-            this.config.toolPermissions &&
             TOOL_NAMES.includes(
               call.function.name as (typeof TOOL_NAMES)[number],
             ) &&
@@ -2814,7 +2801,7 @@ export class Listener {
               call.function.arguments,
             ]);
             if (
-              this.config.tools?.extended?.[
+              this.config.tools.extended?.[
                 call.function.name as ExtendedToolName
               ] === 'confirm'
             ) {
@@ -3097,7 +3084,7 @@ export class Listener {
           }
           if (call.function.name === 'read_forward') {
             result =
-              forwardTools && forwardState && this.config.forward?.enabled
+              forwardTools && forwardState && this.config.forward.enabled
                 ? await withLogContext({ round: round + 1 }, () =>
                     forwardTools!.read(
                       args,
@@ -3115,7 +3102,7 @@ export class Listener {
             continue;
           }
           if (call.function.name === 'view_images') {
-            if (!imageTools || !imageState || !this.config.images?.enabled) {
+            if (!imageTools || !imageState || !this.config.images.enabled) {
               result = { status: 'error', error: 'images_disabled' };
             } else {
               const viewed = await imageTools.view(
@@ -3530,7 +3517,7 @@ export class Listener {
         }
       }
       if (
-        this.config.tools?.reactions &&
+        this.config.tools.reactions &&
         generation === this.generation &&
         this.connected &&
         !this.stopped &&

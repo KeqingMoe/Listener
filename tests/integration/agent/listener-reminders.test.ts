@@ -11,6 +11,10 @@ import type { ListenerConfig } from '../../../src/config/listener.ts';
 import type { Memory, TimelineEntry } from '../../../src/contracts/messages.ts';
 import type { Api } from '../../../src/contracts/onebot.ts';
 import { OWNER_ID } from '../../../src/contracts/identity.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const group = '123456789',
   self = '900000001',
@@ -23,7 +27,10 @@ const config: ListenerConfig = {
   cooldownMs: 0,
   retentionDays: 7,
   randomReplyProbability: 0,
-  tools: { extended: { create_reminder: 'direct' } },
+  toolPermissions: toolPermissions({
+    ...MEMBER_TOOLS,
+    create_reminder: 'direct',
+  }),
 };
 
 class Mem implements Memory {
@@ -106,9 +113,10 @@ function setup(
         memory,
         {
           ...config,
-          tools: {
-            extended: { create_reminder: options.off ? 'off' : 'direct' },
-          },
+          toolPermissions: toolPermissions({
+            ...MEMBER_TOOLS,
+            create_reminder: options.off ? 'off' : 'direct',
+          }),
         },
         () => 1,
         undefined,

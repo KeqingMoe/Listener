@@ -14,9 +14,14 @@ import {
   type Memory,
   type TimelineEntry,
 } from '../../../src/contracts/messages.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const self = '900000001';
 const cfg: ListenerConfig = {
+  toolPermissions: toolPermissions(MEMBER_TOOLS),
   groupId: LISTENER_GROUP,
   ownerId: OWNER_ID,
   enabled: true,
@@ -341,18 +346,14 @@ test('nonowner random turn may autonomously propose configured moderation but on
   let rounds = 0;
   const s = setup({
     config: {
-      tools: {
-        members: true,
-        mention: true,
-        moderation: {
-          mute: 'confirm',
-          unmute: 'off',
-          recall: 'off',
-          memberCard: 'off',
-          confirmationTtlSeconds: 60,
-          maxMuteSeconds: 600,
-        },
-      },
+      toolPermissions: toolPermissions({
+        ...MEMBER_TOOLS,
+        mute_member: { mode: 'confirm', maxSeconds: 600 },
+        unmute_member: 'off',
+        recall_message: 'off',
+        set_member_card: 'off',
+      }),
+      confirmationTtlSeconds: 60,
     },
     complete: async () =>
       ++rounds === 1

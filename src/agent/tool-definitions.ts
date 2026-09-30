@@ -1,4 +1,4 @@
-import { applyToolPolicies, optionalToolEnabled } from '../config/runtime.ts';
+import { applyToolPolicies, toolEnabled } from '../config/runtime.ts';
 import { resolveGroupId } from '../contracts/identity.ts';
 import { type ToolDefinition } from '../contracts/tools.ts';
 import { type JsonObject } from '../contracts/json.ts';
@@ -35,24 +35,16 @@ export const CHAT_TOOLS: ToolDefinition[] = [
 ];
 
 export function buildToolDefinitions(
-  config: ListenerConfig,
+  input: ListenerConfig,
   worldEnabled = false,
 ): ToolDefinition[] {
-  config = applyToolPolicies(config);
+  const config = applyToolPolicies(input);
   const tools = structuredClone(
     CHAT_TOOLS.filter((tool) =>
       tool.function.name === 'get_group_members'
-        ? optionalToolEnabled(
-            config,
-            'get_group_members',
-            config.tools?.members !== false,
-          )
+        ? toolEnabled(config, 'get_group_members')
         : tool.function.name === 'get_member_info'
-          ? optionalToolEnabled(
-              config,
-              'get_member_info',
-              config.tools?.members !== false,
-            )
+          ? toolEnabled(config, 'get_member_info')
           : true,
     ),
   );
@@ -62,7 +54,7 @@ export function buildToolDefinitions(
   const params = send.function.parameters as {
     properties: { segments: { items: { oneOf: SegmentSchema[] } } };
   };
-  if (config.tools?.mention === false) {
+  if (config.tools.mention === false) {
     params.properties.segments.items.oneOf =
       params.properties.segments.items.oneOf.filter(
         (schema) => schema.properties.type.const !== 'at',
@@ -71,37 +63,31 @@ export function buildToolDefinitions(
       '向当前群发送文字和QQ原生表情，可混排或纯表情；提及成员能力已关闭，不允许at片段。表情仅使用目录id，不开放连击或指定动画结果，不另设表情数量配额。' +
       FACE_LAYOUT_GUIDANCE;
   }
-  if (config.images?.enabled) {
+  if (config.images.enabled) {
     const imageTool = structuredClone(VIEW_IMAGES_TOOL);
     tools.push(imageTool);
   }
-  if (config.forward?.enabled) {
+  if (config.forward.enabled) {
     const forwardTool = structuredClone(READ_FORWARD_TOOL);
     tools.push(forwardTool);
   }
-  if (config.tools?.reactions) {
+  if (config.tools.reactions) {
     tools.push(createReactionTool());
   }
-  if (
-    optionalToolEnabled(
-      config,
-      'get_reaction_users',
-      config.tools?.reactions === true,
-    )
-  ) {
+  if (toolEnabled(config, 'get_reaction_users')) {
     tools.push(structuredClone(GET_REACTION_USERS_TOOL));
   }
-  if (config.attention?.enabled) {
+  if (config.attention.enabled) {
     tools.push(structuredClone(MANAGE_ATTENTION_TOOL));
   }
   if (worldEnabled) {
     tools.push(...buildWorldTools());
   }
-  tools.push(...buildModerationTools(config.tools?.moderation));
+  tools.push(...buildModerationTools(config.tools.moderation));
   tools.push(
     ...buildExtendedToolDefinitions(
       resolveGroupId(config.groupId),
-      config.tools?.extended,
+      config.tools.extended,
     ),
   );
   return tools;

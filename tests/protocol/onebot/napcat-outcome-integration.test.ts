@@ -25,6 +25,7 @@ import {
 } from '../../../src/contracts/messages.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
 import type { ExtendedToolsConfig } from '../../../src/config/extended-tools.ts';
+import { toolPermissions } from '../../support/tool-permissions.ts';
 
 const GROUP = '123456',
   SELF = '999',
@@ -282,20 +283,15 @@ async function fixture(
       retentionDays: 7,
       randomReplyProbability: 0,
       maxToolCallsPerWake: 96,
-      tools: {
-        members: false,
-        mention: false,
-        reactions: options.reactions ?? false,
-        extended: options.extended,
-        moderation: {
-          mute: 'off',
-          unmute: 'off',
-          recall: 'off',
-          memberCard: 'off',
-          confirmationTtlSeconds: 60,
-          maxMuteSeconds: 600,
-        },
-      },
+      toolPermissions: toolPermissions({
+        ...options.extended,
+        react_message: options.reactions ? 'direct' : 'off',
+        get_reaction_users: options.reactions ? 'direct' : 'off',
+        mute_member: { mode: 'off', maxSeconds: 600 },
+      }),
+      ...(options.reactions ? { observeReactions: true } : {}),
+      messageMentions: false,
+      confirmationTtlSeconds: 60,
     };
     listener = new Listener(
       client,

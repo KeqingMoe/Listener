@@ -22,6 +22,7 @@ import { type JsonObject } from '../../../../src/contracts/json.ts';
 import { type TimelineEntry } from '../../../../src/contracts/messages.ts';
 import type { ListenerConfig } from '../../../../src/config/listener.ts';
 import type { ExtendedToolsConfig } from '../../../../src/config/extended-tools.ts';
+import { toolPermissions } from '../../../support/tool-permissions.ts';
 
 const GROUP = LISTENER_GROUP,
   SELF = '900000001',
@@ -210,30 +211,17 @@ function fixture(options: {
     cooldownMs: 1,
     retentionDays: 7,
     randomReplyProbability: 0,
-    ...(options.images
-      ? {
-          images: { enabled: true, maxDownloadMb: 10 },
-        }
-      : {}),
-    ...(options.forward
-      ? {
-          forward: { enabled: true },
-        }
-      : {}),
-    tools: {
-      members: false,
-      mention: false,
-      reactions: false,
-      extended: options.extended,
-      moderation: {
-        mute: 'off',
-        unmute: 'off',
-        recall: 'off',
-        memberCard: 'off',
-        confirmationTtlSeconds: 60,
-        maxMuteSeconds: 600,
+    toolPermissions: toolPermissions({
+      ...options.extended,
+      mute_member: { mode: 'off', maxSeconds: 600 },
+      view_images: {
+        mode: options.images ? 'direct' : 'off',
+        maxDownloadMb: 10,
       },
-    },
+      read_forward: options.forward ? 'direct' : 'off',
+    }),
+    messageMentions: false,
+    confirmationTtlSeconds: 60,
   };
   const listener = new Listener(
     api,

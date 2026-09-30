@@ -17,11 +17,16 @@ import type {
   ListenerConfig,
   ModerationPolicy,
 } from '../../../src/config/listener.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const self = '999',
   actor = '123',
   target = '456';
 const config: ListenerConfig = {
+  toolPermissions: toolPermissions(MEMBER_TOOLS),
   groupId: LISTENER_GROUP,
   ownerId: OWNER_ID,
   enabled: true,
@@ -30,14 +35,15 @@ const config: ListenerConfig = {
   retentionDays: 7,
   randomReplyProbability: 0,
 };
-const policy = (override: Partial<ModerationPolicy>): ModerationPolicy => ({
-  mute: 'off',
-  unmute: 'off',
-  recall: 'off',
-  memberCard: 'off',
+const policy = (override: Partial<ModerationPolicy>) => ({
+  toolPermissions: toolPermissions({
+    ...MEMBER_TOOLS,
+    mute_member: { mode: override.mute ?? 'off', maxSeconds: 600 },
+    unmute_member: override.unmute ?? 'off',
+    recall_message: override.recall ?? 'off',
+    set_member_card: override.memberCard ?? 'off',
+  }),
   confirmationTtlSeconds: 60,
-  maxMuteSeconds: 600,
-  ...override,
 });
 
 class Mem implements Memory {
@@ -153,9 +159,7 @@ function setup(
   };
   const cfg = {
     ...config,
-    ...(modes
-      ? { tools: { members: true, mention: true, moderation: policy(modes) } }
-      : {}),
+    ...(modes ? policy(modes) : {}),
     ...overrides,
   };
   const bot = new Listener(api, model, memory, cfg, () => 0);

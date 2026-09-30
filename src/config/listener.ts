@@ -27,7 +27,7 @@ interface ToolsConfig {
   moderation: ModerationPolicy;
 }
 
-/** 底层模块选项。实际部署通过toListenerConfig获得完整策略。 */
+/** Listener选项。实际部署通过toListenerConfig获得完整策略。 */
 export interface ListenerConfig {
   groupId: string;
   /** 可信的全局部署owner；从不接受来自群级覆盖或聊天内容的值。 */
@@ -46,23 +46,26 @@ export interface ListenerConfig {
   botName?: string;
   mentionEnabled?: boolean;
   quoteBotEnabled?: boolean;
-  /** 已解析的授权优先于下面各模块专用的投影字段。 */
-  toolPermissions?: ResolvedToolPolicies;
+  /** 每个工具的已解析授权，是工具开关的唯一来源。 */
+  toolPermissions: ResolvedToolPolicies;
   observeReactions?: boolean;
   messageMentions?: boolean;
   confirmationTtlSeconds?: number;
-  tools?: ToolsConfig;
-  images?: ImagesConfig;
-  forward?: ForwardConfig;
-  attention?: { enabled: boolean; maxPlans: number };
   /** 部署配置的搜索后端；未配置时不提供web_search。 */
   webSearch?: WebSearchProviderConfig;
 }
 
 /** 应用边界始终提供完整且按群独立的策略。 */
 export interface ResolvedListenerConfig extends ListenerConfig {
-  toolPermissions: ResolvedToolPolicies;
   observeReactions: boolean;
   messageMentions: boolean;
   confirmationTtlSeconds: number;
+}
+
+/** applyToolPolicies从toolPermissions投影出的各模块选项，只在内部使用。 */
+export interface ProjectedListenerConfig extends ListenerConfig {
+  tools: ToolsConfig;
+  images: ImagesConfig;
+  forward: ForwardConfig;
+  attention: { enabled: boolean; maxPlans: number };
 }

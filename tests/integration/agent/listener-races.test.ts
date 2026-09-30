@@ -15,6 +15,10 @@ import {
   type Memory,
   type TimelineEntry,
 } from '../../../src/contracts/messages.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const self = '900000001';
 const target = '123456';
@@ -25,18 +29,14 @@ const config: ListenerConfig = {
   debounceMs: 10,
   cooldownMs: 10,
   retentionDays: 7,
-  tools: {
-    members: true,
-    mention: true,
-    moderation: {
-      mute: 'confirm',
-      unmute: 'confirm',
-      recall: 'confirm',
-      memberCard: 'confirm',
-      confirmationTtlSeconds: 60,
-      maxMuteSeconds: 600,
-    },
-  },
+  toolPermissions: toolPermissions({
+    ...MEMBER_TOOLS,
+    mute_member: { mode: 'confirm', maxSeconds: 600 },
+    unmute_member: 'confirm',
+    recall_message: 'confirm',
+    set_member_card: 'confirm',
+  }),
+  confirmationTtlSeconds: 60,
 };
 
 class MockMemory implements Memory {
@@ -442,7 +442,7 @@ test('disabled moderation rejects invented calls despite quoted owner identity',
   let round = 0;
   const s = setup(() => (round++ === 0 ? mute() : tool('finish', {})), {
     ...config,
-    tools: undefined,
+    toolPermissions: toolPermissions(MEMBER_TOOLS),
   });
   try {
     await s.bot.receive(

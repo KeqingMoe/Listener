@@ -22,9 +22,14 @@ import {
   type TimelineEntry,
 } from '../../../../src/contracts/messages.ts';
 import type { ListenerConfig } from '../../../../src/config/listener.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../../support/tool-permissions.ts';
 
 const self = '900000001';
 const config: ListenerConfig = {
+  toolPermissions: toolPermissions(MEMBER_TOOLS),
   groupId: LISTENER_GROUP,
   ownerId: OWNER_ID,
   enabled: true,
@@ -303,20 +308,15 @@ test('live attention metadata survives session rotation and remains absent from 
     { ...memory(), recent: () => world.recentMessages(128) },
     {
       ...config,
-      attention: { enabled: true, maxPlans: 16 },
-      tools: {
-        members: true,
-        mention: true,
-        reactions: true,
-        moderation: {
-          mute: 'off',
-          unmute: 'off',
-          recall: 'off',
-          memberCard: 'off',
-          confirmationTtlSeconds: 60,
-          maxMuteSeconds: 600,
-        },
-      },
+      toolPermissions: toolPermissions({
+        ...MEMBER_TOOLS,
+        react_message: 'direct',
+        get_reaction_users: 'direct',
+        mute_member: { mode: 'off', maxSeconds: 600 },
+        manage_attention: { mode: 'direct', maxPlans: 16 },
+      }),
+      observeReactions: true,
+      confirmationTtlSeconds: 60,
     },
     () => 0,
     undefined,

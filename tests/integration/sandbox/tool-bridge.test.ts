@@ -11,14 +11,24 @@ import { startExecution } from '../../../src/sandbox/executor.ts';
 import { ModelSession } from '../../../src/agent/session/store.ts';
 import { WorldEventStore } from '../../../src/world/events.ts';
 import type { Memory, TimelineEntry } from '../../../src/contracts/messages.ts';
-import type { ListenerConfig } from '../../../src/config/listener.ts';
+import type {
+  ListenerConfig,
+  ProjectedListenerConfig,
+} from '../../../src/config/listener.ts';
+import type { ToolMode, ToolName } from '../../../src/config/tool-policy.ts';
 import type { JsonObject } from '../../../src/contracts/json.ts';
 import { OWNER_ID } from '../../../src/contracts/identity.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const group = '123456',
   self = '999',
   actor = '42';
-const config = (extended: Record<string, string> = {}): ListenerConfig => ({
+const config = (
+  extended: Partial<Record<ToolName, ToolMode>> = {},
+): ListenerConfig => ({
   ownerId: OWNER_ID,
   groupId: group,
   enabled: true,
@@ -26,15 +36,12 @@ const config = (extended: Record<string, string> = {}): ListenerConfig => ({
   cooldownMs: 0,
   retentionDays: 7,
   randomReplyProbability: 0,
-  tools: {
-    members: true,
-    mention: true,
-    extended: {
-      execute_javascript: 'direct',
-      get_group_info: 'direct',
-      ...extended,
-    } as never,
-  },
+  toolPermissions: toolPermissions({
+    ...MEMBER_TOOLS,
+    execute_javascript: 'direct',
+    get_group_info: 'direct',
+    ...extended,
+  }),
 });
 
 function memory(): Memory & { rows: TimelineEntry[] } {
@@ -259,8 +266,8 @@ test('policy is evaluated per call, not at job creation', async () => {
   const h = host();
   try {
     (
-      h.bot as unknown as { config: ListenerConfig }
-    ).config.tools!.extended!.poke_member = 'off' as never;
+      h.bot as unknown as { config: ProjectedListenerConfig }
+    ).config.tools.extended!.poke_member = 'off';
     const r = await h.run(
       `return JSON.stringify(await tools.get_group_info({}));`,
     );
@@ -321,10 +328,8 @@ test('view_images inside the sandbox returns RGBA pixels instead of model-visibl
     text: '[图片]',
     images: [{ id: 'img_77_0', index: 0 }] as never,
   });
-  const cfg = {
-    ...config(),
-    images: { enabled: true, maxDownloadMb: 1 },
-  } as ListenerConfig;
+  const cfg = config({ view_images: 'direct' });
+  cfg.toolPermissions.view_images.maxDownloadMb = 1;
   const bot = new Listener(
     api,
     undefined,

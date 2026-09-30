@@ -18,10 +18,15 @@ import {
   type Model,
 } from '../../../src/contracts/model.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
+import {
+  MEMBER_TOOLS,
+  toolPermissions,
+} from '../../support/tool-permissions.ts';
 
 const self = '999',
   actor = '123';
 const cfg: ListenerConfig = {
+  toolPermissions: toolPermissions(MEMBER_TOOLS),
   groupId: LISTENER_GROUP,
   ownerId: OWNER_ID,
   enabled: true,
@@ -279,53 +284,48 @@ test('send-send-finish sends two identical messages and stops all later calls', 
 
 test('ACK own message is readable, quotable and recallable without opening new incoming scope', async () => {
   const tools = {
-    members: true,
-    mention: true,
-    moderation: {
-      mute: 'off' as const,
-      unmute: 'off' as const,
-      recall: 'direct' as const,
-      memberCard: 'off' as const,
-      confirmationTtlSeconds: 60,
-      maxMuteSeconds: 600,
-    },
+    toolPermissions: toolPermissions({
+      ...MEMBER_TOOLS,
+      mute_member: { mode: 'off', maxSeconds: 600 },
+      unmute_member: 'off',
+      recall_message: 'direct',
+      set_member_card: 'off',
+    }),
+    confirmationTtlSeconds: 60,
   };
-  const s = setup(
-    (i, m) => {
-      if (i === 0) {
-        return done(send());
-      }
-      if (i === 1) {
-        assert.equal(results(m)[0].message_id, '901');
-        s.memory.append({
-          messageId: '777',
-          userId: actor,
-          nickname: 'late',
-          text: 'late',
-          time: 1,
-        });
-        return done(
-          call('read_message', { message_id: '901' }),
-          call('read_message', { message_id: '777' }),
-        );
-      }
-      if (i === 2) {
-        const r = results(m);
-        assert.equal(r[1].message.bot, true);
-        assert.equal(r[2].error, 'message_not_in_context');
-        return done(
-          call('send_message', {
-            segments: [{ type: 'text', text: 'quote own' }],
-            reply_to: '901',
-          }),
-          call('recall_message', { message_id: '901' }),
-        );
-      }
-      assert.equal(results(m).at(-1).status, 'executed');
-      return done(call('finish'));
-    },
-    { tools },
-  );
+  const s = setup((i, m) => {
+    if (i === 0) {
+      return done(send());
+    }
+    if (i === 1) {
+      assert.equal(results(m)[0].message_id, '901');
+      s.memory.append({
+        messageId: '777',
+        userId: actor,
+        nickname: 'late',
+        text: 'late',
+        time: 1,
+      });
+      return done(
+        call('read_message', { message_id: '901' }),
+        call('read_message', { message_id: '777' }),
+      );
+    }
+    if (i === 2) {
+      const r = results(m);
+      assert.equal(r[1].message.bot, true);
+      assert.equal(r[2].error, 'message_not_in_context');
+      return done(
+        call('send_message', {
+          segments: [{ type: 'text', text: 'quote own' }],
+          reply_to: '901',
+        }),
+        call('recall_message', { message_id: '901' }),
+      );
+    }
+    assert.equal(results(m).at(-1).status, 'executed');
+    return done(call('finish'));
+  }, tools);
   try {
     await s.bot.receive(event(), self);
     await settle(s, 4);
@@ -421,16 +421,14 @@ test('finish ignores trailing media even when a send precedes finish', async () 
 
 test('management cycles execute changed state while immediate identical duplicates remain deduplicated', async () => {
   const tools = {
-    members: true,
-    mention: true,
-    moderation: {
-      mute: 'direct' as const,
-      unmute: 'direct' as const,
-      recall: 'off' as const,
-      memberCard: 'off' as const,
-      confirmationTtlSeconds: 60,
-      maxMuteSeconds: 600,
-    },
+    toolPermissions: toolPermissions({
+      ...MEMBER_TOOLS,
+      mute_member: { mode: 'direct', maxSeconds: 600 },
+      unmute_member: 'direct',
+      recall_message: 'off',
+      set_member_card: 'off',
+    }),
+    confirmationTtlSeconds: 60,
   };
   const mute = () => call('mute_member', { user_id: actor, seconds: 60 });
   const s = setup(
@@ -442,7 +440,7 @@ test('management cycles execute changed state while immediate identical duplicat
         mute(),
         call('finish'),
       ),
-    { tools },
+    tools,
   );
   try {
     await s.bot.receive(event(), self);
@@ -460,16 +458,14 @@ test('management cycles execute changed state while immediate identical duplicat
 
 test('listener executes adopted thirty-day cap and rejects one second above before native dispatch', async () => {
   const tools = {
-    members: true,
-    mention: true,
-    moderation: {
-      mute: 'direct' as const,
-      unmute: 'off' as const,
-      recall: 'off' as const,
-      memberCard: 'off' as const,
-      confirmationTtlSeconds: 60,
-      maxMuteSeconds: MAX_MUTE_SECONDS,
-    },
+    toolPermissions: toolPermissions({
+      ...MEMBER_TOOLS,
+      mute_member: { mode: 'direct', maxSeconds: MAX_MUTE_SECONDS },
+      unmute_member: 'off',
+      recall_message: 'off',
+      set_member_card: 'off',
+    }),
+    confirmationTtlSeconds: 60,
   };
   const s = setup(
     (i) =>
@@ -485,7 +481,7 @@ test('listener executes adopted thirty-day cap and rejects one second above befo
               }),
             )
           : done(call('finish')),
-    { tools },
+    tools,
   );
   try {
     await s.bot.receive(event(), self);
