@@ -706,7 +706,7 @@ export class CustomFaceStore {
       }
       this.db
         .prepare(
-          "UPDATE custom_faces SET description=?,tags='[]',revision=? WHERE account_id=? AND res_id=?",
+          'UPDATE custom_faces SET description=?,revision=? WHERE account_id=? AND res_id=?',
         )
         .run(value, nextRevision(row.revision), accountId, resId);
       return true;
@@ -754,14 +754,14 @@ export class CustomFaceStore {
     scope(accountId);
     scope(groupId);
     plain(options, ['query', 'limit', 'cursor'], []);
-    const limit = options.limit ?? 20;
+    const limit = options.limit ?? 48;
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
       FAIL('invalid_limit');
     }
     if (
       options.query !== undefined &&
       (typeof options.query !== 'string' ||
-        Buffer.byteLength(options.query) > 512 ||
+        Buffer.byteLength(options.query) > 256 ||
         /[\u0000-\u001f\u007f]/.test(options.query))
     ) {
       FAIL('invalid_query');

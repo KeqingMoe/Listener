@@ -179,8 +179,7 @@ function delete_custom_face(_: { face_ref: FaceRef }):
   set_custom_face_description: {
     summary: '修改一张收藏表情的描述。',
     ts: `/**
- * 描述最多2048字节；描述有变化而不传 tags 时本地标签被清空，传入则整体替换。
- * description_confirmed=true 时返回新 face_ref，旧引用失效。
+ * 描述最多2048字节；不传 tags 保留原标签，传入则整体替换。
  */
 function set_custom_face_description(_: { face_ref: FaceRef; description: string; tags?: string[] }):
   | (Submitted & { description_confirmed: false; readback: 'not_confirmed'; local_tags_updated?: false })

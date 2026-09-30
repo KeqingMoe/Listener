@@ -253,7 +253,7 @@ test('local tags do not overwrite the QQ caption and external caption changes di
   }
 });
 
-test('confirmed description updates are compare-and-set and preserve no stale searchable hints', () => {
+test('confirmed description updates are compare-and-set and keep local tags', () => {
   const store = new CustomFaceStore();
   try {
     store.sync(ACCOUNT, [row(undefined, { tags: ['旧标签'] })]);
@@ -266,7 +266,8 @@ test('confirmed description updates are compare-and-set and preserve no stale se
       store.updateDescription(ACCOUNT, row().resId, '新说明', 1),
       true,
     );
-    assert.deepEqual(store.get(ACCOUNT, row().resId)?.tags, []);
+    // 标签由模型自己维护，改描述不清空；要替换就同时传tags。
+    assert.deepEqual(store.get(ACCOUNT, row().resId)?.tags, ['旧标签']);
     assert.equal(store.resolve(ref, ACCOUNT, GROUP), undefined);
     assert.equal(store.get(ACCOUNT, row().resId)?.revision, 2);
     assert.equal(
@@ -557,7 +558,7 @@ test('query, limits, scope, sparse arrays and oversized fields fail closed', () 
       assert.throws(() => store.list(id, GROUP), /invalid_scope/);
     }
     assert.throws(
-      () => store.list(ACCOUNT, GROUP, { query: 'x'.repeat(513) }),
+      () => store.list(ACCOUNT, GROUP, { query: 'x'.repeat(257) }),
       /invalid_query/,
     );
     assert.throws(() => store.sync(ACCOUNT, new Array(2)), /invalid_metadata/);
