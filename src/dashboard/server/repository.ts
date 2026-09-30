@@ -51,6 +51,8 @@ export interface Sources {
   getGroups?: () => GroupSource[];
   telemetryPath: string;
   inspectionSecrets?: readonly string[];
+  /** 当前配置中的具名模型名，只用于筛选选项。 */
+  models?: readonly string[];
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- SQLite行的列由本模块建表语句保证

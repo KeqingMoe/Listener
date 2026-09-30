@@ -226,6 +226,78 @@ const metrics = computed(() => {
           </table>
         </div>
       </section>
+      <section class="panel">
+        <div class="section-title">
+          <h2>模型汇总</h2>
+          <span class="muted"
+            >按配置中的模型名统计；未记录模型名的旧请求显示 —</span
+          >
+        </div>
+        <div class="table-wrap">
+          <table class="compact-table">
+            <thead>
+              <tr>
+                <th>模型</th>
+                <th>请求</th>
+                <th>成功</th>
+                <th>失败 / 超时</th>
+                <th title="未缓存输入 tokens">输入</th>
+                <th>缓存</th>
+                <th title="包含推理，不重复相加">输出</th>
+                <th title="仅使用总输入与缓存计数有效配对的样本；未知不视为零">
+                  缓存命中
+                </th>
+                <th :title="ttftHint">TTFT</th>
+                <th :title="tpsHint">TPS</th>
+                <th>P95</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="m in data.models" :key="m.modelName ?? ''">
+                <td>
+                  <RouterLink
+                    v-if="m.modelName"
+                    :to="{
+                      path: '/requests',
+                      query: { ...route.query, model: m.modelName },
+                    }"
+                    >{{ m.modelName }}</RouterLink
+                  ><span v-else title="未记录模型名">—</span>
+                </td>
+                <td>{{ number(m.requests) }}</td>
+                <td>{{ number(m.successes) }}</td>
+                <td>{{ number(m.errors) }} / {{ number(m.timeouts) }}</td>
+                <td
+                  :title="m.uncachedInputTokens == null ? missing : undefined"
+                >
+                  {{ display(m.uncachedInputTokens) }}
+                </td>
+                <td :title="m.cachedInputTokens == null ? missing : undefined">
+                  {{ display(m.cachedInputTokens) }}
+                </td>
+                <td :title="m.outputTokens == null ? missing : undefined">
+                  {{ display(m.outputTokens) }}
+                </td>
+                <td :title="m.cacheHitRate == null ? missing : undefined">
+                  {{ display(m.cacheHitRate, percent) }}
+                </td>
+                <td :title="m.performance.ttftMs == null ? missing : ttftHint">
+                  {{ display(m.performance.ttftMs, duration) }}
+                </td>
+                <td :title="m.performance.tps == null ? missing : tpsHint">
+                  {{ display(m.performance.tps, tps) }}
+                </td>
+                <td :title="m.durationP95Ms == null ? missing : undefined">
+                  {{ display(m.durationP95Ms, duration) }}
+                </td>
+              </tr>
+              <tr v-if="!data.models.length">
+                <td colspan="11" class="muted">当前筛选无模型请求</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </template>
     <section class="panel" :aria-busy="health.loading.value">
       <div class="section-title">

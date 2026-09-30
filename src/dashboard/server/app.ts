@@ -202,6 +202,7 @@ export function buildApp(options: AppOptions) {
     }
     return {
       groups: repository.groups.map((g) => ({ groupId: g.groupId })),
+      models: [...(options.models ?? [])],
       readOnly: true,
       maxRangeDays: 31,
       now: now(),
@@ -224,7 +225,9 @@ export function buildApp(options: AppOptions) {
   });
   app.get('/api/overview', async (req) => {
     const { range, groupId } = parse(req.query),
-      rows = reviewRepository.requests(range, groupId).map((r) => ({
+      requests = reviewRepository.requests(range, groupId),
+      rows = requests.map((r) => ({
+        model_name: r.modelName,
         interval_known: r.performance.coverage.modelIntervalRequests === 1,
         request_id: r.requestId,
         group_id: r.groupId,
@@ -272,6 +275,13 @@ export function buildApp(options: AppOptions) {
             rows.filter((r) => r.group_id === g.groupId),
             toolRows.filter((t) => t.group_id === g.groupId),
           ),
+        })),
+      // 工具耗时无法归属到单个模型，按模型汇总时不计入。
+      models: [...new Set(rows.map((r) => r.model_name))]
+        .sort((a, b) => (a === null ? 1 : b === null ? -1 : a.localeCompare(b)))
+        .map((modelName) => ({
+          modelName,
+          ...summarize(rows.filter((r) => r.model_name === modelName)),
         })),
     };
   });

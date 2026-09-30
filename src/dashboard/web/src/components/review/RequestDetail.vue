@@ -104,7 +104,7 @@ const diagnosticFacts = computed(() => {
       ><template v-if="data">
         <header class="request-head">
           <span class="badge">{{ status(data.request.outcome) }}</span
-          ><strong>{{ data.request.model || '模型请求' }}</strong
+          ><strong>{{ data.request.modelName || '—' }}</strong
           ><span>{{ duration(data.request.durationMs) }}</span>
         </header>
         <div class="request-tokens" title="未记录或不可用显示 —，不能视为 0。">

@@ -197,12 +197,14 @@ const timeline = computed(() =>
                       query: {
                         ...route.query,
                         outcome: undefined,
+                        model: undefined,
                         detailGroup: undefined,
                         selected: item.request.requestId,
                         group: item.request.groupId,
                       },
                     }"
-                    >{{ item.request.model || '模型请求' }}</RouterLink
+                    :aria-label="`模型请求 ${item.request.modelName || '未记录模型名'}`"
+                    >{{ item.request.modelName || '—' }}</RouterLink
                   ><span class="badge">{{ status(item.request.outcome) }}</span
                   ><span class="muted"
                     >{{ duration(item.request.durationMs) }} · 输出
@@ -290,12 +292,14 @@ const timeline = computed(() =>
                           query: {
                             ...route.query,
                             outcome: undefined,
+                            model: undefined,
                             detailGroup: undefined,
                             selected: request.requestId,
                             group: request.groupId,
                           },
                         }"
-                        >{{ request.model || request.transport }}</RouterLink
+                        :aria-label="`模型请求 ${request.modelName || '未记录模型名'}`"
+                        >{{ request.modelName || '—' }}</RouterLink
                       >
                       <div><CopyId :value="request.requestId" /></div>
                       <small class="muted">{{ time(request.startedAt) }}</small>

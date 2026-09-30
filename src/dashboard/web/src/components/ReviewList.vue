@@ -21,6 +21,7 @@ const filterIdentity = computed(() =>
     identity.value,
     route.query.q,
     route.query.outcome,
+    route.query.model,
   ]),
 );
 const anchor = ref('');
@@ -33,6 +34,9 @@ const filters = computed(
       ...(typeof route.query.q === 'string' ? { q: route.query.q } : {}),
       ...(typeof route.query.outcome === 'string'
         ? { outcome: route.query.outcome }
+        : {}),
+      ...(props.kind === 'requests' && typeof route.query.model === 'string'
+        ? { modelName: route.query.model }
         : {}),
     }).toString(),
 );
@@ -274,8 +278,11 @@ function resizeKey(e: KeyboardEvent) {
                 >
               </td>
               <template v-if="kind === 'requests'"
-                ><td class="model-cell secondary-column" :title="r.model || ''">
-                  {{ r.model || '—' }}
+                ><td
+                  class="model-cell secondary-column"
+                  :title="r.modelName || ''"
+                >
+                  {{ r.modelName || '—' }}
                 </td></template
               ><template v-else
                 ><td class="secondary-column">{{ number(r.modelRequests) }}</td>

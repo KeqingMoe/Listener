@@ -85,6 +85,7 @@ const overview: OverviewResponse = {
   summary: usage,
   series: [],
   groups: [{ ...usage, groupId: '10001' }],
+  models: [{ ...usage, modelName: 'synthetic' }],
 };
 const request: ReviewRequest = {
   performance: performance('request'),
@@ -94,6 +95,7 @@ const request: ReviewRequest = {
   wakeId: 'wake-synthetic',
   turnId: 'turn-synthetic',
   model: 'synthetic-model',
+  modelName: 'synthetic',
   transport: 'responses',
   startedAt: now - 6000,
   endedAt: now - 4000,
@@ -278,6 +280,7 @@ const responsesBody = {
   id: 'resp-synthetic-2',
   object: 'response',
   model: 'synthetic-model',
+  modelName: 'synthetic',
   status: 'completed',
   output: [
     {
@@ -313,6 +316,7 @@ const chatBody = {
   id: 'chatcmpl-synthetic-1',
   object: 'chat.completion',
   model: 'synthetic-model',
+  modelName: 'synthetic',
   choices: [
     {
       index: 0,
@@ -561,6 +565,7 @@ async function mock(page: Page, state: MockState = {}) {
     if (path === '/api/meta') {
       body = {
         groups: [{ groupId: '10001' }],
+        models: ['synthetic'],
         readOnly: true,
         maxRangeDays: 31,
         now,
@@ -596,6 +601,7 @@ async function mock(page: Page, state: MockState = {}) {
         ...overview,
         summary,
         groups: [{ ...summary, groupId: '10001' }],
+        models: [{ ...summary, modelName: 'synthetic' }],
       } satisfies OverviewResponse;
     } else if (path === '/api/request-trends/sync') {
       const selectedRange = {
@@ -638,7 +644,9 @@ async function mock(page: Page, state: MockState = {}) {
                 value?.includes(url.searchParams.get('q')!),
               )) &&
             (!url.searchParams.get('outcome') ||
-              r.outcome === url.searchParams.get('outcome')),
+              r.outcome === url.searchParams.get('outcome')) &&
+            (!url.searchParams.get('modelName') ||
+              r.modelName === url.searchParams.get('modelName')),
         ),
         nextCursor:
           state.empty || url.searchParams.has('cursor')
@@ -1450,6 +1458,38 @@ test('request rows show uncached/cache/output and TTFT/TPS without adding reason
       .locator('td')
       .nth(6),
   ).toHaveText('— / —');
+});
+
+test('requests show the configured model name, not the request model id, and filter by it', async ({
+  page,
+}) => {
+  await mock(page);
+  await page.goto('/requests');
+  const cells = page.locator('.list-pane tbody td.model-cell');
+  await expect(cells.first()).toHaveText('synthetic');
+  await expect(page.locator('.list-pane')).not.toContainText('synthetic-model');
+  const urls: string[] = [];
+  page.on('request', (r) => urls.push(r.url()));
+  await page.getByLabel('模型', { exact: true }).selectOption('synthetic');
+  await expect(page).toHaveURL(/model=synthetic/);
+  await expect
+    .poll(() =>
+      urls.some(
+        (u) =>
+          new URL(
+            new URL(u).searchParams.get('resource') ?? '/',
+            'http://x',
+          ).searchParams.get('modelName') === 'synthetic',
+      ),
+    )
+    .toBe(true);
+  await page.goto('/');
+  const models = page
+    .locator('section.panel')
+    .filter({ has: page.getByRole('heading', { name: '模型汇总' }) });
+  await expect(
+    models.getByRole('link', { name: 'synthetic', exact: true }),
+  ).toBeVisible();
 });
 
 test('cancellation diagnostics stay collapsed and expose only recorded Chinese facts', async ({

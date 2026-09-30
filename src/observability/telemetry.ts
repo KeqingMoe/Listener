@@ -15,6 +15,8 @@ import { installRequestChangeLog } from './request-change-log.ts';
 
 interface TelemetryContext {
   groupId?: string | null;
+  /** 具名模型的配置名；与请求时发出的模型ID（model）无关。 */
+  modelName?: string | null;
   turnId?: string | null;
   wakeId?: string | null;
   phase?: string | null;
@@ -68,7 +70,7 @@ const inspectionFields = [
   'providerRequestId',
   'requestMode',
 ] as const;
-const inspectionBytes = `128+${['request_id', 'group_id', 'turn_id', 'wake_id', 'phase', 'transport', 'model', 'status', 'request_json', 'response_json', 'reasoning_text', 'error_text', 'response_id', 'previous_response_id', 'provider_request_id', 'request_mode'].map((key) => `COALESCE(length(CAST(${key} AS BLOB)),0)`).join('+')}`;
+const inspectionBytes = `128+${['request_id', 'group_id', 'turn_id', 'wake_id', 'phase', 'transport', 'model', 'model_name', 'status', 'request_json', 'response_json', 'reasoning_text', 'error_text', 'response_id', 'previous_response_id', 'provider_request_id', 'request_mode'].map((key) => `COALESCE(length(CAST(${key} AS BLOB)),0)`).join('+')}`;
 
 interface InspectionState {
   references: number;
@@ -131,7 +133,7 @@ export class TelemetryStore {
         ttft_ms REAL, decode_duration_ms REAL,
          input_tokens INTEGER, output_tokens INTEGER, total_tokens INTEGER,
         cached_input_tokens INTEGER, reasoning_tokens INTEGER,
-        group_id TEXT, turn_id TEXT, phase TEXT, diagnostics TEXT
+        group_id TEXT, turn_id TEXT, phase TEXT, diagnostics TEXT, model_name TEXT
       );`);
       // 先拿写锁再检查列，避免并发打开时两边都执行ALTER。
       const columns = this.db
@@ -149,7 +151,11 @@ export class TelemetryStore {
       const newDecodeColumn = !columns.some(
         (column) => column.name === 'decode_duration_ms',
       );
-      for (const name of ['ttft_ms', 'decode_duration_ms']) {
+      for (const [name, type] of [
+        ['ttft_ms', 'REAL'],
+        ['decode_duration_ms', 'REAL'],
+        ['model_name', 'TEXT'],
+      ] as const) {
         if (
           !columns.some(
             (column) =>
@@ -157,7 +163,9 @@ export class TelemetryStore {
               column.name.toLowerCase() === name,
           )
         ) {
-          this.db.exec(`ALTER TABLE model_requests ADD COLUMN ${name} REAL;`);
+          this.db.exec(
+            `ALTER TABLE model_requests ADD COLUMN ${name} ${type};`,
+          );
         }
       }
       // TPS口径变化后，即使没有行写入，已缓存的趋势点也会失效。
@@ -202,9 +210,20 @@ export class TelemetryStore {
         started_at INTEGER, ended_at INTEGER, transport TEXT, model TEXT, status TEXT,
         request_json TEXT, response_json TEXT, reasoning_text TEXT, error_text TEXT,
         response_id TEXT, previous_response_id TEXT, provider_request_id TEXT, request_mode TEXT,
-        content_truncated INTEGER NOT NULL DEFAULT 0
-      );
-      CREATE INDEX IF NOT EXISTS model_request_inspections_started ON model_request_inspections(started_at);
+        content_truncated INTEGER NOT NULL DEFAULT 0, model_name TEXT
+      );`);
+      if (
+        !this.db
+          .prepare('PRAGMA table_info(model_request_inspections)')
+          .all()
+          .some((column) => column.name === 'model_name')
+      ) {
+        this.db.exec(
+          'ALTER TABLE model_request_inspections ADD COLUMN model_name TEXT;',
+        );
+      }
+      this.db
+        .exec(`CREATE INDEX IF NOT EXISTS model_request_inspections_started ON model_request_inspections(started_at);
       CREATE INDEX IF NOT EXISTS model_request_inspections_group_response ON model_request_inspections(group_id,response_id);
       CREATE INDEX IF NOT EXISTS model_request_inspections_group_previous_response ON model_request_inspections(group_id,previous_response_id);
       CREATE INDEX IF NOT EXISTS model_request_inspections_group_turn ON model_request_inspections(group_id,turn_id);
@@ -287,10 +306,10 @@ export class TelemetryStore {
     this.db
       .prepare(
         `INSERT INTO model_request_inspections
-      (request_id,group_id,turn_id,wake_id,phase,started_at,ended_at,transport,model,status,request_json,response_json,reasoning_text,error_text,response_id,previous_response_id,provider_request_id,request_mode,content_truncated)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      (request_id,group_id,turn_id,wake_id,phase,started_at,ended_at,transport,model,status,request_json,response_json,reasoning_text,error_text,response_id,previous_response_id,provider_request_id,request_mode,content_truncated,model_name)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(request_id) DO UPDATE SET
-        group_id=COALESCE(excluded.group_id,group_id),turn_id=COALESCE(excluded.turn_id,turn_id),
+        group_id=COALESCE(excluded.group_id,group_id),model_name=COALESCE(excluded.model_name,model_name),turn_id=COALESCE(excluded.turn_id,turn_id),
         wake_id=COALESCE(excluded.wake_id,wake_id),phase=COALESCE(excluded.phase,phase),
         ended_at=excluded.ended_at,status=excluded.status,
         request_json=COALESCE(excluded.request_json,request_json),response_json=excluded.response_json,
@@ -311,6 +330,7 @@ export class TelemetryStore {
         status,
         ...inspectionFields.map((key) => inspection[key] ?? null),
         inspection.contentTruncated ? 1 : 0,
+        text(value.modelName),
       );
     const next = this.db
       .prepare(
@@ -446,7 +466,7 @@ export class TelemetryStore {
     );
     this.db
       .prepare(
-        `INSERT OR IGNORE INTO model_requests(request_id,started_at,ended_at,duration_ms,transport,model,status,error_code,http_status,input_tokens,output_tokens,total_tokens,cached_input_tokens,reasoning_tokens,group_id,turn_id,phase,diagnostics,ttft_ms,decode_duration_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT OR IGNORE INTO model_requests(request_id,started_at,ended_at,duration_ms,transport,model,status,error_code,http_status,input_tokens,output_tokens,total_tokens,cached_input_tokens,reasoning_tokens,group_id,turn_id,phase,diagnostics,ttft_ms,decode_duration_ms,model_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
         id,
@@ -469,6 +489,7 @@ export class TelemetryStore {
         diagnostics ? JSON.stringify(diagnostics) : null,
         ttft,
         decode,
+        text(value.modelName),
       );
     try {
       this.persistInspection(

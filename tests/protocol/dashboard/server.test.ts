@@ -831,3 +831,71 @@ test('unavailable telemetry and wrong group identity remain honest', async () =>
     f.cleanup();
   }
 });
+
+test('requests are shown, filtered and summarized by configured model name, legacy rows as null', async () => {
+  const f = fixture();
+  const db = new DatabaseSync(f.telemetryPath);
+  db.exec(
+    'ALTER TABLE model_requests ADD COLUMN model TEXT; ALTER TABLE model_requests ADD COLUMN model_name TEXT;',
+  );
+  db.exec(
+    "UPDATE model_requests SET model='deepseek-v4.1-flash'; UPDATE model_requests SET model_name='opencode_go' WHERE request_id='request-one'; UPDATE model_requests SET model_name='qunyou_model' WHERE request_id='request-two';",
+  );
+  db.close();
+  const app = buildApp({
+    ...f.options,
+    models: ['opencode_go', 'qunyou_model'],
+  });
+  try {
+    assert.deepEqual((await app.inject('/api/meta')).json().models, [
+      'opencode_go',
+      'qunyou_model',
+    ]);
+    const list = (await app.inject('/api/requests?since=0&until=300')).json();
+    assert.deepEqual(
+      list.items.map((r: any) => [r.requestId, r.modelName, r.model]).sort(),
+      [
+        ['request-one', 'opencode_go', 'deepseek-v4.1-flash'],
+        ['request-three', null, 'deepseek-v4.1-flash'],
+        ['request-two', 'qunyou_model', 'deepseek-v4.1-flash'],
+      ],
+    );
+    const filtered = (
+      await app.inject('/api/requests?since=0&until=300&modelName=qunyou_model')
+    ).json();
+    assert.deepEqual(
+      filtered.items.map((r: any) => r.requestId),
+      ['request-two'],
+    );
+    // 请求模型ID不再是筛选条件。
+    assert.equal(
+      (
+        await app.inject(
+          '/api/requests?since=0&until=300&modelName=deepseek-v4.1-flash',
+        )
+      ).json().items.length,
+      0,
+    );
+    for (const bad of ['', 'x'.repeat(129)]) {
+      assert.equal(
+        (await app.inject(`/api/requests?since=0&until=300&modelName=${bad}`))
+          .statusCode,
+        400,
+      );
+    }
+    const overview = (
+      await app.inject('/api/overview?since=0&until=300')
+    ).json();
+    assert.deepEqual(
+      overview.models.map((m: any) => [m.modelName, m.requests]),
+      [
+        ['opencode_go', 1],
+        ['qunyou_model', 1],
+        [null, 1],
+      ],
+    );
+  } finally {
+    await app.close();
+    f.cleanup();
+  }
+});

@@ -168,12 +168,19 @@ async function main(): Promise<void> {
         session: ModelSession | undefined;
       const contexts = new Map<
         string,
-        { groupId: string; turnId?: string; phase?: string; wakeId?: string }
+        {
+          groupId: string;
+          modelName: string;
+          turnId?: string;
+          phase?: string;
+          wakeId?: string;
+        }
       >();
       const context = () => {
         const trace = getLogContext();
         return {
           groupId,
+          modelName: policy.model,
           ...(typeof trace.turn_id === 'string'
             ? { turnId: trace.turn_id }
             : {}),

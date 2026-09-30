@@ -62,8 +62,17 @@ export function registerReviewRoutes(
         'limit',
         'cursor',
         'outcome',
+        'modelName',
         'q',
       ]);
+      if (
+        q.modelName !== undefined &&
+        (typeof q.modelName !== 'string' ||
+          !q.modelName ||
+          q.modelName.length > 128)
+      ) {
+        throw new InvalidQuery();
+      }
       const range = timeRange(q, now()),
         limit = pageLimit(q, 30),
         groupId = group(q),
@@ -88,6 +97,7 @@ export function registerReviewRoutes(
         groupId,
         groups: base.groups.map((g) => g.groupId).sort(),
         outcome: q.outcome,
+        modelName: q.modelName,
         q: text,
       });
       const offset = cursorOffset(q.cursor, binding);
@@ -97,9 +107,11 @@ export function registerReviewRoutes(
         .filter(
           (r) =>
             (q.outcome === undefined || r.outcome === q.outcome) &&
+            (q.modelName === undefined || r.modelName === q.modelName) &&
             (!search ||
               [
                 r.requestId,
+                r.modelName,
                 r.model,
                 r.errorCode,
                 r.responseId,

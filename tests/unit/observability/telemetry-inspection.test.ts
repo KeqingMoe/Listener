@@ -69,6 +69,7 @@ test('inspection schema is exact and begin/record preserve context and first com
         'provider_request_id',
         'request_mode',
         'content_truncated',
+        'model_name',
       ],
     );
     for (const [name, column] of [

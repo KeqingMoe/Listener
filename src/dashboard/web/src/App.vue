@@ -185,6 +185,7 @@ function applyRange() {
             query: {
               ...route.query,
               outcome: path === route.path ? route.query.outcome : undefined,
+              model: path === '/requests' ? route.query.model : undefined,
               selected: undefined,
               detailGroup: undefined,
               cursor: undefined,
@@ -256,6 +257,17 @@ function applyRange() {
             <option value="cancelled">已取消</option>
             <option value="unknown">结果不明</option></template
           >
+        </select></label
+      ><label v-if="route.path === '/requests' && meta?.models.length"
+        >模型<select
+          aria-label="模型"
+          :value="route.query.model || ''"
+          @change="filter('model', ($event.target as HTMLSelectElement).value)"
+        >
+          <option value="">全部模型</option>
+          <option v-for="m in meta.models" :key="m" :value="m">
+            {{ m }}
+          </option>
         </select></label
       >
       <form class="search-form" @submit.prevent="filter('q', search)">

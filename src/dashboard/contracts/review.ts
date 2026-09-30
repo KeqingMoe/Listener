@@ -10,7 +10,10 @@ export interface ReviewRequest extends CacheMetrics {
   groupId: string;
   wakeId: string | null;
   turnId: string | null;
+  /** 请求时发给服务商的模型ID。 */
   model: string | null;
+  /** 具名模型的配置名；旧记录没有时为null。 */
+  modelName: string | null;
   transport: string;
   startedAt: number;
   endedAt: number | null;

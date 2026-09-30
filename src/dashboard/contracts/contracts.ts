@@ -18,6 +18,8 @@ export interface GroupMeta {
 
 export interface MetaResponse {
   groups: GroupMeta[];
+  /** 当前配置中定义的具名模型名，供筛选使用。 */
+  models: string[];
   readOnly: true;
   maxRangeDays: 31;
   now: number;
@@ -52,6 +54,8 @@ export interface OverviewResponse {
   summary: UsageSummary;
   series: Array<UsageSummary & { bucketStart: number }>;
   groups: Array<UsageSummary & { groupId: string }>;
+  /** 按具名模型名汇总；modelName为null表示未记录模型名的旧请求。 */
+  models: Array<UsageSummary & { modelName: string | null }>;
 }
 
 export interface WakeItem extends CacheMetrics {
