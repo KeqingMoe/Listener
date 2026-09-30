@@ -5,7 +5,7 @@ import { sanitizeLogFields, type ObservedLog } from './logger.ts';
 const MAX_ROWS = 30000,
   RETENTION_MS = 7 * 86400000;
 
-/** A bounded private index of structured runtime events; never a sink for raw chat or exceptions. */
+/** 有界的私有结构化运行事件索引（按条数和保留时长清理）；绝不存放原始聊天内容或异常。 */
 export class RuntimeEventStore {
   private readonly db: DatabaseSync;
   private closed = false;

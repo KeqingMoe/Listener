@@ -288,14 +288,14 @@ function prefix(text: string, maximum: number, maxChars = MAX_TEXT): string {
       high = mid - 1;
     }
   }
-  // Do not leave an unpaired high surrogate at a truncation boundary.
+  // 截断边界处不能留下未配对的高位代理项。
   if (low < text.length && low > 0 && /[\uD800-\uDBFF]/.test(text[low - 1]!)) {
     low--;
   }
   return text.slice(0, low);
 }
 
-/** A prefix projection keeps room consumption monotone while content is incomplete. */
+/** 按序列化大小预算只取段的前缀，使内容不完整时占用的空间保持单调；截断或省略会如实标记。 */
 function bound(
   segments: readonly MessageSegment[],
   maximum: number,
@@ -381,7 +381,7 @@ function content(
   return bound(segments, MAX_CONTENT, omitted, omitted > 0);
 }
 
-/** Interpret actual OneBot structure only. Text (including CQ/marker lookalikes) stays literal. */
+/** 只解释真实的OneBot段结构；文本（包括形似CQ码或标记的内容）保持字面原样。 */
 export function extractMessageContent(
   messageId: string,
   wire: unknown,
@@ -401,7 +401,7 @@ export function extractMessageContent(
   return content(messageId, wire, true, images, forwards);
 }
 
-/** Rebuild persisted content from safe fields. Missing arrays identify legacy text, never a conversion request. */
+/** 从安全字段重建已持久化的content。没有段数组即表示旧格式纯文本，不会触发转换。 */
 export function sanitizeMessageContent(
   messageId: string,
   value: unknown,
@@ -413,7 +413,7 @@ export function sanitizeMessageContent(
     : undefined;
 }
 
-/** Only provenance and safe media references accompany the bounded content projection. */
+/** 有界的content投影只附带来源字段和安全的媒体引用。 */
 export function projectMessage(
   entry: TimelineEntry,
   limit = Infinity,
@@ -505,7 +505,7 @@ export function projectMessage(
   };
 }
 
-/** Project only top-level timeline entries; summary text is deliberately opaque and untouched. */
+/** 只投影顶层timeline条目；摘要文本刻意视为不透明内容，不做改动。 */
 export function projectMessageContext(source: string): string {
   let root: unknown;
   try {

@@ -136,11 +136,9 @@ function errno(error: unknown): string | undefined {
 }
 
 /**
- * Persistent original-byte cache, NOT a temporary upload directory. Nothing is
- * evicted automatically: QQ may retain the supplied path after its API returns.
- * Linux procfs anchors child operations to an opened directory inode. Only the
- * program/deployment may supply these paths; provider paths never go to a model.
- * The caller must fully validate/decode the image; this class checks signatures.
+ * 持久保存原始字节的缓存，不是临时上传目录。不会自动淘汰：QQ在API返回后仍可能引用传入的路径。
+ * 借助Linux procfs把子操作锚定到已打开的目录inode。这些路径只能由程序或部署配置提供，provider路径不会交给模型。
+ * 调用方必须完整校验并解码图片，本类只检查文件签名。
  */
 export class SharedCustomFaceStaging implements CustomFaceStager {
   private readonly directory: string;
@@ -187,7 +185,7 @@ export class SharedCustomFaceStaging implements CustomFaceStager {
     ) {
       fail('storage_invalid_image');
     }
-    // Copy before the first await; the caller cannot change staged bytes in flight.
+    // 在第一个await之前复制，调用方无法在处理途中改动待暂存的字节。
     const original = Buffer.from(bytes);
     const digest = digestOf(original);
     const name = `${digest}.${format}`;
@@ -205,7 +203,7 @@ export class SharedCustomFaceStaging implements CustomFaceStager {
           await this.publish(dir, owner, name, original);
         }
         await this.checkDirectory(dir);
-        // Re-open and hash even reused files; do not trust names or cached metadata.
+        // 即使是复用的文件也重新打开并比对内容，不信任文件名或缓存的元数据。
         const stored = await this.readRegular(dir, name, MAX_IMAGE_BYTES);
         if (!stored.bytes.equals(original)) {
           fail('storage_integrity');
@@ -250,7 +248,7 @@ export class SharedCustomFaceStaging implements CustomFaceStager {
     ) {
       fail('storage_integrity');
     }
-    // A sticky /tmp is fine; a freely replaceable non-sticky parent is not.
+    // 带sticky位的/tmp可以接受；可被随意替换的非sticky父目录不行。
     if ((stat.mode & 0o022n) !== 0n && (stat.mode & 0o1000n) === 0n) {
       fail('storage_integrity');
     }
@@ -351,7 +349,7 @@ export class SharedCustomFaceStaging implements CustomFaceStager {
         await unlink(path.posix.join(dir.anchor, tmp));
         await dir.handle.sync();
       } catch (error) {
-        // Remove only the file this operation created; never touch a winner's marker.
+        // 只删除本次操作创建的文件，不碰竞争胜出者的标记文件。
         await this.removeOwnUnpublished(dir, tmp);
         throw error;
       }
@@ -420,7 +418,7 @@ export class SharedCustomFaceStaging implements CustomFaceStager {
       if (!sameFile(before, stat)) {
         fail('storage_integrity');
       }
-      // A concurrently growing file must not turn this into an unbounded read.
+      // 文件被并发写入变大时，也不能变成无上限的读取。
       const buffer = Buffer.alloc(Number(stat.size) + 1);
       let read = 0;
       while (read < buffer.length) {
@@ -499,7 +497,7 @@ export class SharedCustomFaceStaging implements CustomFaceStager {
           fail('storage_integrity');
         }
       }
-      // An unpublished one-link temp cannot be referenced by a returned providerPath.
+      // 未发布且只有一个硬链接的临时文件不可能被已返回的providerPath引用。
       await unlink(path.posix.join(dir.anchor, name));
     }
     await this.readRegular(dir, MARKER, 4096);
@@ -510,7 +508,7 @@ export class SharedCustomFaceStaging implements CustomFaceStager {
     const listing = await opendir(dir.anchor);
     for await (const entry of listing) {
       names.push(entry.name);
-      // Include bounded room for marker and interrupted unpublished writes.
+      // 为标记文件和中断遗留的未发布写入预留有限余量。
       if (names.length > this.maxFiles + 64) {
         fail('storage_capacity');
       }
@@ -594,7 +592,7 @@ export class SharedCustomFaceStaging implements CustomFaceStager {
         await unlink(path.posix.join(dir.anchor, name));
       }
     } catch {
-      /* best-effort cleanup of this operation's unpublished file only */
+      /* 尽力清理，仅限本次操作的未发布文件 */
     }
   }
 
@@ -608,7 +606,7 @@ export class SharedCustomFaceStaging implements CustomFaceStager {
     await this.writeExclusive(dir, tmp, bytes);
     try {
       await this.checkDirectory(dir);
-      // link is an atomic no-replace publication; rename could overwrite a winner.
+      // link是原子且不覆盖的发布方式；rename可能覆盖竞争胜出者的文件。
       await link(
         path.posix.join(dir.anchor, tmp),
         path.posix.join(dir.anchor, name),

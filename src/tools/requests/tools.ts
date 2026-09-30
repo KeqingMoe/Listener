@@ -12,20 +12,20 @@ import {
   writeFailure,
 } from '../../onebot/operation-result.ts';
 
-// Pinned NapCat v4.18.28 contracts:
-// packages/napcat-onebot/action/system/GetSystemMsg.ts: join_requests = type 7,
-// request_id = +native.seq, invitor_uin = +user1 UIN, checked = status != pending.
-// packages/napcat-onebot/index.ts confirms type-7 user1 is the applicant.
-// packages/napcat-onebot/action/group/SetGroupAddRequest.ts searches seq === flag;
-// it accepts flag/approve/reason/count, WITHOUT group_id, and discards the ACK.
-// Do not extend this bridge to imprecise numbers or invitations to join groups.
+// 基于NapCat v4.18.28的契约：
+// packages/napcat-onebot/action/system/GetSystemMsg.ts：join_requests为type 7，
+// request_id = +native.seq，invitor_uin = +user1 UIN，checked = status != pending。
+// packages/napcat-onebot/index.ts确认type 7的user1是申请人。
+// packages/napcat-onebot/action/group/SetGroupAddRequest.ts按seq === flag查找；
+// 它接受flag/approve/reason/count，不带group_id，并丢弃ACK。
+// 不要把这层桥接扩展到精度不足的数字或邀请入群请求。
 export const GROUP_REQUEST_TOOL_NAMES = Object.freeze([
   'list_group_requests',
   'respond_group_request',
 ] as const);
 const TTL_MS = 15 * 60 * 1000,
   CAPACITY = 4096,
-  SOURCE_LIMIT = 1000, // Bounded account-wide prefix, never a completeness claim.
+  SOURCE_LIMIT = 1000, // 只读取全账号请求的有限前缀，不代表列表完整。
   OUTPUT_LIMIT = 24 * 1024;
 const NAMES = new Set<string>(GROUP_REQUEST_TOOL_NAMES);
 
@@ -76,8 +76,7 @@ function safeNatural(value: unknown): value is number {
 }
 
 function flag(value: unknown): string | undefined {
-  // The audited response is a number. String flags supplied by arbitrary raw
-  // responses are not an alternative schema. Never recover rounded precision.
+  // 经核对的响应中flag是数字；原始响应里的字符串flag不视为另一种合法格式。已丢失的精度不做恢复。
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
     ? String(value)
     : undefined;
@@ -108,9 +107,9 @@ function schema(properties: JsonObject, required: string[]): JsonObject {
   return { type: 'object', additionalProperties: false, properties, required };
 }
 
-/** Persistent per Listener. reset() revokes capabilities, never unknown locks.
- * Locks survive wakes and manual resets in this process. Nothing stores flags
- * in model output, databases or logs; process restarts do not recover this state.
+/**
+ * 每个Listener持有一份，跨wake持久。reset()撤销已发放的句柄，但不解除结果未知的锁。
+ * 这些锁在本进程内跨wake和手动reset保留。flag不会写入模型输出、数据库或日志；进程重启后该状态不恢复。
  */
 export class GroupRequestTools {
   private readonly groupId: string;
@@ -144,7 +143,7 @@ export class GroupRequestTools {
     this.handles.clear();
   }
 
-  /** Wake boundaries intentionally preserve handles and unknown locks. */
+  /** wake边界有意保留句柄和结果未知的锁。 */
   resetWake(): void {}
   definitions(): ToolDefinition[] {
     const list: ToolDefinition[] = [
@@ -206,7 +205,7 @@ export class GroupRequestTools {
     return { args: this.parse(name, value), self: context.selfId };
   }
 
-  /** Read-only current-request proof for an owner confirmation; flags never leave this class. */
+  /** 为主人确认提供只读的当前请求证明；flag不会离开本类。 */
   async confirmationDetails(
     name: string,
     value: unknown,
@@ -416,8 +415,7 @@ export class GroupRequestTools {
       fail('invalid_response');
     }
     const invitations = raw.invited_requests;
-    // Compatibility alias is included for ambiguity checking, without counting
-    // exact alias entries as duplicates. A different matching invite always blocks.
+    // InvitedRequest别名字段也纳入歧义检查，但与正式字段完全相同的条目不算重复；只要有不同的匹配邀请就拒绝。
     const alias = Array.isArray(raw.InvitedRequest) ? raw.InvitedRequest : [];
     if (
       raw.join_requests.length + invitations.length > SOURCE_LIMIT ||
@@ -633,8 +631,7 @@ export class GroupRequestTools {
     if (!current) {
       fail('request_not_pending_or_changed');
     }
-    // List fetching can be slow. Refresh both account identity and authority
-    // immediately before dispatch rather than reusing the pre-query role.
+    // 拉取列表可能较慢，派发前重新校验账号身份和权限，不沿用查询前的角色。
     await this.authorize(self, generation, signal);
     if (
       handle.expires <= Date.now() ||
@@ -701,7 +698,7 @@ export class GroupRequestTools {
       generation,
       signal,
     );
-    this.uncertain.add(handle.key); // Reserve before external effects, including reset races.
+    this.uncertain.add(handle.key); // 在产生外部影响之前先占位，也防止与reset竞态。
     let result: JsonObject;
     try {
       const value = await this.api.call('set_group_add_request', {

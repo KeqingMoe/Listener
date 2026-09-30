@@ -22,8 +22,10 @@ function lookup(value: unknown, path: string): unknown {
   return value;
 }
 
-/** Operator-only diagnostic: no provider credentials, persona body, or chat data.
- * It describes policy, not verified membership or a currently active Listener. */
+/**
+ * 仅供运维的诊断输出，并标注每个值来自群配置、defaults还是程序默认值。
+ * 不含provider凭据、persona正文或聊天数据；描述的是策略，不代表已核实的群成员身份或正在运行的Listener。
+ */
 export function inspectGroupConfig(
   app: AppConfig,
   groupId: string,

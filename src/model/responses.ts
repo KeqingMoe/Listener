@@ -57,7 +57,7 @@ export interface ResponsesModelOptions extends OpenAIModelOptions {
   serverCompactionVerified?: boolean;
 }
 
-/** Contains conversation material. Treat as private; never log this checkpoint. */
+/** 包含对话内容，按隐私数据处理，不要写进日志。 */
 export interface ResponsesCheckpoint {
   responseId: string;
   baselineMessages: ChatMessage[];
@@ -75,7 +75,7 @@ export interface ResponsesContinuationCheckpoint extends Record<
   baselineLength: number;
   baselineHash: string;
   baselineNullContentHash?: string;
-  /** Full mode stores only native assistant outputs; user/tool inputs live in ModelSession. */
+  /** full模式只保存原生assistant输出；用户和工具输入由ModelSession保存。 */
   outputHistory?: Array<{ index: number; items: unknown[] }>;
   outputHistoryStart?: number;
 }
@@ -252,7 +252,7 @@ const expired = (raw: unknown): boolean =>
     'response_not_found',
   ].includes(raw.error.code);
 
-/** One instance per conversation. Prefix mutations start an explicit fresh chain. */
+/** 每个对话一个实例。历史前缀发生变化时，显式开启新的response链。 */
 export class ResponsesModel implements Model {
   private readonly options: ResponsesModelOptions;
   private readonly endpoint: string;
@@ -681,7 +681,7 @@ export class ResponsesModel implements Model {
         try {
           raw = await readBody(response, () => {}, capture);
         } catch {
-          /* Keep HTTP status/code even for non-JSON or oversized error bodies. */
+          /* 错误响应体不是JSON或过大时也保留HTTP状态码。 */
         }
         Object.assign(diagnostics, providerDiagnostics(raw));
         if (reuse && expired(raw)) {
@@ -842,7 +842,7 @@ export class ResponsesModel implements Model {
         throw new ModelError('invalid_response');
       }
       const result = completion(raw);
-      /* Validate observed deltas against the authoritative terminal snapshot. */
+      /* 用最终快照校验流式过程中收到的delta，以最终快照为准。 */
       for (const delta of deltas.values()) {
         const item = (raw.output as unknown[])[delta.index];
         if (!object(item)) {
@@ -940,8 +940,8 @@ export class ResponsesModel implements Model {
       ) {
         inspection.errorText = error.message;
       }
-      // A failed full-mode request did not append anything: keep the previous native
-      // output mapping so retry/restart cannot silently lose reasoning or compaction.
+      // full模式下失败的请求没有追加任何内容：保留之前的原生输出映射，
+      // 避免重试或重启后悄悄丢失reasoning或compaction结果。
       if (!fullMode) {
         this.state = undefined;
         this.baselineWithoutContent = undefined;
@@ -980,7 +980,7 @@ export class ResponsesModel implements Model {
           diagnostics: normalizeModelRequestDiagnostics(diagnostics),
         });
       } catch {
-        /* Observers never change transport results. */
+        /* 回调失败不影响请求结果。 */
       }
     }
   }

@@ -101,8 +101,7 @@ async function main(): Promise<void> {
   } catch {
     log('warn', 'app.diagnostics_unavailable', { reason: 'storage_failed' });
   }
-  // Reject unsupported compaction before contacting the provider, including the
-  // unlisted-group default branch of all-groups mode.
+  // 在联系provider之前拒绝不受支持的compaction配置，包括全群模式下未列出群走的defaults分支。
   const declared = app.configuredGroupIds.map((groupId) =>
     app.resolveGroup(groupId),
   );
@@ -387,7 +386,7 @@ async function main(): Promise<void> {
             });
             sandboxService!.ackResult(account, job.groupId, job.job_id);
           } catch {
-            /* unavailable groups remain pending */
+            /* 暂不可用的群不ack，结果保留待下次投递。 */
           }
         }
         if (page.nextCursor === null) {
@@ -464,7 +463,7 @@ async function main(): Promise<void> {
     if (!selfId || stopping) {
       return;
     }
-    // Index arrival metadata, not message content. Only enabled groups of this authenticated account.
+    // 只索引消息到达的元数据，不记录消息内容；且只针对当前已认证账号下启用的群。
     if (event && typeof event === 'object') {
       const raw = event as Record<string, unknown>,
         groupId = id(raw.group_id);

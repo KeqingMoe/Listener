@@ -1,4 +1,7 @@
-// Keep this fallback synchronous so an insecure-HTTP click retains user activation.
+/**
+ * 基于隐藏textarea与execCommand的复制回退，结束后恢复焦点、选区和滚动位置。
+ * 必须保持同步，非安全HTTP下的点击才能保留用户激活状态。
+ */
 function copyWithTextarea(text: string): boolean {
   if (typeof document === 'undefined' || !document.body) {
     return false;
@@ -62,7 +65,7 @@ function copyWithTextarea(text: string): boolean {
     try {
       active?.focus({ preventScroll: true });
     } catch {
-      /* A removed element cannot regain focus. */
+      /* 已移除的元素无法重新获得焦点。 */
     }
     try {
       if (selection) {
@@ -92,7 +95,7 @@ function copyWithTextarea(text: string): boolean {
         );
       }
     } catch {
-      /* The original selection may no longer exist. */
+      /* 原选区可能已不存在。 */
     }
     for (const [element, position] of scroll) {
       element.scrollTop = position.top;
@@ -107,7 +110,7 @@ function copyWithTextarea(text: string): boolean {
   }
 }
 
-/** A true result means a browser copy operation actually reported success. */
+/** 返回true仅表示浏览器复制操作确实报告成功。 */
 export function copyText(text: string): Promise<boolean> {
   try {
     if (
@@ -120,7 +123,7 @@ export function copyText(text: string): Promise<boolean> {
       );
     }
   } catch {
-    /* Missing permissions or a throwing API still get the legacy fallback. */
+    /* 缺少权限或API抛错时同样走旧式回退。 */
   }
   return Promise.resolve(copyWithTextarea(text));
 }

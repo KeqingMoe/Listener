@@ -238,7 +238,7 @@ test(
         const code = (error as { errcode?: number }).errcode;
         if (code === 5 || code === 6) {
           return undefined;
-        } // Wait for the fixture writer's commit notification.
+        } // SQLITE_BUSY/LOCKED：等待fixture写入方的提交通知。
         throw error;
       } finally {
         db?.close();
@@ -469,8 +469,8 @@ file = false
         identities,
         'rejoining reopens the same database files without replacing them',
       );
-      // A successful complete snapshot is authoritative removal evidence even for
-      // groups that were only known in metadata and have never had a handler.
+      // 成功获取的完整快照是权威的移除依据，即使某些群只在元数据中出现、
+      // 从未创建过handler。
       assert.equal(existsSync(join(dir, 'data/groups/39')), false);
       peer!.terminate();
       await wait(

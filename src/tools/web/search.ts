@@ -13,7 +13,7 @@ export interface WebSearchResult {
   failed_queries: number;
 }
 
-/** One backend call per query; the tool merges, dedupes and bounds the results. */
+/** 每个查询调用一次后端；由工具负责合并、去重和限制结果数量。 */
 export type WebSearchBackend = (
   query: string,
   signal: AbortSignal,
@@ -62,7 +62,7 @@ function publicUrl(value: unknown): string | undefined {
   }
 }
 
-/** Read a bounded body; the provider is local but its output is still untrusted. */
+/** 有上限地读取响应体；provider虽在本地，其输出仍不可信。 */
 async function boundedJson(
   response: Response,
   maxBytes: number,
@@ -99,8 +99,10 @@ async function boundedJson(
   );
 }
 
-/** SearXNG JSON API. The configured instance is operator-trusted infrastructure,
- * so it is not subject to the public-address policy that guards web_fetch. */
+/**
+ * SearXNG JSON API。配置的实例属于运维方信任的基础设施，
+ * 因此不受web_fetch使用的公网地址限制。
+ */
 export function createSearxngBackend(
   config: Extract<WebSearchProviderConfig, { type: 'searxng' }>,
   fetcher: HttpFetch = fetch,
@@ -172,7 +174,7 @@ export function createSearchBackend(
   }
 }
 
-/** Queries run concurrently; results interleave by rank and dedupe by URL. */
+/** 多个查询并发执行；结果按排名交错合并，并按URL去重。 */
 export async function runSearch(
   backend: WebSearchBackend,
   queries: string[],

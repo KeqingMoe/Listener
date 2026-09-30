@@ -74,7 +74,7 @@ function source() {
   };
 }
 
-// Deliberately bypass the TOML loader: this guard must live in the dispatch layer.
+// 有意绕过TOML loader：此防护必须位于分发层。
 test('all 25 write capabilities fail closed in confirm mode without a confirmation adapter', async () => {
   assert.equal(writes.length, 25);
   assert.equal(SANDBOX.length, 3);

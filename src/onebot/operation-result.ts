@@ -1,7 +1,7 @@
 import { OneBotError } from './client.ts';
 import type { JsonObject } from '../contracts/json.ts';
 
-/** A reused message ID is not evidence of a new send; distinguish it from local storage failure. */
+/** 重复出现的消息ID不能证明发生了新的发送；用于与本地存储失败区分开。 */
 export class DuplicateMessageAckError extends Error {
   constructor() {
     super('duplicate_message_ack');
@@ -9,7 +9,7 @@ export class DuplicateMessageAckError extends Error {
   }
 }
 
-/** Identity verification failed before claiming an ACK; this is not a projection-only failure. */
+/** 在确认ACK之前身份校验就失败了；这不是仅投影（projection）层面的失败。 */
 export class UnverifiedMessageAckError extends Error {
   constructor() {
     super('message_ack_unverified');
@@ -17,7 +17,7 @@ export class UnverifiedMessageAckError extends Error {
   }
 }
 
-/** A successful provider submission is not a failure or proof of the final QQ state. */
+/** provider提交成功既不是失败，也不能证明QQ上的最终状态。 */
 export function submittedResult(details: JsonObject = {}): JsonObject {
   return {
     ...details,
@@ -30,9 +30,10 @@ export function submittedResult(details: JsonObject = {}): JsonObject {
   };
 }
 
-/** Only locally unsent calls and the audited WS pre-handler validation code prove rejection.
- * NapCat's 1200 includes exceptions AFTER writing (e.g. card/recall acknowledgement timeout).
- * Never expose remote wording or infer that such an operation had no effect.
+/**
+ * 只有本地未发出的调用和经过核实的WS pre-handler校验错误码（1400）能证明请求被拒绝。
+ * NapCat的1200也包括写入之后才发生的异常（例如改名片/撤回的确认超时）。
+ * 绝不暴露远端的错误措辞，也不能据此推断操作没有生效。
  */
 export function writeFailure(
   error: unknown,
@@ -77,7 +78,7 @@ export function writeFailure(
   };
 }
 
-/** Cancellation cannot erase an acknowledgement already received. */
+/** 取消不能抹掉已经收到的确认；已派发的结果只追加cancelled_after_dispatch标记。 */
 export function afterDispatch(
   result: JsonObject,
   cancelled: boolean,

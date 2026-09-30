@@ -81,6 +81,10 @@ export function useFilters() {
   return { groupId, range, query, identity };
 }
 
+/**
+ * 基于resource-sync的增量资源加载。sequence用于丢弃过期响应；
+ * identity或登录状态变化时清空数据与cursor，重新拉取完整快照。
+ */
 export function useResource<T>(
   path: Ref<string>,
   identity: Ref<string> = path,

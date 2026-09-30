@@ -306,8 +306,8 @@ test(
       calls.filter(
         (c) => c.action === 'get_msg' && c.params.message_id === BOT_MESSAGE,
       ).length;
-    // Aggregate snapshots are only observed through explicit read_message calls.
-    // WebSocket ordering makes pong a deterministic barrier after preceding notice frames.
+    // 聚合快照只能通过显式的read_message调用观察到。
+    // WebSocket保序，因此pong是之前所有notice帧之后的确定性屏障。
     const barrier = async () => {
       const pong = once(peer!, 'pong');
       peer!.ping();

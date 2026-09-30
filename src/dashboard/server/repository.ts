@@ -45,9 +45,9 @@ export interface GroupSource {
 }
 
 export interface Sources {
-  /** Static sources for embedded callers/tests; production uses getGroups exclusively. */
+  /** 供嵌入调用方和测试使用的静态来源；生产环境只使用getGroups。 */
   groups?: GroupSource[];
-  /** Returns current, policy-filtered and membership-proven sources. Failure closes access. */
+  /** 返回当前经策略过滤、成员身份已确认的来源；调用失败时关闭所有访问。 */
   getGroups?: () => GroupSource[];
   telemetryPath: string;
   inspectionSecrets?: readonly string[];
@@ -67,6 +67,7 @@ const percentile = (a: number[], p: number) =>
     ? a.sort((a, b) => a - b)[Math.max(0, Math.ceil(a.length * p) - 1)]!
     : null;
 
+/** 查询行数超过硬上限；路由层映射为503，要求缩小范围而非返回部分结果。 */
 export class ResourceLimit extends Error {}
 
 export function summarize(rows: Row[], tools?: MetricTool[]): UsageSummary {
@@ -123,6 +124,10 @@ export function summarize(rows: Row[], tools?: MetricTool[]): UsageSummary {
   };
 }
 
+/**
+ * 只读访问telemetry库和各群session库的元数据仓库。
+ * 连接按(groupId, path)缓存，文件dev/ino变化或群授权变化时关闭重开。
+ */
 export class Repository {
   private handles = new Map<
     string,
@@ -138,7 +143,7 @@ export class Repository {
     return this.currentGroups;
   }
 
-  /** Called once at the start of each synchronous API read, never mid-query. */
+  /** 在每次同步API读取开始时调用一次，绝不在查询中途调用。来源校验失败时清空群列表。 */
   refreshGroups(): void {
     let groups: GroupSource[];
     try {
@@ -196,7 +201,7 @@ export class Repository {
     try {
       handle?.db.close();
     } catch {
-      /* Already unavailable; never retain it. */
+      // 连接已不可用，丢弃即可，绝不保留。
     }
   }
 
@@ -217,6 +222,7 @@ export class Repository {
       }
       db = cached?.db ?? new DatabaseSync(path, { readOnly: true });
       db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=250;');
+      // session库必须属于声明的群，且具备所需表结构，否则拒绝打开。
       if (groupId) {
         if (
           db
@@ -250,9 +256,11 @@ export class Repository {
 
   private readonly syncConnections = new WeakMap<DatabaseSync, number>();
   private syncConnectionSequence = 0;
-  /** Cheap resource invalidation, NOT a SQL row change feed. Versions are meaningful
-   * only on the same live SQLite connection; file/WAL identities cover replacement.
-   * World DBs are read only by health, which resource sync always recomputes. */
+  /**
+   * 低成本的资源失效判断，不是SQL行级变更流。data_version只在同一个存活的SQLite连接上有意义，
+   * 文件替换由主库及WAL等文件的身份信息覆盖。
+   * world库只被health读取，而resource sync总会重新计算health。无法判断时返回null。
+   */
   resourceVersion(): string | null {
     const files = (path: string) =>
       [path, `${path}-wal`, `${path}-shm`, `${path}-journal`].map((file) => {
@@ -285,8 +293,7 @@ export class Repository {
         sources.map(({ path, db }) => {
           const identities = files(path);
           if (!db) {
-            // A truly absent file is observable on every poll; schema/permission/
-            // transient failures of an existing file cannot be proven unchanged.
+            // 文件确实不存在在每次轮询时都可观测；而已存在文件的结构/权限/临时故障无法证明未变化。
             if (identities[0] !== null) {
               throw new Error('unavailable_source');
             }
@@ -712,7 +719,7 @@ export class Repository {
     };
   }
 
-  /** Bounded scalar metadata only: never arguments/results or historical bodies. */
+  /** 只返回有界的标量元数据，绝不包含工具参数、结果或历史内容。 */
   toolTimings(range?: Range, groupId?: string, wakeId?: string): Row[] {
     if (!range && !wakeId) {
       throw new ResourceLimit('Tool timing scope required');

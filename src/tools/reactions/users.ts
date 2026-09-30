@@ -83,7 +83,7 @@ interface Cursor {
   chain: Chain;
 }
 
-const MAX_RESOURCES = 4096; // Cache/cursor memory capacity, not a per-tool call allowance.
+const MAX_RESOURCES = 4096; // 缓存和游标的内存容量上限，不是单个工具的调用配额。
 
 interface State {
   queue: Promise<void>;
@@ -168,7 +168,7 @@ function nickname(value: unknown): string {
     : '';
 }
 
-/** Read-only, turn-owned paging. Cursors contain no client-visible native state. */
+/** 只读分页，状态归属于单个turn。游标不包含客户端可见的原生状态。 */
 export class ReactionUserTools {
   private readonly groupId: string;
   private readonly turns = new WeakMap<ReactionUserTurn, State>();
@@ -192,7 +192,7 @@ export class ReactionUserTools {
     return token;
   }
 
-  /** A dispatched mutation invalidates all type/target views of this pair, without changing the wake runner's call budget. */
+  /** 已派发的写操作会使该消息与表情组合的所有类型/目标视图失效，但不影响wake runner的调用预算。 */
   invalidate(
     token: ReactionUserTurn,
     messageId: string,

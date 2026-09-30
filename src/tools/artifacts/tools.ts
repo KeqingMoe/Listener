@@ -48,7 +48,7 @@ function fields(args: unknown, required: readonly string[], optional: readonly s
   return record;
 }
 
-/** Byte fields: Uint8Array from sandbox code, or an integer array from direct calls. */
+/** 字节字段：沙箱代码传入Uint8Array，直接调用时传入整数数组。 */
 export function byteField(value: unknown, max: number): Uint8Array {
   if (value instanceof Uint8Array) { if (value.byteLength > max) {throw new ArtifactError('artifact_too_large');} return value; }
   if (!Array.isArray(value)) {return invalid();}

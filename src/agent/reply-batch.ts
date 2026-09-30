@@ -19,7 +19,10 @@ const MAX_ITEMS = 64;
 const MAX_PAYLOAD = 24_000;
 const copy = <T>(value: T): T => structuredClone(value);
 
-/** Arrival ordering and retention only. Scheduling, random draws and logging belong to Listener. */
+/**
+ * 一个turn待处理的消息批次，只负责按到达顺序保存和有界保留。调度、随机抽取和日志
+ * 由Listener负责。满64条时优先淘汰普通消息，保留触发消息（@或引用）。
+ */
 export class ReplyBatch {
   readonly turnId = newTraceId();
   items: BatchItem[] = [];
@@ -80,7 +83,7 @@ export class ReplyBatch {
       return;
     }
     this.seen.add(item.entry.messageId);
-    // Listener's memory handles transport dedup; keep only a bounded local FIFO.
+    // 传输层去重由Listener的memory负责，这里只保留有界的本地FIFO。
     if (this.seen.size > 256) {
       this.seen.delete(this.seen.values().next().value!);
     }
@@ -100,8 +103,8 @@ export class ReplyBatch {
           return;
         }
         this.omittedDirect++;
-        // A slow quote lookup can finish late despite an earlier arrival.
-        // Preserve the earliest arrivals, not the first lookup completions.
+        // 引用查询较慢时，先到达的消息可能后加入批次。
+        // 按到达序号保留最早的消息，而不是最先完成查询的消息。
         if (item.sequence >= this.items[this.items.length - 1]!.sequence) {
           return;
         }
@@ -147,7 +150,7 @@ export class ReplyBatch {
       const truncated: string[] = [];
       const messages = this.items.map(({ entry }) => {
         const message = projectMessage(entry, limit);
-        // Typed media segments carry their references; do not duplicate the root lists.
+        // 带类型的媒体片段已包含引用，不再重复输出根级列表。
         delete message.images;
         delete message.forwards;
         if (names) {
@@ -190,7 +193,7 @@ export class ReplyBatch {
     if (JSON.stringify(full).length <= MAX_PAYLOAD) {
       return full;
     }
-    // Names and duplicated attachment metadata are expendable; provenance and callers are not.
+    // 超出预算时先舍弃昵称和重复的附件元数据；消息来源和呼唤者信息不可舍弃。
     const withoutNames = render(Infinity, false);
     if (JSON.stringify(withoutNames).length <= MAX_PAYLOAD) {
       return withoutNames;
@@ -203,17 +206,17 @@ export class ReplyBatch {
     let compactMetadata = false;
     let best = render(0, false);
     if (JSON.stringify(best).length > MAX_PAYLOAD) {
-      // The same IDs already accompany every per-message truncation flag.
-      // Drop only this duplicate roster, never message/caller/reply provenance.
+      // 每条消息的截断标记旁已有相同ID，只丢弃这份重复名单，
+      // 绝不丢弃消息、呼唤者或引用的来源信息。
       compactMetadata = true;
       best = render(0, false, true);
     }
     if (JSON.stringify(best).length > MAX_PAYLOAD) {
-      // Valid OneBot IDs (at most 32 digits) always fit, even with all 64 callers.
+      // 合法OneBot ID最多32位，即使64条都是呼唤也放得下，走到这里说明数据异常。
       throw new RangeError('Reply batch provenance exceeds payload limit');
     }
-    // Equal per-entry caps share space among long bodies without dropping early callers.
-    // Measure serialized JSON, including escaping, framing, roster and truncation flags.
+    // 二分查找统一的单条正文上限，让长消息平分空间而不丢掉较早的呼唤者。
+    // 以序列化后的JSON长度衡量，包含转义、框架、名单和截断标记。
     while (low <= high) {
       const middle = Math.floor((low + high) / 2);
       const candidate = render(middle, false, compactMetadata);
@@ -228,7 +231,7 @@ export class ReplyBatch {
   }
 }
 
-/** Capture synchronously before awaiting compaction; never delegate writes or later reads. */
+/** 在await压缩之前同步截取只读快照；写入为空操作，之后也不会回读原memory。 */
 export function snapshotMemory(
   memory: Memory,
   batchEntries: TimelineEntry[],
@@ -255,7 +258,7 @@ export function snapshotMemory(
       context = JSON.stringify(parsed);
     }
   } catch {
-    /* Legacy memories may expose plain text rather than JSON. */
+    /* context可能是纯文本而非JSON，此时原样使用。 */
   }
   const entries = new Map<string, TimelineEntry>();
   for (const entry of memory.recent().slice(-300)) {
@@ -263,7 +266,7 @@ export function snapshotMemory(
       entries.set(entry.messageId, copy(entry));
     }
   }
-  // Trusted batch entries override both stale records and the unresolved-ID exclusion.
+  // 可信的批次条目覆盖过时记录，也不受未解析ID排除列表影响。
   for (const entry of batchEntries.slice(0, MAX_ITEMS)) {
     entries.set(entry.messageId, copy(entry));
   }

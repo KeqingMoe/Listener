@@ -189,7 +189,7 @@ process.on('message', async (message: unknown) => {
       if (toolNames?.length) {
         disposers.push(installTools(vm, toolNames as string[]));
       }
-      // The Function constructor is QuickJS's, not the host's. A function body cannot escape into wrapper source.
+      // 这里取的是QuickJS内部的Function构造器而不是host的；用它编译函数体，用户代码无法通过拼接源码逃出包装函数。
       const compiled = vm.evalCode('(async function(){}).constructor');
       if (compiled.error) {
         const d = diagnose(compiled.error, 'compile');
@@ -252,7 +252,7 @@ process.on('message', async (message: unknown) => {
           jobs.error.dispose();
           throw new Error('execution_error');
         }
-        // Yield to IPC/watchdog between bounded microtask batches; an unresolved promise may wait indefinitely.
+        // 每批有限的微任务之间让出事件循环，让IPC和看门狗得以运行；未决的promise可能一直等下去，靠超时兜底。
         await new Promise<void>((resolve) =>
           setTimeout(
             resolve,
@@ -312,8 +312,11 @@ process.on('SIGTERM', () => {
   process.exit(0);
 });
 
-/** Guest prelude: `tools.<name>(args)` encodes args itself (captured builtins), so the host
- * receives only a JSON string plus ArrayBuffers. Uint8Array fields become {"$bytes":i}. */
+/**
+ * guest前置脚本：`tools.<name>(args)`在guest内用预先捕获的内置函数自行编码参数，
+ * host只收到JSON字符串和ArrayBuffer列表，Uint8Array字段替换为{"$bytes":i}。
+ * 预先捕获是为了防止用户代码篡改原型链上的内置方法。
+ */
 const PRELUDE = `(call,names)=>{
  const tag=Function.prototype.call.bind(Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype),Symbol.toStringTag).get);
  const isArray=Array.isArray,keys=Object.keys,getProto=Object.getPrototypeOf,objProto=Object.prototype,freeze=Object.freeze,stringify=JSON.stringify,parse=JSON.parse,isFinite=Number.isFinite;

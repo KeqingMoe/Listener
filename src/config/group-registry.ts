@@ -24,7 +24,10 @@ export interface RegisteredGroup {
 const MAX_BYTES = 16 * 1024 * 1024;
 const MAX_AGE_MS = 120000;
 
-/** Private deployment metadata only. No message bodies, persona, model settings or credentials. */
+/**
+ * 定期原子写出当前已启用群及其数据库路径，供其他进程发现。
+ * 只含私有部署元数据，不含消息正文、persona、模型设置或凭据。
+ */
 export class GroupRegistry {
   private groups: RegisteredGroup[] = [];
   private readonly timer: ReturnType<typeof setInterval>;
@@ -60,9 +63,8 @@ export class GroupRegistry {
       groupId: group.groupId,
       databasePath: group.storage.databasePath,
     }));
-    // Publication failure must not undo an authenticated leave or keep its
-    // Listener alive. Retain the desired snapshot for the heartbeat retry;
-    // readers fail closed after expiry if the filesystem remains unavailable.
+    // 发布失败不能撤销已认证的退群，也不能让对应Listener继续存活。保留目标快照
+    // 由定时心跳重试；若文件系统一直不可用，读取方在过期后按失败关闭处理。
     try {
       this.write();
     } catch {
@@ -116,8 +118,10 @@ export class GroupRegistry {
   }
 }
 
-/** A registry is a discovery hint, never authority for a file path. Re-derive all
- * paths from current trusted policy; the SQL reader also checks each DB's group ID. */
+/**
+ * registry只是发现线索，不能作为文件路径的依据：所有路径都按当前可信配置重新推导，
+ * SQL读取方还会核对每个数据库的群号。任何异常、过期或不一致都返回空列表。
+ */
 export function readGroupRegistry(app: AppConfig): RegisteredGroup[] {
   let descriptor: number | undefined;
   try {

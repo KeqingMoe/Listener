@@ -23,7 +23,7 @@ const GROUP = '123456789',
   OWNER = '100000001',
   SELF = '100000002',
   MEMBER = '100000003';
-// Explicit product contract, independent of the implementation's default-mode calculation.
+// 显式的产品约定，与实现中默认模式的计算方式无关。
 const DIRECT = [
   'get_group_members',
   'get_member_info',
@@ -151,7 +151,7 @@ test('all 61 optional tools have the approved defaults; opening tools never open
     toListenerConfig(app, group),
     true,
   ).map((t) => t.function.name);
-  // Without [web].search the direct-by-default web_search has no backend and is not offered.
+  // 未配置[web].search时，默认直接可用的web_search没有后端，因此不提供。
   assert.deepEqual(
     TOOL_NAMES.filter((n) => definitions.includes(n)).sort(),
     [...DIRECT, ...CONFIRM].filter((n) => n !== 'web_search').sort(),

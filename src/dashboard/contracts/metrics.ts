@@ -1,14 +1,14 @@
-/** Metadata-only measurements. Cumulative times must never be added to wall times. */
+/** 仅基于元数据的性能度量。累计耗时绝不能与墙钟耗时相加。 */
 export interface PerformanceMetrics {
   attribution: 'aggregate' | 'wake' | 'request';
   wallDurationMs: number | null;
-  /** Sum of known ended HTTP durations, including failures; coverage describes omissions. */
+  /** 已知已结束HTTP请求的耗时之和，包含失败请求；缺失情况由coverage描述。 */
   modelDurationMs: number | null;
   modelWallDurationMs: number | null;
-  /** Sum of ledger finished_at-started_at, not a wall-clock component. */
+  /** 工具ledger中finished_at-started_at之和，不是墙钟时间的组成部分。 */
   toolDurationMs: number | null;
   toolWallDurationMs: number | null;
-  /** Wake wall minus model interval union: NOT pure tool, NapCat or database latency. */
+  /** wake墙钟时间减去模型请求区间并集，并非纯粹的工具、NapCat或数据库延迟。 */
   otherDurationMs: number | null;
   tps: number | null;
   ttftMs: number | null;
@@ -41,7 +41,7 @@ export interface MetricRequest {
   started_at?: unknown;
   ended_at?: unknown;
   duration_ms?: unknown;
-  /** Preserve missing interval evidence when a legacy DTO uses a display fallback timestamp. */
+  /** DTO使用展示用的回退时间戳时，以false标记区间实际未知。 */
   interval_known?: boolean;
   status?: unknown;
   output_tokens?: unknown;
@@ -73,8 +73,7 @@ export function requestDuration(r: MetricRequest): number | null {
   ) {
     return null;
   }
-  // A display fallback (e.g. startedAt=0) is not evidence of an HTTP interval.
-  // Explicit measured durations remain usable even when interval metadata is missing.
+  // 展示用回退值（如startedAt=0）不能证明HTTP区间存在；显式测得的duration在缺少区间元数据时仍可用。
   return (
     metricNumber(r.duration_ms) ??
     (r.interval_known === false
@@ -83,6 +82,7 @@ export function requestDuration(r: MetricRequest): number | null {
   );
 }
 
+/** 区间并集总长度，重叠或嵌套的部分只计一次。 */
 export function intervalUnion(intervals: Array<[number, number]>): number {
   let total = 0,
     end = -Infinity;
@@ -118,7 +118,7 @@ export function performanceMetrics(
         r.status !== 'running',
     )
     .map((r) => [Number(r.started_at), Number(r.ended_at)] as [number, number]);
-  // Pair output only with valid completed-minus-first decode samples; never use legacy timing.
+  // 输出token只与有效的decode样本（完成时刻减首个输出时刻）配对计算TPS，不使用旧的计时字段。
   const reliable = requests.filter(
     (r) =>
       r.status === 'success' &&

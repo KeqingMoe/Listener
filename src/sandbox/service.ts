@@ -38,13 +38,13 @@ export type JobResponse =
       tool_calls?: ToolCallSummary;
     };
 
-/** Who started a job. Held in memory only: jobs never survive a restart. */
+/** 发起任务的人。只存在内存中：任务不会跨重启继续执行。 */
 export interface JobCaller {
   actorId: string;
   messageId: string;
 }
 
-/** Host tools reachable from guest code. Authorization happens inside call(), at call time. */
+/** guest代码可调用的host工具。鉴权在call()内部、按调用时刻进行。 */
 export interface SandboxToolBridge {
   names(scope: JobScope): readonly string[];
   call(
@@ -123,7 +123,7 @@ const response = (j: Job): JobResponse =>
         ...(j.toolCalls ? { tool_calls: j.toolCalls } : {}),
       };
 
-/** Persistent task ownership plus a bounded in-memory execution queue. No per-call quotas. */
+/** 任务归属持久化，执行队列在内存中且有上限。不做单次调用配额。 */
 export class SandboxService {
   private live = new Map<string, Live>();
   private queue: string[] = [];
@@ -153,7 +153,7 @@ export class SandboxService {
     }
   }
 
-  /** Late binding: the bridge reaches group listeners, which are created after the service. */
+  /** 延迟注入：bridge要用到群listener，而listener在本服务之后才创建。 */
   setToolBridge(bridge: SandboxToolBridge): void {
     this.bridge = bridge;
   }
@@ -249,7 +249,7 @@ export class SandboxService {
       try {
         fn();
       } catch {
-        /* completion remains durable for retry */
+        /* 完成状态已持久化，可在之后重试投递 */
       }
     }
   }
@@ -322,7 +322,7 @@ export class SandboxService {
     try {
       item.handle?.cancel();
     } catch {
-      /* state still records terminal cancellation */
+      /* 即使取消失败，finally里仍会记录终止状态 */
     } finally {
       this.finish(item, { status, error, logs: [] });
     }
@@ -511,7 +511,7 @@ export class SandboxService {
         try {
           this.options.store.detach(item.job, item.job.job_id);
         } catch {
-          /* startup recovery keeps unfinished durable jobs */
+          /* 写库失败时，下次启动会把未完成的任务标记为interrupted */
         }
         this.clean(item);
         item.delivery = 'background';

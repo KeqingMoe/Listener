@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Bot, parseCommand } from '../../../src/onebot/command-bot.ts';
 import type { Config } from '../../../src/config/onebot.ts';
 
-// Legacy command-handler regressions use typed fixtures; runtime configuration is TOML only.
+// command-bot的回归测试使用带类型的fixture；运行时配置只来自TOML。
 const config = (extra: Partial<Config> = {}): Config => ({
   url: 'ws://127.0.0.1:3001',
   token: 'test',

@@ -14,9 +14,9 @@ export const FACE_CATALOG_PATH = new URL(
   import.meta.url,
 );
 
-// Small hand-maintained public API examples, not a vendored upstream catalog.
-// A fresh offline checkout can render/send these; explicit faces:sync installs
-// ALL numeric sysface IDs from the pinned version into ignored local data/.
+// 少量手工维护的公开示例，不是从上游拷贝的目录。
+// 全新的离线checkout也能渲染/发送这些表情；显式运行faces:sync才会把固定版本的全部数字sysface ID
+// 安装到被git忽略的本地data/目录。
 export const EXAMPLE_FACE_CATALOG: readonly FaceCatalogEntry[] =
   validateFaceCatalog({
     version: FACE_CATALOG_VERSION,
@@ -32,7 +32,7 @@ export const EXAMPLE_FACE_CATALOG: readonly FaceCatalogEntry[] =
     ],
   });
 
-/** Load once at startup; a malformed existing catalog fails, never falls back. */
+/** 启动时加载一次；文件不存在时用示例目录，已存在但格式错误则直接报错，绝不回退。 */
 export function loadFaceCatalog(
   path: string | URL = FACE_CATALOG_PATH,
 ): readonly FaceCatalogEntry[] {

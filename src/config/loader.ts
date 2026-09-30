@@ -30,7 +30,7 @@ import {
   type ToolPolicy,
 } from './tool-policy.ts';
 
-/** Errors contain schema paths and static explanations, never supplied values. */
+/** 错误消息只含配置路径和固定说明，从不包含用户提供的值。 */
 export class ConfigError extends Error {
   constructor(message: string) {
     super(message);
@@ -41,12 +41,12 @@ export class ConfigError extends Error {
 const fail = (path: string, reason = '值无效'): never => {
   throw new ConfigError(`配置错误：${path}：${reason}`);
 };
-// Keep only a fingerprint, not private source text, outside the resolved model.
+// 解析结果之外只保留配置源的指纹，不保留可能含隐私的原文。
 const configSources = new WeakMap<
   AppConfig,
   { path: string; digest: string }
 >();
-// Dashboard-only startup secret: deliberately absent from serializable AppConfig.
+// 仅供Dashboard使用的启动密钥，刻意不放进可序列化的AppConfig。
 const dashboardPasswords = new WeakMap<AppConfig, string | undefined>();
 
 export function dashboardPassword(config: AppConfig): string | undefined {
@@ -277,7 +277,7 @@ function webSearch(value: unknown): WebSearchProviderConfig | undefined {
   if (value === undefined) {
     return undefined;
   }
-  // Discriminate first so an unknown provider is reported as such, not as stray fields.
+  // 先按type区分，未知provider会报成不支持的类型，而不是多余字段。
   const tag = table(
     value,
     'web.search',
@@ -444,8 +444,8 @@ function policy(
   const personaPath = own(raw, 'persona')
     ? filePath(text(raw, 'persona', path, ''), base, `${path}.persona`)
     : (defaults?.personaPath ?? resolve(base, 'prompts/listener.md'));
-  // A defaults database override is inherited literally: multiple active groups
-  // must override it or fail collision checks, never silently share a database.
+  // defaults中显式指定的数据库路径按字面继承：多个启用的群必须各自覆盖，
+  // 否则在冲突检查中失败，绝不会悄悄共用同一个数据库。
   const databasePath = own(storage, 'database')
     ? filePath(
         text(storage, 'database', `${path}.storage`, ''),
@@ -565,8 +565,8 @@ function canonicalStoragePath(
   if (depth > 40) {
     return fail(field, '无法核验存储路径');
   }
-  // Preserve symlink-target dot segments: the kernel dereferences each link
-  // before applying a subsequent `..`, even when the final file is absent.
+  // 逐段解析而不是先规范化：内核会先解引用每个符号链接再应用后面的`..`，
+  // 即使最终文件不存在也是如此，所以链接目标里的`.`/`..`必须保留到解析时处理。
   const parts = path.split('/').filter(Boolean);
   let current = '/';
   for (let i = 0; i < parts.length; i++) {
@@ -611,8 +611,10 @@ function canonicalStoragePath(
   return current;
 }
 
-/** Includes every SQLite companion file; call again on retained groups + a new
- * dynamic candidate before opening databases. No mutation, enumeration, or I/O creation. */
+/**
+ * 检查所有存储路径（含SQLite的-wal/-shm/-journal伴随文件）在路径名和inode上互不冲突、互不嵌套。
+ * 动态加入新群时，须在打开数据库前对保留的群加上新候选群再调用一次。不修改、不枚举目录、不创建文件。
+ */
 export function assertStoragePaths(
   storage: AppConfig['storage'],
   groups: readonly ResolvedGroupConfig[],
@@ -660,8 +662,8 @@ export function assertStoragePaths(
   databases.forEach(({ path, field }, index) => {
     const canonical = canonicalStoragePath(path, field, 0, canonicalCache);
     paths.push({ path, field, owner: `${index}:main` });
-    // SQLite places companions alongside its canonical main database. Reserve
-    // both spellings, but treat them as aliases of the SAME physical artifact.
+    // SQLite把伴随文件放在主数据库的规范路径旁。两种写法都要占位，
+    // 但视为同一个物理文件的别名（owner相同），不算冲突。
     for (const suffix of ['-wal', '-shm', '-journal']) {
       for (const base of new Set([path, canonical])) {
         paths.push({ path: base + suffix, field, owner: `${index}:${suffix}` });
@@ -1080,7 +1082,7 @@ export function loadAppConfig(
     fail('logging.file.max_total_mb', '不得小于单文件大小上限');
   }
   assertStoragePaths(storage, [...resolved.values()]);
-  // Validate a literal defaults database even when no explicit group exists.
+  // 即使没有显式配置的群，也要校验defaults中字面指定的数据库路径。
   if (defaultDatabaseExplicit) {
     assertStoragePaths(storage, [defaultPolicy]);
   }
@@ -1138,8 +1140,8 @@ export function loadAppConfig(
     },
   };
   configSources.set(app, { path: configPath, digest: sourceDigest(source) });
-  // Empty process values intentionally override a file credential to disable login.
-  // Password policy belongs to AuthStore so invalid/missing values still serve the UI.
+  // 进程环境变量为空字符串时有意覆盖文件中的凭据，用于禁用登录。
+  // 密码规则由AuthStore负责，因此无效或缺失的值也不影响加载UI。
   dashboardPasswords.set(
     app,
     env.DASHBOARD_PASSWORD ?? secrets.DASHBOARD_PASSWORD,

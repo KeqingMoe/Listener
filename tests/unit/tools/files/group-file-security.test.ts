@@ -122,8 +122,8 @@ test('security: one raw file unknown lock survives alternate opaque handles from
     root = await f.list();
   const oldHandle = root.find((r) => r.kind === 'file')!.file_handle,
     folderHandle = root.find((r) => r.kind === 'folder')!.folder_handle;
-  // A file moved between listings (or duplicate native listing) is the same raw
-  // file identity, even if two valid opaque tokens were issued for its parents.
+  // 在两次列举之间被移动（或原生列表重复出现）的文件仍是同一个原始文件身份，
+  // 即使其父目录签发过两个有效的不透明token。
   const nested = await f.list({ folder_handle: folderHandle });
   const otherHandle = nested.find((r) => r.kind === 'file')!.file_handle;
   assert.equal(

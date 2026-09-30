@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module';
 
-// Both src/config and dist/config are two directories below the package root.
+// src/config和dist/config都位于包根目录下两级，同一相对路径两处通用。
 const { version } = createRequire(import.meta.url)('../../package.json') as {
   version: unknown;
 };

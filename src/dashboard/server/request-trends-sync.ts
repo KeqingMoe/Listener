@@ -32,7 +32,10 @@ export const TREND_SYNC_MAX_CACHED_POINTS = 100_000;
 const key = (group: string, request: string) =>
   JSON.stringify([group, request]);
 
-/** Per-app bounded cache. Tokens are opaque capabilities additionally bound to the authenticated scope. */
+/**
+ * 请求趋势的增量同步，每个app一个有界缓存。cursor是不透明的能力令牌，并额外绑定到已认证的会话和群范围。
+ * 只有在epoch一致、revision连续且窗口宽度相同并向前移动时才返回delta，否则退回snapshot。
+ */
 export class RequestTrendsSync {
   private readonly cache = new Map<string, Snapshot>();
   constructor(
@@ -96,7 +99,7 @@ export class RequestTrendsSync {
     const availability = base.availability();
     const db = base.telemetry();
     availability.telemetry = db !== null;
-    // No awaits between BEGIN and COMMIT: metadata, journal and both projections share one SQLite snapshot.
+    // BEGIN与COMMIT之间不能有await：元数据、变更日志和两个投影必须读自同一个SQLite快照。
     db?.exec('BEGIN');
     try {
       const meta = this.meta(db);
@@ -156,7 +159,7 @@ export class RequestTrendsSync {
           ids.add(r);
           dirty.set(g, ids);
         };
-        // Journal is writer-bounded (50k); stream it and retain only deduplicated authorized keys.
+        // 变更日志由写入方限制在50k条以内；流式遍历，只保留去重后的已授权key。
         let expectedRevision = previous!.revision + 1;
         let contiguous = true;
         for (const row of db!
@@ -170,6 +173,7 @@ export class RequestTrendsSync {
           add(row.old_group_id, row.old_request_id);
           add(row.new_group_id, row.new_request_id);
         }
+        // revision有缺口说明日志已被裁剪，无法可靠求差，清空缓存后重做snapshot。
         if (!contiguous || expectedRevision !== meta!.revision + 1) {
           db!.exec('ROLLBACK');
           this.cache.clear();
@@ -197,7 +201,7 @@ export class RequestTrendsSync {
             for (const id of chunk) {
               points.delete(key(g, id));
             }
-            // Re-read BOTH tables in the full current range: deleting one projection may expose the other.
+            // 在完整的当前范围内重新读取两张表：删除其中一个投影后，另一个可能会显露出来。
             for (const point of read(range, g, chunk)) {
               points.set(point.key, point);
             }
@@ -239,6 +243,7 @@ export class RequestTrendsSync {
         (sum, s) => sum + s.points.size,
         0,
       );
+      // Map按插入顺序迭代，从最早的快照开始淘汰。
       while (
         this.cache.size > TREND_SYNC_MAX_SNAPSHOTS ||
         total > TREND_SYNC_MAX_CACHED_POINTS

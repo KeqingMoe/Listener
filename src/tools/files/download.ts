@@ -23,7 +23,7 @@ export interface GroupTextDownloadDependencies {
     options: RequestOptions,
     callback: (response: IncomingMessage) => void,
   ) => ClientRequest;
-  /** Test-only deadline override. The production singleton always uses 15 seconds. */
+  /** 仅供测试覆盖超时；生产单例固定使用15秒。 */
   timeoutMs?: number;
 }
 
@@ -41,8 +41,7 @@ function validateUrl(value: string): URL {
     throw failed();
   }
   const url = new URL(value);
-  // URL normalizes explicit default ports to empty strings. Reject even an empty
-  // credentials marker, not just username/password values after normalization.
+  // URL会把显式写出的默认端口规范化为空串。即使凭据部分为空，只要原串带@也拒绝，不只检查规范化后的username/password。
   if (
     !['http:', 'https:'].includes(url.protocol) ||
     url.port ||
@@ -83,10 +82,11 @@ function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
-/** Internal transport boundary, NOT a model URL tool. Its caller must first resolve
- * a current-group opaque handle through NapCat get_group_file_url. HTTP is needed
- * for native QQ ftn_handler links; every destination is nevertheless public/pinned.
- * Dependencies exist for offline transport tests, never as model-controlled input. */
+/**
+ * 内部传输边界，不是供模型使用的URL工具。调用方必须先通过NapCat get_group_file_url
+ * 解析当前群的不透明句柄。QQ原生ftn_handler链接需要HTTP，但所有目标都必须是公网地址并固定解析结果。
+ * dependencies仅用于离线传输测试，绝不接受模型控制的输入。
+ */
 export function createGroupTextDownloader(
   dependencies: GroupTextDownloadDependencies = {},
 ): GroupTextDownloader {
@@ -151,7 +151,7 @@ export function createGroupTextDownloader(
       ) {
         throw failed();
       }
-      // Capture primitive values, not a mutable resolver-owned record.
+      // 取出原始值，不持有解析器所有的可变记录。
       const { address, family } = addresses[0]!;
       if (signal.aborted) {
         throw aborted();
@@ -198,8 +198,7 @@ export function createGroupTextDownloader(
               agent: false,
               family,
               maxHeaderSize: 16_384,
-              // Pin connection DNS while retaining the original host for Host/SNI and
-              // native certificate verification. No proxy agent or caller headers.
+              // 固定连接使用的DNS结果，同时保留原始主机名用于Host/SNI和证书校验。不使用代理agent，也不带调用方请求头。
               lookup: (_hostname, options, callback) => {
                 if (options.all) {
                   callback(null, [{ address: address, family }]);
@@ -292,7 +291,7 @@ export function createGroupTextDownloader(
         throw aborted();
       }
       const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-      // Permit normal text whitespace (TAB/LF/CR), never NUL/ESC or C1 controls.
+      // 允许常见空白字符（TAB/LF/CR），拒绝NUL/ESC等控制字符及C1控制字符。
       if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(text)) {
         throw failed();
       }

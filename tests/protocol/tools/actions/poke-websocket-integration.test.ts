@@ -146,7 +146,7 @@ for (const scenario of scenarios) {
                 group_id: GROUP,
                 user_id: ACTOR,
               });
-              // Matches NapCat OB11Response.ok(void): JSON serialization omits data entirely.
+              // 与NapCat的OB11Response.ok(void)一致：JSON序列化时完全省略data。
               const wire = JSON.stringify({
                 status: scenario.status,
                 retcode: scenario.retcode,

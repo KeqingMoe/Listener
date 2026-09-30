@@ -40,7 +40,7 @@ for (const signed of [false, true]) {
     const inputs = Array.from({ length: 64 }, (_, index) =>
       item(index, signed, segments),
     );
-    // Arrival of the final item first must not reorder model provenance or callers.
+    // 最后一项先到达时，不能打乱模型来源或调用方的顺序。
     const batch = new ReplyBatch(inputs[63]!, 0, false);
     for (const incoming of inputs.slice(0, 63)) {
       batch.add(incoming, 0);
@@ -87,7 +87,7 @@ for (const signed of [false, true]) {
         4000,
       );
     });
-    // Returned display and caller rosters must not alias the captured batch.
+    // 返回的显示列表和调用方名单不能与捕获的batch共享引用。
     messages[0].messageId = 'tampered';
     messages[0].segments.push({ type: 'text', text: 'tampered' });
     (payload.trusted_direct_requests as any[])[0].user_id = 'tampered';

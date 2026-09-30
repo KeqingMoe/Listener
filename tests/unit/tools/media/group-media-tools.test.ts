@@ -649,7 +649,7 @@ test('projection failure preserves ACK without automatic replay; a new explicit 
   assert.equal(r.requested_source_count, 1);
   assert.equal(r.source_count, undefined);
   assert.equal(r.source_completeness, 'not_verified');
-  assert.equal(f.writes().length, 1); // projection failure never triggers an automatic resend
+  assert.equal(f.writes().length, 1); // 投影失败绝不触发自动重发
   assert.equal(
     (await f.tools.execute('send_group_forward', { message_ids: ['1'] }, ctx))
       .status,

@@ -389,7 +389,7 @@ enabled = false
           peer!.send(JSON.stringify({ ...packet, ...invalid }));
         }
       }
-      peer!.send(JSON.stringify(notices[3])); // Explicit provider identity deduplicates one replay.
+      peer!.send(JSON.stringify(notices[3])); // 显式的provider身份使一次重放被去重。
       peer!.send(JSON.stringify({ ...notices[0], group_id: OTHER }));
       peer!.send(
         JSON.stringify({
@@ -402,8 +402,8 @@ enabled = false
       const pong = once(peer!, 'pong');
       peer!.ping();
       await bounded(pong);
-      // Observe beyond the configured 100ms reply delay: a notice must not merely
-      // queue a wake that merges with the explicit message sent later.
+      // 观察时间超过配置的100ms回复延迟：notice不能只是排队一个wake，
+      // 再与之后发送的显式消息合并。
       await new Promise((resolve) => setTimeout(resolve, 300));
       if (failure) {
         throw failure;

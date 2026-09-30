@@ -24,11 +24,12 @@ const MAX_RAW = 300;
 const KEEP_RAW = 30;
 const MAX_SEEN = 100_000;
 
-/** Time is Unix seconds, as in OneBot. Character budget is a conservative token
- * approximation (one token per character, rather than assuming four chars/token).
- * JSON framing is included in the budget; recent raw storage remains independently bounded.
- * Raw history is capped at 300: older messages can be lost during bursts before compaction.
- * Dedup IDs survive compaction, but expire at retention or the newest 100,000 IDs.
+/**
+ * 基于SQLite的单群聊天记忆：原始消息加一份滚动摘要。
+ * 时间与OneBot一致，用Unix秒。字符预算是保守的token估算（按每字符一个token，
+ * 而不是每4字符一个token），并包含JSON框架；近期原始记录另有独立上限。
+ * 原始记录最多300条，压缩前遇到消息突发时较早的消息可能丢失。
+ * 去重ID在压缩后仍保留，但超过保留期或超出最新100,000条时过期。
  */
 export class SQLiteMemory implements Memory {
   private readonly db: DatabaseSync;
@@ -48,8 +49,8 @@ export class SQLiteMemory implements Memory {
       throw new Error('Invalid memory configuration');
     }
     this.options = { ...options, groupId: this.groupId };
-    // Check ownership read-only BEFORE chmod, schema creation, pragmas or retention.
-    // A populated identity-less file is not safe to adopt as another group's memory.
+    // 必须在chmod、建表、pragma和清理之前以只读方式核对归属群。
+    // 非空但没有身份表的文件不能被当作本群记忆接管。
     if (
       options.path !== ':memory:' &&
       existsSync(options.path) &&
@@ -105,7 +106,7 @@ export class SQLiteMemory implements Memory {
       try {
         this.db.exec('ROLLBACK');
       } catch {
-        /* Initialization may have already committed. */
+        /* 初始化事务可能已提交，ROLLBACK失败可忽略。 */
       }
       this.db.close();
       throw error;
@@ -268,8 +269,10 @@ export class SQLiteMemory implements Memory {
     });
   }
 
-  /** Fit only the display projection. Never rewrite authoritative raw text or
-   * typed content merely to satisfy one model input's framing/escaping budget. */
+  /**
+   * 二分截断单条消息的展示投影使其放进预算。只截断投影，不为满足某次模型输入的
+   * 框架或转义预算而改写权威的原始文本或类型化内容。
+   */
   private fitMessage(
     entry: TimelineEntry,
     summary?: string,
@@ -304,7 +307,7 @@ export class SQLiteMemory implements Memory {
         JSON.stringify(projected).length + (selected.length ? 1 : 0);
       if (length + addition > this.options.maxContextChars) {
         if (!selected.length) {
-          // Keep provenance and report content omissions without injecting marker text.
+          // 连最新一条都放不下时截断它：保留来源信息，通过字段标记内容省略，不插入标记文本。
           const fitted = this.fitMessage(entry, summary);
           if (fitted) {
             selected.push(fitted);
@@ -316,7 +319,7 @@ export class SQLiteMemory implements Memory {
       length += addition;
     }
     const result = this.encode(selected, summary);
-    // Summary is capped well below the context limit, including JSON escaping.
+    // 摘要长度远低于context上限（已计入JSON转义），此处超限仅作兜底。
     return result.length <= this.options.maxContextChars
       ? result
       : this.encode([]);
@@ -361,7 +364,7 @@ export class SQLiteMemory implements Memory {
     const generation = this.generation;
     const prefix = rows.slice(0, -KEEP_RAW);
     try {
-      // Summarize only a bounded oldest prefix; never delete records not in the input.
+      // 只摘要有界的最旧前缀，不删除未进入摘要输入的记录。
       const source: JsonObject[] = [];
       let lastSeq = 0;
       let oldest = prior?.oldest ?? Infinity;
@@ -375,7 +378,7 @@ export class SQLiteMemory implements Memory {
           if (source.length) {
             break;
           }
-          // Truncate typed content as well as legacy text, never mutate the stored entry.
+          // 单条就超预算时截断其类型化内容和纯文本，不修改已存储的条目。
           const fitted = this.fitMessage(entry, prior?.text);
           if (!fitted) {
             skipped('input_too_large');
@@ -427,7 +430,7 @@ export class SQLiteMemory implements Memory {
         skipped('invalid_response');
         return;
       }
-      // Leave room for JSON escaping (up to six characters per input character).
+      // 为JSON转义留出余量（每个输入字符最多转义为6个字符）。
       const text = result.content
         .trim()
         .slice(
@@ -439,7 +442,7 @@ export class SQLiteMemory implements Memory {
         this.db
           .prepare('INSERT OR REPLACE INTO listener_summary VALUES (1, ?, ?)')
           .run(text, oldest);
-        // Only the snapshot prefix is deleted: appends during the await remain intact.
+        // 只删除快照中的前缀，await期间新追加的记录不受影响。
         this.db
           .prepare('DELETE FROM listener_messages WHERE seq <= ?')
           .run(lastSeq);
@@ -470,7 +473,7 @@ export class SQLiteMemory implements Memory {
             ? 'stale'
             : 'summarizer_failed',
       });
-      // A failed summarizer must not interrupt the bot or discard raw records.
+      // 摘要失败不能中断bot，也不能丢弃原始记录。
     } finally {
       this.busy = false;
     }

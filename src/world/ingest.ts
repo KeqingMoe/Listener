@@ -20,7 +20,7 @@ function object(value: unknown): value is Record<string, unknown> {
   );
 }
 
-/** Reject accessors/cycles/non-JSON values BEFORE inspecting fields. Never persist the raw envelope. */
+/** 在读取任何字段之前先拒绝访问器、循环引用和非JSON值，并限制节点数、深度与大小。原始事件包绝不持久化。 */
 function boundedJson(value: unknown): boolean {
   let nodes = 0;
   const visit = (v: unknown, depth: number): boolean => {
@@ -89,7 +89,7 @@ function metadataName(value: unknown): string | undefined {
   if (typeof value !== 'string' || !value) {
     return;
   }
-  // Display labels are untrusted metadata, never transport URLs or capabilities.
+  // 显示名是不可信元数据，其中的URL一律遮蔽，绝不当作传输地址或访问凭据。
   const name = value
     .replace(/(?:https?:\/\/|file:\/\/|data:)\S*/gi, '[redacted]')
     .replace(/[\u0000-\u001f\u007f]/g, '')
@@ -115,8 +115,8 @@ function eventIdentity(
   groupId: string,
   type: string,
 ): { dedupKey?: string } {
-  // Without a provider event identity, identical pokes/reactions in one second can be
-  // distinct actions. Do not invent a dedup key from timestamp/body in that case.
+  // 没有provider提供的事件ID时，同一秒内完全相同的戳一戳/回应也可能是不同动作，
+  // 此时不能用时间戳或内容拼出去重键。
   const identity = event.event_id;
   if (
     typeof identity !== 'string' ||
@@ -164,8 +164,8 @@ function normalizeMessage(
   const images = imageReferences(msgId, wire),
     forwards = forwardReferences(msgId, wire);
   const content = extractMessageContent(msgId, wire, images, forwards);
-  // Human-readable fallback only; typed content remains authoritative. Strings/CQ lookalikes
-  // are never parsed into operations. No upstream raw_message or arbitrary metadata survives.
+  // 仅作可读的回退文本，以结构化content为准。字符串或形似CQ码的内容绝不解析为操作；
+  // 上游raw_message和任意元数据都不保留。
   const text = content.segments
     .map((segment) => {
       if (segment.type === 'text') {
@@ -212,8 +212,10 @@ function normalizeMessage(
   };
 }
 
-/** Group-scoped structural normalization, not permission verification. Caller still applies its
- * configured group allowlist before storing. Unknown/private events are ignored, never guessed. */
+/**
+ * 按群范围做结构规范化，不做权限校验；调用方存储前仍需套用配置的群白名单。
+ * 未知事件和私聊事件直接忽略，绝不猜测。
+ */
 export function normalizeOneBotEvent(
   event: unknown,
   selfId: string,
@@ -257,7 +259,7 @@ export function normalizeOneBotEvent(
     if (msgId === undefined) {
       return;
     }
-    // user_id is the message author, NOT necessarily the person who recalled it.
+    // user_id是消息作者，不一定是撤回者；撤回者只取operator_id。
     const operator = id(event.operator_id);
     if (event.operator_id !== undefined && !operator) {
       return;
@@ -280,8 +282,8 @@ export function normalizeOneBotEvent(
     if (msgId === undefined) {
       return;
     }
-    // NapCat notices may be dirty hints. Do NOT attribute user_id/likes.count/is_add
-    // to an actor, action or exact count. The current aggregate is queried separately.
+    // NapCat的这类通知可能只是脏提示：不能把user_id/likes.count/is_add当作操作者、动作或准确计数。
+    // 当前聚合值另行查询。
     return {
       ...base,
       type: 'reaction.changed',
@@ -305,8 +307,8 @@ export function normalizeOneBotEvent(
       ...eventIdentity(event, groupId, 'poke.created'),
     };
   }
-  // Fields mirror NapCat's OB11Group{Increase,Decrease,Ban,UploadNotice,Name}Event
-  // classes. No synthetic notice identity or inferred operator/action is introduced.
+  // 字段对应NapCat的OB11Group{Increase,Decrease,Ban,UploadNotice,Name}Event类。
+  // 不合成通知ID，也不推断操作者或动作。
   if (
     event.notice_type === 'group_increase' ||
     event.notice_type === 'group_decrease' ||
@@ -405,7 +407,7 @@ export function normalizeOneBotEvent(
     if (!name) {
       return;
     }
-    // Intentionally discard file.id, busid, URL, paths and arbitrary transport fields.
+    // 刻意丢弃file.id、busid、URL、路径及其他任意传输字段。
     return {
       ...base,
       type: 'file.uploaded',
@@ -432,7 +434,7 @@ export function normalizeOneBotEvent(
     ) {
       return;
     }
-    // user_id is retained as a reported field, not guessed to be an administrator/operator.
+    // user_id仅作为上报字段保留，不推断其为管理员或操作者。
     return {
       ...base,
       type: 'group.name_changed',
@@ -444,8 +446,10 @@ export function normalizeOneBotEvent(
   return undefined;
 }
 
-/** Only the caller can establish that this is an actual validated send ACK. Echo-first/ACK-first
- * use the store's same message-ID dedup and never overwrite the original immutable fact. */
+/**
+ * 只有调用方能确认这是经过校验的真实发送ACK。无论echo先到还是ACK先到，
+ * 都走store按消息ID的同一去重逻辑，绝不覆盖先写入的不可变事实。
+ */
 export function recordToolMessage(
   store: WorldEventStore,
   entry: TimelineEntry,

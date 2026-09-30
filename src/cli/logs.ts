@@ -89,7 +89,7 @@ interface Cursor {
   dropping: boolean;
 }
 
-/** Bounded snapshots and incremental follow, including rotations; never follow file symlinks. */
+/** 读取有上限的日志快照并增量follow，能处理轮转；从不跟随文件符号链接。 */
 export class LogReader {
   private cursors = new Map<string, Cursor>();
   constructor(
@@ -192,7 +192,7 @@ export class LogReader {
               }
             }
           } catch {
-            /* Skip malformed/torn records; never print raw data. */
+            /* 跳过格式错误或写了一半的记录；从不输出原始数据。 */
           }
         }
         const rest = data.subarray(start);
@@ -238,8 +238,8 @@ export async function runLogViewer(
         process.stdout as typeof process.stdout & { unref?: () => void }
       ).unref?.();
     }
-    // A pending stdio write cannot be cancelled portably. The CLI wrapper
-    // exits after cleanup; embedded callers retain control of their process.
+    // 挂起的stdio写入无法可移植地取消，这里只unref。CLI包装层清理后会退出；
+    // 嵌入调用方自行掌控进程生命周期。
   };
   const stop = () => {
     stopped = true;

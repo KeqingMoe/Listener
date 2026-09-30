@@ -51,8 +51,8 @@ function fixture() {
   const insert = t.prepare(
     'INSERT INTO model_requests VALUES(?,?,?,?,?,?,?,?,?,?,?)',
   );
-  // Separate physical turns; none equals the persisted session wake ID.
-  // Shared turn IDs now intentionally correlate retries/session rotations.
+  // 各自独立的物理turn，均不等于持久化的会话wake ID。
+  // 共享turn ID有意用于关联重试与会话轮换。
   insert.run(
     'request-one',
     '11',
@@ -210,7 +210,7 @@ test('safe metadata, weighted usage, missing usage, and enabled-group isolation'
     assert.equal(b.summary.cacheHitRate, 0.86);
     assert.equal(b.summary.cachedInputTokens, 860);
     assert.equal(b.summary.uncachedInputTokens, 140);
-    assert.equal(b.summary.tps, null); // Historical requests lack streaming timings.
+    assert.equal(b.summary.tps, null); // 历史请求缺少流式计时数据。
     assert.equal(b.summary.ttftMs, null);
     assert.equal(b.groups.length, 1);
     assert.doesNotMatch(r.body, new RegExp(sentinel + '|NOT_WAKE_ID|foreign'));

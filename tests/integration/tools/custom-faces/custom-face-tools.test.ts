@@ -1218,7 +1218,7 @@ test('delete revokes local ref after submission but never proves remote absence'
   assert.equal(result.effect_confirmed, false);
   assert.equal(result.reference_revoked, true);
   assert.equal(f.store.resolve(ref, SELF, GROUP), undefined);
-  f.rows = [favorite()]; // stale native cache must not resurrect a locally retired ref
+  f.rows = [favorite()]; // 过期的原生缓存不能复活本地已停用的ref
   assert.equal((await f.execute('list_custom_faces')).returned_count, 0);
   assert.equal(
     (await f.execute('send_custom_face', { face_ref: ref })).error,
@@ -1236,9 +1236,9 @@ test('normal delete permits a later explicit real add; stale catalog rows alone 
       .reference_revoked,
     true,
   );
-  f.rows = [favorite()]; // provider cache still shows the old row after deletion
+  f.rows = [favorite()]; // 删除后provider缓存仍会返回旧行
   assert.equal((await f.execute('list_custom_faces')).returned_count, 0);
-  f.hooks.add_custom_face = () => null; // real explicit re-add accepted with same native identity
+  f.hooks.add_custom_face = () => null; // 真实的显式重新添加被接受，原生身份不变
   const added = await f.execute('add_custom_face', {
     image_id: 'img_11_0',
     description: 'collected again',
@@ -1642,7 +1642,7 @@ test('local snapshot pagination can traverse all observed entries without refres
   assert.equal(one.returned_count, 100);
   assert.equal(one.snapshot_count, 205);
   assert.equal(one.pagination, 'local_fixed_snapshot');
-  f.rows = []; // pagination must not refresh and replace a fixed snapshot
+  f.rows = []; // 翻页不能刷新并替换已固定的快照
   const two = await f.execute('list_custom_faces', {
     limit: 100,
     cursor: one.next_cursor,

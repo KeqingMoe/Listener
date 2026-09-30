@@ -108,7 +108,7 @@ export interface OpenAIModelOptions {
   maxTokens: number;
   onRequestStart?: (record: ModelRequestStart) => void;
   onRequest?: (record: ModelRequestRecord) => void;
-  /** Evaluated per request; authentication, content type and User-Agent remain authoritative. */
+  /** 每次请求时求值；鉴权、Content-Type和User-Agent以内置值为准，不会被覆盖。 */
   requestHeaders?: () => Readonly<Record<string, string>>;
 }
 
@@ -167,9 +167,8 @@ function validate(value: unknown): Completion {
       throw new Error();
     }
     const fn = call.function;
-    // Validate the transport envelope, not tool semantics: unknown/disabled tools
-    // and invalid argument JSON must reach the dispatcher, consume its shared
-    // wake budget, and return a tool result the model can correct.
+    // 这里只校验传输结构，不校验工具语义：未知/禁用的工具和非法参数JSON
+    // 要交给dispatcher处理，消耗wake共享预算，并返回模型能据此修正的工具结果。
     if (
       typeof fn.name !== 'string' ||
       !fn.name.length ||
@@ -193,7 +192,7 @@ function validate(value: unknown): Completion {
   };
 }
 
-/** Single attempt transport. Errors deliberately contain no remote text or underlying cause. */
+/** 单次请求，不重试。错误中刻意不带远端文本和底层cause。 */
 export class OpenAIModel implements Model {
   private readonly endpoint: string;
   private readonly options: OpenAIModelOptions;
@@ -342,7 +341,7 @@ export class OpenAIModel implements Model {
         httpStatus = response.status;
         stage = 'http_status';
         diagnostics.providerCategory = 'unknown';
-        // An observed HTTP failure wins over timeout/cancellation during diagnostic collection.
+        // 已拿到HTTP错误状态时，以它为准；收集诊断期间发生的超时或取消不再覆盖。
         clearTimeout(timer);
         signal?.removeEventListener('abort', abort);
         abortReason = undefined;
@@ -651,7 +650,7 @@ export class OpenAIModel implements Model {
       try {
         this.options.onRequest?.(record);
       } catch {
-        /* telemetry observers are non-critical */
+        /* 遥测回调失败不影响结果 */
       }
     }
   }

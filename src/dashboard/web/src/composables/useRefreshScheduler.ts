@@ -6,6 +6,10 @@ export const autoRefresh = ref(true);
 export const pageVisible = ref(true);
 export const refreshBackoff = ref(false);
 
+/**
+ * 自动刷新调度：仅在已登录、开启自动刷新且页面可见时计时，有请求在途时暂停。
+ * 一轮刷新中有失败则间隔从5s起指数退避，最多60s；页面重新可见或重新启用时立即刷新一次。
+ */
 export function useRefreshScheduler() {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let ticker: ReturnType<typeof setInterval> | undefined;

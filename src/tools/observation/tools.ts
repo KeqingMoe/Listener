@@ -6,11 +6,11 @@ import {
   type TurnContext,
 } from '../../contracts/tools.ts';
 
-// Contract sources pinned to NapCat v4.18.28:
+// 契约依据NapCat v4.18.28源码：
 // https://github.com/NapNeko/NapCatQQ/tree/v4.18.28/packages/napcat-onebot/action/group
 // https://github.com/NapNeko/NapCatQQ/blob/v4.18.28/packages/napcat-onebot/action/go-cqhttp/GetGroupHonorInfo.ts
-// Native mutes: packages/napcat-core/types/notify.ts (ShutUpGroupMember), not the action's example.
-// These APIs return whole collections, not server-side offset/limit pages.
+// 原生禁言字段以packages/napcat-core/types/notify.ts（ShutUpGroupMember）为准，不看action里的示例。
+// 这些API返回完整集合，不支持服务端offset/limit分页。
 export const GROUP_OBSERVATION_TOOL_NAMES = Object.freeze([
   'get_group_info',
   'get_group_honor',
@@ -53,7 +53,7 @@ function text(v: unknown, limit = 256): string | undefined {
   if (typeof v !== 'string') {
     return;
   }
-  // CQ strings are not typed text and can carry raw media credentials.
+  // CQ字符串不是有类型的文本，可能携带原始媒体凭据。
   return v
     .slice(0, limit)
     .replace(/\[CQ:[^\]]*(?:\]|$)/g, '[unsupported segment]')
@@ -62,8 +62,8 @@ function text(v: unknown, limit = 256): string | undefined {
 }
 
 function bodyText(value: string, limit: number): string {
-  // Typed user-authored text is data, not a transport segment or resource capability.
-  // Preserve literal links and CQ-looking examples, as for ordinary chat text.
+  // 用户撰写的有类型文本是数据，不是传输段或资源凭证。
+  // 与普通聊天文本一样，保留字面链接和形似CQ码的示例。
   let clipped = value.slice(0, limit);
   if (clipped.length < value.length && /[\uD800-\uDBFF]$/.test(clipped)) {
     clipped = clipped.slice(0, -1);

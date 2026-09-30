@@ -15,7 +15,7 @@ import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import ts from 'typescript';
 
-// Independently hand-authored sentinels: neither ID/name is supplied by the offline fallbacks.
+// 独立手写的哨兵值：ID和名称都不来自离线兜底数据。
 const version = '4.18.28';
 const raw = {
   sysface: [{ QSid: '812', QDes: '/synthetic-path-face', AniStickerType: 1 }],
@@ -47,7 +47,7 @@ function fixture(t: TestContext) {
     'onebot/catalog/reactions',
     'cli/sync-faces',
   ]) {
-    // Copy implementation only: no repository data, environment or database is read.
+    // 只复制实现代码：不读取仓库数据、环境变量或数据库。
     const source = readFileSync(
       new URL(`../../../src/${name}.ts`, import.meta.url),
       'utf8',

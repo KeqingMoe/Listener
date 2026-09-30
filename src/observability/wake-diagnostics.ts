@@ -1,7 +1,7 @@
 import { types } from 'node:util';
 import type { JsonObject } from '../contracts/json.ts';
 
-/** Local reason codes only. Never persist arbitrary exception or provider text. */
+/** 仅限本地定义的原因码，绝不持久化任意异常或provider返回的文本。 */
 export const WAKE_REASON_CODES = [
   'turn_timeout',
   'disconnected',
@@ -76,7 +76,7 @@ export function normalizeWakeDiagnostics(value: unknown): JsonObject {
       }
     }
   } catch {
-    /* Optional diagnostics must not prevent recording the terminal state. */
+    /* 诊断信息是可选的，不能妨碍记录终止状态。 */
   }
   return result;
 }

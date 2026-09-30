@@ -42,7 +42,7 @@ const continuation = computed(
     ['continue_live', 'continue_restored'].includes(props.requestMode || ''),
 );
 
-// Only display image metadata. Never pass image payloads to a text viewer.
+// 只展示图片元数据，绝不把图片载荷传给文本查看器。
 function imageMetadata(part: RecordValue): RecordValue {
   const image = record(part.image_url)
     ? part.image_url
@@ -131,7 +131,7 @@ const reading = computed(() => {
       try {
         args = JSON.parse(args);
       } catch {
-        /* Preserve non-JSON arguments. */
+        /* 非JSON参数保留原样。 */
       }
     }
     add('模型提出（未据此确认执行）', {
@@ -207,7 +207,7 @@ const reading = computed(() => {
     return false;
   }
   let value = props.value;
-  // Some historical records contain a serialized envelope; retain the original in raw mode.
+  // 部分记录是序列化后的envelope字符串，在此解析；原始模式仍显示原文。
   if (typeof value === 'string') {
     try {
       const parsed: unknown = JSON.parse(value);
@@ -215,7 +215,7 @@ const reading = computed(() => {
         value = parsed;
       }
     } catch {
-      /* Plain model text. */
+      /* 普通模型文本。 */
     }
   }
   if (props.kind === 'response') {

@@ -195,7 +195,7 @@ test('explicit enabled history remains readable offline; dynamic groups require 
     registry?.close();
     cleanup();
   });
-  // No registry at all: explicit policy authorizes offline history, not bot routing.
+  // 完全没有registry：显式策略只授权离线历史，不授权Bot路由。
   assert.deepEqual((await app.inject('/api/meta')).json().groups, [
     { groupId: '11' },
   ]);
@@ -225,7 +225,7 @@ test('explicit enabled history remains readable offline; dynamic groups require 
     (await app.inject('/api/wakes/wake?groupId=11')).statusCode,
     200,
   );
-  // Expired lease removes only unconfigured dynamic access, even after DB caching.
+  // lease过期只移除未配置的动态访问，即使已被DB缓存也是如此。
   writeFileSync(
     config.storage.registryPath,
     JSON.stringify({
@@ -244,7 +244,7 @@ test('explicit enabled history remains readable offline; dynamic groups require 
     (await app.inject('/api/wakes/wake?groupId=11')).statusCode,
     200,
   );
-  // Registry paths cannot retarget a dynamic group, and disabled entries stay invisible.
+  // registry中的路径不能改指动态群，被禁用的条目保持不可见。
   writeFileSync(
     config.storage.registryPath,
     JSON.stringify({

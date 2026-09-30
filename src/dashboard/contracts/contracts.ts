@@ -41,7 +41,7 @@ export interface UsageSummary {
   cacheHitRate: number | null;
   durationP50Ms: number | null;
   durationP95Ms: number | null;
-  /** Streaming output rate, excluding TTFT, for requests with valid timing and usage. */
+  /** 流式输出速率，不含TTFT，只统计计时和usage都有效的请求。 */
   tps: number | null;
   ttftMs: number | null;
 }
@@ -70,7 +70,7 @@ export interface WakeItem extends CacheMetrics {
   trigger: null;
   modelRequests: number;
   toolCalls: number;
-  /** Historical compatibility: total input, including cache. */
+  /** 总输入token，包含缓存命中部分。 */
   inputTokens: number | null;
   uncachedInputTokens?: number | null;
   cachedInputTokens?: number | null;
@@ -156,22 +156,23 @@ export interface ApiError {
     | 'internal_error';
   message: string;
 }
+// 元数据API约定：
 // GET /api/meta
-// GET /api/overview|wakes|tools?since=<epoch ms>&until=<epoch ms>&groupId=<optional enabled group>
-// GET /api/wakes also accepts limit (1..100, default 30), opaque cursor, metadata q and outcome.
-// outcome=running means no finish; failed/cancelled group related terminal reasons; other tokens match raw outcome.
-// GET /api/wakes/:id requires groupId. Detail arrays have a 500-item resource bound.
-// Ranges default to last 24 hours, max 31 days. Unknown values are null, not zero.
-// Follow a wakes cursor with the exact response.range since/until and original groupId.
-// Wake list/review summaries use stable inspection/message physical-turn associations, including failures and running requests.
-// Legacy metadata detail keeps persisted message.request_id-only request arrays; never assume wakeId=turnId.
-// uncachedInputTokens and cacheHitRate use only valid paired input/cache samples; missing usage is never zero.
-// performance.tps uses only successful streaming requests with known output usage and generation timing; ttftMs is the mean first-token wait of measured requests.
-// performance.modelDurationMs sums ended HTTP durations including failures; coverage exposes missing measurements.
-// toolDurationMs is cumulative real ledger timing; toolWallDurationMs/modelWallDurationMs union nested/overlapping intervals.
-// otherDurationMs = wake wall minus model interval union, NOT exclusive tool/NapCat/DB latency; never add tool cumulative time to wall time.
-// Global wall/round TPS and request tool/other times are null: no full-round or world-time attribution is implied.
-// Cross-session physical-turn scopes may cross wake boundaries; their wall analysis stays null with whyIncomplete, never negative/clamped.
-// Overview/tool scans above 10,000 rows return 503; narrow the range rather than showing partial totals.
-// Metadata APIs do not return message content, raw tool arguments/results, checkpoints, or filesystem paths.
-// Authorized review detail APIs expose bounded, credential-scrubbed content; see review.ts.
+// GET /api/overview|wakes|tools?since=<epoch ms>&until=<epoch ms>&groupId=<可选，已启用的群>
+// GET /api/wakes另外接受limit（1..100，默认30）、不透明cursor、元数据搜索q和outcome。
+// outcome=running表示尚未结束；failed/cancelled会归并相关的终止原因；其他值按原始outcome匹配。
+// GET /api/wakes/:id必须带groupId。详情数组上限500项。
+// 范围默认最近24小时，最长31天。未知值为null而非0。
+// 翻页时须使用上次响应中的response.range since/until及原groupId。
+// wake列表和review摘要按inspection/message记录的物理turn稳定关联请求，包含失败和进行中的请求。
+// 元数据详情的请求数组只来自已持久化的message.request_id；不要假设wakeId=turnId。
+// uncachedInputTokens和cacheHitRate只使用input/cache成对有效的样本；缺失的usage不按0计。
+// performance.tps只统计output usage和生成计时已知的成功流式请求；ttftMs是有测量值请求的首token等待均值。
+// performance.modelDurationMs是已结束HTTP请求的耗时之和（含失败），缺失测量由coverage暴露。
+// toolDurationMs是ledger真实耗时的累加；toolWallDurationMs/modelWallDurationMs对嵌套或重叠区间取并集。
+// otherDurationMs = wake墙钟时间减模型区间并集，并非独占的工具/NapCat/DB延迟；不要把工具累计耗时加到墙钟时间上。
+// 全局的wall/round TPS以及单个请求的tool/other耗时为null：不做整轮或全局时间归因。
+// 跨session的物理turn范围可能跨越wake边界，其墙钟分析保持null并给出whyIncomplete，不会为负或被截断。
+// overview/tools扫描超过10,000行时返回503，应缩小范围，而不是展示不完整的合计。
+// 元数据API不返回消息内容、原始工具参数/结果、checkpoint或文件系统路径。
+// 经授权的review详情API返回有界且已清除凭据的内容，见review.ts。

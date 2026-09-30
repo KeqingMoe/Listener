@@ -76,8 +76,8 @@ const hideCrosshair = () => {
   crosshair.value.visible = false;
 };
 
-// zrender coordinates and ECharts conversion are in the same canvas CSS pixel
-// space. No point lookup, nearest-point snapping, tooltip, or synthetic jitter.
+// zrender事件坐标与ECharts坐标换算同处canvas的CSS像素空间，可直接换算。
+// 刻意不做点查找、最近点吸附、tooltip或人为抖动。
 function moveCrosshair(event: { offsetX: number; offsetY: number }) {
   const instance = scatterChart.value?.chart;
   if (!instance) {

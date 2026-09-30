@@ -184,7 +184,7 @@ export interface ObservedLog {
 
 const observers = new Set<(record: ObservedLog) => void>();
 
-/** Private diagnostic sinks receive sanitized metadata, including console-filtered debug events. */
+/** 注册私有诊断sink：收到脱敏后的元数据，包括被控制台级别过滤掉的debug事件。 */
 export function observeLogs(
   observer: (record: ObservedLog) => void,
 ): () => void {
@@ -215,7 +215,7 @@ function warn(): void {
       );
     }
   } catch {
-    /* Logging must not affect the application. */
+    /* 日志出错不能影响应用本身。 */
   }
 }
 
@@ -227,7 +227,7 @@ function validEvent(value: unknown): value is string {
   return typeof value === 'string' && domains.test(value) && clean(value);
 }
 
-/** Strict allowlist, including for debug. Never invokes user serialization methods. */
+/** 严格按白名单保留字段（debug级别也一样），绝不调用用户对象的序列化方法。 */
 export function sanitizeLogFields(
   fields: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -300,7 +300,7 @@ export function sanitizeLogFields(
       out.tools = safeTools;
     }
   } catch {
-    /* Hostile getters and proxies are not loggable. */
+    /* 恶意getter和Proxy一律不记录。 */
   }
   return out;
 }
@@ -315,7 +315,7 @@ export function withLogContext<T>(
   );
 }
 
-/** Sanitized trace metadata only; never expose arbitrary async-local fields. */
+/** 只返回脱敏后的trace元数据，绝不暴露任意async-local字段。 */
 export function getLogContext(): Record<string, unknown> {
   return sanitizeLogFields(context.getStore() ?? {});
 }
@@ -324,7 +324,7 @@ export function newTraceId(prefix: 't' | 'c' = 't'): string {
   return `${prefix === 'c' ? 'c' : 't'}_${randomBytes(8).toString('hex')}`;
 }
 
-/** Accepts a parsed JSONL record or a single JSONL string. */
+/** 接受已解析的JSONL记录或单行JSONL字符串，格式化为控制台可读的一行；非法输入返回undefined。 */
 export function formatLogLine(raw: unknown): string | undefined {
   try {
     if (typeof raw === 'string') {
@@ -380,7 +380,7 @@ export function log(
           fields: structuredClone(safe),
         });
       } catch {
-        /* A diagnostic sink never interrupts logging or bot work. */
+        /* 诊断sink出错绝不打断日志或bot的正常工作。 */
       }
     }
     current.emit(level, event, safe);
@@ -389,6 +389,10 @@ export function log(
   }
 }
 
+/**
+ * 有界异步日志管线：pino输出先进内存队列（条数、字节数有上限，超出即丢弃并告警），
+ * 再串行写入按天/大小轮转的JSONL文件和控制台。任一输出出错只禁用该输出，不抛给调用方。
+ */
 function createLogger(config: LoggingConfig) {
   const queue: string[] = [];
   let queuedBytes = 0;
@@ -479,7 +483,7 @@ function createLogger(config: LoggingConfig) {
       }
       await prune(bytes, day);
       if (!handle) {
-        // Recheck the final directory each rotation; never open an existing log file.
+        // 每次轮转都重新检查目录本身；O_EXCL保证绝不打开已存在的日志文件。
         const directoryStat = await lstat(config.directory);
         if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) {
           throw new Error('unsafe');
@@ -516,7 +520,7 @@ function createLogger(config: LoggingConfig) {
       return;
     }
     try {
-      // Never add writes behind another producer's already backed-up stdout.
+      // stdout已被其他写入方堵塞时，不再往后追加写入。
       if (process.stdout.writableLength > 65536) {
         consoleEnabled = false;
         warn();
@@ -605,7 +609,7 @@ function createLogger(config: LoggingConfig) {
     },
   );
   async function flush() {
-    // A stuck device must never indefinitely delay bot shutdown. No polling timers.
+    // 设备卡住时也不能无限期拖住bot关闭；只用一个超时，不用轮询定时器。
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([
@@ -636,16 +640,15 @@ function createLogger(config: LoggingConfig) {
         kick();
       }
       await flush();
-      // Do not destroy shared application stdout. Node's public stdio destroy
-      // is a no-op; unref cannot cancel a pending libuv write. CLI entrypoints
-      // must explicitly exit after all application shutdown work completes.
+      // 不销毁应用共享的stdout：Node公开的stdio destroy是空操作，unref也取消不了挂起的libuv写入。
+      // CLI入口必须在全部关闭工作完成后显式退出进程。
       if (consoleStalled && consolePending) {
         try {
           (
             process.stdout as typeof process.stdout & { unref?: () => void }
           ).unref?.();
         } catch {
-          /* Best effort. */
+          /* 尽力而为。 */
         }
       }
     },

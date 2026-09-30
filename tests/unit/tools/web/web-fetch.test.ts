@@ -28,7 +28,7 @@ async function serve(
   return { server, port: (server.address() as AddressInfo).port };
 }
 
-/** DNS says every host is public; the transport records the pinned address and routes to the fixture server. */
+/** DNS把所有主机解析为公网地址；transport记录固定的地址并路由到fixture服务器。 */
 function network(port: number, answers: Record<string, string[]> = {}) {
   const pinned: string[] = [],
     hosts: string[] = [];
@@ -224,7 +224,7 @@ test('redirects: same-origin followed with fresh checks, cross-origin returned, 
       n.hosts.filter((h) => h === 'example.com').length,
       2 + 1 + FETCH_LIMITS.redirects + 1,
     );
-    // A cross-origin hop is only a suggestion; reading it runs the full address policy again.
+    // 跨origin跳转只是建议；读取时会重新执行完整的地址策略。
     const rebind = await fetcher('https://example.com/rebind');
     assert.ok(rebind.kind === 'redirect');
     assert.equal(await code(fetcher(rebind.location)), 'blocked_url');

@@ -1,6 +1,6 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 
-/** Side-effect pacing constants: a 20-call burst, then one call per second, never closer than 100 ms. */
+/** 副作用限速参数：可突发20次，之后每秒1次，任意两次间隔不少于100ms。 */
 export const SIDE_EFFECT_PACING = {
   capacity: 20,
   refillMs: 1000,
@@ -17,7 +17,7 @@ const systemClock: PacerClock = {
   sleep: (ms, signal) => sleep(ms, undefined, { signal }),
 };
 
-/** FIFO token bucket shared by model and sandbox side effects of one group. Waiting, not rejecting. */
+/** 同一群的模型与沙箱副作用共用的FIFO令牌桶；超额时排队等待而不是拒绝。 */
 export class SideEffectPacer {
   private tokens: number = SIDE_EFFECT_PACING.capacity;
   private updated: number;
@@ -27,7 +27,7 @@ export class SideEffectPacer {
     this.updated = clock.now();
   }
 
-  /** Resolves when the caller may perform one side effect; rejects if the signal aborts while queued. */
+  /** 轮到调用方执行一次副作用时resolve；排队期间signal中止则reject。 */
   take(signal: AbortSignal): Promise<void> {
     const turn = this.queue.then(() => this.acquire(signal));
     this.queue = turn.catch(() => {});

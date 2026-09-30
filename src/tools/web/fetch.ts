@@ -31,7 +31,7 @@ export type FetchOutcome =
     }
   | { kind: 'redirect'; url: string; httpStatus: number; location: string };
 
-/** Stable machine codes; remote error text is never exposed. */
+/** 稳定的机器可读错误码；不暴露远端错误文本。 */
 export class FetchError extends Error {
   constructor(
     readonly code:
@@ -117,7 +117,7 @@ function classify(header: string | undefined): {
   return { kind, ...(charset ? { charset } : {}) };
 }
 
-/** Header charset wins; HTML may declare it in an early meta tag (common for GBK pages). */
+/** 响应头的charset优先；HTML也可能在靠前的meta标签里声明编码（GBK页面常见）。 */
 function decode(bytes: Buffer, kind: FetchKind, declared?: string): string {
   let label = declared;
   if (!label && kind === 'html') {
@@ -171,7 +171,7 @@ async function resolvePublic(
           ),
         ),
       ]);
-  // Every resolved address must be public: a mixed answer is a rebinding signal.
+  // 解析出的每个地址都必须是公网地址：混有内网地址的应答视为DNS rebinding迹象。
   if (
     !Array.isArray(addresses) ||
     !addresses.length ||
@@ -203,7 +203,7 @@ function decompressor(encoding: string | undefined): Transform | undefined {
   throw new FetchError('unsupported_content_type');
 }
 
-/** One pinned request. Redirect bodies are never read. */
+/** 发起一次固定解析地址的请求，不读取重定向响应体。 */
 function requestOnce(
   url: URL,
   target: { hostname: string; address: string; family: number },
@@ -255,7 +255,7 @@ function requestOnce(
                 rejectUnauthorized: true,
               }
             : {}),
-          // Connect only to the address that passed the public-address check.
+          // 只连接通过公网地址检查的那个地址。
           lookup: (_host, options, callback) => {
             if ((options as { all?: boolean }).all) {
               (
@@ -319,7 +319,7 @@ function requestOnce(
               return;
             }
             total += chunk.length;
-            // Bound decoded bytes too, so compressed bombs cannot expand without limit.
+            // 解压后的字节同样受限，防止压缩炸弹无限膨胀。
             if (total > FETCH_LIMITS.responseBytes) {
               finish(new FetchError('fetch_too_large'));
               return;
@@ -365,8 +365,10 @@ function requestOnce(
   });
 }
 
-/** Anonymous, bounded fetch of public HTTP(S) resources. Same-origin redirects
- * are followed with fresh address checks; cross-origin ones are returned to the caller. */
+/**
+ * 匿名、有上限地抓取公网HTTP(S)资源。同源重定向会跟随并重新检查地址；
+ * 跨源重定向交还给调用方处理。
+ */
 export function createWebFetcher(
   dependencies: FetchDependencies = {},
 ): (value: unknown, signal?: AbortSignal) => Promise<FetchOutcome> {

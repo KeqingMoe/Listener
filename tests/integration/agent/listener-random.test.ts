@@ -650,4 +650,4 @@ test('structured send_message at becomes native OneBot at, never marker text', a
   }
 });
 
-// TOML defaults and invalid values are covered by config-loader.test.ts.
+// TOML默认值和非法值由config-loader.test.ts覆盖。

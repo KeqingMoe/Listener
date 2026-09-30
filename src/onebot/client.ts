@@ -40,7 +40,10 @@ export type ClientOptions = Pick<
   | 'heartbeatMs'
 >;
 
-// Never relay remote error text: it may contain message bodies or credentials.
+/**
+ * OneBot WebSocket客户端：带心跳与指数退避重连，按echo匹配API响应。
+ * 绝不转发远端返回的错误文本，其中可能含消息正文或凭据。
+ */
 export class OneBotClient extends EventEmitter {
   private socket?: WebSocket;
   private reconnectTimer?: NodeJS.Timeout;
@@ -109,7 +112,7 @@ export class OneBotClient extends EventEmitter {
               Number.isSafeInteger(userId) &&
               userId > 0) ||
             (typeof userId === 'string' && /^[1-9]\d*$/.test(userId));
-          // Do not reset backoff or announce readiness for a malformed login response.
+          // 登录信息不合法时不重置退避计数，也不发出ready。
           if (!validIdentity) {
             log('warn', 'onebot.identity_failed', {
               reason: 'invalid_identity',
@@ -153,9 +156,8 @@ export class OneBotClient extends EventEmitter {
         }
         clearTimeout(pending.timer);
         this.pending.delete(packet.echo);
-        // NapCat void handlers serialize success without a data key (undefined is
-        // omitted by JSON.stringify). Canonicalize only a successful empty payload;
-        // never confuse a failed envelope with success or discard false/0/empty text.
+        // NapCat无返回值的handler成功时不带data键（JSON.stringify会省略undefined）。
+        // 只把成功且缺data的响应规范化为null；绝不把失败响应当成功，也不丢弃false/0/空字符串。
         if (packet.status === 'ok' && packet.retcode === 0) {
           pending.resolve(packet.data ?? null);
         } else {
@@ -218,7 +220,7 @@ export class OneBotClient extends EventEmitter {
       if (this.stopped || !ws || ws.readyState !== WebSocket.OPEN) {
         throw new OneBotError('unavailable');
       }
-      // No offline queue, no retries, bounded in-flight requests and buffered bytes.
+      // 没有离线队列也不重试；在途请求数和缓冲字节数都有上限。
       if (this.pending.size >= 64 || ws.bufferedAmount > 1024 * 1024) {
         throw new OneBotError('busy');
       }

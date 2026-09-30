@@ -40,6 +40,7 @@ export interface Reply {
   params: Record<string, unknown>;
 }
 
+/** 最小命令bot：按白名单过滤会话，对消息做TTL去重，并按会话限流回复/ping和/help。 */
 export class Bot {
   private recent = new Map<string, number>();
   private conversations = new Map<string, number>();
@@ -97,6 +98,7 @@ export class Bot {
       return undefined;
     }
     const now = this.now();
+    // TTL统一，Map按插入顺序即按过期时间递增，遇到第一个未过期项即可停止。
     for (const [key, expiry] of this.recent) {
       if (expiry <= now) {
         this.recent.delete(key);

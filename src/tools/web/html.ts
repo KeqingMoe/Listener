@@ -1,7 +1,9 @@
 import TurndownService from 'turndown';
 
-/** Deep unclosed nesting makes DOM building and conversion superlinear on the
- * event loop; real pages nest a few dozen levels. Deeper input falls back to tag stripping. */
+/**
+ * 深层未闭合嵌套会让DOM构建和转换在事件循环上呈超线性耗时；真实页面一般只嵌套几十层。
+ * 超过该深度的输入退化为直接剥离标签。
+ */
 const MAX_DEPTH = 512;
 const VOID = new Set([
   'area',
@@ -72,12 +74,12 @@ const turndown = new TurndownService({
   codeBlockStyle: 'fenced',
   bulletListMarker: '-',
 });
-// Hidden content is a common prompt-injection carrier and is not what a reader sees.
+// 隐藏内容常被用来做提示词注入，而且读者本来也看不到。
 turndown.addRule('dropHidden', {
   filter: (node) => hidden(node as HTMLElement),
   replacement: () => '',
 });
-// Images carry no text for the model; keep only meaningful alt text.
+// 图片对模型没有文字信息，只保留有意义的alt文本。
 turndown.addRule('imageAlt', {
   filter: 'img',
   replacement: (_content, node) => {
@@ -85,7 +87,7 @@ turndown.addRule('imageAlt', {
     return alt ? `[图片: ${alt.slice(0, 120)}]` : '';
   },
 });
-// Relative or script links are noise; only absolute http(s) links are kept.
+// 相对链接和脚本链接是噪音，只保留绝对http(s)链接。
 turndown.addRule('safeLinks', {
   filter: (node) => node.nodeName === 'A',
   replacement: (content, node) => {
@@ -155,7 +157,7 @@ export function htmlTitle(html: string): string | undefined {
   return title ? title.slice(0, 200) : undefined;
 }
 
-/** Visible content as Markdown; the prefer-main heuristic avoids site chrome when present. */
+/** 把可见内容转成Markdown；存在主体区域时优先取它，避开站点导航等外围元素。 */
 export function htmlToMarkdown(html: string): string {
   if (exceedsDepth(html)) {
     return stripTags(html).trim();

@@ -84,6 +84,10 @@ const directByDefault = new Set<string>([
   'delete_custom_face',
   'set_custom_face_description',
 ]);
+/**
+ * 每个工具的默认模式、是否允许confirm模式及可配置选项。
+ * leave_group默认关闭；只读或低风险工具默认direct且不支持confirm，其余默认confirm。
+ */
 export const TOOL_CAPABILITIES: Readonly<Record<ToolName, ToolCapability>> =
   Object.fromEntries(
     TOOL_NAMES.map((name) => [

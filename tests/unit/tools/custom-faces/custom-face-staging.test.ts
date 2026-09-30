@@ -60,8 +60,8 @@ async function setup(
   };
 }
 
-// The downloader is responsible for full image decoding; these tests exercise
-// immutable byte storage, not Sharp or any live OneBot/QQ endpoint.
+// 完整的图片解码由下载器负责；这些测试只覆盖不可变的字节存储，
+// 不涉及Sharp或任何在线OneBot/QQ端点。
 test('stores original GIF bytes, private permissions, and mapped provider path', async (t) => {
   const { directory, stager } = await setup(t);
   const result = await stager.stage(gif, 'gif');

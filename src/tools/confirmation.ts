@@ -58,7 +58,7 @@ function record(value: unknown): value is JsonObject {
   );
 }
 
-/** Snapshot plain JSON without invoking getters, toJSON, or inherited properties. */
+/** 快照纯JSON数据，不调用getter、toJSON，也不读取继承属性。 */
 function snapshot(input: unknown, code: string): unknown {
   let nodes = 0,
     textBytes = 0;
@@ -384,7 +384,7 @@ function validate(value: unknown, schema: JsonObject): void {
   }
 }
 
-/** Escape invisible formatting in the displayed JSON, while keeping executable args unchanged. */
+/** 转义展示用JSON中的不可见格式字符，实际执行的参数保持不变。 */
 function visible(value: string): string {
   return value.replace(/[\p{Cf}\p{Cc}\p{Zl}\p{Zp}]/gu, (char) =>
     Array.from(
@@ -394,6 +394,10 @@ function visible(value: string): string {
   );
 }
 
+/**
+ * 校验待确认的扩展工具调用并生成给主人看的确认文案。参数按工具schema快照校验；
+ * 涉及句柄或add_custom_face时必须附带可信的目标资料。
+ */
 export function prepareExtendedConfirmation(
   name: string,
   args: unknown,
@@ -485,7 +489,7 @@ export function prepareExtendedConfirmation(
         code = Object.getOwnPropertyDescriptor(error, 'message')?.value;
       }
     } catch {
-      /* Do not inspect attacker-controlled exceptions. */
+      /* 不检查可能受攻击者控制的异常对象。 */
     }
     throw new Error(
       typeof code === 'string' && codes.includes(code)

@@ -1,4 +1,4 @@
-/** Hand-generated full-size input, not copied from NapCat or a production data directory. */
+/** 手工生成的完整规模输入，并非复制自NapCat或生产数据目录。 */
 export function fullReactionCatalogFixture() {
   return {
     sysface: Array.from({ length: 329 }, (_, i) => ({

@@ -240,8 +240,8 @@ export class GroupFileTools {
   private readonly enabled: Set<string>;
   private readonly handles = new Map<string, Resource>();
   private readonly writes = new Map<string, Promise<JsonObject>>();
-  // Original provider tokens pin execution; conservative metadata keys only reject
-  // duplicate aliases. Submitted and unknown outcomes survive wakes, not explicit reset.
+  // 执行目标由provider最初给出的token固定；保守的元数据键只用于拒绝重复别名。
+  // 已提交和结果未知的状态跨wake保留，显式reset时清除。
   private readonly targetLocks = new Map<string, TargetLock>();
   private generation = 0;
   private readonly downloader: GroupTextDownloader;
@@ -645,7 +645,7 @@ export class GroupFileTools {
       return unknown();
     }
     if (name === 'upload_group_file') {
-      // UploadGroupFile waits for the native send-success event; UUID extraction is optional.
+      // UploadGroupFile会等待原生发送成功事件；能否取到UUID不影响结果。
       return value.file_id === null || resourceId(value.file_id)
         ? {
             status: 'ok',
@@ -670,7 +670,7 @@ export class GroupFileTools {
         : rejected();
     }
     if (name === 'create_group_folder') {
-      // The action intentionally exposes {result:Any,groupItem:Any}, not a required retCode.
+      // 该action有意返回{result:Any,groupItem:Any}，没有必需的retCode。
       if (
         !Object.hasOwn(value, 'result') ||
         !Object.hasOwn(value, 'groupItem')
@@ -679,8 +679,8 @@ export class GroupFileTools {
       }
       return submittedResult({ action: name, refresh_list: true });
     }
-    // deleteGroupFile carries a documented GeneralCallResult plus opaque native-ID lists.
-    // Those IDs are not the random provider cache token and must never be compared to it.
+    // deleteGroupFile返回有文档的GeneralCallResult和不透明的原生ID列表。
+    // 这些ID不是provider随机生成的缓存token，不能拿来与之比较。
     if (!Number.isSafeInteger(value.result)) {
       return unknown();
     }
@@ -718,8 +718,10 @@ export class GroupFileTools {
       : this.resourceKey('folder', parent);
   }
 
-  /** Conservative rejection key, NOT native identity proof. Excluding mutable name/parent
-   * keeps an uncertain file blocked after aliases, renames or moves; collisions only deny. */
+  /**
+   * 保守的拒绝键，不是原生身份证明。不包含可变的名称和父目录，
+   * 使结果未知的文件在别名、重命名或移动后仍被拦住；键冲突只会导致拒绝。
+   */
   private observedFileKey(resource: Resource): string | undefined {
     if (
       resource.kind !== 'file' ||
@@ -795,7 +797,7 @@ export class GroupFileTools {
             ? undefined
             : { ...this.resource(args.folder_handle, 'folder') },
         parentKey = this.parentKey(resource?.rawId);
-      // NapCat reads the shared-directory file itself; no content crosses OneBot.
+      // NapCat直接读取共享目录中的文件，文件内容不经过OneBot传输。
       return {
         artifact,
         action: 'upload_group_file',
@@ -890,9 +892,8 @@ export class GroupFileTools {
     if (sameToken) {
       return sameToken;
     }
-    // NapCat reissues a random cache token on every file listing. Never replace the
-    // original execution token with a new candidate: only that old token fixes identity.
-    // Complete unique metadata is a current-consistency check, not native ID equality.
+    // NapCat每次列文件都会重新发放随机缓存token。不能用新候选替换最初的执行token：只有旧token能确定身份。
+    // 完整且唯一匹配的元数据只是当前一致性检查，不等同于原生ID相同。
     if (
       resource.kind === 'file' &&
       resource.nameFingerprint &&
@@ -912,7 +913,7 @@ export class GroupFileTools {
         return matches[0]!;
       }
     }
-    // Missing/ambiguous metadata or a bounded prefix cannot authorize a changed target.
+    // 元数据缺失、有歧义或只拿到有限前缀时，不能授权操作已变化的目标。
     fail('resource_not_verified');
   }
 
@@ -938,7 +939,7 @@ export class GroupFileTools {
         ) {
           fail('insufficient_permission');
         }
-        // A renamed resource could otherwise dodge a previous unknown name slot.
+        // 否则重命名后的资源可能绕过此前结果未知的名称槽位。
         if (name.startsWith('delete_')) {
           const freshSlot = this.slotKey(
             plan.parentKey,
@@ -995,7 +996,7 @@ export class GroupFileTools {
       return result;
     } finally {
       for (const [key, lock] of locks) {
-        // Explicit reset may already have replaced ownership; never resurrect it.
+        // 显式reset可能已替换了锁的归属，不能把它恢复回来。
         if (this.targetLocks.get(key) !== lock) {
           continue;
         }
@@ -1088,7 +1089,7 @@ export class GroupFileTools {
     return { ...args };
   }
 
-  /** Read-only preflight for an owner confirmation. Never reserves a write or issues handles. */
+  /** 为主人确认做只读预检，不预留写操作，也不发放句柄。 */
   async confirmationDetails(
     name: string,
     value: unknown,

@@ -125,7 +125,7 @@ function proof(
       return {};
     }
   } catch {
-    /* Broken/foreign provenance is not evidence. */
+    /* 损坏或外来的来源信息不构成证据。 */
   }
   return undefined;
 }
@@ -177,14 +177,15 @@ function label(
   return { name: entry.name, ...(entry.emoji ? { emoji: entry.emoji } : {}) };
 }
 
-/** Observes QQ-reported counters, never unique people, own membership or a
- * guaranteed absence. An empty SDK list is only an empty_snapshot: GetMsg also
- * initializes that list when the underlying SDK supplied no aggregate field. */
+/**
+ * 观察QQ上报的回应计数，不代表去重后的人数、本账号是否参与，也不能保证没有回应。
+ * SDK返回的空列表只算empty_snapshot：底层SDK没给聚合字段时，GetMsg同样会初始化出空列表。
+ */
 export class ReactionObservations {
   private readonly groupId: string;
   private readonly retentionMs: number;
   private readonly cache = new Map<string, Cached>();
-  // These physical RPC leases deliberately survive clear() and refresh timeout.
+  // 这些真实RPC的占用记录刻意在clear()和refresh超时后仍然保留，确保并发上限覆盖仍在途的请求。
   private readonly pending = new Map<string, Pending>();
   private serial = 0;
   private generation = 0;
@@ -211,7 +212,7 @@ export class ReactionObservations {
     this.refreshEpoch++;
     this.cache.clear();
     this.active?.controller.abort();
-    // Do not reset serial: old ingestion tokens must never match a new entry.
+    // 不重置serial：旧的ingest令牌绝不能匹配到新条目。
   }
 
   private prune(now = Date.now()): void {
@@ -248,8 +249,10 @@ export class ReactionObservations {
     return entry;
   }
 
-  /** Capture immediately before asynchronous get_msg; revisions survive neither
-   * notices nor eviction/reset, so old responses cannot freshen newer evidence. */
+  /**
+   * 在异步get_msg之前立即获取；收到通知、被淘汰或重置后revision都会变化，
+   * 因此旧响应不能刷新更新的证据。
+   */
   revision(messageId: string): number {
     if (typeof messageId !== 'string' || shortId(messageId) !== messageId) {
       return 0;
@@ -281,8 +284,8 @@ export class ReactionObservations {
     if (id === undefined || !proof(memory, id)) {
       return false;
     }
-    // The envelope is a dirty hint only. Do not inspect/add/subtract likes.count,
-    // trust is_add, attribute absent user_id to self, or initiate RPC/model work.
+    // 通知本身只作为脏标记：不读取或增减likes.count，不信任is_add，
+    // 不把缺失的user_id归为自己，也不在这里发起RPC或模型调用。
     this.markDirty(id);
     return true;
   }
@@ -306,8 +309,10 @@ export class ReactionObservations {
     entry.revision = ++this.serial;
   }
 
-  /** Direct synchronous snapshots may omit the token. Async callers MUST supply
-   * their pre-request revision and independently guard their owner generation. */
+  /**
+   * 同步直接传入的快照可以省略revision令牌；异步调用方必须传入请求前获取的revision，
+   * 并自行校验所属的generation。
+   */
   ingest(
     messageId: string,
     raw: unknown,
@@ -465,7 +470,7 @@ export class ReactionObservations {
     return selected;
   }
 
-  /** Wait without retaining an abort listener after either branch completes. */
+  /** 等待promise或abort，任一方完成后都移除abort监听，避免泄漏。 */
   private async wait(
     promise: Promise<void>,
     signal: AbortSignal,
@@ -520,8 +525,8 @@ export class ReactionObservations {
       this.refreshEpoch === epoch &&
       performance.now() < deadline;
     const run = async (): Promise<void> => {
-      // Frozen recent() can deep-clone hundreds of rich entries. Materialize it
-      // once, not once for each of up to 512 dirty IDs outside this turn's view.
+      // 冻结的recent()可能深拷贝数百条完整条目，只取一次，
+      // 而不是为本轮视图外最多512个脏ID各取一次。
       const recentIds: string[] = [],
         quoted = new Set<string>();
       try {
@@ -543,7 +548,7 @@ export class ReactionObservations {
           }
         }
       } catch {
-        /* Unavailable memory does not add any reference authority. */
+        /* memory不可用时不增加任何可引用依据。 */
       }
       const proven = new Map<string, Proof | undefined>();
       const origin = (id: string): Proof | undefined => {
@@ -587,8 +592,8 @@ export class ReactionObservations {
               },
             )
             .catch(() => {
-              // Defensive sanitization failures must never leak provider payloads
-              // or create an unhandled rejection after a timed-out public wait.
+              // 防御性清洗出错时绝不能泄漏provider的payload，
+              // 也不能在对外等待已超时后产生未处理的rejection。
               if (alive() && this.matches(id, revision)) {
                 this.failed(id, true);
               }
@@ -608,7 +613,7 @@ export class ReactionObservations {
         ),
       );
     };
-    // Defer work until active is installed, including for synchronous fake APIs.
+    // 推迟到active赋值之后再开始工作，同步实现的假API也一样。
     const active = { controller, promise: Promise.resolve().then(run) };
     this.active = active;
     try {

@@ -111,7 +111,7 @@ test('full mode preserves all native outputs in order with tool results, persist
     );
     assert.deepEqual(restored.getContinuationCheckpoint(), prior);
     fail = false;
-    // Retry the next projection (including the last successful assistant).
+    // 重试下一次投影（包含最后一条成功的assistant消息）。
     const last = append(third, {
       content: 'text3',
       tool_calls: [
@@ -269,7 +269,7 @@ test('removed middle native mapping fails closed before any request', async (t) 
     (e: any) => e.code === 'invalid_response',
   );
   assert.equal(count, 3);
-  // A validation failure must not leave the instance busy.
+  // 校验失败不能让实例停留在busy状态。
   await restored.complete([{ role: 'user', content: 'fresh' }]);
   assert.equal(count, 4);
 });

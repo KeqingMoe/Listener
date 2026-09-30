@@ -11,7 +11,7 @@ export interface RegisteredTool {
   ): Promise<JsonObject>;
 }
 
-/** Per-wake dispatch registry. No fallback from unknown or disabled names to RPCs. */
+/** 每次wake使用的分发注册表。未知或未启用的工具名不会回退为RPC调用。 */
 export class ToolRegistry {
   private readonly tools = new Map<string, RegisteredTool>();
   register(tool: RegisteredTool): void {
@@ -52,7 +52,7 @@ export class ToolRegistry {
     if (signal?.aborted) {
       return { status: 'error', error: 'cancelled' };
     }
-    // Handlers own post-dispatch cancellation: a late valid write ACK must not be lost.
+    // 派发后的取消由handler自行处理：迟到的有效写ACK不能丢。
     try {
       return await tool.execute(args, context, signal);
     } catch {

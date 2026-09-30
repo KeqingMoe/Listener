@@ -173,7 +173,7 @@ test('follow tolerates truncation and replacement without repeating old records'
   await writeFile(path, row(3));
   assert.deepEqual(counts(await reader.scan()), [3]);
   assert.deepEqual(await reader.scan(), []);
-  // Keep the original inode alive so replacement cannot reuse its inode number.
+  // 保持原inode存活，使替换后的文件不能复用同一inode号。
   const { rename } = await import('node:fs/promises');
   await rename(path, join(root, 'old-unowned'));
   await writeFile(path, row(4));
@@ -269,7 +269,7 @@ test('viewer exits on SIGTERM with actual unread stdout pipe', async (t) => {
     { stdio: ['ignore', 'pipe', 'pipe'] },
   );
   child.stderr.resume();
-  // 'readable' observes availability without consuming any bytes from stdout.
+  // 'readable'只观察是否有数据，不消费stdout中的任何字节。
   let signalTimer: ReturnType<typeof setTimeout> | undefined;
   child.stdout.once('readable', () => {
     signalTimer = setTimeout(() => child.kill('SIGTERM'), 250);

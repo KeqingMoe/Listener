@@ -13,7 +13,7 @@ export interface AttentionHit {
   purpose?: string;
 }
 
-/** Opaque token; transactions are owned and stored privately by their engine. */
+/** 不透明令牌；事务状态由所属引擎私有保存。 */
 export interface AttentionTransaction {
   readonly attention_transaction: true;
 }
@@ -204,8 +204,11 @@ function parseSpec(
   };
 }
 
-/** One instance per group. All times are epoch milliseconds; tool delays are seconds.
- * No callbacks, timers, network or persistence: the caller schedules nextDeadline. */
+/**
+ * 关注计划引擎：模型通过manage_attention登记“下一条消息/某成员发言/延时/活跃度”条件，
+ * 满足时产生一次attention唤醒。每群一个实例。时间统一为epoch毫秒，工具参数中的延时为秒。
+ * 不含回调、定时器、网络或持久化，由调用方按nextDeadline安排唤醒。
+ */
 export class AttentionEngine {
   private readonly config: AttentionConfig;
   private readonly transactions = new WeakMap<
@@ -257,7 +260,7 @@ export class AttentionEngine {
       userId: message.userId,
     });
     this.sequences.add(message.sequence);
-    // Accept out-of-order observations still inside the bounded sequence horizon.
+    // 乱序到达的观测只要仍在有界序号窗口内就接受。
     this.history.sort((a, b) => a.sequence - b.sequence);
     while (this.history.length > 512) {
       const old = this.history.shift()!;
@@ -329,8 +332,8 @@ export class AttentionEngine {
     let next: number | undefined;
     for (const plan of this.plans.values()) {
       for (const candidate of [plan.expires, ...plan.due]) {
-        // Due timers remain latched via their stored due time, but cannot spin
-        // while there are no unread messages. Expiry still gets a future wakeup.
+        // 已到期的延时条件靠保存的due时间保持触发状态，但只取未来的时间点，
+        // 避免没有未读消息时反复空转；过期时间仍会安排一次未来唤醒。
         if (
           candidate !== undefined &&
           candidate > now &&
@@ -425,7 +428,7 @@ export class AttentionEngine {
     if (spec === undefined) {
       return error('invalid_arguments');
     }
-    // Validation is complete before any transaction state changes.
+    // 走到这里校验已全部完成，之后才修改事务状态。
     if (spec === null) {
       state.view.delete(id);
     } else {
@@ -466,8 +469,8 @@ export class AttentionEngine {
       }
       valid.set(id, spec);
     }
-    // Apply final valid removals first. A stale cancel never frees capacity;
-    // cancel+recreate in one transaction can reuse only its own freed slots.
+    // 先应用有效的删除。过时的cancel不会释放容量；
+    // 同一事务内cancel后再create，只能复用自己释放出的名额。
     for (const [id, spec] of valid) {
       if (spec === null) {
         next.delete(id);

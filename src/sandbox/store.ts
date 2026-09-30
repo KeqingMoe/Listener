@@ -77,7 +77,7 @@ export interface ToolCallRecord {
   finishedAt: number;
 }
 
-/** Mandatory model-visible digest: per-tool status counts plus every non-ok call. */
+/** 必须给模型看的工具调用摘要：按工具统计各状态次数，并列出非ok的调用（超出上限的只计数）。 */
 export interface ToolCallSummary {
   counts: Record<string, Partial<Record<ToolCallStatus, number>>>;
   abnormal: {
@@ -230,7 +230,7 @@ export function jobSummary(job: Job): JobSummary {
   return summary;
 }
 
-/** Dedicated private database; code is never persisted. One live service owns each database. */
+/** 独立的私有数据库，只存代码哈希不存代码。每个数据库同一时间只由一个服务实例使用。 */
 export class SandboxJobStore {
   private db: DatabaseSync;
   private closed = false;

@@ -462,7 +462,7 @@ for (const unknown of [false, true]) {
       await s.receive(event('1'));
       await settled(s, 2);
       assert.equal(mutations(s).length, 1);
-      assert.equal(s.calls.filter((c) => c.action === 'get_msg').length, 2); // Observation plus fresh mutation verification.
+      assert.equal(s.calls.filter((c) => c.action === 'get_msg').length, 2); // 一次观察，加一次修改后的重新验证。
       const returned = results(s.requests[1]!);
       assert.equal(returned[0].status, unknown ? 'unknown' : 'ok');
       assert.equal(returned[1].duplicate, true);

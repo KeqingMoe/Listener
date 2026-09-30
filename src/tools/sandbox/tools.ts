@@ -161,7 +161,7 @@ function execution(
   if (value.status === 'pending') {
     return { ...value };
   }
-  // Preserve the validated guest diagnostic alongside the stable task error code.
+  // 在稳定的任务错误码之外，一并保留已校验的沙箱内诊断信息。
   const { status, ...detail } = value;
   return {
     ...detail,

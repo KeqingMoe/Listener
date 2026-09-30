@@ -19,11 +19,11 @@ import { type AuthStore, sessionToken } from './auth.ts';
 import { authWrites, registerAuthRoutes } from './auth-routes.ts';
 
 export interface AppOptions extends Sources {
-  /** Required at runtime: absent stores fail closed. Caller owns store lifetime. */
+  /** 运行时必填，缺失时直接拒绝启动。store的生命周期由调用方管理。 */
   auth?: AuthStore;
   webRoot?: string;
   now?: () => number;
-  /** Bind hostname used for Host validation; defaults to loopback only. */
+  /** 监听地址，用于校验Host头；默认只允许loopback。 */
   listenHost?: string;
 }
 
@@ -44,6 +44,7 @@ function integer(v: unknown, defaultValue: number) {
   return n;
 }
 
+/** Host头白名单，防御DNS rebinding：只接受loopback、监听地址，或监听全部地址时的IP字面量。 */
 function allowedHost(host: string, listenHost = '127.0.0.1') {
   try {
     const u = new URL(`http://${host}`);
@@ -63,6 +64,7 @@ function allowedHost(host: string, listenHost = '127.0.0.1') {
   }
 }
 
+/** 构建只读dashboard服务：除登录/登出外只允许GET/HEAD，所有/api路径都要求认证。 */
 export function buildApp(options: AppOptions) {
   const auth = options.auth;
   if (!auth) {
@@ -132,7 +134,7 @@ export function buildApp(options: AppOptions) {
         path === '/api/auth/session') ||
       (authWrite &&
         (req.url === '/api/auth/login' || req.url === '/api/auth/logout'));
-    // Gate all API-shaped paths before routing, including encoded/case variants.
+    // 在路由之前拦截所有形似API的路径，包括URL编码和大小写变体；解码失败按API路径处理。
     let decoded: string;
     try {
       decoded = decodeURIComponent(path).toLowerCase();
@@ -223,6 +225,7 @@ export function buildApp(options: AppOptions) {
   const trendsSync = new RequestTrendsSync(reviewRepository, now);
   app.get('/api/request-trends/sync', async (req) => {
     const { range, groupId, q } = parse(req.query, ['cursor']);
+    // 同步cursor绑定到当前登录会话，只传token的哈希。
     const fingerprint = createHash('sha256')
       .update(sessionToken(req.headers.cookie) ?? '')
       .digest('hex');
@@ -306,6 +309,7 @@ export function buildApp(options: AppOptions) {
     ) {
       throw new InvalidQuery();
     }
+    // cursor绑定查询条件和当前可见的群集合，任一变化都会使旧cursor失效。
     const binding = createHash('sha256')
       .update(
         JSON.stringify({

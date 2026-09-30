@@ -191,7 +191,7 @@ test('literal image marker in structured text does not grant image access', asyn
   assert.equal((await s.view()).result.status, 'error');
   assert.equal(s.calls.length, 0);
   assert.equal(s.downloads.length, 0);
-  // Old records retain their independently verified compatibility path.
+  // 没有images字段的旧记录仍走独立校验过的兼容路径。
   const legacy = setup(remote(), [{ ...entry, images: undefined }]);
   assert.equal((await legacy.view()).result.status, 'ok');
   assert.equal(legacy.calls.length, 1);

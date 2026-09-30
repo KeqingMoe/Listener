@@ -114,8 +114,10 @@ type ActionName = keyof typeof policyKey;
 export interface ExternalModerationProposal {
   name: string;
   description: string;
-  /** Revalidate scope/permissions and check this confirmation's signal after every await.
-   * Once a write is dispatched, preserve its real ACK or return unknown. */
+  /**
+   * 每次await之后都要重新校验范围和权限，并检查本次确认的signal。
+   * 写操作一旦派发，必须保留真实的ACK，否则返回unknown。
+   */
   execute(context: TurnContext, signal: AbortSignal): Promise<JsonObject>;
 }
 
@@ -241,6 +243,10 @@ export function buildModerationTools(
   });
 }
 
+/**
+ * 群管理操作与主人确认流程。提案生成一次性确认码，只有主人在同群、有效期内确认才会执行；
+ * 确认时重新校验身份、权限和目标。
+ */
 export class Moderation {
   private readonly pending = new Map<string, Pending>();
   private disposed = false;
@@ -389,7 +395,7 @@ export class Moderation {
     expires?: number,
     expectedSender?: string,
   ): Promise<string> {
-    // This proof comes only from the caller's frozen memory, never model arguments.
+    // 这份证明只来自调用方冻结的memory，绝不来自模型参数。
     if (expectedSender !== undefined) {
       if (
         action.name !== 'recall_message' ||
@@ -441,9 +447,8 @@ export class Moderation {
     } else {
       target = action.user_id;
     }
-    // Own-message recall and own-card edits are account operations, not moderation
-    // of another member. Keep the group/login/message proofs above, including the
-    // frozen sender check, but do not require an administrator role for these.
+    // 撤回自己的消息、修改自己的群名片属于账号自身操作，不是管理其他成员。
+    // 上面的群、登录和消息证明（包括冻结的发送者检查）照常保留，但不要求管理员身份。
     if (
       target === context.selfId &&
       (action.name === 'recall_message' || action.name === 'set_member_card')
@@ -462,8 +467,7 @@ export class Moderation {
       ),
       target,
     );
-    // Do not invent an action-specific administrator immunity when the bot owns
-    // the group. The native API determines whether the requested operation succeeds.
+    // Bot是群主时，不自行设定针对具体操作的管理员豁免；操作能否成功由原生API决定。
     if (role === 'owner' || (botRole !== 'owner' && role !== 'member')) {
       return deny('permission_denied');
     }
@@ -478,7 +482,7 @@ export class Moderation {
     seconds?: number,
     phase: 'request' | 'confirm' | 'direct' = 'request',
   ): void {
-    // In request/direct phases actor_id is only the source-message actor, not an authorizer.
+    // 在request/direct阶段，actor_id只是源消息的发送者，不是授权人。
     log('info', 'moderation.audit', {
       action,
       group_id: this.groupId,
@@ -538,10 +542,9 @@ export class Moderation {
       );
       return failure;
     }
-    // These handlers check native business ACKs (ban/card) or a matching recall
-    // event and return void. The transport canonicalizes only outer success to null.
-    // Do not guess meanings for arbitrary native result/retcode fields or scalars.
-    // Dispatch is irreversible. Preserve its acknowledgement even after cancellation.
+    // 这些handler会检查原生业务ACK（禁言/名片）或匹配的撤回事件，然后返回void；传输层只把外层成功规范化为null。
+    // 不猜测任意原生result/retcode字段或标量的含义。
+    // 派发不可撤销，即使已取消也保留其ACK。
     if (result !== null) {
       this.audit(
         action.name,
@@ -681,7 +684,7 @@ export class Moderation {
         return deny('confirmation_limit');
       }
       const code = randomBytes(16).toString('hex');
-      // Copy metadata, and deliberately do not retain the proposal wake's signal.
+      // 复制元数据，并有意不保留提案所在wake的signal。
       const external = {
         name,
         description: input.description,
@@ -726,7 +729,7 @@ export class Moderation {
         context,
         confirmationSignal,
       );
-      // No post-await cancellation check: a confirmed late write remains a fact.
+      // await之后不检查取消：已确认的迟到写入仍是事实。
       if (
         !record(result) ||
         !['ok', 'executed', 'unknown', 'error'].includes(
@@ -751,8 +754,7 @@ export class Moderation {
       );
       return result;
     } catch {
-      // Only the callback knows whether it dispatched; never turn an opaque throw
-      // into permission to retry a potentially completed external write.
+      // 只有回调自己知道是否已派发；不能把不透明的异常当成可以重试的依据，外部写入可能已经完成。
       this.audit(
         pending.external.name,
         context,
@@ -774,7 +776,7 @@ export class Moderation {
     try {
       this.check(signal);
       fixed = this.scope(context);
-      // A nonowner or another group/bot must not consume a valid owner's code.
+      // 非主人或其他群/Bot不能消耗主人有效的确认码。
       if (fixed.actorId !== this.ownerId) {
         return deny('confirmation_denied');
       }
@@ -789,7 +791,7 @@ export class Moderation {
       ) {
         return deny('confirmation_denied');
       }
-      this.pending.delete(code); // Consume before the first await: concurrent confirmations execute once.
+      this.pending.delete(code); // 在第一个await之前消耗确认码，并发确认只会执行一次。
       if (pending.kind === 'external') {
         return await this.confirmExternal(pending, fixed, signal);
       }

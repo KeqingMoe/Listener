@@ -29,8 +29,7 @@ function id(value: unknown, message = false): string | undefined {
   if (typeof value === 'number' && Number.isSafeInteger(value)) {
     value = String(value);
   }
-  // NapCat converts short message IDs to Number: aliases must never authorize
-  // a different cached message (leading zero, -0, or an unsafe integer).
+  // NapCat会把短消息ID转成Number：前导零、-0或不安全整数等别名不能授权到另一条缓存消息。
   return typeof value === 'string' &&
     (message ? /^-?[1-9]\d{0,15}$/ : /^[1-9]\d{0,31}$/).test(value) &&
     (!message || Number.isSafeInteger(Number(value)))
@@ -58,8 +57,9 @@ function messageArgument(value: unknown): string {
   return field.value as string;
 }
 
-/** Bound the serialized result, not just its text: JSON escaping also costs bytes.
- * Iterate code points so truncation cannot split a UTF-8 character or surrogate pair.
+/**
+ * 限制的是序列化后的结果而不只是文本：JSON转义同样占字节。
+ * 按码点迭代，截断时不会切开UTF-8字符或代理对。
  */
 function result(messageId: string, source: string): JsonObject {
   const text = source
@@ -79,7 +79,7 @@ function result(messageId: string, source: string): JsonObject {
   const parts: string[] = [];
   let truncated = false;
   for (let point of text) {
-    // Replace malformed Unicode rather than exposing lone surrogates.
+    // 用替换字符代替孤立代理项，不把畸形Unicode暴露出去。
     if (point.length === 1 && /[\ud800-\udfff]/.test(point)) {
       point = '\ufffd';
     }
@@ -94,8 +94,9 @@ function result(messageId: string, source: string): JsonObject {
   return { ...(truncated ? truncatedBase : base), text: parts.join('') };
 }
 
-/** One instance must receive the Memory belonging to groupId. No cross-call cache:
- * every invocation rechecks login, live message scope, sender and voice presence.
+/**
+ * 每个实例必须传入groupId对应群的Memory。不做跨调用缓存：
+ * 每次调用都重新校验登录账号、消息的实时归属、发送者和语音段是否存在。
  */
 export class GroupTranscriptionTools {
   private readonly groupId: string;
@@ -169,8 +170,7 @@ export class GroupTranscriptionTools {
       }
       const messageId = messageArgument(args);
       const local = this.memory.find(messageId);
-      // Capture known sender as a primitive before any await. Memory updates must
-      // not change the provenance against which this operation was authorized.
+      // 在任何await之前把已知发送者取成原始值，Memory后续更新不能改变本次授权所依据的来源。
       const author = local?.userId;
       if (local) {
         if (
@@ -220,8 +220,7 @@ export class GroupTranscriptionTools {
       if (!Array.isArray(raw.message)) {
         fail('verification_failed');
       }
-      // Bound only our inspection, not the message itself. Unrelated segments
-      // and any tail after the first 128 entries are not validation inputs.
+      // 只限制本地检查范围，不限制消息本身：无关消息段和前128段之后的内容不参与校验。
       const voice = raw.message
         .slice(0, 128)
         .find((segment) => object(segment) && segment.type === 'record');
@@ -232,7 +231,7 @@ export class GroupTranscriptionTools {
         fail('verification_failed');
       }
       check(signal);
-      // Never pass provider file/URL fields or model-supplied destinations through.
+      // 不透传provider返回的file/URL字段，也不使用模型提供的目标地址。
       const recognition = await this.call(
         'fetch_ptt_text',
         { message_id: messageId },
@@ -248,7 +247,7 @@ export class GroupTranscriptionTools {
       if (signal?.aborted) {
         return { status: 'error', error: 'cancelled' };
       }
-      // Upstream exceptions and arbitrary getters must not leak response details.
+      // 上游异常和任意getter不能泄露响应细节。
       return {
         status: 'error',
         error: error instanceof ToolFailure ? error.message : 'tool_failed',

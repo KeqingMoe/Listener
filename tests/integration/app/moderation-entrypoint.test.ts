@@ -265,7 +265,7 @@ test(
             assert.ok([A, B].includes(call.params.group_id));
             assert.equal(call.params.user_id, TARGET);
             assert.equal(call.params.duration, 120);
-            data = call.params.group_id === A ? undefined : null; // Real handler void/null, not an invented empty-object ACK.
+            data = call.params.group_id === A ? undefined : null; // 与真实handler一致返回void/null，而非虚构的空对象ACK。
           } else if (call.action === 'send_group_msg') {
             assert.ok(Array.isArray(call.params.message));
             assert.ok(call.params.message.every((s: any) => s.type === 'text'));

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { buildApp, type AppOptions } from '../../src/dashboard/server/app.ts';
 import { AuthStore, SESSION_COOKIE } from '../../src/dashboard/server/auth.ts';
 
-/** Test-only real credentials: all requests still traverse production auth hooks. */
+/** 仅用于测试的真实凭据：所有请求仍经过生产环境的鉴权hook。 */
 export function buildAuthenticatedApp(options: AppOptions) {
   const dir = mkdtempSync(join(tmpdir(), 'dashboard-auth-fixture-'));
   const auth = new AuthStore({

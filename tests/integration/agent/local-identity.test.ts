@@ -154,7 +154,7 @@ const context = (actorId = OWNER_A, selfId = SELF) => ({
   messageId: '1',
 });
 
-// Keep both instances live in the same process and group: owner authority must not be a module-global mutation.
+// 两个实例在同一进程、同一群中同时存活：owner权限不能依赖模块级全局状态。
 test('Listener instances use independent local owners for prompt identity, reset and moderation confirmation', async () => {
   const instances = [OWNER_A, OWNER_B].map((ownerId) => {
     const transport = fixtureApi(),
@@ -209,7 +209,7 @@ test('Listener instances use independent local owners for prompt identity, reset
       assert.equal(s.writes().length, 1);
       assert.equal(s.modelCalls, 1);
     }
-    // Unauthorized resets do not clear state or consume the local owner's command opportunity.
+    // 未授权的reset不清空状态，也不占用本地owner的命令机会。
     for (const [index, s] of instances.entries()) {
       await s.bot.receive(event('5', OWNER_ID, '/reset'), SELF);
       await s.bot.receive(
@@ -224,7 +224,7 @@ test('Listener instances use independent local owners for prompt identity, reset
     assert.equal(instances[1]!.memory.clears, 0);
     await instances[1]!.bot.receive(event('7', OWNER_B, '/reset'), SELF);
     assert.equal(instances[1]!.memory.clears, 1);
-    // reset creates fresh Moderation: it must preserve the configured owner rather than reverting to OWNER_ID.
+    // reset会新建Moderation：必须保留配置的owner，而不是退回OWNER_ID。
     await instances[0]!.bot.receive(
       event('8', TARGET, 'new proposal', true),
       SELF,
@@ -313,7 +313,7 @@ test('Moderation configured owner is sole confirmer, codes stay local and self e
       m.dispose();
     }
   }
-  // The fallback constant is not special when another owner was explicitly configured.
+  // 显式配置了其他owner时，兜底常量没有特殊权限。
   const oldSelf = fixtureApi(OWNER_ID),
     m = new Moderation(
       oldSelf.api,

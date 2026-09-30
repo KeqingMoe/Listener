@@ -1027,7 +1027,7 @@ for (const incompletePhase of ['binding', 'description'] as const) {
     const h = await fixture(t, {
       provider: { favorites: [], fileName: `${MD5}.gif` },
       apiHook(action) {
-        // A normal submitted return is not evidence of visibility or a completed annotation.
+        // 正常的submitted返回不代表已可见或标注已完成。
         if (incompletePhase === 'binding' && action === 'add_custom_face') {
           return null;
         }
@@ -1091,7 +1091,7 @@ for (const incompletePhase of ['binding', 'description'] as const) {
             'management_result_review_required',
           );
         }
-        // After reviewing the staged result, the next model response can stop or speak accurately.
+        // 查看暂存结果后，下一次模型响应可以停止或给出准确的发言。
         return incompletePhase === 'binding'
           ? finish()
           : completion(

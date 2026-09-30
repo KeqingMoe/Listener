@@ -54,7 +54,7 @@ export function isExecutionDiagnostic(
   }
 }
 
-/** Host side of guest `tools.<name>(args)`. Args and results are JSON values whose byte fields are Uint8Array. */
+/** guest调用`tools.<name>(args)`在host侧的实现。参数和结果都是JSON值，其中字节字段为Uint8Array。 */
 export type ToolCaller = (
   name: string,
   args: unknown,

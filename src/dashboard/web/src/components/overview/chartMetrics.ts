@@ -112,7 +112,7 @@ export function scatterSummary(
     const value = metricValue(point, metric);
     return Number.isFinite(point.startedAt) && value !== null ? [value] : [];
   });
-  // Nearest-rank percentile retains all ties; this is a display limit, not outlier detection.
+  // 最近秩百分位会保留所有并列值；这只是显示上限，不是离群值检测。
   const limited = range !== 'all' && values.length >= 20;
   const sorted = limited ? [...values].sort((a, b) => a - b) : [];
   const upper = limited

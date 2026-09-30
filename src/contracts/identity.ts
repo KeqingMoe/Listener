@@ -1,5 +1,7 @@
-/** Low-level compatibility/test defaults, not deployment identities or database routing.
- * Production scope and identity come from trusted local configuration. */
+/**
+ * 底层兼容与测试用的默认值，不是部署身份，也不用于数据库路由。
+ * 生产环境的作用范围和身份来自可信的本地配置。
+ */
 export const LISTENER_GROUP = '100000002';
 
 export function resolveGroupId(value: unknown = LISTENER_GROUP): string {

@@ -241,7 +241,7 @@ test('integrated session starts metadata-only, reads live arrivals, checkpoints 
 });
 
 test('live attention metadata survives session rotation and remains absent from wake input', async () => {
-  // This scenario tests metadata persistence, not the optional upstream catalog: 76 is an offline fallback candidate.
+  // 本场景测试元数据持久化，而不是可选的上游目录：76是离线兜底候选。
   const emojiId = '76';
   let reactionWrites = 0;
   const session = new ModelSession({

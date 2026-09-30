@@ -203,7 +203,7 @@ test('file previews are stable fresh human descriptions without resource IDs, wr
   assert.match(a, /12/);
   assert.doesNotMatch(a, /PROVIDER_|https:|PRIVATE|gf_|expires|queried/);
   noFileWrites(f.calls);
-  // A preview must not reserve a target or consume a write-cache entry.
+  // 预览不能占用目标，也不能消耗写缓存条目。
   const result = await f.tools.execute('delete_group_file', args, ctx);
   assert.equal(result.status, 'unknown');
   assert.equal(f.calls.filter((x) => x === 'delete_group_file').length, 1);

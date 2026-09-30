@@ -231,7 +231,7 @@ test('older empty snapshots cannot starve recent real reactions in any presentat
       .message_id,
     '100',
   );
-  // Equal nonempty records also prefer the newest, without reordering source messages.
+  // 非空记录相同时同样取最新的，且不改变源消息顺序。
   const crowded = JSON.parse(
     annotateReactionContext(new Mem(raw, rows), () => large()),
   );

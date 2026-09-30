@@ -4,7 +4,7 @@ import { open, readdir, rename, unlink, lstat } from 'node:fs/promises';
 import { createHash, randomBytes } from 'node:crypto';
 import path from 'node:path';
 
-/** Per-artifact and whole-store disk budgets. Full storage rejects; nothing is evicted early. */
+/** 单个artifact和整个存储的磁盘预算。存满时拒绝写入，不会提前淘汰旧文件。 */
 export const ARTIFACT_LIMITS = { bytes: 64 * 1024 * 1024, totalBytes: 2 * 1024 * 1024 * 1024, ttlMs: 24 * 60 * 60 * 1000, name: 128, description: 500, mediaType: 128 } as const;
 
 export interface ArtifactScope { selfId: string; groupId: string }
@@ -19,7 +19,7 @@ const fail = (code: string): never => { throw new ArtifactError(code); };
 const ID = /^art_[a-f0-9]{24}$/;
 const MEDIA = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,63}$/;
 
-/** Validate a display name: also the QQ file name for uploads, so no path structure or control characters. */
+/** 校验显示名称：它也是上传到QQ时的文件名，所以不能含路径结构或控制字符。 */
 export function validArtifactName(value: unknown): value is string {
   return typeof value === 'string' && value.trim() === value && value.length > 0 && [...value].length <= ARTIFACT_LIMITS.name &&
     !/[\u0000-\u001f\u007f/\\]/u.test(value) && value !== '.' && value !== '..';
@@ -30,8 +30,8 @@ export function validMediaType(value: unknown): value is string { return typeof 
 export interface ArtifactInput extends ArtifactScope { name: string; description: string; mediaType: string; ttlMs: number; bytes: Uint8Array }
 
 /**
- * Durable scoped binary objects. Metadata lives in SQLite; content lives in a directory NapCat
- * can also read, named only by artifact id, written atomically (exclusive tmp + fsync + rename).
+ * 按账号和群隔离的持久二进制对象。元数据存SQLite；内容存在NapCat也能读取的目录中，
+ * 文件名只用artifact id，写入是原子的（独占创建临时文件 + fsync + rename）。
  */
 export class ArtifactStore {
   private readonly db: DatabaseSync;
@@ -50,7 +50,7 @@ export class ArtifactStore {
       CREATE INDEX IF NOT EXISTS artifacts_expiry ON artifacts(expires_at);`);
   }
 
-  /** NapCat-side absolute path for an artifact file. */
+  /** artifact文件在NapCat侧的绝对路径。 */
   providerPath(artifact: Artifact): string { return path.posix.join(this.options.providerDirectory, artifact.artifactId); }
   private file(id: string): string { if (!ID.test(id)) {fail('artifact_not_found');} return path.join(this.options.directory, id); }
 
@@ -62,7 +62,7 @@ export class ArtifactStore {
     if (!Number.isSafeInteger(input.ttlMs) || input.ttlMs < 1 || input.ttlMs > ARTIFACT_LIMITS.ttlMs) {fail('invalid_arguments');}
     if (!(input.bytes instanceof Uint8Array)) {fail('invalid_arguments');}
     if (input.bytes.byteLength > ARTIFACT_LIMITS.bytes) {fail('artifact_too_large');}
-    // Serialize writers so the global quota check and the write are one step.
+    // 串行化写入，让总配额检查和写入成为一个整体，避免并发写入超额。
     const run = this.writing.then(() => this.write(input));
     this.writing = run.then(() => {}, () => {});
     return run;
@@ -100,7 +100,7 @@ export class ArtifactStore {
     return { artifacts: rows.slice(0, limit).map(decode), hasMore: rows.length > limit };
   }
 
-  /** Read and integrity-check content; a mismatching or replaced file is never served. */
+  /** 读取并校验内容；大小或哈希不符、或文件被替换时一律不返回。 */
   async read(artifact: Artifact): Promise<Buffer> {
     const handle = await open(this.file(artifact.artifactId), constants.O_RDONLY | constants.O_NOFOLLOW).catch(() => fail('artifact_unavailable'));
     try {
@@ -112,7 +112,7 @@ export class ArtifactStore {
     } finally { await handle.close(); }
   }
 
-  /** Remove expired rows and files, and stray temporaries or orphans older than a minute. */
+  /** 删除过期的记录和文件，以及超过一分钟的残留临时文件和无主文件。 */
   async sweep(): Promise<void> {
     const now = this.now();
     for (const row of this.db.prepare('SELECT id FROM artifacts WHERE expires_at<=? LIMIT 500').all(now)) {

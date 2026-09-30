@@ -10,8 +10,8 @@ import type { JsonObject } from '../src/contracts/json.ts';
 import type { ToolDefinition } from '../src/contracts/tools.ts';
 import type { ModelRequestRecord } from '../src/observability/model-usage.ts';
 
-// Deliberately opt-in: this spends model tokens, never connects to OneBot/QQ,
-// never loads real message databases, and never offers a sending tool.
+// 需显式开启：会消耗模型token，但从不连接OneBot/QQ、
+// 从不加载真实消息数据库，也从不提供发送工具。
 if (process.argv.slice(2).join(' ') !== '--allow-model-network') {
   throw new Error(
     'Use --allow-model-network to run the bounded synthetic probe',

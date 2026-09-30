@@ -2,7 +2,7 @@ import type { Config } from './onebot.ts';
 import type { LoggingConfig } from '../observability/logger.ts';
 import type { ResolvedToolPolicies } from './tool-policy.ts';
 
-/** Tagged union so further providers add branches without reinterpreting fields. */
+/** 带标签的联合类型，新增provider只需加分支，无需重新解释已有字段。 */
 export type WebSearchProviderConfig = { type: 'searxng'; url: string };
 
 export type ModelTransport =
@@ -48,7 +48,7 @@ export interface AppConfig {
     transport: ModelTransport;
   };
   runtime: { maxConcurrentTurns: number };
-  /** Absent search means the web_search tool is not offered at all. */
+  /** 未配置search时完全不提供web_search工具。 */
   web: { search?: WebSearchProviderConfig };
   storage: {
     directory: string;

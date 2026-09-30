@@ -27,10 +27,10 @@ export interface ToolsConfig {
   moderation: ModerationPolicy;
 }
 
-/** Low-level module options. Deployments obtain a complete policy from toListenerConfig. */
+/** 底层模块选项。实际部署通过toListenerConfig获得完整策略。 */
 export interface ListenerConfig {
   groupId?: string;
-  /** Trusted global deployment owner; never accepted from group overrides or chat. */
+  /** 可信的全局部署owner；从不接受来自群级覆盖或聊天内容的值。 */
   ownerId?: string;
   enabled: boolean;
   baseUrl: string;
@@ -57,7 +57,7 @@ export interface ListenerConfig {
   botName?: string;
   mentionEnabled?: boolean;
   quoteBotEnabled?: boolean;
-  /** Resolved authorization takes precedence over the module-specific projections below. */
+  /** 已解析的授权优先于下面各模块专用的投影字段。 */
   toolPermissions?: ResolvedToolPolicies;
   observeReactions?: boolean;
   messageMentions?: boolean;
@@ -66,11 +66,11 @@ export interface ListenerConfig {
   images?: ImagesConfig;
   forward?: ForwardConfig;
   attention?: { enabled: boolean; maxPlans: number };
-  /** Deployment search backend; without it web_search is never offered. */
+  /** 部署配置的搜索后端；未配置时不提供web_search。 */
   webSearch?: WebSearchProviderConfig;
 }
 
-/** The application boundary always supplies a complete, independently scoped policy. */
+/** 应用边界始终提供完整且按群独立的策略。 */
 export interface ResolvedListenerConfig extends ListenerConfig {
   toolPermissions: ResolvedToolPolicies;
   observeReactions: boolean;

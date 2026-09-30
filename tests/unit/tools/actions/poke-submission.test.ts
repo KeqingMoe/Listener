@@ -258,7 +258,7 @@ test('late null after dispatch records submission even when the caller aborts', 
   submitted(result);
   assert.equal(result.cancelled_after_dispatch, true);
   assert.equal(f.writes.length, 1);
-  // No lock was installed: another explicit call with a live context remains independent.
+  // 未安装锁：带有效上下文的另一次显式调用保持独立。
   submitted(await f.tools.execute('poke_member', args, ctx));
   assert.equal(f.writes.length, 2);
 });

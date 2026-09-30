@@ -93,7 +93,7 @@ function object(value: unknown): value is JsonObject {
   );
 }
 
-/** Never evaluate provider/model getters, prototypes, proxies or toJSON methods. */
+/** 不执行provider或模型数据上的getter、原型、代理或toJSON方法。 */
 function field(value: unknown, key: string): unknown {
   if (!object(value)) {
     fail('invalid_data');
@@ -301,6 +301,10 @@ function targets(
   ];
 }
 
+/**
+ * 群内自定义表情（QQ收藏表情）工具。元数据由CustomFaceStore保存，
+ * 写操作经CustomFaceCoordinator预写日志保护：结果不确定的写入会持续拦住同一目标，不自动重试。
+ */
 export class CustomFaceTools {
   private readonly groupId: string;
   private readonly enabled: ReadonlySet<string>;
@@ -668,8 +672,7 @@ export class CustomFaceTools {
     const contentMd5 = /^([a-f0-9]{32})(?:\.[a-z0-9]{1,8})?$/i
       .exec(fileName)?.[1]
       ?.toLowerCase();
-    // QQ transport URLs/rkeys rotate. Bind immutable message/segment identity and
-    // available file metadata, not credentials embedded in a transport URL.
+    // QQ传输URL和rkey会轮换。绑定不可变的消息/消息段身份和可用的文件元数据，不绑定URL中嵌入的凭据。
     return {
       url,
       fingerprint: digest([
@@ -735,7 +738,7 @@ export class CustomFaceTools {
     };
   }
 
-  /** Pure preflight: no download, staging, catalog sync, reference issue or write reservation. */
+  /** 纯预检：不下载、不暂存、不同步目录、不发放引用，也不预留写操作。 */
   async confirmationDetails(
     name: string,
     value: unknown,
@@ -956,8 +959,7 @@ export class CustomFaceTools {
   ): Promise<JsonObject> {
     const first = await this.fresh(ref, ctx, signal);
     const sendTargets = [digest(['send', this.groupId, first.record.md5])];
-    // A failed delivery belongs to this recipient and content, not the shared
-    // collection asset. Asset write uncertainty still blocks every recipient.
+    // 发送失败只影响该接收方和该内容，不影响共享的收藏资产；但资产写入结果不确定时，所有接收方都被拦住。
     this.options.coordinator.assertAllowed(ctx.selfId, [
       ...targets(first.record),
       ...sendTargets,
@@ -995,7 +997,7 @@ export class CustomFaceTools {
     try {
       id = messageId(field(ack, 'message_id'));
     } catch {
-      /* malformed ACK is uncertain */
+      /* ACK格式异常，视为结果不确定 */
     }
     if (!id || receipt.memoryIds.has(id)) {
       this.settle(op, 'unknown');
@@ -1065,11 +1067,13 @@ export class CustomFaceTools {
       return true;
     } catch {
       return false;
-    } // the committed pending record remains a fail-closed guard
+    } // 已提交的pending记录继续作为失败即关闭的防护
   }
 
-  /** Positive/empty Any replies are only submissions. Explicit negative business
-   * codes or uninspectable accessors are uncertain failures, never proof of no effect. */
+  /**
+   * 正向或空的Any响应只表示已提交。明确的负业务码或无法检查的访问器属于结果不确定的失败，
+   * 不能证明操作没有生效。
+   */
   private nativeWriteFailure(
     op: string,
     value: unknown,
@@ -1162,7 +1166,7 @@ export class CustomFaceTools {
         record.revision,
       );
     } catch {
-      /* keep the durable guard */
+      /* 保留持久化防护 */
     }
     if (retired) {
       this.settle(op, 'done');
@@ -1264,7 +1268,7 @@ export class CustomFaceTools {
         }
       }
     } catch {
-      /* preserve a normal write receipt even when readback is cancelled/unavailable */
+      /* 回读被取消或不可用时，仍保留正常的写入回执 */
     }
     return afterDispatch(
       {
@@ -1311,7 +1315,7 @@ export class CustomFaceTools {
           this.options.coordinator.recoverableAddHolds(ctx.selfId, guard)
             .length > 0;
       } catch {
-        /* unknown or changed evidence must remain blocked */
+        /* 证据未知或已变化时必须保持拦截 */
       }
       return afterDispatch(
         submittedResult({
@@ -1416,9 +1420,8 @@ export class CustomFaceTools {
     if (!candidate) {
       return partial('collection_not_uniquely_verified');
     }
-    // Directory metadata alone is not proof that this is the image being added.
-    // Verify the candidate's real bytes (including collision-resistant SHA256),
-    // then recheck its exact native identity and current account before binding.
+    // 仅凭目录元数据不能证明这就是正在添加的图片。
+    // 先校验候选图片的真实字节（包括抗碰撞的SHA256），绑定前再复核其确切的原生身份和当前账号。
     try {
       const content = await this.original(candidate.url, candidate.md5, signal);
       if (
@@ -1504,7 +1507,7 @@ export class CustomFaceTools {
         );
       }
     } catch {
-      /* do not hand out a stale ref after a local projection failure */
+      /* 本地投影失败后不发放过期的引用 */
     }
     return afterDispatch(
       {

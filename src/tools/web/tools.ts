@@ -85,7 +85,7 @@ export interface WebToolsOptions {
   fetcher?: (url: unknown, signal?: AbortSignal) => Promise<FetchOutcome>;
 }
 
-/** Shared per-process tool runtime; the in-flight bound is a resource limit, not a quota. */
+/** 进程内共享的Web工具运行时；并发上限是资源限制，不是调用配额。 */
 export class WebTools {
   private active = 0;
   private readonly fetcher: NonNullable<WebToolsOptions['fetcher']>;
@@ -202,7 +202,7 @@ export class WebTools {
       outcome.contentType === 'html'
         ? htmlToMarkdown(outcome.text)
         : outcome.text.trim();
-    // Code-point slicing keeps surrogate pairs intact across continuation reads.
+    // 按码点切片，分段续读时不会拆开代理对。
     const chars = Array.from(content),
       page = chars.slice(start, start + WEB_LIMITS.contentChars).join('');
     const next =

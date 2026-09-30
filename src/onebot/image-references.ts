@@ -31,7 +31,7 @@ function identifier(v: unknown, message = false): string | undefined {
   }
 }
 
-/** Store only stable references, never transport URLs or QQ file tokens. */
+/** 只保存稳定引用（消息ID加段序号），绝不保存传输URL或QQ文件token。 */
 export function imageReferences(
   messageId: string,
   segments: unknown,

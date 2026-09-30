@@ -357,7 +357,7 @@ enabled = true
           notify();
         });
       });
-      // Attach a handler immediately so early spawn failures never become unhandled rejections.
+      // 立即挂上处理函数，避免spawn早期失败变成未处理的rejection。
       void childExited.catch(() => {});
       for (const stream of [child.stdout!, child.stderr!]) {
         stream.on('data', (chunk) => {
@@ -367,7 +367,7 @@ enabled = true
       }
       await wait(() => output.includes('onebot.ready'), 'entrypoint ready');
       assert.ok(peer);
-      // Ignored traffic precedes valid events on the same ordered transport.
+      // 在同一有序传输上，被忽略的流量先于有效事件到达。
       peer.send(JSON.stringify(event('77', '91', 'unlisted-fixture-body')));
       peer.send(
         JSON.stringify({
@@ -435,7 +435,7 @@ enabled = true
         { type: 'text', data: { text: 'pong' } },
       ]);
       assert.equal(requests.length, 4);
-      // A holds the sole global permit while B reaches its admission queue.
+      // A占住唯一的全局许可，同时B进入准入队列。
       holdModel = true;
       peer.send(JSON.stringify(event(A, '3', 'hold-A-model')));
       await wait(() => !!held && requests.length === 5, 'active model request');

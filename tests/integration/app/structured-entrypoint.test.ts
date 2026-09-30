@@ -135,7 +135,7 @@ test(
     const send = (segments: unknown[]) => op('send_message', { segments });
     const http = createServer((req, res) => {
       void (async () => {
-        req.setEncoding('utf8'); // Preserve multibyte characters split across HTTP chunks.
+        req.setEncoding('utf8'); // 保证跨HTTP chunk拆开的多字节字符不被破坏。
         let source = '';
         for await (const chunk of req) {
           source += chunk;

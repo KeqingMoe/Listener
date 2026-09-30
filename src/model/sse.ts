@@ -10,8 +10,9 @@ export interface SseOptions {
   onBytes?: (bytes: Uint8Array) => void;
 }
 
-/** Bounded UTF-8 SSE framing. Events completed in one read share its arrival timestamp.
- * Protocol-specific completion belongs to the caller; EOF without it is an error.
+/**
+ * 有字节上限的UTF-8 SSE分帧。同一次read中完成的事件共享该次到达时间戳。
+ * 是否结束由调用方按协议判断（onEvent返回true）；未结束就遇到EOF视为错误。
  */
 export async function readSse(
   body: ReadableStream<Uint8Array>,
@@ -40,7 +41,7 @@ export async function readSse(
     if (field === 'data') {
       data.push(colon < 0 ? '' : current.slice(colon + 1).replace(/^ /, ''));
     }
-    // Comments, event/id/retry and unknown fields do not contribute data.
+    // 注释行、event/id/retry和未知字段都不计入data。
     return false;
   };
   const abort = () => {
@@ -91,7 +92,7 @@ export async function readSse(
     try {
       await reader.cancel();
     } catch {
-      /* Original stream failure wins. */
+      /* 以原始的流错误为准。 */
     }
     reader.releaseLock();
   }

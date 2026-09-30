@@ -36,6 +36,7 @@ function verify(password: string, stored: string) {
   );
 }
 
+/** 逐级创建父目录并拒绝symlink和group/other可写的目录（root所有的sticky目录如/tmp除外）。 */
 function directories(path: string) {
   const parent = dirname(resolve(path));
   const parts = parent
@@ -63,6 +64,7 @@ function directories(path: string) {
   }
 }
 
+/** 要求是当前用户所有、权限0600、无硬链接的普通文件，防止凭据库被替换或被他人读取。 */
 function privateFile(path: string, optional = false) {
   let stat;
   try {
@@ -87,7 +89,7 @@ function privateFile(path: string, optional = false) {
 
 export interface AuthOptions {
   path: string;
-  /** Snapshot of DASHBOARD_PASSWORD loaded at process startup. Never read from the database. */
+  /** 进程启动时读取的DASHBOARD_PASSWORD快照；密码本身从不从数据库读取。 */
   password?: string;
   secureCookie?: boolean;
   now?: () => number;
@@ -103,6 +105,10 @@ export type LoginResult =
         | 'password_invalid_configuration';
     };
 
+/**
+ * 基于SQLite的单密码认证与会话存储。数据库只保存密码哈希和会话token的SHA-256摘要。
+ * 启动时密码变化或未配置会清空所有会话。
+ */
 export class AuthStore {
   readonly secureCookie: boolean;
   private readonly passwordHash: string | undefined;
@@ -158,7 +164,7 @@ export class AuthStore {
       );
       this.db.exec('BEGIN IMMEDIATE');
       try {
-        // Legacy account credentials are never consulted, even during migration.
+        // 旧的account表中的凭据一律不使用，直接删除。
         this.db.exec('DROP TABLE IF EXISTS account');
         const previous = this.credential();
         if (validPassword(options.password)) {
@@ -188,6 +194,7 @@ export class AuthStore {
     }
   }
 
+  /** 每次访问前重新校验目录、文件身份（dev/ino）以及journal/WAL文件，发现替换即报错。 */
   private boundary() {
     directories(this.path);
     const stat = privateFile(this.path)!;
@@ -211,6 +218,7 @@ export class AuthStore {
     return createHash('sha256').update(token).digest('hex');
   }
 
+  /** 登录限流：每分钟全局40次、单IP 5次；跟踪的IP数达到上限时拒绝新IP，避免内存无限增长。 */
   private permit(ip: string) {
     const now = this.now();
     if (now - this.global.start >= 60000) {
@@ -251,7 +259,7 @@ export class AuthStore {
     if (!validPassword(password)) {
       return { status: 'invalid' };
     }
-    // Serialize issuance with startup credential changes in another process.
+    // 与其他进程启动时的凭据变更串行化，避免用已失效的密码签发会话。
     this.db.exec('BEGIN IMMEDIATE');
     try {
       if (
@@ -308,6 +316,7 @@ export class AuthStore {
   }
 }
 
+/** 同名cookie出现多次时视为无效，防止cookie注入造成歧义。 */
 export function sessionToken(cookie: string | undefined) {
   const values = (cookie ?? '')
     .split(';')

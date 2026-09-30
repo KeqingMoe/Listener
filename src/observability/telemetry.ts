@@ -55,9 +55,9 @@ const text = (v: unknown, max = 128): string | null =>
     ? v
     : null;
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-// Logical retained payload capacity, not the allocated SQLite file size.
+// 按逻辑保留的payload字节数计算容量，而非SQLite文件实际占用大小。
 const CAPACITY_BYTES = 256 * 1024 * 1024;
-// The shared sanitizer owns per-field bounds (1 MiB JSON, 64 KiB other fields).
+// 单字段上限由共享的sanitizer负责（JSON 1 MiB，其他字段64 KiB）。
 const inspectionFields = [
   'requestJson',
   'responseJson',
@@ -78,9 +78,13 @@ interface InspectionState {
   cleanupPending?: boolean;
 }
 
-// Share writer/recovery state across simultaneous stores for the same database inode.
+// 同一数据库inode上同时打开的多个store共享写入与恢复状态。
 const inspectionStores = new Map<string, InspectionState>();
 
+/**
+ * 模型请求的SQLite遥测存储：model_requests记录用量与耗时，model_request_inspections保存脱敏后的请求/响应内容，
+ * 后者失败不影响前者。
+ */
 export class TelemetryStore {
   private readonly db: DatabaseSync;
   private readonly secrets: readonly string[];
@@ -129,7 +133,7 @@ export class TelemetryStore {
         cached_input_tokens INTEGER, reasoning_tokens INTEGER,
         group_id TEXT, turn_id TEXT, phase TEXT, diagnostics TEXT
       );`);
-      // Take the write lock before checking, so concurrent openers cannot both ALTER.
+      // 先拿写锁再检查列，避免并发打开时两边都执行ALTER。
       const columns = this.db
         .prepare('PRAGMA table_info(model_requests)')
         .all();
@@ -156,8 +160,8 @@ export class TelemetryStore {
           this.db.exec(`ALTER TABLE model_requests ADD COLUMN ${name} REAL;`);
         }
       }
-      // Changing TPS semantics invalidates cached trend points even without row writes.
-      // The epoch rotation commits atomically with the nullable column migration.
+      // TPS口径变化后，即使没有行写入，已缓存的趋势点也会失效。
+      // 更换epoch与新增可空列的迁移在同一事务中原子提交。
       if (
         newDecodeColumn &&
         this.db
@@ -178,7 +182,7 @@ export class TelemetryStore {
       try {
         this.db.exec('ROLLBACK;');
       } catch {
-        /* The transaction may not have started. */
+        /* 事务可能根本没开始。 */
       }
       this.db.close();
       throw error;
@@ -191,7 +195,7 @@ export class TelemetryStore {
     };
     this.inspectionState.references++;
     inspectionStores.set(this.inspectionKey, this.inspectionState);
-    // Inspection failures are deliberately private and never disable usage telemetry.
+    // inspection相关失败刻意不对外暴露，也绝不影响usage telemetry。
     try {
       this.db.exec(`CREATE TABLE IF NOT EXISTS model_request_inspections (
         request_id TEXT PRIMARY KEY, group_id TEXT, turn_id TEXT, wake_id TEXT, phase TEXT,
@@ -206,9 +210,9 @@ export class TelemetryStore {
       CREATE INDEX IF NOT EXISTS model_request_inspections_group_turn ON model_request_inspections(group_id,turn_id);
       CREATE INDEX IF NOT EXISTS model_request_inspections_group_wake ON model_request_inspections(group_id,wake_id);`);
     } catch {
-      /* No request contents or database errors escape inspection persistence. */
+      /* 请求内容和数据库错误都不会从inspection持久化中泄漏出去。 */
     }
-    // Install before beginRequest can recover running rows (and before any other writes).
+    // 必须在beginRequest恢复running行（以及其他任何写入）之前安装，这些变更才会进入change log。
     installRequestChangeLog(this.db);
   }
 
@@ -251,7 +255,7 @@ export class TelemetryStore {
         ),
       );
     } catch {
-      /* Inspection capture is best effort, including hostile getters. */
+      /* inspection采集尽力而为，包括遇到恶意getter时。 */
     }
   }
 
@@ -276,7 +280,7 @@ export class TelemetryStore {
         `SELECT status,${inspectionBytes} AS bytes FROM model_request_inspections WHERE request_id=?`,
       )
       .get(value.requestId);
-    // Match model_requests' first-completion-wins semantics; duplicate starts do not reset data.
+    // 与model_requests一致采用首次完成为准；重复的start不会重置已有数据。
     if (old && (status === 'running' || old.status !== 'running')) {
       return;
     }
@@ -327,10 +331,8 @@ export class TelemetryStore {
     ) {
       return;
     }
-    // Retention/capacity are incremental targets, not an unbounded synchronous
-    // sweep: a backlog continues in bounded batches on subsequent writes.
-    // One transaction avoids one fsync per removed row. Secure deletion work is
-    // additionally limited by payload bytes and a cooperative time check.
+    // 保留期和容量是逐步逼近的目标，而非一次性无界的同步清理：积压部分在后续写入时分批继续。
+    // 单个事务避免每删一行就fsync一次；secure_delete的开销另外受删除字节数和协作式计时限制。
     const over = (state.bytes ?? 0) > CAPACITY_BYTES,
       started = performance.now();
     let nextBytes = state.bytes ?? 0,
@@ -366,7 +368,7 @@ export class TelemetryStore {
       }
       this.db.exec('COMMIT;');
       transaction = false;
-      // Publish accounting only after successful commit; rollback must leave it unknown.
+      // 提交成功后才更新字节统计；回滚时必须置为未知。
       state.bytes = nextBytes;
       state.cleanupPending = processed < rows.length || rows.length === 64;
       state.cleanedAt = now;
@@ -375,7 +377,7 @@ export class TelemetryStore {
         try {
           this.db.exec('ROLLBACK;');
         } catch {
-          /* No private database errors escape. */
+          /* 不泄漏任何私有数据库错误。 */
         }
       }
       state.bytes = null;
@@ -476,7 +478,7 @@ export class TelemetryStore {
         sanitizeInspection(value.inspection ?? {}, this.secrets),
       );
     } catch {
-      /* Inspection failures must not change existing record semantics. */
+      /* inspection失败不能改变原有record的语义。 */
     }
   }
 

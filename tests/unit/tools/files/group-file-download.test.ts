@@ -272,8 +272,8 @@ test('rejects private metadata loopback reserved and mapped IPv6 literals withou
     await assert.rejects(download(`http://${host}/PRIVATE_PATH`, 100), ERROR);
     assert.equal(fake.requests, 0, host);
   }
-  // The production export rejects numeric private destinations without test hooks,
-  // without performing DNS or making a network connection.
+  // 生产导出在没有测试hook的情况下拒绝数字形式的私有目标地址，
+  // 不做DNS解析，也不建立网络连接。
   await assert.rejects(
     downloadGroupText('http://127.0.0.1/PRIVATE_PATH', 100),
     ERROR,

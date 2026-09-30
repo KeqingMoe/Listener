@@ -27,7 +27,7 @@ const app = buildApp({
     config.model.apiKey,
     ...(password ? [password] : []),
   ],
-  // Historical read authorization is separate from live bot membership/routing.
+  // 历史数据的读取授权与bot当前的群成员身份/路由相互独立。
   getGroups: () => dashboardGroupSources(config),
   telemetryPath: config.storage.telemetryPath,
   webRoot: resolve('dist/dashboard/web'),

@@ -14,7 +14,7 @@ import {
   afterDispatch,
 } from '../../onebot/operation-result.ts';
 
-/** NapCat v4.18.28: set_group_leave ignores is_dismiss; no dismiss tool is offered. */
+/** NapCat v4.18.28的set_group_leave忽略is_dismiss，因此不提供解散群的工具。 */
 export const GROUP_ACTION_TOOL_NAMES = [
   'poke_member',
   'group_sign',
@@ -152,8 +152,7 @@ const check = (signal?: AbortSignal) => {
   }
 };
 
-// These two native essence APIs declare Any. Validate JSON transport data, not
-// invented business ACK fields; a normal provider return only proves submission.
+// 这两个原生精华消息API声明返回Any。只校验JSON传输数据，不臆造业务ACK字段；provider正常返回只证明已提交。
 function jsonValue(value: unknown, depth = 0, budget = { nodes: 0 }): boolean {
   if (++budget.nodes > 4096 || depth > 16) {
     return false;
@@ -208,7 +207,7 @@ function jsonValue(value: unknown, depth = 0, budget = { nodes: 0 }): boolean {
   );
 }
 
-/** One instance per wake: dedup/unknown locks must never be shared across wakes. */
+/** 每次wake一个实例：去重和结果未知的锁不能跨wake共享。 */
 export class GroupActionTools {
   private readonly groupId: string;
   private readonly enabled: ReadonlySet<string>;
@@ -256,7 +255,7 @@ export class GroupActionTools {
     );
   }
 
-  /** Read-only proposal verification; never queues, reserves or dispatches a write. */
+  /** 只读的提案校验；不排队、不预留，也不派发写操作。 */
   async verifyProposal(
     name: string,
     args: unknown,
@@ -305,7 +304,7 @@ export class GroupActionTools {
     ctx: TurnContext,
     signal?: AbortSignal,
   ): Promise<JsonObject> {
-    // Copy trusted metadata and validated values before waiting for earlier dispatches.
+    // 在等待之前的派发完成前，先复制可信元数据和已校验的值。
     let action: Name, value: JsonObject, context: TurnContext;
     try {
       check(signal);
@@ -412,7 +411,7 @@ export class GroupActionTools {
     ) {
       fail('invalid_arguments');
     }
-    // Packet operations coerce QQ IDs with unary + in NapCat: refuse precision loss.
+    // NapCat的发包操作用一元+转换QQ ID，拒绝会丢失精度的值。
     if (
       ['poke_member', 'group_sign', 'set_group_title'].includes(name) &&
       (!Number.isSafeInteger(Number(this.groupId)) ||
@@ -507,8 +506,7 @@ export class GroupActionTools {
     ) {
       fail('permission_denied');
     }
-    // This returns an earlier checked acknowledgement, not a fresh operation.
-    // Identity and bot permission still have to pass before reusing it.
+    // 这里复用的是之前已校验的ACK，不是新操作；复用前仍须通过身份和Bot权限校验。
     if (cached) {
       return;
     }
@@ -587,19 +585,17 @@ export class GroupActionTools {
     }
   }
 
-  // Field/ACK audit: https://github.com/NapNeko/NapCatQQ/tree/v4.18.28/packages/napcat-onebot/action
-  // group/SetGroupName.ts and SetGroupWholeBan.ts check result===0 before null.
-  // go-cqhttp/SendGroupNotice.ts checks WebApi.ec===0 before void (wire data:null).
-  // group/{SetEssenceMsg,DelEssenceMsg}.ts return untyped native results:
-  // core/services/NodeIKernelGroupService.ts declares add/removeGroupEssence
-  // as Promise<unknown>, NOT GeneralCallResult. A guessed {result:0} is no ACK.
-  // deleteGroupBulletin is declared void; DelGroupNotice forwards it unchanged.
-  // Normal returns prove provider submission, not the final QQ state. Any-result
-  // bodies never become invented business ACKs; void is client-normalized null.
-  // group/{SetGroupAdmin,SetGroupKick,SetGroupLeave}.ts discard native result.
-  // packet/SendPoke.ts and extends/{SetGroupSign,SetSpecialTitle}.ts only send
-  // packets: core/packet/context/operationContext.ts awaits sendOidbPacket with
-  // the default rsp=false; no parsed server acknowledgement is obtained.
+  // 字段与ACK核对依据：https://github.com/NapNeko/NapCatQQ/tree/v4.18.28/packages/napcat-onebot/action
+  // group/SetGroupName.ts和SetGroupWholeBan.ts先检查result===0再返回null。
+  // go-cqhttp/SendGroupNotice.ts先检查WebApi.ec===0再返回void（线上data:null）。
+  // group/{SetEssenceMsg,DelEssenceMsg}.ts返回无类型的原生结果：
+  // core/services/NodeIKernelGroupService.ts把add/removeGroupEssence声明为Promise<unknown>，
+  // 而不是GeneralCallResult，猜测的{result:0}不算ACK。
+  // deleteGroupBulletin声明为void，DelGroupNotice原样转发。
+  // 正常返回只证明provider已提交，不代表QQ的最终状态。Any类型的返回体不会被当作业务ACK；void由客户端规范化为null。
+  // group/{SetGroupAdmin,SetGroupKick,SetGroupLeave}.ts丢弃原生结果。
+  // packet/SendPoke.ts和extends/{SetGroupSign,SetSpecialTitle}.ts只发包：
+  // core/packet/context/operationContext.ts以默认rsp=false等待sendOidbPacket，拿不到解析后的服务端确认。
   private native(
     name: Name,
     args: JsonObject,
@@ -736,8 +732,8 @@ export class GroupActionTools {
         retry_allowed: false,
       };
     }
-    // Every new dispatch rechecks live login/group/role; cached confirmations are not new dispatches.
-    // Accepted pokes are independent submissions, never idempotent deliveries.
+    // 每次新派发都重新校验实时的登录、群和角色；复用缓存的确认不算新派发。
+    // 戳一戳每次都是独立提交，不做幂等去重。
     const cached = name === 'poke_member' ? undefined : this.latest.get(key);
     const hit = cached?.fingerprint === fingerprint;
     await this.verify(name, args, ctx, signal, hit);
@@ -775,7 +771,7 @@ export class GroupActionTools {
     } catch (error) {
       return failure(error);
     }
-    // A successful provider return and a confirmed QQ state are different facts.
+    // provider成功返回与QQ状态已确认是两回事。
     const submitted =
       ((native.ack === 'submitted_null' || native.ack === 'submitted_void') &&
         result === null) ||

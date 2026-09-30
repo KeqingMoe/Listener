@@ -14,7 +14,7 @@ import {
 } from './useDashboard';
 import { applyTrendSync } from './requestTrendsState';
 
-/** Cursors are private to the mounted resource; scheduling belongs to App. */
+/** 请求趋势的增量同步。cursor归当前挂载的实例私有，刷新调度由App负责。 */
 export function useRequestTrends() {
   const { query, identity } = useFilters();
   const data = shallowRef<RequestTrendsResponse | null>(null);

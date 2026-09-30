@@ -16,6 +16,10 @@ export interface ReminderSchedulerOptions {
   intervalMs?: number;
 }
 
+/**
+ * 定时轮询到期提醒并投递。发送前通过claim回调把提醒原子地置为sending，
+ * 回调只能用一次，且在暂停、换号或群不再可用时拒绝，保证同一提醒最多发送一次。
+ */
 export class ReminderScheduler {
   private timer?: ReturnType<typeof setInterval>;
   private running?: Promise<void>;

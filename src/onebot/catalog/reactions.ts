@@ -91,7 +91,7 @@ function unicodeId(value: unknown): value is string {
   );
 }
 
-/** Minimal candidate projection, not a claim that QQ accepts every reaction. */
+/** 提取最小候选集合（sysface数字表情加Unicode emoji），不代表QQ接受其中每个回应。 */
 export function extractReactionCatalog(raw: unknown): readonly ReactionEntry[] {
   if (!record(raw) || !array(raw.sysface) || !array(raw.emoji)) {
     return invalid();
@@ -158,7 +158,7 @@ export function extractReactionCatalog(raw: unknown): readonly ReactionEntry[] {
   return Object.freeze(result);
 }
 
-// Independently hand-authored examples only; never vendor the upstream table.
+// 仅为独立手写的示例，绝不拷贝上游的表。
 const fallback: readonly ReactionEntry[] = Object.freeze([
   Object.freeze({ id: '0', name: '惊讶', kind: 'face' as const }),
   Object.freeze({ id: '14', name: '微笑', kind: 'face' as const }),
@@ -185,7 +185,7 @@ const fallback: readonly ReactionEntry[] = Object.freeze([
   }),
 ]);
 
-/** Missing raw resources alone may fall back. Existing invalid/symlink/special files fail closed. */
+/** 只有原始资源文件不存在时才回退到示例；已存在但非法、是符号链接或特殊文件时一律报错。 */
 export function loadReactionCatalog(
   path: string | URL = defaultPath,
 ): readonly ReactionEntry[] {
@@ -240,7 +240,7 @@ export function loadReactionCatalog(
 let cached: readonly ReactionEntry[] | undefined;
 let known: ReadonlySet<string> | undefined;
 
-/** Intentionally lazy: importing a disabled feature never opens its catalog. */
+/** 刻意延迟加载：功能未启用时仅import不会打开目录文件。 */
 export function getReactionCatalog(): readonly ReactionEntry[] {
   return (cached ??= loadReactionCatalog());
 }

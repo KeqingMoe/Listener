@@ -132,7 +132,7 @@ test('responses compaction object is accepted as configuration, never a user sup
       assert.deepEqual(app.resolveGroup('11').session.compaction, {
         thresholdTokens: threshold,
       });
-      assert.equal(app.model.model, 'fixture-model'); // Parsing is not evidence that a provider supports compression.
+      assert.equal(app.model.model, 'fixture-model'); // 能解析不代表provider支持压缩。
     }
   }
   for (const scope of ['defaults.session', 'groups."11".session']) {

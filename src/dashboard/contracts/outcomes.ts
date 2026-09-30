@@ -1,4 +1,4 @@
-// Diagnostic categories do not change the model/tool protocol status or prove an external effect.
+// 诊断分类不会改变模型/工具协议层面的状态，也不能证明外部副作用已发生。
 export const REQUEST_REASONS = [
   'cancelled',
   'timeout',
@@ -83,7 +83,7 @@ export const REASONS = [
   'transient_images_lost',
   'transcript_resource_boundary',
   'session_rotated',
-  // Fixed public custom-face failure codes; never accept arbitrary provider text.
+  // 以下是自定义表情功能固定的公开失败码；不接受上游返回的任意文本。
   'message_ack_unverified',
   'previous_operation_unresolved',
   'storage_configuration',
@@ -140,7 +140,7 @@ export function requestOutcome(
       : 'failed';
 }
 
-// Match only the two exact historical messages, never expose arbitrary result text.
+/** 只接受白名单内的原因码，外加两条固定的错误文本；不暴露任意结果文本。 */
 export function toolReason(row: {
   reason_code?: unknown;
   reason?: unknown;
@@ -228,14 +228,15 @@ export function toolOutcome(row: {
     if (reason === 'cancelled') {
       return 'cancelled';
     }
-    // A more specific diagnostic must not erase the underlying rejection category.
+    // 更具体的诊断码不能掩盖底层的拒绝类别，所以同时检查reason和原始error。
     if (
       (reason && REJECTED.includes(reason)) ||
       (typeof row.error === 'string' && REJECTED.includes(row.error))
     ) {
       return 'rejected';
     }
-    return 'failed'; // Unrecognised explicit errors remain failures, not normal handling.
+    // 无法识别的显式错误仍算失败，而非正常处理。
+    return 'failed';
   }
   return typeof row.status === 'string' && HANDLED.includes(row.status)
     ? 'handled'

@@ -119,7 +119,7 @@ async function until(check: () => boolean, description: string) {
   assert.fail(`Timed out: ${description}`);
 }
 
-// A real local OneBot connection, with write ACKs controlled by each test.
+// 真实的本地OneBot连接，写操作的ACK由各测试自行控制。
 async function fixture(
   check: (h: {
     listener: Listener;
@@ -382,7 +382,7 @@ for (const sender of [SELF, OTHER]) {
   test(`wire dispatch-time echo from ${sender === SELF ? 'self is legal' : 'another sender is not ownership'}`, async () => {
     await fixture(async (h) => {
       const pending = send(h.listener);
-      // Attach the rejection handler before releasing the ACK.
+      // 先挂上rejection处理函数，再放行ACK。
       const outcome = pending.then(
         (value) => ({ value }),
         (error) => ({ error }),

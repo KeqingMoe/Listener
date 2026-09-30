@@ -109,7 +109,7 @@ const DEFINITIONS: ToolDefinition[] = [
   ),
 ];
 
-/** Group-scoped, per-wake voice operations. Does not fabricate sent-message facts. */
+/** 限定单群、每次wake一份的语音操作。不捏造已发送消息的事实。 */
 export class GroupVoiceTools {
   private readonly groupId: string;
   private readonly enabled: ReadonlySet<string>;
@@ -297,7 +297,7 @@ export class GroupVoiceTools {
       completeness: 'native_snapshot_only',
     };
     const result = this.output(value);
-    // output() clones its payload, so explicitly retain the array being filled.
+    // output()会克隆传入内容，因此显式挂回正在填充的数组。
     result.voices = rows;
     const update = () => {
       const next = offset + rows.length;
@@ -365,7 +365,7 @@ export class GroupVoiceTools {
         if (prior?.status === 'unknown') {
           return { ...prior, cached: true, dispatched: false };
         }
-        // A queued explicit interaction needs fresh identity/membership proof too.
+        // 排队中的显式调用同样需要重新验证身份和群成员资格。
         if (previous) {
           await this.verify(ctx, signal);
         }
@@ -424,8 +424,8 @@ export class GroupVoiceTools {
       if (!record(response) || response.message_id !== 0) {
         return afterDispatch(unknown(), !!signal?.aborted);
       }
-      // GetAiVoice completed normally, but the handler hard-codes message_id: 0.
-      // Preserve submission even after cancellation without inventing a message ACK.
+      // GetAiVoice正常完成，但handler把message_id硬编码为0。
+      // 即使已取消也保留“已提交”结果，不捏造消息ACK。
       return afterDispatch(
         submittedResult({ action: 'send_group_ai_voice', message_id: null }),
         !!signal?.aborted,

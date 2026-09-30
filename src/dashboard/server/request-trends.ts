@@ -7,7 +7,7 @@ import type {
 } from '../contracts/request-trends.ts';
 import { ResourceLimit } from './repository.ts';
 
-/** Same hard ceiling as ReviewRepository: never return a silently sampled scatter plot. */
+/** 与ReviewRepository相同的硬上限：超出时报错，绝不悄悄返回采样过的散点图。 */
 export const MAX_REQUEST_TREND_POINTS = 10000;
 const MINUTE = 60000;
 const DAY = 24 * 60 * MINUTE;
@@ -25,7 +25,7 @@ export function requestTrendBucketMs(range: Range): number {
           : DAY;
 }
 
-/** Pure projection of already authorized, bounded ReviewRepository rows. */
+/** 对已授权、有界的ReviewRepository行做纯投影。 */
 export function buildRequestTrends(
   range: Range,
   availability: Availability,
@@ -37,7 +37,7 @@ export function buildRequestTrends(
   const points = requests.map((r) => ({
     startedAt: r.startedAt,
     outcome: r.outcome,
-    // A display fallback duration must not imply a known request interval.
+    // 展示用的回退耗时不能被当作已知的请求区间。
     durationMs:
       r.performance.coverage.modelIntervalRequests === 1 ? r.durationMs : null,
     inputTokens: r.inputTokens,
@@ -51,7 +51,7 @@ export function buildRequestTrends(
   return buildRequestTrendBuckets(range, availability, points);
 }
 
-/** Rebuild exact buckets from a bounded metadata-only cached point set. */
+/** 从有界的、仅含元数据的缓存点集重新精确计算分桶。 */
 export function buildRequestTrendBuckets(
   range: Range,
   availability: Availability,
@@ -64,7 +64,7 @@ export function buildRequestTrendBuckets(
   const buckets: RequestTrendBucket[] = [];
   if (availability.telemetry) {
     const first = Math.floor(range.since / bucketMs) * bucketMs;
-    // ceil prevents an empty tail when until is exactly a bucket boundary.
+    // 用ceil，until恰好落在桶边界时不会多出一个空的尾桶。
     const count = Math.max(1, Math.ceil((range.until - first) / bucketMs));
     for (let i = 0; i < count; i++) {
       buckets.push({
@@ -88,7 +88,7 @@ export function buildRequestTrendBuckets(
         Math.floor((point.startedAt - first) / bucketMs),
       );
       const bucket = buckets[index];
-      // Route queries are inclusive and already scoped; never count an out-of-range row.
+      // 路由查询的范围是闭区间且已限定作用域，这里仍跳过越界的行，绝不计入。
       if (
         !bucket ||
         point.startedAt < range.since ||

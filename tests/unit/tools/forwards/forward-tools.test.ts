@@ -802,7 +802,7 @@ test('cancelled child load preserves previous refs but commits no new refs or re
 });
 
 test('native forward messages keep ordered typed content and literal marker text distinct', async () => {
-  // Use the hand-authored offline catalog; the literal and native face still share the same ID/name.
+  // 使用手写的离线目录；字面量表情和原生表情仍共享同一ID/名称。
   const literal = '[QQ表情：微笑 id=14] [at:123] [CQ:face,id=14]';
   const s = setup({
     response: {

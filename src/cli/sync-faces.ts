@@ -84,7 +84,7 @@ async function atomicWrite(
   }
 }
 
-/** Explicit opt-in CLI only. Imports and tests never fetch the network. */
+/** 只能通过CLI显式触发；import和测试都不会访问网络。 */
 export async function syncFaces(): Promise<void> {
   const source = await download(FACE_CATALOG_SOURCE);
   const license = await download(FACE_CATALOG_LICENSE);
@@ -103,8 +103,8 @@ export async function syncFaces(): Promise<void> {
   if (info.isSymbolicLink() || !info.isDirectory()) {
     throw new Error('Invalid QQ face data directory');
   }
-  // Original files remain byte-for-byte intact in ignored data/, together with
-  // upstream license. Publish the minimal runtime table last, atomically.
+  // 原始文件连同上游许可证逐字节保存在被git忽略的data/下。
+  // 运行时使用的精简表最后原子写入，确保它出现时源文件已就位。
   await atomicWrite(
     directory,
     `napcat-face-config-v${FACE_CATALOG_VERSION}.json`,

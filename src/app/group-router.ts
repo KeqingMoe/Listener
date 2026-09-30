@@ -7,7 +7,7 @@ import type { Reminder, DeliveryOutcome } from '../reminders/store.ts';
 
 export interface GroupHandler {
   receive(event: unknown, selfId: string): Promise<void>;
-  /** Active, host-scheduled reminder dispatch; must not synthesize a receive event. */
+  /** 由宿主调度、主动发送的提醒；不得伪造成一次receive事件。 */
   sendReminder?(
     reminder: Reminder,
     beforeDispatchClaim: () => boolean,
@@ -43,9 +43,11 @@ export interface DynamicGroupRouting {
   onError?(reason: string): void;
 }
 
-/** Membership is established only by authenticated protocol input or a complete
- * successful get_group_list response, never by model text or configured IDs alone.
- * Structural transitions are serialized; handlers are allocated lazily. */
+/**
+ * 按群把事件路由到各自的handler，并维护bot的群成员身份。
+ * 成员身份只由已认证的协议输入或一次完整成功的get_group_list响应确立，
+ * 从不来自模型文本或仅凭配置中的群号。结构性变更串行执行；handler按需懒创建。
+ */
 export class GroupRouter {
   private readonly handlers = new Map<string, GroupHandler>();
   private members = new Set<string>();
@@ -100,7 +102,7 @@ export class GroupRouter {
       : undefined;
   }
 
-  /** Only persisted host tasks may use this entry; membership never comes from task data. */
+  /** 只有已持久化的宿主任务可以走这个入口；成员身份从不取自任务数据。 */
   async dispatchReminder(
     reminder: Reminder,
     claim: () => boolean,
@@ -121,7 +123,7 @@ export class GroupRouter {
     if (!valid()) {
       throw new Error('reminder_unavailable');
     }
-    // Allocation shares receive's structural queue, but delivery must not hold it.
+    // 创建handler与receive共用结构队列，但投递过程不能占住该队列。
     const handler =
       this.handlers.get(groupId) ??
       (await this.enqueue(async () => {
@@ -209,7 +211,7 @@ export class GroupRouter {
     }
   }
 
-  /** Tool names for a sandbox job of an already-resident group; never allocates a handler. */
+  /** 返回已驻留群的sandbox任务可用的工具名；从不为此创建handler。 */
   hostToolNames(selfId: string, groupId: string): string[] {
     if (
       this.reminderAccount !== selfId ||
@@ -223,7 +225,7 @@ export class GroupRouter {
     return this.handlers.get(groupId)?.hostToolNames?.() ?? [];
   }
 
-  /** A sandbox tool call, validated against the live account, membership and handler at call time. */
+  /** 执行sandbox发起的工具调用，在调用时按当前账号、成员身份和handler校验。 */
   async executeHostTool(
     context: {
       groupId: string;
@@ -321,7 +323,7 @@ export class GroupRouter {
     }
   }
 
-  /** A failed/invalid snapshot leaves the last known membership intact. */
+  /** 获取失败或无效的群列表快照不会改动最近一次已知的成员身份。 */
   async connect(selfId: string): Promise<void> {
     this.membershipVerified = false;
     if (this.stopped || id(selfId) !== selfId) {
@@ -421,8 +423,8 @@ export class GroupRouter {
     const snapshotRetired = new Set(
       [...this.members].filter((groupId) => !snapshotNext.has(groupId)),
     );
-    // Fence at response arrival, not after a pending factory/close yields the
-    // structural queue. Even known-but-never-opened groups need this tombstone.
+    // 在响应到达时立即设栅栏，而不是等挂起的创建/关闭让出结构队列之后。
+    // 即使是已知但从未打开过的群也需要这个墓碑标记。
     for (const groupId of snapshotRetired) {
       this.departed.add(groupId);
       this.closing.add(groupId);
@@ -430,7 +432,7 @@ export class GroupRouter {
       this.handlers.get(groupId)?.setConnected(false);
     }
     await this.enqueue(async () => {
-      // Finish already-authorized revocations even if disconnected meanwhile.
+      // 即使期间已断开连接，也要完成已经确认的撤销。
       await this.closeGroups(snapshotRetired);
       if (this.stopped || !this.connected || epoch !== this.epoch) {
         return;
@@ -447,8 +449,8 @@ export class GroupRouter {
           }
         }
       }
-      // Authoritative removals must still retire resources if a newly discovered
-      // group's policy/path is invalid. Do not admit any additions until validated.
+      // 即使新发现群的策略或路径无效，权威的移除仍须释放资源；
+      // 校验通过之前不接纳任何新增群。
       const removed = [...this.members].filter((groupId) => !next.has(groupId));
       for (const groupId of removed) {
         if (!this.departed.has(groupId)) {
@@ -559,19 +561,19 @@ export class GroupRouter {
       } else if (this.departed.has(groupId)) {
         return;
       }
-      // Explicit self join/leave beats an in-flight snapshot. Ordinary traffic
-      // is weaker membership evidence and cannot override a successful removal.
+      // bot自身明确的入群/退群事件优先于进行中的快照。普通消息只是较弱的
+      // 成员身份证据，不能推翻一次成功的移除。
       if (selfLeft || selfJoined) {
         this.touched.set(groupId, ++this.revision);
       }
     }
     const groupEpoch = this.groupEpoch.get(groupId) ?? 0;
-    // Cancel running work immediately, even if another transition is awaiting close.
+    // 立即取消进行中的工作，即使另一个变更正在等待关闭。
     if (selfLeft) {
       this.handlers.get(groupId)?.setConnected(false);
     }
     const stable = this.handlers.get(groupId);
-    // Unrelated live groups never wait behind another group's late ACK/close.
+    // 已稳定运行的无关群走快速路径，不排在其他群迟到的ACK/关闭后面。
     if (
       stable &&
       !selfLeft &&

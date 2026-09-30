@@ -208,7 +208,7 @@ async function until(check: () => boolean) {
   assert.fail('listener condition timed out');
 }
 
-// Mock clocks establish exact deadlines; async gates isolate the remaining scheduler boundaries.
+// mock时钟确定精确的截止时间；异步闸门隔离其余调度边界。
 test('fixed first-caller window retains every mention and ordinary supplement', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
   const s = setup({ config: { debounceMs: 100, delayMaxMs: 100 } });

@@ -29,8 +29,7 @@ const lines = computed(() =>
         line.text.toLocaleLowerCase().includes(query.value.toLocaleLowerCase()),
     ),
 );
-// Keep the reader's search while a resource patch updates its content.
-// A real detail identity change clears data and remounts this viewer.
+// 资源patch更新内容时保留搜索词；详情对象真正切换时会清空数据并重新挂载本组件。
 </script>
 <template>
   <section class="content-viewer" :aria-label="label || '内容'">
@@ -76,7 +75,7 @@ input {
   flex: 1;
   min-width: 8rem;
 }
-/* The detail pane (or main page) owns vertical scrolling, never the prose. */
+/* 纵向滚动由详情面板或主页面负责，正文本身不滚动。 */
 .viewer-body {
   font-family: ui-monospace, monospace;
   font-size: 12px;

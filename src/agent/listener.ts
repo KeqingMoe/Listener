@@ -296,6 +296,7 @@ function logToolResult(
   );
 }
 
+/** 把OneBot群消息事件规范化为TimelineEntry；非本群、非本bot账号或bot自己发的消息返回undefined。 */
 export function normalizeEvent(
   event: unknown,
   selfId: string,
@@ -325,7 +326,7 @@ export function normalizeEvent(
   }
   let text = '';
   let replyTo: string | undefined;
-  // Content clipping must not erase an actual quote's provenance later in the wire array.
+  // 先扫描完整片段数组取引用：后续内容截断不能抹掉位于数组靠后位置的真实引用来源。
   for (const segment of event.message) {
     if (object(segment) && segment.type === 'reply' && object(segment.data)) {
       replyTo = messageId(segment.data.id);
@@ -384,6 +385,10 @@ export function normalizeEvent(
   };
 }
 
+/**
+ * 单群AI监听器：接收OneBot事件、维护未读与回复批次、按@/引用/关注/随机触发调度turn，
+ * 驱动模型工具循环，并向沙箱代码暴露同一套工具实现。
+ */
 export class Listener {
   private moderation: Moderation;
   private readonly groupId: string;
@@ -699,7 +704,7 @@ export class Listener {
   }
 
   private cancelActive(reason: string): void {
-    // Keep the first cancellation cause, even if shutdown follows an expired wake.
+    // 保留第一次取消的原因，即使wake过期之后又发生shutdown。
     if (this.active && !this.active.signal.aborted) {
       this.activeCancelReason = reason;
       this.active.abort(reason);
@@ -720,7 +725,7 @@ export class Listener {
       }
     }
     const pending = this.pending;
-    // Do not discard overflow: an omitted trigger may not have been observed.
+    // 有溢出时不丢弃批次：被省略的触发消息可能还没被处理到。
     if (
       pending &&
       !pending.omittedMessages &&
@@ -832,13 +837,13 @@ export class Listener {
       if (this.memory) {
         this.reactionObservations?.notice(event, this.memory);
       }
-      return; // Metadata updates never enter chat memory, unread buffers, or triggers.
+      return; // notice类元数据更新不进入聊天记忆、未读缓冲或触发判断。
     }
     const entry = normalizeEvent(event, selfId, this.groupId);
     if (!entry) {
       return;
     }
-    // Do not replay history after reconnect, nor accept far-future event timestamps.
+    // 重连后不重放历史消息，也不接受时间戳远在未来的事件。
     if (Math.abs(Date.now() / 1000 - entry.time) > 120) {
       log('debug', 'message.skipped', {
         message_id: entry.messageId,
@@ -858,7 +863,7 @@ export class Listener {
       messageId: entry.messageId,
       selfId,
     };
-    // Store only when AI explicitly enabled; disabled AI does not collect group history.
+    // 只有显式启用AI时才有memory；未启用时不收集群聊历史。
     if (this.memory && !this.memory.append(entry)) {
       log('debug', 'message.skipped', {
         message_id: entry.messageId,
@@ -998,8 +1003,8 @@ export class Listener {
       );
       this.armAttention();
     }
-    // Late quote lookups cannot redraw random batches; a matching explicit
-    // attention plan may still inspect an unread, previously unresolved quote.
+    // 迟到的引用查询结果不能重新抽取随机批次；但匹配的显式关注计划
+    // 仍可处理此前未解析引用的未读消息。
     if (
       !triggered &&
       !attentionHits.length &&
@@ -1066,8 +1071,8 @@ export class Listener {
           omitted_direct: this.pending.omittedDirect,
         });
       }
-      // Promotion may establish a fresh first-@ window; later callers cannot
-      // keep extending it. Recompute the same absolute deadline, not a delay.
+      // 升级为direct批次时可能开启新的首次@收集窗口，后续呼唤不能无限延长它。
+      // 清掉计时器后按同一绝对截止时间重新计算，而不是重新计时。
       clearTimeout(this.timer);
       this.timer = undefined;
     }
@@ -1240,7 +1245,7 @@ export class Listener {
     signal?: AbortSignal,
   ): Promise<JsonObject> {
     try {
-      // Validate before reading handles or making a proposal; no write is dispatched here.
+      // 读取句柄或生成提案前先校验参数；这里不会派发任何写操作。
       const parsed = prepareExtendedConfirmation(
         name,
         args,
@@ -1292,7 +1297,7 @@ export class Listener {
                 };
               }
               const generation = this.generation;
-              // Do not capture turnApi or its expired wake guard: /confirm is a later owner command.
+              // 不捕获turnApi及其wake守卫（届时已过期）：/confirm是之后由主人发起的独立命令。
               const executor = createExtendedTools(
                 this.api,
                 memory,
@@ -1461,7 +1466,7 @@ export class Listener {
     );
   }
 
-  // Survives reset/disconnect; world persistence covers earlier Listener instances.
+  // 在reset和断线后仍保留；更早的Listener实例的记录由world持久化覆盖。
   private readonly claimedMessageAcks = new Set<string>();
   private captureSendReceipt(): SendReceiptSnapshot {
     const worldHighWater = this.runtime.world?.getState().latestSequence;
@@ -1471,8 +1476,8 @@ export class Listener {
         this.memory?.recent().map((entry) => entry.messageId) ?? [],
       );
     } catch (error) {
-      // World-backed sessions may deliberately prohibit legacy memory snapshots.
-      // Their persisted world watermark remains the authoritative pre-send history.
+      // 基于world的会话可能有意禁止读取memory快照，
+      // 此时以持久化的world水位作为发送前历史的权威依据。
       if (worldHighWater === undefined) {
         throw error;
       }
@@ -1493,7 +1498,7 @@ export class Listener {
       const world = this.runtime.world;
       const known = world?.findMessage(id);
       const remembered = this.memory?.find(id);
-      // Only a matching self echo observed AFTER this dispatch may precede its ACK.
+      // 只有在本次派发之后观察到、且内容匹配的自身回显才允许先于ACK出现。
       if (
         !receipt ||
         this.claimedMessageAcks.has(id) ||
@@ -1506,7 +1511,7 @@ export class Listener {
       ) {
         throw new DuplicateMessageAckError();
       }
-      // Claim before any projection: an append failure must not make this ACK reusable.
+      // 在任何投影之前先登记：即使追加失败，这个ACK也不能被再次使用。
       this.claimedMessageAcks.add(id);
       if (this.claimedMessageAcks.size > 65536) {
         this.claimedMessageAcks.delete(
@@ -1653,8 +1658,8 @@ export class Listener {
       generation !== this.generation ||
       !this.connected ||
       this.stopped;
-    // A reused ID cannot prove a new send. A real new ACK is not undone by cancellation
-    // or local projection failure, and must not resurrect cleared conversation memory.
+    // 重复的消息ID不能证明发生了新的发送。真正的新ACK不会因取消或本地投影失败而撤销，
+    // 也不能让已清空的对话记忆重新出现。
     this.claimMessageAck(entry, receipt);
     let projectionFailed = false;
     try {
@@ -1713,9 +1718,8 @@ export class Listener {
       ) {
         return;
       }
-      // A first @ may have arrived while a random batch was waiting for a
-      // global slot. Respect its remaining collection window without holding
-      // the slot, then rejoin behind already waiting groups.
+      // 随机批次等待全局名额期间可能来了首次@。此时不占着名额，
+      // 等其剩余收集窗口结束后再排到已在等待的群后面。
       if (
         this.commandBusy ||
         (this.pending && this.pending.readyAt > Date.now())
@@ -1769,7 +1773,7 @@ export class Listener {
   }
 
   private ownPacer?: SideEffectPacer;
-  /** Tool names sandbox code may call right now: the model's current tool set minus wake-steering tools. */
+  /** 沙箱代码当前可调用的工具名：模型当前工具集减去控制wake的工具。 */
   hostToolNames(): string[] {
     if (this.stopped) {
       return [];
@@ -1798,8 +1802,10 @@ export class Listener {
     return this.memory;
   }
 
-  /** One sandbox tool call. Policy, identity and group state are checked now, not at job creation.
-   * Same implementations as model calls; results are returned, never thrown. */
+  /**
+   * 执行一次沙箱工具调用。策略、身份和群状态在调用时检查，而非创建任务时。
+   * 与模型调用共用同一套实现；结果以返回值给出，不抛异常。
+   */
   async executeHostTool(
     name: string,
     args: unknown,
@@ -2009,7 +2015,7 @@ export class Listener {
     }
   }
 
-  /** Sandbox view results carry RGBA pixels instead of model-visible image content. */
+  /** 沙箱中的查看图片结果返回RGBA像素，而不是模型可见的图片内容。 */
   private async pixelsOf(content: ChatContentPart[]): Promise<JsonObject[]> {
     const images: JsonObject[] = [];
     let meta: JsonObject = {};
@@ -2048,8 +2054,10 @@ export class Listener {
     return images;
   }
 
-  /** Tool implementations bound to one working memory. Shared by model turns and host callers;
-   * per-turn policy (dedupe, review gates, budgets) stays with the caller. */
+  /**
+   * 绑定到某份工作memory的工具实现，由模型turn和宿主调用方共用；
+   * 每轮策略（去重、复核门槛、预算）由调用方负责。
+   */
   private hostToolkit(options: {
     memory: Memory;
     valid: () => boolean;
@@ -2176,7 +2184,7 @@ export class Listener {
           ),
         beforeSend: () => this.captureSendReceipt(),
         onSent: (entry, receipt) => {
-          // A late valid ACK remains a world fact even after cancellation or disconnection.
+          // 迟到但有效的ACK即使在取消或断线后仍记为world中的事实。
           this.claimMessageAck(entry, receipt);
           if (this.runtime.world) {
             recordToolMessage(this.runtime.world, entry);
@@ -2316,9 +2324,8 @@ export class Listener {
         Date.now(),
         trigger.context.selfId,
       );
-      // Seal the batch before any await. New arrivals cannot change the model
-      // context, caller authority, or tool source scope of this turn.
-      // Session tools query the live, group-scoped world; legacy turns retain their sealed view.
+      // 在任何await之前封存批次，新到达的消息不能改变本轮的模型上下文、呼唤者权限或工具来源范围。
+      // 有session时工具查询实时的本群world；无session时保留封存时的快照。
       const frozen: Memory = session
         ? {
             append: (entry) => this.memory!.append(entry),
@@ -2663,7 +2670,7 @@ export class Listener {
         if (!response.tool_calls.length) {
           outcome = 'prose_suppressed';
           break;
-        } // Ordinary prose is intentionally never forwarded.
+        } // 模型的普通文本输出有意不转发到群里。
         if (!session) {
           messages.push({
             role: 'assistant',
@@ -2876,7 +2883,7 @@ export class Listener {
                   canonical(parsed),
                 ]);
               } catch {
-                /* Invalid proposals are rejected by the confirmation adapter, never dispatched. */
+                /* 非法提案会被确认适配器拒绝，不会派发。 */
               }
             }
             const previousProposal = extendedProposals.get(proposalKey);
@@ -2953,7 +2960,7 @@ export class Listener {
             ) {
               lastWakeSendAt = Date.now();
             }
-            // Preserve a dispatched write result even when cancellation arrives with its ACK.
+            // 即使取消与ACK同时到达，也保留已派发写操作的结果，据此标记需要复核。
             if (
               call.function.name === 'add_custom_face' &&
               (result.collection_submitted === true ||
@@ -3436,8 +3443,8 @@ export class Listener {
         if (terminal) {
           return;
         }
-        // Chat Completions requires every tool result before the next user image message.
-        // These bytes live only in this turn; never append them to shared memory.
+        // Chat Completions要求所有工具结果都出现在下一条user图片消息之前。
+        // 这些图片字节只存在于本轮，绝不追加到共享memory。
         if (imageContent.length && valid()) {
           if (session) {
             session.appendInput([
@@ -3668,7 +3675,7 @@ export class Listener {
     this.resolving.clear();
     this.resetModeration();
     this.clearEphemeralState();
-    // Defer DB close until current async work has noticed cancellation.
+    // 等进行中的异步工作感知到取消后再关闭数据库。
     while (
       this.running ||
       this.admission ||

@@ -53,7 +53,7 @@ export const EXTENDED_TOOL_NAMES = [
 
 export type ExtendedToolName = (typeof EXTENDED_TOOL_NAMES)[number];
 
-/** No QQ-visible effect and no confirmation mode (artifact tools write only bot-local, TTL-bound storage). */
+/** 在QQ中没有可见效果、也不需要确认模式的工具（artifact类工具只写bot本地、带TTL的存储）。 */
 export const EXTENDED_READ_ONLY_TOOLS: readonly ExtendedToolName[] = [
   'query_javascript_jobs',
   'create_artifact',
@@ -83,7 +83,7 @@ export type ExtendedToolsConfig = Partial<
   Record<ExtendedToolName, ExtendedToolMode>
 >;
 
-/** Absent capabilities remain disabled, including calls invented by the model. */
+/** 未配置的能力一律视为关闭，模型臆造的工具调用同样不会启用。 */
 export function enabledExtendedTools(
   config?: ExtendedToolsConfig,
 ): ExtendedToolName[] {

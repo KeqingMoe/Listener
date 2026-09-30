@@ -52,7 +52,7 @@ const check = (signal?: AbortSignal) => {
   }
 };
 
-/** Clone only bounded JSON data, without invoking getters or toJSON. Reject cycles. */
+/** 只克隆有界的JSON数据，不调用getter或toJSON，拒绝循环引用。 */
 function snapshot(raw: unknown): { value: unknown; bytes: number } {
   let visits = 0,
     estimate = 0;
@@ -192,6 +192,7 @@ function textPrefix(text: string, length: number): string {
   return text.slice(0, end);
 }
 
+/** 分页读取合并转发；读取状态按turn保存，嵌套转发需凭forward_id另行读取。 */
 export class ForwardTools {
   private readonly options: ForwardConfig;
   private readonly groupId: string;
@@ -444,8 +445,8 @@ export class ForwardTools {
         partial_message_indices: partial,
         messages: rows,
       };
-      // This is the successful page-payload budget, not total protocol size.
-      // Static error replies remain small; all calls share the wake's tool budget.
+      // 这是成功分页的payload预算，不是协议总大小。
+      // 固定的错误回复本身很小；所有调用共用本次wake的工具预算。
       const limit = Math.min(12000, 29500 - state.outputChars);
       const pending: Array<{ id: string; key: string; target: Target }> = [];
       let last = start - 1;
@@ -504,9 +505,8 @@ export class ForwardTools {
           !Array.isArray(data.message) &&
           !Array.isArray(data.content) &&
           stringContent === undefined;
-        // A transport compatibility string is not a native text segment: serialized
-        // CQ may hide attachment credentials. Literal CQ in an actual text segment
-        // remains text, without parsing or denying it.
+        // 为传输兼容提供的字符串不是原生文本段：序列化的CQ码可能藏有附件凭据。
+        // 真正文本段里字面出现的CQ码仍按文本处理，不解析也不拒绝。
         const serializedCq =
           stringContent !== undefined && /\[CQ:/i.test(stringContent);
         const content: MessageSegment[] = [];
@@ -671,8 +671,7 @@ export class ForwardTools {
             update();
             break;
           }
-          // Preserve a structured prefix. Never split a nontext segment, nor leave
-          // an actionable child reference after its corresponding segment is gone.
+          // 保留结构化的前缀：不切开非文本段，对应消息段被截掉后也不留下可操作的子引用。
           let lo = 0,
             hi = content.length;
           while (lo < hi) {
@@ -730,7 +729,7 @@ export class ForwardTools {
         children.set(child.id, child.target);
         childKeys.set(child.key, child.id);
       }
-      // Commit only after all awaits, cancellation checks, and output budgeting.
+      // 所有await、取消检查和输出预算都完成后才提交状态。
       state.roots = roots;
       state.children = children;
       state.cache = cache;

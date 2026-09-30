@@ -28,9 +28,9 @@ export interface WorldToolsOptions {
   selfId: string;
   wake?: () => WakeMetadata;
   currentBudget?: () => JsonObject;
-  /** Group-scoped runtime metadata, queried only by get_wake_state. */
+  /** 本群的运行时元数据，仅供get_wake_state查询。 */
   state?: () => JsonObject;
-  /** Unix seconds, not milliseconds. */
+  /** Unix秒，不是毫秒。 */
   clock?: () => number;
   timezone?: string;
 }
@@ -305,7 +305,7 @@ function event(value: ProjectedWorldEvent): JsonObject {
   };
 }
 
-// Explicit metadata projection: no message bodies, arbitrary callback keys or API payloads.
+/** 显式投影元数据：不含消息正文、任意回调键或API payload。 */
 function runtimeState(source: unknown): JsonObject {
   if (!object(source)) {
     return {};
@@ -437,7 +437,7 @@ function runtimeState(source: unknown): JsonObject {
         omitted += original.length - items.length;
       }
     }
-    // Preserve a useful prefix, explicitly accounting for every dropped top-level item.
+    // 保留有用的前缀，并明确计数每个被丢弃的顶层条目。
     while (Buffer.byteLength(JSON.stringify(out)) > 10000) {
       const items = (
         name === 'attention_state'
@@ -467,6 +467,7 @@ function runtimeState(source: unknown): JsonObject {
   return result;
 }
 
+/** 本群world存储的读取入口：wake状态、时间、事件与消息分页，以及事件ack。只读取本群范围。 */
 export class WorldTools {
   private readonly groupId: string;
   private readonly clock: () => number;
@@ -684,7 +685,7 @@ export class WorldTools {
         ? { before: query.boundary }
         : { after: query.boundary }),
     };
-    // Reserve space for projection and metadata. Final output is independently byte checked.
+    // 为投影和元数据预留空间，最终输出另行按字节检查。
     const page =
       kind === 'events'
         ? this.options.store.readEvents(input, 12_000)
@@ -704,7 +705,7 @@ export class WorldTools {
       current_time: this.clockResult(now),
       untrusted: true,
     };
-    // Projected extra names/representation may grow input. Never skip rows to fit a public output.
+    // 投影附加的名称和表示形式可能使内容变大。不能为了塞进输出而跳过行。
     if (Buffer.byteLength(JSON.stringify(output), 'utf8') > MAX_BYTES - 512) {
       fail('resource_limit');
     }

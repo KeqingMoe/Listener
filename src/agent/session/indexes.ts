@@ -1,4 +1,4 @@
-/** Identical expression in the writer index and readonly dashboard lookup; no historical body transfer. */
+/** 写入端表达式索引与只读dashboard查询必须使用完全相同的表达式，SQLite才会命中该索引；不迁移历史消息体。 */
 export const SESSION_PHYSICAL_TURN =
   "CASE WHEN json_valid(message) THEN CASE WHEN json_type(message,'$.content')='text' THEN CASE WHEN json_valid(json_extract(message,'$.content')) THEN json_extract(json_extract(message,'$.content'),'$.wake.wake_id') END END END";
 export const SESSION_INSPECTION_INDEXES = `

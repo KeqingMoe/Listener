@@ -295,7 +295,7 @@ function project(row: Reminder): JsonObject {
   };
 }
 
-/** Retain all scheduling/CAS metadata even when one body consumes the entire output budget. */
+/** 即使单条正文占满输出预算，也保留全部调度和CAS元数据。 */
 function fit(row: JsonObject, budget: number): JsonObject | undefined {
   if (bytes(row) <= budget) {
     return row;

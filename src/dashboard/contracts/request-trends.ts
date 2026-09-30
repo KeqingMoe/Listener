@@ -13,7 +13,7 @@ export const REQUEST_TREND_OUTCOMES = [
   'unknown',
 ] as const satisfies readonly RequestTrendOutcome[];
 
-/** One unsampled request; no identifiers, models, diagnostics or content. Unknown is null, not zero. */
+/** 单个未经采样的请求，不含标识符、模型、诊断信息或内容。未知值为null而非0。 */
 export type RequestTrendPoint = Pick<
   ReviewRequest,
   | 'startedAt'
@@ -35,8 +35,7 @@ export interface RequestTrendBucket {
   total: number;
 }
 
-/** GET /api/request-trends?since&until&groupId; authenticated, range <=31 days. */
-/** Stable, collision-free JSON tuple of authorized group id and request id. */
+/** key是由已授权group id与request id组成的JSON元组，稳定且不会冲突。 */
 export type RequestTrendSyncPoint = RequestTrendPoint & { key: string };
 
 export interface RequestTrendsSyncResponse extends Omit<
@@ -45,17 +44,20 @@ export interface RequestTrendsSyncResponse extends Omit<
 > {
   mode: 'snapshot' | 'delta';
   cursor: string;
-  /** Snapshot: complete point set. Delta: replace these keys. */
+  /** snapshot模式为完整点集；delta模式为需要替换的key。 */
   upserts: RequestTrendSyncPoint[];
   removals: string[];
 }
 
+/** GET /api/request-trends?since&until&groupId，需认证，范围不超过31天。 */
 export interface RequestTrendsResponse {
   range: Range;
   availability: Availability;
   points: RequestTrendPoint[];
   bucketMs: number;
-  /** Clipped epoch-aligned buckets. Last bucket includes until; a zero-width range has one bucket.
-   * Unavailable telemetry has no buckets, rather than fabricated zero counts. */
+  /**
+   * 按epoch对齐并裁剪到范围内的桶。最后一个桶包含until；零宽范围只有一个桶。
+   * 遥测不可用时不返回桶，而不是伪造零计数。
+   */
   buckets: RequestTrendBucket[];
 }

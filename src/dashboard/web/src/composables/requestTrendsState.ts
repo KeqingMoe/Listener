@@ -4,6 +4,7 @@ import type {
   RequestTrendsSyncResponse,
 } from '../../../contracts/request-trends';
 
+/** 合并趋势增量（snapshot时重建），并剔除落在响应时间范围外的点。 */
 export function applyTrendSync(
   previous: ReadonlyMap<string, RequestTrendSyncPoint>,
   response: RequestTrendsSyncResponse,

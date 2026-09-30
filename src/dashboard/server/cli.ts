@@ -5,6 +5,7 @@ export function parseListenOptions(
   args: string[],
   env: NodeJS.ProcessEnv = process.env,
 ) {
+  // 不带值的--host（后面没有参数或紧跟另一个选项）表示监听所有IPv4地址。
   const normalized = args.flatMap((arg, index) =>
     arg === '--host' &&
     (args[index + 1] === undefined || args[index + 1]!.startsWith('--'))

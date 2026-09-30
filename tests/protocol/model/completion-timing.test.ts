@@ -79,8 +79,8 @@ for (const transport of ['chat', 'responses'] as const) {
         index = 0;
       const records: ModelRequestRecord[] = [];
       t.mock.method(performance, 'now', () => now);
-      // Reproduce production's tiny first-to-last-delta interval; delayed usage and
-      // protocol completion must be in the denominator, not mistaken for output.
+      // 复现生产环境中首个到最后一个delta间隔极短的情况；延迟到达的usage和
+      // 协议完成时间必须计入分母，而不能被误算为输出时间。
       let chunks: Array<[number, string]> =
         scenario === 'buffered-delayed-terminal'
           ? [

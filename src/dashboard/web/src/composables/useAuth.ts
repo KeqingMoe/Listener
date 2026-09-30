@@ -1,7 +1,7 @@
 import { ref } from 'vue';
 
 export const authenticated = ref<boolean | null>(null);
-// Invalidate private caches even when a successful login replaces a live session.
+/** 登录/登出时递增；即使新登录替换了仍有效的会话，也借此让私有缓存失效。 */
 export const authVersion = ref(0);
 export const configured = ref<boolean | null>(null);
 export const configurationError = ref('');

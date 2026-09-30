@@ -88,7 +88,7 @@ const diagnosticKeys = {
   ],
 } as const;
 
-// Defense in depth: never stringify an entire API diagnostic payload.
+/** 纵深防御：只按白名单提取诊断字段，绝不整体序列化API诊断载荷。 */
 export function diagnosticRows(
   value: unknown,
   kind: keyof typeof diagnosticKeys,

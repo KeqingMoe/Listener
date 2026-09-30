@@ -102,7 +102,7 @@ test('SQLite canonical-side companions are protected for every database and shar
     );
     assert.throws(() => f.load(), ConfigError);
   }
-  // Same-owner lexical/canonical companion aliases must not self-conflict.
+  // 同一owner的字面路径与规范路径形式的伴随文件别名不能与自身冲突。
   for (const companion of ['-wal', '-shm', '-journal']) {
     symlinkSync(
       'real/base.sqlite' + companion,
@@ -111,7 +111,7 @@ test('SQLite canonical-side companions are protected for every database and shar
   }
   f.config('[groups."11".storage]\ndatabase="alias.sqlite"');
   assert.doesNotThrow(() => f.load());
-  // A companion's own symlink is resolved too, not just its base database.
+  // 伴随文件自身的symlink也会被解析，而不只是其所属的主数据库。
   symlinkSync('../other.sqlite', join(f.dir, 'real/base.sqlite-wal'));
   f.config(
     '[groups."11".storage]\ndatabase="alias.sqlite"\n[groups."22".storage]\ndatabase="other.sqlite"',
@@ -142,7 +142,7 @@ test('real SQLite journal appears beside canonical database and loader rejects i
     db.exec('ROLLBACK');
     db.close();
   }
-  // The guard does not rely on that journal already existing.
+  // 此防护不依赖该journal文件已经存在。
   assert.equal(existsSync(real + '-journal'), false);
   assert.throws(() => f.load(), ConfigError);
 });

@@ -524,7 +524,7 @@ test('ordinary arrival during confirmation notification does not requeue the pro
     );
     send.resolve({ message_id: '9999' });
     await delay(50);
-    assert.equal(s.requests.length, 2); // Confirmation notification is no longer terminal; the next model response explicitly finishes.
+    assert.equal(s.requests.length, 2); // 确认通知不是终点；由下一次模型响应显式结束。
     assert.equal(s.codes().length, 1);
     assert.equal(
       s.calls.filter((call) => call.action === 'set_group_ban').length,

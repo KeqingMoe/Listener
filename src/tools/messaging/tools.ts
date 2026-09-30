@@ -356,7 +356,7 @@ export class GroupTools {
         if (!Array.isArray(raw) || raw.length > 100000) {
           fail('verification_failed');
         }
-        // Verify the entire source, even records outside the requested page.
+        // 校验整个数据源，包括请求页之外的记录。
         const matching = raw
           .map((v) => member(v, this.groupId))
           .filter(

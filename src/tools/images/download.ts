@@ -24,7 +24,7 @@ export type ImageDownloader = (
 const MAX_INPUT_BYTES = 10 * 1024 * 1024;
 const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
 const MAX_PIXELS = 40_000_000;
-// Exact QQ image CDN hosts only; never suffix-match a caller-supplied hostname.
+// 只允许精确匹配的QQ图片CDN主机名，不对调用方提供的主机名做后缀匹配。
 const IMAGE_HOSTS = new Set([
   'multimedia.nt.qq.com.cn',
   'gchat.qpic.cn',
@@ -53,7 +53,7 @@ export function validateImageUrl(value: string): URL {
   return url;
 }
 
-/** Reject noncanonical addresses, scoped IPv6, mapped IPv4, and all special ranges. */
+/** 拒绝非规范地址、带scope的IPv6、IPv4映射地址以及所有特殊用途网段。 */
 export function isPublicAddress(address: string): boolean {
   if (!isIP(address) || address.includes('%')) {
     return false;
@@ -63,8 +63,7 @@ export function isPublicAddress(address: string): boolean {
     if (parsed.range() !== 'unicast') {
       return false;
     }
-    // IPv6 global unicast is currently 2000::/3. Exclude special-purpose allocations
-    // even on ipaddr.js versions which label them plain unicast.
+    // IPv6全球单播目前为2000::/3。即使某些ipaddr.js版本把特殊用途分配标为普通unicast，也要排除。
     if (parsed.kind() === 'ipv6') {
       const v6 = parsed as ipaddr.IPv6;
       if (!v6.match(ipaddr.parse('2000::') as ipaddr.IPv6, 3)) {
@@ -93,7 +92,7 @@ function checkAbort(signal?: AbortSignal): void {
   }
 }
 
-/** Race even uncooperative DNS/decoder work against cancellation; never expose its errors. */
+/** 即使DNS或解码工作不响应取消，也让它与取消信号竞速；不暴露其错误。 */
 function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
     const aborted = () => {
@@ -120,7 +119,7 @@ function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
-/** Gate native parsers using signatures, not caller-controlled MIME types or filenames. */
+/** 根据文件签名决定是否交给原生解析器，不看调用方可控的MIME类型或文件名。 */
 export function hasSupportedImageSignature(bytes: Buffer): boolean {
   if (!Buffer.isBuffer(bytes)) {
     return false;
@@ -139,7 +138,7 @@ export function hasSupportedImageSignature(bytes: Buffer): boolean {
   );
 }
 
-/** Fixed model preview bound; callers cannot request original-size model input. */
+/** 模型预览尺寸上限固定，调用方不能请求以原图尺寸输入模型。 */
 export function prepareImage(
   bytes: Buffer,
   signal?: AbortSignal,
@@ -147,7 +146,7 @@ export function prepareImage(
   return prepareNormalizedImage(bytes, MODEL_IMAGE_MAX_EDGE, signal);
 }
 
-/** Decode bytes only (never filenames), flatten the first frame, strip metadata. */
+/** 只根据字节解码（不看文件名），取第一帧展平并去除元数据。 */
 async function prepareNormalizedImage(
   bytes: Buffer,
   maxEdge: number,
@@ -267,7 +266,7 @@ export interface ImageDownloadDependencies {
     options: RequestOptions,
     callback: (response: IncomingMessage) => void,
   ) => ClientRequest;
-  /** Testing hook; production always uses the 15 second total deadline. */
+  /** 测试钩子；生产环境固定使用15秒总超时。 */
   timeoutMs?: number;
 }
 
@@ -307,7 +306,7 @@ function createSafeImageDownloader<T>(
         ...metrics(),
         reason: callerSignal?.aborted ? 'cancelled' : 'url_rejected',
       });
-      throw error; // These preflight errors already have fixed, public messages.
+      throw error; // 这些预检错误的消息本就是固定且可公开的。
     }
     const controller = new AbortController();
     const signal = controller.signal;
@@ -372,7 +371,7 @@ function createSafeImageDownloader<T>(
               rejectUnauthorized: true,
               agent: false,
               family: selected.family,
-              // A fresh connection with a pinned address; TLS still validates the CDN hostname.
+              // 新建连接并固定地址；TLS仍校验CDN主机名。
               lookup: (_hostname, options, callback) => {
                 if (options.all) {
                   callback(null, [
@@ -402,7 +401,7 @@ function createSafeImageDownloader<T>(
                 incoming.destroy();
                 return;
               }
-              // All redirects and errors are rejected without reading or exposing their bodies.
+              // 所有重定向和错误响应都直接拒绝，不读取也不暴露响应体。
               if (incoming.statusCode !== 200) {
                 finish(fail('Image HTTP response rejected'));
                 return;
@@ -489,7 +488,7 @@ function createSafeImageDownloader<T>(
                   : 'transfer_failed',
         },
       );
-      // Never include remote exception messages, URL tokens, response text, or binary data.
+      // 不包含远端异常消息、URL中的token、响应文本或二进制数据。
       throw fail(
         timedOut
           ? 'Image download timed out'
@@ -514,7 +513,7 @@ export function createImageDownloader(
   );
 }
 
-/** Native group sends retain their previous normalized 2048px policy, not model previews. */
+/** 原生群发送按2048px规范化，不使用模型预览的尺寸。 */
 export function createSendImageDownloader(
   dependencies: ImageDownloadDependencies = {},
 ): ImageDownloader {
@@ -531,7 +530,7 @@ export interface OriginalImage {
   bytes: Buffer;
   md5: string;
   format: 'jpeg' | 'png' | 'gif' | 'webp';
-  /** Encoded dimensions of a single frame; no EXIF rotation or resizing is applied. */
+  /** 单帧的编码尺寸；不应用EXIF旋转，也不缩放。 */
   width: number;
   height: number;
   animated: boolean;
@@ -543,8 +542,10 @@ export type OriginalImageDownloader = (
   signal?: AbortSignal,
 ) => Promise<OriginalImage>;
 
-/** Only for already-authorized native collection URLs, never arbitrary model URLs.
- * HTTP input is upgraded before DNS/network work. Generic view_images policy is unchanged. */
+/**
+ * 仅用于已授权的原生收藏表情URL，不接受模型给出的任意URL。
+ * HTTP输入在DNS和网络访问之前升级为HTTPS。通用的view_images策略不受影响。
+ */
 export function validateCustomFaceImageUrl(value: string): URL {
   let url: URL;
   try {
@@ -566,8 +567,7 @@ export function validateCustomFaceImageUrl(value: string): URL {
     throw fail('Image URL is not allowed');
   }
   if (url.hostname === 'p.qpic.cn') {
-    // Native collection URL shape verified from fetch_custom_face_detail. The
-    // two numeric fields are not assumed to carry the same identity.
+    // 收藏表情URL的格式依据fetch_custom_face_detail的实际返回核实；不假定两个数字字段表示同一身份。
     if (
       value.includes('?') ||
       !/^\/qq_expression\/[1-9]\d{0,31}\/[1-9]\d{0,31}_0_0_0_[a-fA-F0-9]{32}_0_0\/0$/.test(
@@ -600,8 +600,10 @@ export function validateCustomFaceImageUrl(value: string): URL {
 
 const MAX_ORIGINAL_FRAMES = 512;
 
-/** Bound GIF logical canvases as well as decoded frame extents: libvips can
- * report only the image rectangles, ignoring a maliciously oversized canvas. */
+/**
+ * 同时限制GIF逻辑画布和解码后帧的尺寸：libvips可能只报告图像矩形，
+ * 忽略恶意设置的超大画布。
+ */
 function validateGifStructure(bytes: Buffer): {
   width: number;
   height: number;
@@ -682,8 +684,10 @@ function validateGifStructure(bytes: Buffer): {
   throw fail('Image decoding failed');
 }
 
-/** libvips does not validate APNG's additional frames. Do not treat it as a fully
- * validated static PNG and pass its unvalidated animation on to another decoder. */
+/**
+ * libvips不校验APNG的附加帧。不能把它当作完整校验过的静态PNG，
+ * 把未校验的动画交给其他解码器。
+ */
 function rejectApng(bytes: Buffer): void {
   if (
     !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
@@ -711,8 +715,10 @@ function rejectApng(bytes: Buffer): void {
   throw fail('Image decoding failed');
 }
 
-/** Validate all frames, but return a private copy of the exact original bytes.
- * Decoded pixels are temporary validation data, never the returned/sendable image. */
+/**
+ * 校验所有帧，但返回原始字节的私有副本。
+ * 解码出的像素只是临时校验数据，不作为返回或发送的图片。
+ */
 export async function validateOriginalImage(
   input: Buffer,
   callerSignal?: AbortSignal,
@@ -785,7 +791,7 @@ export async function validateOriginalImage(
         throw fail('Image decoding failed');
       }
       checkAbort(signal);
-      // sRGB+alpha bounds the raw validation allocation to four bytes per pixel.
+      // 转为sRGB并加alpha，使校验用的原始缓冲区固定为每像素4字节。
       const { data, info } = await decoder!
         .toColourspace('srgb')
         .ensureAlpha()
@@ -838,7 +844,7 @@ export const downloadOriginalImage: OriginalImageDownloader =
   createOriginalImageDownloader();
 export const downloadImage: ImageDownloader = createImageDownloader();
 
-/** Decode a normalized model image into RGBA pixels for sandbox code (first frame only). */
+/** 把规范化后的模型图片解码为RGBA像素供沙箱代码使用（仅第一帧）。 */
 export async function imagePixels(
   dataUrl: string,
 ): Promise<{ width: number; height: number; pixels: Uint8Array }> {

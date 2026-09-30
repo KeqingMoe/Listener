@@ -3,9 +3,10 @@ import { assertStoragePaths } from '../../config/loader.ts';
 import { readGroupRegistry } from '../../config/group-registry.ts';
 import type { GroupSource } from './repository.ts';
 
-/** Dashboard historical-read scope, deliberately NOT the bot's routing authority.
- * Explicit enabled groups remain readable offline. Unconfigured groups need a
- * fresh registry lease. Every path is derived again from trusted local policy.
+/**
+ * dashboard可读取历史数据的群范围，刻意与bot的路由权限分开。
+ * 显式配置且启用的群离线时仍可读；未配置的群需要注册表中有新鲜的租约。
+ * 每次都从可信的本地策略重新推导所有路径。
  */
 export function dashboardGroupSources(app: AppConfig): GroupSource[] {
   try {
@@ -27,7 +28,7 @@ export function dashboardGroupSources(app: AppConfig): GroupSource[] {
       worldPath: `${group.storage.databasePath}.events.sqlite`,
     }));
   } catch {
-    // Invalid policy/path combinations never fall back to an unchecked subset.
+    // 策略或路径组合无效时返回空列表，绝不退回到未经校验的子集。
     return [];
   }
 }

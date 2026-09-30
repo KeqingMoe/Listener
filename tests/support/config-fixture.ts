@@ -1,6 +1,7 @@
-/** Supply a synthetic required model to policy-only fixtures without changing
- * their original tables, values, or malformed syntax. Model validation tests
- * should write their input directly instead. This helper never reads secrets. */
+/**
+ * 为只关心策略的fixture补上必需的合成model，不改动其原有的表、值或故意写错的语法。
+ * 模型校验测试应直接写出自己的输入。此helper从不读取密钥。
+ */
 export function withFixtureModel(source: string): string {
   const section =
     /^\[model\][ \t]*(?:#[^\n]*)?$(?:\n([\s\S]*?))?(?=^\[|(?![\s\S]))/m;
@@ -14,7 +15,7 @@ export function withFixtureModel(source: string): string {
       '$&\nmodel = "fixture-model"',
     );
   }
-  // Root model values/dotted definitions are deliberately left to the loader.
+  // 根级model值或点号形式的定义有意留给loader处理。
   if (/^model\s*[.=]/m.test(source)) {
     return source;
   }

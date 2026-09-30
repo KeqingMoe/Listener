@@ -21,6 +21,7 @@ const integer = (v: unknown, fallback: number) => {
   return Number(v);
 };
 
+/** 注册review相关路由。每个请求开始前都会重新刷新群授权。 */
 export function registerReviewRoutes(
   app: FastifyInstance,
   base: Repository,
@@ -125,6 +126,7 @@ export function registerReviewRoutes(
       if (q.q !== undefined && (typeof q.q !== 'string' || q.q.length > 200)) {
         throw new BadQuery();
       }
+      // cursor绑定范围、过滤条件和当前可见的群集合，任一变化都会使旧cursor失效。
       const range = { since, until },
         binding = createHash('sha256')
           .update(
@@ -275,6 +277,7 @@ export function registerReviewRoutes(
             }),
           )
           .digest('hex');
+      // 事件按sequence倒序做keyset分页，cursor记录上一页最后一条的sequence。
       let after = Number.MAX_SAFE_INTEGER;
       if (q.cursor !== undefined) {
         try {

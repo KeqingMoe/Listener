@@ -30,7 +30,7 @@ function json(v: unknown): Record<string, unknown> | undefined {
   return object(v) ? v : undefined;
 }
 
-/** Pure reference extraction: resource identifiers are never part of persisted references. */
+/** 纯提取：识别forward段或multimsg JSON卡片；返回的resourceId仅供即时读取，绝不写入持久化引用。 */
 export function extractForward(segment: unknown): ExtractedForward | undefined {
   if (!object(segment) || !object(segment.data)) {
     return;

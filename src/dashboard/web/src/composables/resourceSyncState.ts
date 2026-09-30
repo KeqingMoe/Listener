@@ -1,6 +1,6 @@
 import type { ResourceSyncResponse } from '../../../contracts/resource-sync';
 
-/** Apply the server's restricted RFC6902 operations without mutating displayed data. */
+/** 应用服务端受限的RFC6902操作，先深拷贝，不改动正在显示的数据。 */
 export function applyResourceSync<T>(
   current: T | null,
   response: ResourceSyncResponse<T>,

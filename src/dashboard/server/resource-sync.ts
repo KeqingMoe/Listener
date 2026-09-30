@@ -27,7 +27,7 @@ type State = {
 
 const escape = (key: string) => key.replace(/~/g, '~0').replace(/\//g, '~1');
 
-/** Bounded structural delta: unchanged body strings are never recopied into patches. */
+/** 有界的结构化差分，未变化的字符串不会被复制进patch；超过4096条操作时抛错。 */
 function diff(
   before: unknown,
   after: unknown,
@@ -87,6 +87,7 @@ function diff(
   return out;
 }
 
+/** 校验并规范化resource参数：只接受白名单内的/api路径，拒绝重复的query键，并对query排序。 */
 function resourceURL(raw: unknown) {
   if (
     typeof raw !== 'string' ||
@@ -108,7 +109,7 @@ function resourceURL(raw: unknown) {
   ) {
     return null;
   }
-  // Encoded path separators and traversal must not bypass the allowlist.
+  // 编码后的路径分隔符和路径穿越不能绕过白名单。
   try {
     if (
       decodeURIComponent(url.pathname)
@@ -129,6 +130,10 @@ function resourceURL(raw: unknown) {
   return url;
 }
 
+/**
+ * 注册/api/resource-sync：通过内部inject请求原有GET路由，并按cursor返回snapshot、patch或unchanged。
+ * 缓存按会话、授权策略和资源范围隔离，并受条目数与总字节数限制。
+ */
 export function registerResourceSync(
   app: FastifyInstance,
   base: Repository,
@@ -181,7 +186,8 @@ export function registerResourceSync(
         drop(key);
       }
     }
-    base.refreshGroups(); // Dynamic permissions must be checked even on unchanged polls.
+    // 即使轮询结果未变化，也必须重新检查动态权限。
+    base.refreshGroups();
     const policy = createHash('sha256')
       .update(
         JSON.stringify([
@@ -231,7 +237,7 @@ export function registerResourceSync(
           until - since === candidate.until - candidate.since))
         ? candidate
         : undefined;
-    // Implicit/sliding ranges and health leases cannot be proven unchanged by a DB version.
+    // 隐式/滑动时间范围和health的租约状态无法靠数据库版本证明未变化。
     const temporal =
       ['/api/meta', '/api/health'].includes(url.pathname) ||
       (!explicit && !/^\/api\/(requests|wakes)\//.test(url.pathname));
@@ -246,7 +252,7 @@ export function registerResourceSync(
       previous.expires = time + RESOURCE_SYNC_TTL_MS;
       return { mode: 'unchanged', cursor: q.cursor };
     }
-    // Internal injection retains existing auth, query validation, projection limits and errors.
+    // 通过内部inject复用原路由的认证、查询校验、投影上限和错误处理。
     const response = await app.inject({
       method: 'GET',
       url: resource,
@@ -262,6 +268,7 @@ export function registerResourceSync(
         .type('application/json')
         .send(response.body);
     }
+    // 请求期间授权若发生变化，丢弃结果，避免把旧授权下的数据缓存下来。
     base.refreshGroups();
     const afterPolicy = createHash('sha256')
       .update(
@@ -280,12 +287,11 @@ export function registerResourceSync(
       });
     }
     if (Buffer.byteLength(response.body) > RESOURCE_SYNC_MAX_PAYLOAD_BYTES) {
-      // An oversized detail must not evict unrelated resources in this session.
+      // 超大的详情不能挤掉本会话中其他无关资源的缓存。
       if (previous && typeof q.cursor === 'string') {
         drop(q.cursor);
       }
-      // Preserve existing bounded detail budgets without retaining/copying large
-      // bodies in a patch cache. Such resources honestly fall back to snapshots.
+      // 保留原有详情的大小预算，不在patch缓存中保存或复制大体积内容，这类资源直接退回snapshot。
       return {
         mode: 'snapshot',
         cursor: randomBytes(32).toString('hex'),
@@ -308,10 +314,10 @@ export function registerResourceSync(
           result = { mode: 'patch', cursor, patch };
         }
       } catch {
-        /* Large structural changes reset to a bounded snapshot. */
+        // 结构变化过大时退回有界的snapshot。
       }
     }
-    // Retire predecessor: in-flight replays may reset, but never apply a wrong patch.
+    // 作废旧cursor：并发重放可能因此退回snapshot，但绝不会应用错误的patch。
     if (previous && typeof q.cursor === 'string') {
       drop(q.cursor);
     }
@@ -328,6 +334,7 @@ export function registerResourceSync(
       resource,
       since,
       until,
+      // 请求前后版本不一致说明期间有写入，不记录版本，下次必须重新读取。
       version: version !== null && version === afterVersion ? version : null,
       data,
       bytes,

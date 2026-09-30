@@ -107,7 +107,7 @@ export function buildToolDefinitions(
   return tools;
 }
 
-/** Tools that steer the current wake itself; they have no meaning inside sandbox code. */
+/** 控制当前wake本身的工具，在沙箱代码中没有意义，因此不暴露给沙箱。 */
 export const SANDBOX_EXCLUDED_TOOLS: readonly string[] = [
   'finish',
   'manage_attention',

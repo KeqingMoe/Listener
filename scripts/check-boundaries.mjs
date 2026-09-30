@@ -10,7 +10,7 @@ const builtins = new Set(
 const under = (path, directory) => path.startsWith(directory + '/');
 const normalize = (path) => path.replaceAll('\\', '/');
 
-/** Analyze source dependencies without evaluating application modules. */
+/** 只做静态分析，不执行应用模块。 */
 export async function analyzeBoundaries(root) {
   root = resolve(root);
   const files = new Map(),
@@ -115,7 +115,7 @@ export async function analyzeBoundaries(root) {
         'OneBot cannot depend on application-layer runtime implementations',
       );
     }
-    // The library-entrypoint rule above already rejects world -> app/cli.
+    // world依赖app/cli的情况已由上面的入口规则拦截。
     if (
       runtime &&
       under(from, 'src/world') &&
@@ -242,7 +242,7 @@ export async function analyzeBoundaries(root) {
       visit(ast);
     }
   }
-  // DFS over production runtime edges only. Type dependencies never form runtime cycles.
+  // 只沿生产代码的运行时依赖做DFS；类型依赖不会形成运行时环。
   const graph = new Map(
     [...files.keys()]
       .filter((path) => under(path, 'src'))

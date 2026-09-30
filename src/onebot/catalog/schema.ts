@@ -50,7 +50,7 @@ export function canonicalFaceId(value: unknown): value is string {
   );
 }
 
-/** Validate the generated minimal data, never arbitrary upstream transport metadata. */
+/** 校验生成后的最小数据（字段必须精确匹配），不接受任意上游元数据。 */
 export function validateFaceCatalog(
   value: unknown,
 ): readonly FaceCatalogEntry[] {
@@ -89,7 +89,7 @@ export function validateFaceCatalog(
   return Object.freeze(faces);
 }
 
-/** Only sysface numeric QSid entries: Unicode emoji and all raw metadata stay out. */
+/** 只提取QSid为数字的sysface条目；Unicode emoji和其他原始元数据一律不带出。 */
 export function extractFaceCatalog(source: unknown): FaceCatalogData {
   if (
     !dataObject(source) ||

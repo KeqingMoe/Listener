@@ -235,7 +235,7 @@ test('byte, frame and aggregate animation pixel limits apply before accepting or
     validateOriginalImage(manyFrames),
     /Image decoding failed/,
   );
-  // Each frame is below 40M pixels, but two full canvases exceed the aggregate cap.
+  // 每帧都低于40M像素，但两张完整画布合计超过总量上限。
   const hugeAnimation = Buffer.from(await animation());
   hugeAnimation.writeUInt16LE(6000, 6);
   hugeAnimation.writeUInt16LE(4000, 8);

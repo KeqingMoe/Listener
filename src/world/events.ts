@@ -74,7 +74,7 @@ export interface MemberLeftPayload {
   operator_id?: string;
 }
 
-/** Preserve the upstream classification even if duration and subtype appear inconsistent. user_id=0 is the upstream whole-group sentinel. */
+/** 即使duration与sub_type看起来矛盾，也保留上游的分类。user_id=0是上游表示全群禁言的哨兵值。 */
 export interface GroupBanPayload {
   kind: 'group_ban';
   user_id: string;
@@ -83,7 +83,7 @@ export interface GroupBanPayload {
   operator_id?: string;
 }
 
-/** Metadata only: neither this payload nor its group subject grants a file-reading capability. */
+/** 仅为元数据：这个payload及其群subject都不授予读取文件的能力。 */
 export interface FileUploadedPayload {
   kind: 'file_uploaded';
   user_id: string;
@@ -457,6 +457,10 @@ function eventFrom(row: StoredRow): WorldEvent {
   return event;
 }
 
+/**
+ * 单个群的世界事件SQLite存储：追加式事件日志、消息快照和按consumer的观察水位。
+ * 一个数据库文件只绑定一个群（world_identity），打开时群不匹配直接报错。
+ */
 export class WorldEventStore {
   private readonly db: DatabaseSync;
   readonly groupId: string;
@@ -896,7 +900,7 @@ export class WorldEventStore {
     };
   }
 
-  /** Sequence cursors are trusted internal values. Public tools must bind opaque cursors to scope/filter/direction. */
+  /** sequence游标是受信任的内部值；公开工具必须把不透明游标与范围、过滤条件和方向绑定。 */
   readEvents(input: ReadEventsInput, maxBytes = 24_000): EventPage {
     return this.readPage(input, maxBytes, false) as EventPage;
   }
@@ -949,8 +953,8 @@ export class WorldEventStore {
     ) {
       throw new Error('Invalid event output limit');
     }
-    // One short read transaction binds rows, recall projections and high water consistently;
-    // subsequent calls start fresh unless the caller explicitly passes the prior highWater.
+    // 用一个短读事务让行数据、撤回投影和high water保持一致；
+    // 之后的调用重新开始，除非调用方显式传入上一次的highWater。
     this.db.exec('BEGIN');
     try {
       const queriedAt = nowSeconds();
@@ -1075,7 +1079,7 @@ export class WorldEventStore {
       : undefined;
   }
 
-  /** Internal convenience view with the same 24KB output resource boundary as readMessages. */
+  /** 内部便捷视图，输出资源上限与readMessages相同（24KB）。 */
   recentMessages(limit: number): MessageView[] {
     return this.readMessages({
       limit,
@@ -1116,7 +1120,7 @@ export class WorldEventStore {
     };
   }
 
-  /** Explicit caller acknowledgement only: filtered reads NEVER advance observation watermarks. */
+  /** 只有调用方显式确认才推进观察水位；带过滤的读取绝不推进水位。 */
   ack(consumer: string, throughSequence: number): number {
     this.ensureOpen();
     if (

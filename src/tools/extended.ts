@@ -74,6 +74,10 @@ export interface ExtendedToolOptions {
   ) => Promise<JsonObject>;
 }
 
+/**
+ * 按群配置组装扩展工具注册表。配置为confirm的写操作会被包装：调用只提交确认请求，
+ * 由主人确认后才执行；只读、Web、沙箱与提醒工具不支持confirm模式。
+ */
 export function createExtendedTools(
   api: Api,
   memory: Memory,
@@ -252,8 +256,7 @@ export function createExtendedTools(
         onSent: options.onSent,
       })
     : undefined;
-  // Schema construction is pure: never create a SQLite store or touch the provider
-  // merely to describe these capabilities. Production injects one root repository.
+  // 构建schema必须无副作用：仅为描述能力不得创建SQLite存储或访问provider。生产环境注入唯一的根仓库。
   for (const definition of buildCustomFaceToolDefinitions(customNames)) {
     register({
       definition,
@@ -359,7 +362,7 @@ const emptyMemory: Memory = {
   close() {},
 };
 
-/** Stable schemas use the same registry as runtime dispatch. */
+/** 稳定schema与运行时分发使用同一套注册逻辑，保证两者一致。 */
 export function buildExtendedToolDefinitions(
   groupId: string,
   config?: ExtendedToolsConfig,

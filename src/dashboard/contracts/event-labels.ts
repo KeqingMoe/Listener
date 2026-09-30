@@ -1,4 +1,4 @@
-/** Human-readable titles; retain the original event code separately for diagnostics. */
+/** 事件的中文标题；原始事件码需另行保留以便诊断。 */
 const TITLES: Record<string, string> = {
   'app.start': '应用启动',
   'app.starting': '应用正在启动',
@@ -111,6 +111,7 @@ const CATEGORIES: Record<string, string> = {
   session: '会话事件',
 };
 
+/** 优先精确匹配事件码，其次按点号前的类别回退。 */
 export function eventTitle(kind: string): string {
   return TITLES[kind] ?? CATEGORIES[kind.split('.')[0]!] ?? '其他事件';
 }

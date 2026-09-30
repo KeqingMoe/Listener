@@ -259,7 +259,7 @@ import { SandboxService } from '../../../src/sandbox/service.ts';
 import { SandboxJobStore } from '../../../src/sandbox/store.ts';
 import { ArtifactStore } from '../../../src/artifacts/store.ts';
 
-// A tiny ray tracer: one sphere, a light, Lambert shading. Pure guest computation.
+// 微型光线追踪器：一个球、一个光源、Lambert着色。纯guest端计算。
 const RAYTRACE = `
 const w=96,h=64,p=new Uint8Array(w*h*4);
 const c=[0,0,3],r=1,l=[-0.6,0.8,-0.5],ln=Math.hypot(...l),L=l.map(v=>v/ln);

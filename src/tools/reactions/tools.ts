@@ -24,7 +24,7 @@ export function createReactionTool() {
   return tool;
 }
 
-/** Opaque ownership token: mutable state never comes from model arguments. */
+/** 不透明的归属令牌：可变状态绝不来自模型参数。 */
 export interface ReactionTurn {
   readonly reaction_turn: true;
 }
@@ -41,7 +41,7 @@ interface TurnState {
   pairs: Map<string, PairState>;
 }
 
-const MAX_PAIR_RESOURCES = 4096; // Memory bound; call accounting belongs to the wake runner.
+const MAX_PAIR_RESOURCES = 4096; // 内存上限；调用次数由wake runner统计。
 const error = (code: string): JsonObject => ({ status: 'error', error: code });
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -98,8 +98,10 @@ function identity(value: unknown): string | undefined {
   return value;
 }
 
-/** Native returnSchema is Any: normal JSON is a submission, never a business ACK.
- * Do not execute getters/toJSON or expose native response bodies while classifying. */
+/**
+ * 原生returnSchema为Any：正常的JSON只表示已提交，不是业务ACK。
+ * 分类时不执行getter/toJSON，也不暴露原生响应体。
+ */
 function jsonResponse(
   value: unknown,
   depth = 0,
@@ -238,8 +240,7 @@ export class ReactionTools {
       pair = { queue: Promise.resolve() };
       turn.pairs.set(key, pair);
     }
-    // Snapshot the sender before awaiting a queue/RPC. Parent supplies frozen
-    // memory, but even a caller mutating the source entry cannot alter this proof.
+    // 在等待队列/RPC之前快照发送者。上层传入的是冻结的memory，但即使调用方改动了源记录也不能影响这份证明。
     const sender = local?.userId;
     const ownedPair = pair;
     const operation = pair.queue.then(() =>
@@ -262,9 +263,8 @@ export class ReactionTools {
   ): Promise<JsonObject> {
     const duplicate = (result: JsonObject): JsonObject =>
       structuredClone({ ...result, duplicate: true });
-    // Never retry either desired state after an uncertain dispatched write.
-    // Preserve the original dispatched tuple; requested_action identifies a
-    // blocked opposite action without pretending it was sent to QQ.
+    // 已派发但结果不确定的写操作之后，两种目标状态都不再重试。
+    // 保留原先派发的参数；requested_action标出被拦下的相反操作，不假装它已发给QQ。
     if (pair.unknown) {
       return duplicate({
         ...pair.unknown,
@@ -333,7 +333,7 @@ export class ReactionTools {
         ...tuple,
       });
     }
-    // A cancellation during a dispatched native call cannot undo its result.
+    // 原生调用派发后再取消也无法撤销其结果。
     if (!jsonResponse(result)) {
       return unknown();
     }

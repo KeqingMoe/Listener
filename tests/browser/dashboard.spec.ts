@@ -21,7 +21,7 @@ import type {
 import type { PerformanceMetrics } from '../../src/dashboard/contracts/metrics.ts';
 import { buildRequestTrends } from '../../src/dashboard/server/request-trends.ts';
 
-// Entirely synthetic data: screenshots and clipboard tests never use production logs.
+// 全部为合成数据：截图和剪贴板测试从不使用生产日志。
 function performance(
   attribution: PerformanceMetrics['attribution'],
 ): PerformanceMetrics {
@@ -494,7 +494,7 @@ async function mock(page: Page, state: MockState = {}) {
   await page.route('**/api/**', async (route) => {
     const transportUrl = new URL(route.request().url());
     const url = effectiveApiUrl(transportUrl);
-    // Vite also serves /src/api/client.ts: preserve earlier asset-proxy handlers.
+    // Vite也会提供/src/api/client.ts，需交给先注册的资源代理处理。
     if (!url.pathname.startsWith('/api/')) {
       return route.fallback();
     }
@@ -931,7 +931,7 @@ test('global refresh counts down each second and shows pending until the refresh
   await page.clock.runFor(1);
   await expect.poll(() => calls).toBe(2);
   await expect(status).toContainText('刷新中');
-  // A slow response must not overlap another cycle or display a false countdown.
+  // 慢响应不能与下一轮刷新重叠，也不能显示错误的倒计时。
   await page.clock.runFor(15000);
   expect(calls).toBe(2);
   await expect(status).toContainText('刷新中');
@@ -946,7 +946,7 @@ test('global refresh defaults to five seconds, polls overview and charts, and pa
 }) => {
   await page.clock.install();
   const { requests } = await mock(page);
-  // The removed chart-only preference must not disable global refresh.
+  // 已移除的chartRefresh参数不能关闭全局刷新。
   await page.goto('/?range=5m&chartRefresh=0');
   await expect(page.getByTestId('request-scatter-summary')).toBeVisible();
   await expect(page.getByTestId('dashboard-refresh-status')).toHaveText('5秒');
@@ -1015,7 +1015,7 @@ test('global refresh defaults to five seconds, polls overview and charts, and pa
   await expect(page.getByTestId('dashboard-refresh-status')).toHaveText(
     '已暂停',
   );
-  // Becoming visible must not override the user's unchecked preference.
+  // 页面重新可见时不能覆盖用户取消勾选的设置。
   for (const hidden of [true, false]) {
     await page.evaluate((hidden) => {
       Object.defineProperty(document, 'hidden', {
@@ -1947,7 +1947,7 @@ test('transient polling errors retain the last list and recover automatically', 
   await expect(page.getByRole('alert')).toBeVisible();
   await expect(page.locator('.list-pane tbody tr')).toHaveCount(3);
   state.fail = false;
-  // Failed cycles back off before attempting the next automatic refresh.
+  // 刷新失败后先退避，再尝试下一次自动刷新。
   await page.clock.runFor(10100);
   await expect(page.getByRole('alert')).toHaveCount(0);
   await expect(page.locator('.list-pane tbody tr')).toHaveCount(3);
@@ -2064,8 +2064,8 @@ test('event category and metadata search preserve URL and link the actual turn t
   await expect(page.locator('.list-pane tbody tr')).toHaveCount(3);
 });
 
-// The browser stays on a genuinely insecure, non-loopback origin. Only assets reach Vite;
-// API requests are intercepted separately and can never read local production data.
+// 浏览器始终处于真正不安全的非回环origin。只有静态资源会到达Vite；
+// API请求单独拦截，永远读不到本地生产数据。
 async function insecureDashboard(page: Page) {
   await page.route('http://dashboard.example/**', async (route) => {
     const url = new URL(route.request().url());
@@ -2141,7 +2141,7 @@ test('insecure HTTP uses native execCommand and copies the full filtered text', 
       activation: true,
     },
   ]);
-  // Read back via a fully synthetic trustworthy document, with no network request.
+  // 通过完全合成的可信文档读回，不发起网络请求。
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
     origin: 'https://clipboard.example',
   });
@@ -2400,7 +2400,7 @@ for (const viewport of [
                 element.clientHeight > 0 &&
                 element.scrollHeight > element.clientHeight + 1 &&
                 /^(auto|scroll)$/.test(style.overflowY);
-              // List and detail are sibling primary scroll owners, not nested prose scrollers.
+              // 列表和详情是并列的主滚动容器，而不是嵌套的正文滚动区。
               return (
                 scrolls &&
                 !element.matches('.list-pane > .table-wrap, .detail-scroll')

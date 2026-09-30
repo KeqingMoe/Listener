@@ -723,7 +723,7 @@ test('late real send ACK survives cancellation without resurrecting cleared memo
         ),
     },
     async (h) => {
-      await h.run(1); // Cancellation intentionally prevents a second model round.
+      await h.run(1); // 取消操作有意阻止第二轮模型round。
       const result = h.results().text!;
       assert.equal(result.status, 'ok');
       assert.equal(result.message_id, '777');

@@ -452,7 +452,7 @@ test('autonomous moderation proposals remain groupbound and only the owner can c
       )
     ).error,
     'permission_denied',
-  ); // Actual admin role, not identity immunity.
+  ); // 依据实际的管理员角色，而不是身份豁免。
   assert.ok(!b.calls.some((c) => c.action === 'set_group_ban'));
 });
 

@@ -145,7 +145,7 @@ test('expired artifacts disappear and are swept with stray temporaries; global q
     now += 120_000;
     await f.store.sweep();
     assert.deepEqual(readdirSync(f.directory), []);
-    // Simulate a nearly full store by reserving metadata only.
+    // 只预留元数据来模拟接近满的存储。
     (
       f.store as unknown as {
         db: { prepare(sql: string): { run(...a: unknown[]): void } };

@@ -9,7 +9,7 @@ import {
   type ExecutionResult,
 } from './protocol.ts';
 
-/** Replace guest {"$bytes":i} placeholders; every attachment must be referenced exactly once. */
+/** 把guest传来的{"$bytes":i}占位符还原成Buffer；每个附件必须恰好被引用一次。 */
 export function decodeToolValue(
   json: string,
   attachments: readonly Uint8Array[],
@@ -44,7 +44,7 @@ export function decodeToolValue(
   return value;
 }
 
-/** Host → guest encoding: Uint8Array (incl. Buffer) values become placeholders. */
+/** host到guest方向的编码：Uint8Array（含Buffer）替换为占位符，字节单独放进attachments。 */
 export function encodeToolValue(value: unknown): {
   json: string;
   attachments: Uint8Array[];

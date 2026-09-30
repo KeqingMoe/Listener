@@ -244,7 +244,7 @@ test(
         : { user_id: '123' },
     );
     try {
-      // fixture waits for the FIRST ready event; any invalid ready would return too soon.
+      // fixture等待第一个ready事件；任何无效的ready都会导致过早返回。
       assert.equal(f.connections, invalid.length + 1);
     } finally {
       await f.close();
@@ -389,7 +389,7 @@ test(
 test('missing pong triggers reconnect', { timeout: 3000 }, async () => {
   const f = await fixture(undefined, 20);
   try {
-    // ws exposes autoPong as a construction option; mutate only in this mock peer.
+    // ws只在构造时提供autoPong选项；这里仅在mock对端上修改。
     (f.socket as any)._autoPong = false;
     await once(f.client, 'ready');
     assert.equal(f.connections, 2);

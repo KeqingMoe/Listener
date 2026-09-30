@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 
-// Keep both dev processes under one lifecycle; neither starts the Bot.
+// 两个开发进程共用同一生命周期；都不会启动Bot。
 const children: ChildProcess[] = [];
 let stopping = false;
 

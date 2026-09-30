@@ -210,8 +210,10 @@ function reasonText(reason: string): string {
   return reason;
 }
 
-/** Reject links (including directory and SQLite sidecar links) before touching a file.
- * The enclosing directory must be controlled by the application, as for other local DBs. */
+/**
+ * 在接触文件之前拒绝链接（包括目录链接和SQLite附属文件的链接）。
+ * 与其他本地数据库一样，所在目录必须由应用自身控制。
+ */
 function checkPath(path: string): void {
   for (let p = resolve(path); ; p = dirname(p)) {
     try {
@@ -245,10 +247,10 @@ function checkPath(path: string): void {
   }
 }
 
-/** Per-group AI history only: no World Store reads, QQ API, logging, or replay of writes.
- * Every mutating method is synchronous and durable before returning. The caller MUST
- * dispatch a tool only after startTool returns true. A failed checkpoint is fail-closed.
- * Reset rotates the current projection; prior sessions and ledger audit rows remain.
+/**
+ * 单群的模型会话持久化，只保存AI历史：不读World Store、不调QQ API、不写日志、不重放写操作。
+ * 所有修改方法同步执行，返回前已持久化。调用方必须在startTool返回true之后才能派发工具。
+ * checkpoint失败时按fail-closed处理。reset只轮换当前投影，旧会话和工具账本审计行仍保留。
  */
 export class ModelSession {
   private readonly db: DatabaseSync;
@@ -272,7 +274,7 @@ export class ModelSession {
     }
     if (options.path !== ':memory:') {
       checkPath(options.path);
-      // Read identity BEFORE chmod, schema creation, or writable SQLite open.
+      // 必须在chmod、建表或以可写方式打开SQLite之前读取身份。
       if (existsSync(options.path) && lstatSync(options.path).size) {
         const probe = new DatabaseSync(options.path, { readOnly: true });
         try {
@@ -328,7 +330,7 @@ export class ModelSession {
       try {
         this.db.exec(SESSION_INSPECTION_INDEXES);
       } catch {
-        /* Optional readonly lookup acceleration must not disable the bot. */
+        /* 这些索引只是只读查询的可选加速，建立失败不能导致bot不可用。 */
       }
       const meta = this.db
         .prepare('SELECT * FROM model_session_meta WHERE singleton=1')
@@ -488,7 +490,7 @@ export class ModelSession {
   private rotate(reason: string): void {
     this.resolvePending(reason);
     if (this.stateValue.wakeId) {
-      // End the old scope before rotation; late callbacks must never end a new session.
+      // 轮换前先结束旧wake，避免迟到的回调误结束新会话。
       const detail = normalizeWakeDiagnostics({
         reason_code: reason === 'owner_reset' ? 'reset' : reason,
       });
@@ -525,7 +527,7 @@ export class ModelSession {
     return structuredClone(this.stateValue);
   }
 
-  /** Durable host inbox, independent of model-session rotation and tool call IDs. */
+  /** 持久化的宿主事件收件箱，与模型会话轮换及工具调用ID无关。 */
   receiveExternalEvent(
     eventId: string,
     selfId: string,
@@ -621,9 +623,10 @@ export class ModelSession {
       );
   }
 
-  /** Instructions and tools are fingerprinted, never patched into an existing prefix.
-   * Empty wake metadata adds no placeholder input. Resource/config reset adds an explicit
-   * recovery notice directing the model to read tools again, never a fabricated summary. */
+  /**
+   * 系统指令和工具定义按指纹比对，不会修补进已有前缀。wake元数据为空时不追加占位输入。
+   * 因资源或配置变化而reset时，追加明确的恢复提示让模型重新阅读工具，而不是编造摘要。
+   */
   beginWake(
     system: string,
     tools: ToolDefinition[],
@@ -704,8 +707,10 @@ export class ModelSession {
     return this.messages();
   }
 
-  /** Image bytes/URLs live in memory only, with an 8 MiB aggregate bound. A reopened
-   * session containing such inputs explicitly rotates and drops the transport chain. */
+  /**
+   * 图片字节和URL只保存在内存中，总量上限8MiB。重新打开的会话若包含这类输入，
+   * 会显式轮换并丢弃传输链。
+   */
   appendInput(content: ChatContentPart[] | string): void {
     this.check();
     if (!this.stateValue.wakeId || this.pending().length) {
@@ -919,7 +924,7 @@ export class ModelSession {
     this.audit('tool_result', { ordinal: row.ordinal, state });
   }
 
-  /** Duplicate completions never overwrite the first durable result. */
+  /** 重复完成不会覆盖第一次持久化的结果。 */
   finishTool(callId: string, result: JsonObject, assistantSeq?: number): void {
     this.check();
     if (!object(result)) {
@@ -1046,10 +1051,11 @@ export class ModelSession {
     });
   }
 
-  /** Completion is terminal ledger state, not necessarily a successful external write.
-   * Explicit proposal/staging statuses count successful tool handling, not QQ execution.
-   * Unrecognised terminal statuses are unknown. Durations weight individual known
-   * started→finished intervals; external RPCs cannot be inferred from tool starts. */
+  /**
+   * 统计工具账本。completed是账本的终态，不代表外部写操作成功。明确的提案/暂存状态
+   * 计为工具处理成功，而非QQ侧已执行。无法识别的终态计为unknown。耗时按每个已知的
+   * started→finished区间加权；无法从工具开始记录推断外部RPC。
+   */
   summarizeTools(options: ToolWindow): ToolSummary {
     this.check();
     fields(options, ['since', 'until', 'wakeId', 'sessionId']);

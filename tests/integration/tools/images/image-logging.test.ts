@@ -222,7 +222,7 @@ test('downloader classifies rejected URL DNS transfer decode and timeout without
   for (const row of failures) {
     assert.ok(row.duration_ms >= 0);
   }
-  assert.ok(!rows.some((row) => row.event === 'image.decode_start')); // Signature rejection occurs before native decoder.
+  assert.ok(!rows.some((row) => row.event === 'image.decode_start')); // 文件签名校验在原生解码器之前就拒绝。
 });
 
 test('native decoder logs sanitized failure only after byte size and signature gates pass', async () => {

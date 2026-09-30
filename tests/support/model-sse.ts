@@ -1,6 +1,6 @@
 import type { ServerResponse } from 'node:http';
 
-/** Emit an OpenAI Chat Completions SSE response from an existing fixture completion. */
+/** 把现有fixture completion以OpenAI Chat Completions SSE响应的形式输出。 */
 export function sendChatStream(
   res: ServerResponse,
   completion: any,

@@ -428,7 +428,7 @@ test('real blocked stdout cannot halt disk logging or bounded application shutdo
     ['--import', 'tsx', '--input-type=module', '-e', script],
     { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] },
   );
-  // Intentionally never consume stdout: this is a real pipe, not a mocked write.
+  // 有意从不消费stdout：这是真实的pipe，而非mock的write。
   child.stderr.resume();
   t.after(() => {
     child.kill('SIGKILL');

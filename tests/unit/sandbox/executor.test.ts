@@ -200,7 +200,7 @@ test('return and log boundaries never invoke guest object conversions', async ()
     code: 'String.prototype.toString=function(){while(true){}};Object.defineProperty(String.prototype,"length",{get(){while(true){}}});return "safe";',
     timeoutMs: 3000,
   }).result;
-  // String.prototype.length is nonconfigurable; rejecting that mutation is safe too.
+  // String.prototype.length不可配置；拒绝这一修改同样安全。
   assert.ok(
     value.status === 'completed' ||
       (value.status === 'failed' && value.error === 'execution_error'),

@@ -28,7 +28,7 @@ export const GROUP_MEDIA_TOOL_NAMES = [
 
 type Name = (typeof GROUP_MEDIA_TOOL_NAMES)[number];
 
-/** Captured immediately before native dispatch, never at ACK time. */
+/** 在原生派发前一刻采集，不在收到ACK时采集。 */
 export interface SendReceiptSnapshot {
   worldHighWater?: number;
   memoryIds: ReadonlySet<string>;
@@ -52,8 +52,7 @@ const userId = (v: unknown): string | undefined => {
   }
   return typeof v === 'string' && /^[1-9]\d{0,31}$/.test(v) ? v : undefined;
 };
-// NapCat MessageUnique short IDs are passed through numeric conversion. Reject
-// non-canonical/unsafe values rather than aliasing another cached message.
+// NapCat MessageUnique短ID会经过数字转换，拒绝非规范或不安全的值，避免指向另一条缓存消息。
 const messageId = (v: unknown): string | undefined => {
   if (typeof v === 'number' && Number.isSafeInteger(v)) {
     v = String(v);
@@ -102,7 +101,7 @@ const DEFINITIONS: ToolDefinition[] = [
       },
     );
     const parameters = base.function.parameters as JsonObject;
-    // Exactly one of the two is enforced at call time; top-level oneOf is not portable across model APIs.
+    // 二者恰好提供一个由调用时检查；顶层oneOf在各家模型API间不通用。
     parameters.required = [];
     return base;
   })(),
@@ -125,7 +124,7 @@ const DEFINITIONS: ToolDefinition[] = [
   ),
 ];
 
-/** One instance per wake; no global/shared cache and no automatic write retries. */
+/** 每次wake一个实例；没有全局或共享缓存，写操作不自动重试。 */
 export class GroupMediaTools {
   private readonly groupId: string;
   private readonly enabled: ReadonlySet<string>;
@@ -226,7 +225,7 @@ export class GroupMediaTools {
     ) {
       fail('forbidden_reference');
     }
-    // Recheck the live local capability after the await (e.g. reset/eviction).
+    // await之后重新检查本地引用是否仍有效（例如已被reset或淘汰）。
     const current = this.scope(id);
     if (current && current.userId !== sender) {
       fail('forbidden_reference');
@@ -328,8 +327,7 @@ export class GroupMediaTools {
       return this.response({ status: 'error', error: 'resource_limit' });
     }
     const context = { ...ctx };
-    // Each explicit call is a new interaction after a normal result. Serialize
-    // identical intents so an uncertain predecessor can prevent a blind replay.
+    // 前一次结果正常时，每次显式调用都是新的交互。相同意图串行执行，使结果不确定的前一次调用能阻止盲目重放。
     const operation = Promise.resolve(previous).then((prior) =>
       prior?.status === 'unknown'
         ? { ...prior, cached: true, dispatched: false }
@@ -387,7 +385,7 @@ export class GroupMediaTools {
           fail('artifact_unavailable');
         }
         this.check(signal);
-        // Only content that really decodes as a supported image goes out as a picture.
+        // 只有能真正解码为受支持图片格式的内容才作为图片发送。
         let format: string | undefined;
         try {
           format = (
@@ -404,7 +402,7 @@ export class GroupMediaTools {
         }
         this.check(signal);
         action = 'send_group_msg';
-        // NapCat reads the shared-directory file and copies it into its own media cache.
+        // NapCat读取共享目录中的文件并复制到自己的媒体缓存。
         params = {
           group_id: this.groupId,
           message: [
@@ -460,7 +458,7 @@ export class GroupMediaTools {
         ) {
           fail('image_unavailable');
         }
-        // Only normalized bytes from ImageTools may become a native image upload.
+        // 只有经ImageTools规范化的字节才能作为原生图片上传。
         action = 'send_group_msg';
         params = {
           group_id: this.groupId,
@@ -494,8 +492,7 @@ export class GroupMediaTools {
       dispatched = true;
       const ack = await this.api.call(action, params);
       if (name === 'forward_message') {
-        // NapCat v4.18.28 ForwardSingleMsg validates native ret.result===0 and
-        // returns null. There is no new message ID to persist as a world fact.
+        // NapCat v4.18.28的ForwardSingleMsg校验原生ret.result===0后返回null，没有新消息ID可记录为world事实。
         if (ack !== null) {
           return unknown();
         }
@@ -526,8 +523,8 @@ export class GroupMediaTools {
         ...(forwards.length ? { forwards } : {}),
         ...extractMessageContent(id, segments, images, forwards),
       };
-      // A valid ACK is a provider fact even when local projection is unavailable.
-      // A reused ID is different: it cannot prove a new send happened.
+      // 即使本地投影不可用，有效的ACK仍是provider给出的事实。
+      // 重复出现的ID则不同，不能证明发生了新的发送。
       let projectionFailed = false;
       try {
         this.options.onSent?.(entry, receipt);

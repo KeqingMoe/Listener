@@ -208,7 +208,7 @@ function row(value: unknown): Reminder | undefined {
   };
 }
 
-/** Account/group-scoped one-shot reminders. Opening a store recovers uncertain sends, never retries them. */
+/** 按账号和群隔离的一次性提醒。打开时把发送中断的提醒标记为unknown，不会重发。 */
 export class ReminderStore {
   private readonly db: DatabaseSync;
   private closed = false;
@@ -508,7 +508,7 @@ export class ReminderStore {
     return result.changes ? this.get(s.selfId, s.groupId, s.id) : undefined;
   }
 
-  /** Maintenance is scoped to an account, or all accounts when explicitly omitted at startup. */
+  /** 只处理指定账号；启动时不传selfId则处理所有账号。 */
   expire(now = Date.now(), selfId?: string): number {
     this.open();
     time(now);

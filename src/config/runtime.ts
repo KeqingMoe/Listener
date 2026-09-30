@@ -6,7 +6,7 @@ import {
 } from './extended-tools.ts';
 import { TOOL_CAPABILITIES, type ToolName } from './tool-policy.ts';
 
-/** One-way projection into module options; the resolved policy remains authoritative. */
+/** 把工具策略单向投影为各模块选项；以已解析的策略为准。 */
 export function applyToolPolicies(
   config: ResolvedListenerConfig,
 ): ResolvedListenerConfig;
@@ -15,7 +15,7 @@ export function applyToolPolicies(config: ListenerConfig): ListenerConfig;
 
 export function applyToolPolicies(config: ListenerConfig): ListenerConfig {
   const policies = config.toolPermissions;
-  // A tool without a configured backend is absent rather than visible-but-failing.
+  // 没有配置后端的工具直接不提供，而不是可见但调用失败。
   if (!policies) {
     return config.webSearch || !config.tools?.extended?.web_search
       ? config
@@ -84,7 +84,7 @@ export function observesReactions(config: ListenerConfig): boolean {
   );
 }
 
-/** Sole application→listener adapter. Resolved groups never carry model credentials. */
+/** 应用配置到listener配置的唯一适配入口。模型凭据来自全局配置，已解析的群配置从不携带。 */
 export function toListenerConfig(
   app: AppConfig,
   group: ResolvedGroupConfig,
@@ -115,9 +115,9 @@ export function toListenerConfig(
     ...(app.web.search ? { webSearch: structuredClone(app.web.search) } : {}),
     memoryPath: group.storage.databasePath,
     retentionDays: group.history.retentionDays,
-    // Cache constructor bound only; production ModelSession never summarizes via this budget.
+    // 仅作为缓存构造参数的上限；生产环境的ModelSession不会按此预算做摘要。
     maxContextChars: 24000,
-    // A tool without a configured backend is absent rather than visible-but-failing.
+    // 没有配置后端的工具直接不提供，而不是可见但调用失败。
     toolPermissions: {
       ...structuredClone(group.tools),
       ...(app.web.search ? {} : { web_search: { mode: 'off' } }),

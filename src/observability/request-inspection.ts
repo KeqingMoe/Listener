@@ -1,6 +1,6 @@
 import type { ModelRequestInspection } from './model-usage.ts';
 
-// Private diagnostic material only. Never pass these values to the public logger.
+// 这里处理的都是私有诊断材料，绝不能传给公开logger。
 export const INSPECTION_FIELD_BYTES = 64 * 1024;
 const credentialKey =
   /^(?:authorization|proxy[-_]?authorization|cookie|set[-_]?cookie|api[-_]?key|password|passwd|secret|token|secret[-_]?key|client[-_]?secret|access[-_]?token|refresh[-_]?token|confirmation[-_]?code|confirm[-_]?code|authorization[-_]?code|auth[-_]?code)$/i;
@@ -18,8 +18,8 @@ function scrubText(text: string, secrets: readonly string[]): string {
         /data:image\/[^;\s]+;base64,[a-zA-Z0-9+/=\r\n]+/g,
         (value) => `[image data omitted; ${Buffer.byteLength(value)} bytes]`,
       )
-      // Header values have their own grammar: auth schemes contain spaces and
-      // Cookie/Set-Cookie contain multiple semicolon-separated credentials.
+      // header值有自己的语法：认证scheme中含空格，Cookie/Set-Cookie含多个分号分隔的凭据，
+      // 因此整行值都要遮蔽。
       .replace(
         /^([ \t]*(?:authorization|proxy[-_]?authorization|cookie|set[-_]?cookie)[ \t]*:[ \t]*)[^\r\n]*/gim,
         '$1[REDACTED]',
@@ -29,7 +29,7 @@ function scrubText(text: string, secrets: readonly string[]): string {
         '$1[REDACTED]',
       )
       .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/-]+=*/gi, '$1[REDACTED]')
-      // Bare 'token'/'secret' in prose are business text, not an auth context.
+      // 正文里单独出现的token/secret属于业务文本，不视为认证上下文，因此不在此列。
       .replace(
         /(\b(?:authorization|proxy[-_]?authorization|cookie|set[-_]?cookie|api[-_]?key|password|passwd|secret[-_]?key|client[-_]?secret|access[-_]?token|refresh[-_]?token|confirmation[-_]?code|confirm[-_]?code|authorization[-_]?code|auth[-_]?code)["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;}]+)/gi,
         '$1[REDACTED]',
@@ -42,7 +42,7 @@ function scrub(value: unknown, secrets: readonly string[], depth = 0): unknown {
     return '[omitted: nesting limit]';
   }
   if (typeof value === 'string') {
-    // Tool arguments/output frequently contain serialized JSON.
+    // 工具参数和输出里经常是序列化后的JSON，先解析再逐字段脱敏。
     try {
       const parsed: unknown = JSON.parse(value);
       if (parsed !== null && typeof parsed === 'object') {
@@ -77,6 +77,7 @@ function scrub(value: unknown, secrets: readonly string[], depth = 0): unknown {
   return value;
 }
 
+/** 脱敏后按字节上限裁剪；超限时深度优先保留前部内容并插入截断标记。 */
 export function sanitizeInspectionValue(
   value: unknown,
   secrets: readonly string[] = [],
@@ -111,7 +112,7 @@ export function sanitizeInspectionValue(
     }
     if (Array.isArray(v)) {
       const out: unknown[] = [];
-      budget -= 96; // Reserve an omission marker before descending.
+      budget -= 96; // 递归前先为省略标记预留空间。
       for (const item of v) {
         if (budget < 128) {
           out.push('[truncated: remaining array items omitted]');
@@ -124,7 +125,7 @@ export function sanitizeInspectionValue(
     }
     if (v && typeof v === 'object') {
       const out: Record<string, unknown> = Object.create(null);
-      budget -= 96; // Include markers added during recursion unwind.
+      budget -= 96; // 为递归返回时追加的标记预留空间。
       for (const [key, item] of Object.entries(v)) {
         const cost = Buffer.byteLength(JSON.stringify(key)) + 2;
         if (budget < cost + 128) {
@@ -248,12 +249,12 @@ export function responseInspection(
         typeof raw.error === 'string' ? raw.error : JSON.stringify(raw.error);
     }
   } catch {
-    /* Preserve non-JSON and partial bodies as text, not fabricated JSON. */
+    /* 非JSON或不完整的响应体按原文保留，不伪造成JSON。 */
   }
   return result;
 }
 
-/** HTTP failure has already happened: diagnostic collection cannot consume the model timeout. */
+/** HTTP请求已经失败，读取错误响应体用于诊断时只给极短的时间预算，不能占用模型请求的超时。 */
 export async function readErrorInspection(
   response: Response,
   budgetMs = 25,

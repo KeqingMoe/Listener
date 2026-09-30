@@ -340,7 +340,7 @@ test('real TelemetryStore restart recovery time is not an interrupted HTTP end o
       assert.equal('roundTps' in wake.performance, false);
       assert.equal(wake.performance.coverage.endedRequests, 1);
     }
-    // A primary measured record remains usable even with a synthetic interrupted status.
+    // 即使带有合成的interrupted状态，主测量记录仍然可用。
     const update = new DatabaseSync(telemetryPath);
     update.exec(
       "UPDATE model_requests SET status='interrupted' WHERE request_id='measured'",

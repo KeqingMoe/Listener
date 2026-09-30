@@ -89,8 +89,7 @@ export function chartOptions(
             emphasis: { disabled: true },
             animation: false,
             clip: true,
-            // Plot bucket centres, not category indices. The first/last partial buckets
-            // therefore remain within the exact response time range.
+            // 按bucket中点而非类目索引定位，首尾不完整的bucket因此仍落在响应的精确时间范围内。
             barCategoryGap: '12%',
             itemStyle: { color: outcome.color },
             data: data.buckets.map((bucket) => [

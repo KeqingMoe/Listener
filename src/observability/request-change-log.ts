@@ -35,7 +35,7 @@ const canonical = (sql: unknown): string =>
     ? sql.replace(/\s+/g, ' ').trim().replace(/;$/, '')
     : '';
 
-/** Read-only, constant-sized schema validation shared with journal readers. */
+/** 只读、开销固定的schema校验，与journal读取方共用。 */
 export function requestChangeLogSchemaIntact(db: DatabaseSync): boolean {
   const objects = db
     .prepare(
@@ -91,9 +91,10 @@ function intact(db: DatabaseSync): boolean {
   );
 }
 
-/** Writer-only installation. A missing/changed component means the old cursor epoch is unsafe.
- * All source writes and their key-only log entries share the caller's SQLite transaction.
- * Failures remain private and must not disable pre-existing usage telemetry.
+/**
+ * 仅由写入方安装。任一组件缺失或变更都意味着旧的cursor epoch不再可靠，需要换新epoch重建。
+ * 源表写入和对应的只含主键的日志条目由触发器写入，共享调用方的SQLite事务。
+ * 安装失败不对外暴露，也不能导致已有的usage telemetry失效。
  */
 export function installRequestChangeLog(db: DatabaseSync): boolean {
   try {
@@ -112,8 +113,7 @@ export function installRequestChangeLog(db: DatabaseSync): boolean {
         throw new Error('Request change sources unavailable');
       }
     }
-    // Query acceleration is installed for standalone upgrades too, but is not part
-    // of the reader's journal validity contract.
+    // 查询加速索引在单独升级时也会安装，但不属于读取方判断journal有效性的约定。
     db.exec(
       'CREATE INDEX IF NOT EXISTS model_request_inspections_group_started ON model_request_inspections(group_id,started_at)',
     );
@@ -126,7 +126,7 @@ export function installRequestChangeLog(db: DatabaseSync): boolean {
       );
       db.exec(metaSql);
       db.exec(changesSql);
-      // Not visible to readers until the complete schema and all six triggers commit.
+      // 完整schema和全部六个触发器一起提交之前，读取方看不到这些变更。
       db.prepare('INSERT INTO request_change_meta VALUES(1,1,?,0,0)').run(
         randomUUID(),
       );
@@ -140,10 +140,10 @@ export function installRequestChangeLog(db: DatabaseSync): boolean {
     try {
       db.exec('ROLLBACK');
     } catch {
-      /* BEGIN may have failed. */
+      /* BEGIN本身可能就失败了。 */
     }
-    // A rollback alone could resurrect valid-looking metadata beside incomplete triggers.
-    // Remove owned triggers too, so a failed optional installation cannot break usage INSERTs.
+    // 只回滚可能留下看似有效的元数据和不完整的触发器。
+    // 因此把自己的触发器也删掉，避免可选功能安装失败后破坏usage的INSERT。
     try {
       db.exec('BEGIN IMMEDIATE');
       for (const trigger of triggers) {
@@ -154,7 +154,7 @@ export function installRequestChangeLog(db: DatabaseSync): boolean {
       try {
         db.exec('ROLLBACK');
       } catch {
-        /* Locked/unavailable database: no writes can proceed. */
+        /* 数据库被锁或不可用：此时任何写入都无法进行。 */
       }
     }
     return false;

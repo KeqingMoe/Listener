@@ -15,7 +15,7 @@ import {
 import { DatabaseSync } from 'node:sqlite';
 import { types } from 'node:util';
 
-/** Only metadata belongs here. Transport URLs, file paths, image bytes and keys do not. */
+/** 只存元数据；传输URL、文件路径、图片字节和密钥都不放这里。 */
 export interface CustomFaceInput {
   resId: string;
   emoId: number | string;
@@ -32,7 +32,7 @@ export interface CustomFaceRecord {
   description: string;
   tags: string[];
   revision: number;
-  /** Local revocation, not proof that QQ has confirmed deletion. */
+  /** 本地撤销标记，不代表QQ已确认删除。 */
   retired: boolean;
 }
 
@@ -52,7 +52,7 @@ export interface CustomFaceListOptions {
 export interface CustomFacePage {
   items: CustomFaceListItem[];
   coverage: 'observed_prefix';
-  /** Number in this local snapshot; never the QQ account's total. */
+  /** 本地快照中的数量，不是QQ账号的总数。 */
   snapshot_count: number;
   stale_omitted: number;
   next_cursor?: string;
@@ -156,8 +156,7 @@ function array(value: unknown, maximum: number): asserts value is unknown[] {
 }
 
 function scope(value: unknown): asserts value is string {
-  // Explicit absolute-end guard: identifier validation must not depend on
-  // multiline/end-anchor semantics or trim/coerce into another ID.
+  // 显式断言字符串绝对结尾：ID校验不能依赖多行模式或$锚点语义，也不能经trim或类型转换变成另一个ID。
   if (typeof value !== 'string' || !/^[1-9]\d{0,31}(?![\s\S])/.test(value)) {
     FAIL('invalid_scope');
   }
@@ -316,7 +315,7 @@ function inspectIdentity(db: DatabaseSync): string {
   ) {
     FAIL('store_identity_mismatch');
   }
-  // Missing or incompatible tables are rejected before writable initialization/chmod.
+  // 在可写初始化和chmod之前，先拒绝缺失或不兼容的表。
   db.prepare(
     'SELECT account_id,res_id,resource_id,emo_id,md5,description,tags,revision,retired FROM custom_faces LIMIT 0',
   );
@@ -326,9 +325,11 @@ function inspectIdentity(db: DatabaseSync): string {
   return meta.secret;
 }
 
-/** Account-shared metadata with group-bound references. This class grants no QQ authority:
- * callers must independently verify the current login, group policy and live native resource.
- * No background refresh or API requests are performed, including during schema construction. */
+/**
+ * 账号共享的表情元数据，引用绑定到群。本类不授予任何QQ权限：
+ * 调用方必须自行校验当前登录账号、群策略和原生资源的实时状态。
+ * 不做后台刷新，也不发API请求，构建schema时同样如此。
+ */
 export class CustomFaceStore {
   private readonly db: DatabaseSync;
   private readonly secret: string;
@@ -522,7 +523,7 @@ export class CustomFaceStore {
     revive: boolean,
   ): boolean {
     const old = this.row(accountId, value.resId);
-    // A late list response after delete submission is not evidence of a fresh addition.
+    // 删除提交后迟到的列表响应不能作为重新添加的证据。
     if (old?.retired && !revive) {
       return false;
     }
@@ -576,7 +577,7 @@ export class CustomFaceStore {
     return true;
   }
 
-  /** Upsert only observed rows. Missing rows and truncated prefixes never delete records. */
+  /** 只upsert实际观察到的行；缺失的行或被截断的前缀都不会删除记录。 */
   sync(
     accountId: string,
     rows: readonly CustomFaceInput[],
@@ -601,7 +602,7 @@ export class CustomFaceStore {
     });
   }
 
-  /** Only for a positively verified re-addition, never a generic list refresh. */
+  /** 仅用于已确证的重新添加，不用于一般的列表刷新。 */
   revive(accountId: string, value: CustomFaceInput): CustomFaceRecord {
     this.check();
     scope(accountId);
@@ -659,7 +660,7 @@ export class CustomFaceStore {
     return row ? fromRow(row) : undefined;
   }
 
-  /** Immediately revoke all group references locally; this does not confirm QQ deletion. */
+  /** 立即在本地撤销所有群引用；这不代表QQ已确认删除。 */
   retire(
     accountId: string,
     resId: string,
@@ -691,7 +692,7 @@ export class CustomFaceStore {
     });
   }
 
-  /** Call only after QQ description confirmation. Local labels have a separate method. */
+  /** 仅在QQ确认描述修改后调用；本地标签另有方法。 */
   updateDescription(
     accountId: string,
     resId: string,
@@ -723,7 +724,7 @@ export class CustomFaceStore {
     });
   }
 
-  /** Local search hints only. Never claims to write or synchronize QQ's description. */
+  /** 仅作本地搜索提示，不表示写入或同步了QQ上的描述。 */
   setLocalTags(
     accountId: string,
     resId: string,
@@ -830,8 +831,8 @@ export class CustomFaceStore {
           members: JSON.stringify(members),
           created_at: now,
         };
-        // Evict only this scope's old snapshots: one busy group must not revoke
-        // another group's still-valid cursors. Global exhaustion refuses new work.
+        // 过期快照全局清理；按数量淘汰只针对本账号本群，避免一个繁忙的群
+        // 让其他群仍有效的游标失效。全局总量耗尽时拒绝新请求。
         this.db
           .prepare('DELETE FROM custom_face_snapshots WHERE created_at<?')
           .run(now - SNAPSHOT_AGE);

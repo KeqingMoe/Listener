@@ -152,7 +152,7 @@ test('signature gate rejects SVG/PDF/HEIF and spoofed MIME data before native de
   ]) {
     assert.equal(hasSupportedImageSignature(bytes), true);
   }
-  // Matching magic alone is insufficient: malformed supported files still fail safely.
+  // 只匹配magic不够：格式受支持但内容损坏的文件仍应安全失败。
   await assert.rejects(
     prepareImage(Buffer.from([0xff, 0xd8, 0xff, 0x53, 0x45, 0x43])),
     /^Error: Image decoding failed$/,

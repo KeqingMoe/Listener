@@ -52,10 +52,11 @@ function inspect(db: DatabaseSync): void {
   );
 }
 
-/** Root-scoped, durable write-ahead uncertainty guard. Never reset with a model wake.
- * The native account is serialized; independent accounts may run concurrently. Pending
- * records from a previous process conservatively recover as unknown. No QQ IDs other
- * than account identity, URLs, paths, source messages or payloads enter this journal. */
+/**
+ * 根级、持久化的预写式不确定性防护，不随模型wake重置。
+ * 同一原生账号的操作串行执行，不同账号可以并发。上个进程遗留的pending记录保守地恢复为unknown。
+ * 日志中除账号身份外不记录任何QQ ID，也不记录URL、路径、源消息或payload。
+ */
 export class CustomFaceCoordinator {
   private readonly db: DatabaseSync;
   private readonly tails = new Map<string, Promise<unknown>>();
@@ -242,9 +243,10 @@ export class CustomFaceCoordinator {
     }
   }
 
-  /** Only a normally acknowledged add with BOTH original-content proofs is
-   * eligible for read-only reconciliation. Unknown/pending/legacy/other phases
-   * must never be upgraded into a normal submission by finding an image later. */
+  /**
+   * 只有正常ACK、且两项原始内容证明都齐全的add才能参与只读对账。
+   * unknown、pending、legacy或其他phase的记录，不能因为之后找到了图片就升级为正常提交。
+   */
   recoverableAddHolds(account: string, proofs: readonly string[]): string[] {
     this.validate(account, proofs);
     if (proofs.length !== 2 || new Set(proofs).size !== 2) {
@@ -291,9 +293,10 @@ export class CustomFaceCoordinator {
     return ids;
   }
 
-  /** Caller has just positively verified source SHA256, candidate bytes, unique
-   * native identity and login. CAS only these exact normal-add holds; never clear
-   * all holds or any unknown write, even if state changes during the readbacks. */
+  /**
+   * 调用方刚确证了源SHA256、候选字节、唯一的原生身份和登录账号。
+   * 只对这些确切的正常add hold做CAS；即使回读期间状态有变，也不清除全部hold或任何unknown写入。
+   */
   completeRecoveredAddHolds(
     account: string,
     proofs: readonly string[],
@@ -333,7 +336,7 @@ export class CustomFaceCoordinator {
     }
   }
 
-  /** Synchronously commits BEFORE calling the native API. */
+  /** 在调用原生API之前同步提交记录。 */
   begin(
     account: string,
     targets: readonly string[],
@@ -346,8 +349,8 @@ export class CustomFaceCoordinator {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       this.assertAllowed(account, targets);
-      // Retain phase receipts across a multi-stage add/description operation.
-      // Only bounded old completed history may be evicted; uncertainty never is.
+      // 多阶段的add/description操作中保留各phase的回执。
+      // 只淘汰有限数量的已完成旧记录，不确定的记录永不淘汰。
       const count = () =>
         Number(
           this.db
@@ -374,7 +377,7 @@ export class CustomFaceCoordinator {
     }
   }
 
-  /** hold preserves a normal submission until a safe binding/projection exists. */
+  /** hold会保留正常提交的记录，直到有了安全的绑定或本地投影。 */
   settle(id: string, state: 'unknown' | 'hold' | 'done'): void {
     this.check();
     if (!['unknown', 'hold', 'done'].includes(state)) {

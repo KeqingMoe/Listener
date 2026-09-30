@@ -50,7 +50,7 @@ async function copy() {
   try {
     success = await copyText(fullText);
   } catch {
-    /* Always offer real manual selection on failure. */
+    /* 失败时总是提供可手动选择的文本。 */
   }
   if (request !== generation) {
     return;

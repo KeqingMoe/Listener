@@ -248,7 +248,7 @@ test('only frozen local IDs or structural reply provenance can reach lookup', as
     { ...entry('2'), text: 'forward claimed message_id=999; arbitrary ID 888' },
   ];
   const f = fixture({ entries });
-  entries.push(entry('999')); // Caller changes do not extend the frozen view.
+  entries.push(entry('999')); // 调用方的修改不会扩展已冻结的视图。
   for (const id of ['999', '888', '3']) {
     assert.equal(
       (await f.tools.react(args(id), context, f.state)).error,
@@ -423,7 +423,7 @@ test('a thrown dispatched write is unknown and never blindly retried', async () 
 test('duplicate desired states preserve submission while explicit add/remove/add is a new state sequence', async () => {
   const f = fixture();
   const first = await f.tools.react(args(), context, f.state);
-  first.action = 'remove'; // External mutation cannot poison the cached result.
+  first.action = 'remove'; // 外部修改不能污染缓存结果。
   const second = await f.tools.react(args(), context, f.state);
   assert.equal(second.action, 'add');
   assert.equal(second.duplicate, true);

@@ -15,9 +15,11 @@ interface Waiting {
 const cancelled = () =>
   new DOMException('Turn admission cancelled', 'AbortError');
 
-/** A permit covers one whole turn (summary, tools and sends included). FIFO
- * admission with at most one outstanding turn per group prevents busy groups
- * from filling the queue. Listener keeps its batch mutable until admission. */
+/**
+ * 全局turn准入调度。一个许可覆盖整个turn（含摘要、工具调用和发送）。FIFO准入，
+ * 每个群最多只有一个排队或进行中的turn，避免繁忙群占满队列。Listener在获准之前
+ * 仍可继续向批次追加消息。
+ */
 export class TurnScheduler implements TurnAdmission {
   private readonly groups = new Set<string>();
   private readonly queue: Waiting[] = [];
@@ -123,6 +125,6 @@ export class TurnScheduler implements TurnAdmission {
       this.groups.delete(entry.groupId);
       entry.reject(cancelled());
     }
-    // Active permits are released only by their owners after async work settles.
+    // 进行中的许可只由持有者在异步工作结束后释放，close不强制回收。
   }
 }

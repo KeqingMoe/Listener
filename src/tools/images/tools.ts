@@ -25,7 +25,7 @@ import {
 } from '../../onebot/image-references.ts';
 
 function downloadFailure(error: unknown): string {
-  // Do not invoke exception getters from an injected transport while classifying it.
+  // 分类错误时不调用注入的transport所抛异常上的getter。
   let message: unknown;
   try {
     message =
@@ -84,7 +84,7 @@ export const VIEW_IMAGES_TOOL: ToolDefinition = {
   },
 };
 
-/** Successful visual attachments only; failed attempts never consume a quota. */
+/** 只记录成功加载的视觉附件；失败的尝试不消耗配额。 */
 export interface ImageTurnState {
   loadedIds: Set<string>;
 }
@@ -303,7 +303,7 @@ export class ImageTools {
         ) {
           throw new Error();
         }
-        // parseId already bounds the selected index; do not inspect unrelated tail segments.
+        // parseId已限制所选索引范围，不检查无关的尾部消息段。
         if (!Array.isArray(raw.message)) {
           throw new Error();
         }
@@ -316,7 +316,7 @@ export class ImageTools {
         ) {
           throw new Error();
         }
-        // Network destinations (including DNS/redirect checks) are the downloader's responsibility.
+        // 网络目标的检查（包括DNS和重定向）由downloader负责。
         const imageUrl = segment.data.url;
         const url = new URL(imageUrl);
         if (url.protocol !== 'https:' || url.username || url.password) {

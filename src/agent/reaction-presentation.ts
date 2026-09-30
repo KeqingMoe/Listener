@@ -1,6 +1,8 @@
 import type { JsonObject } from '../contracts/json.ts';
 import type { Memory } from '../contracts/messages.ts';
 
+/** 把reaction观测结果作为只读标注附加到模型可见的消息投影上，受字符预算限制，不改动原始记录。 */
+
 export type ReactionLookup = (messageId: string) => JsonObject | undefined;
 
 const ADDED_LIMIT = 6000,
@@ -38,7 +40,7 @@ function boundedText(value: unknown, max: number): string | undefined {
     .join('');
 }
 
-/** Project only observation fields: these counts never assert our participation. */
+/** 只投影观测字段：这些计数不代表bot自己参与过reaction。 */
 function snapshot(value: unknown): JsonObject | undefined {
   if (
     !object(value) ||
@@ -152,8 +154,8 @@ function candidates(
       result.push({ message, info, index });
     }
   });
-  // Allocate scarce annotation space to real reactions before empty snapshots,
-  // then prefer recent messages. Never reorder the actual conversation.
+  // 有限的标注空间优先给有实际reaction的消息，其次是空快照，同类中优先较新的消息。
+  // 只排序候选列表，不改变对话本身的顺序。
   return result.sort(
     (a, b) =>
       Number((b.info.items as unknown[]).length > 0) -
@@ -161,7 +163,7 @@ function candidates(
   );
 }
 
-/** Mutates only a newly cloned/parsed representation, never Memory entries. */
+/** 只修改新克隆或新解析出的副本，绝不修改Memory中的条目。超出预算的标注会被撤回。 */
 function decorate(
   root: unknown,
   messages: unknown[],
@@ -186,7 +188,7 @@ function decorate(
   return changed;
 }
 
-/** Retain all original message text/provenance, even for an already oversized input. */
+/** 保留全部原始消息文本和来源信息；输入本身已超预算时不做标注，也不裁剪原文。 */
 export function annotateReactionBatch(
   payload: JsonObject,
   lookup: ReactionLookup,
@@ -201,7 +203,7 @@ export function annotateReactionBatch(
   return copy;
 }
 
-/** This is a display projection only; the original context remains the summary input. */
+/** 仅用于展示的投影；摘要仍以原始context为输入。 */
 export function annotateReactionContext(
   memory: Memory,
   lookup: ReactionLookup,
@@ -211,7 +213,7 @@ export function annotateReactionContext(
   try {
     parsed = JSON.parse(source);
   } catch {
-    /* Legacy plain contexts cannot be edited by matching text. */
+    /* 纯文本context无法按文本匹配改写，改为在末尾追加观测记录。 */
   }
   const messages = Array.isArray(parsed)
     ? parsed
@@ -247,7 +249,7 @@ export function annotateReactionContext(
   return trailer ? `${source}\n${trailer}` : source;
 }
 
-/** Parent applies this only to successful, locally scoped read_message results. */
+/** 调用方只对成功且限定在本群范围内的read_message结果调用。 */
 export function annotateReactionReadResult(
   result: JsonObject,
   lookup: ReactionLookup,

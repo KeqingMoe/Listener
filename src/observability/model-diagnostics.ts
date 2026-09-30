@@ -75,7 +75,7 @@ const fields = {
   requestMode: ['fresh', 'continue_live', 'continue_restored'],
 } as const;
 
-/** Never invoke user getters or Proxy traps, including on revoked proxies. */
+/** 只读自有数据属性，绝不触发用户getter或Proxy trap（包括已revoke的Proxy）。 */
 function own(value: unknown, key: string): unknown {
   if (value === null || typeof value !== 'object' || types.isProxy(value)) {
     return undefined;
@@ -110,7 +110,7 @@ export function normalizeModelRequestDiagnostics(
     : undefined;
 }
 
-/** Upstream reasons are deliberately narrower than internal abort sources. */
+/** 上游传入的abort原因刻意只接受内部abort来源的一个子集，其余一律归为external_unknown。 */
 export function upstreamAbortSource(
   reason: unknown,
 ): ModelRequestDiagnostics['abortSource'] {

@@ -35,7 +35,7 @@ const newBudget = (): ContentBudget => ({
   truncated: false,
 });
 
-/** Iterate instead of materializing hundreds of potentially large rows. */
+/** 逐行迭代而不是一次性取出数百行可能很大的数据；超过条数或字节预算时标记truncated并停止。 */
 function collectContent(
   iterator: Iterable<Row>,
   count: number,
@@ -82,8 +82,8 @@ const cap = (rows: Row[]) => {
   }
   return rows;
 };
-// Exact, reviewed lifecycle/connection diagnostics emitted by the local logger.
-// Null-group tool/message events are never promoted into global visibility.
+// 本地logger产生的、经过审查的生命周期/连接事件的精确列表。
+// group为null的工具/消息事件绝不会因此变为全局可见。
 const GLOBAL_REVIEW_EVENTS = [
   'app.start',
   'app.stopping',
@@ -133,6 +133,10 @@ const fields = [
   'diagnostics',
 ];
 
+/**
+ * review页面的数据访问层：合并telemetry与inspection两张表的请求记录，
+ * 所有内容在返回前经过凭据清洗，并受条数和8MB内容预算限制。
+ */
 export class ReviewRepository {
   constructor(readonly base: Repository) {}
   private clean(value: unknown) {
@@ -206,7 +210,7 @@ export class ReviewRepository {
     if (scope && !clauses.length) {
       return [];
     }
-    // Key-only trend refreshes must seek by request identity, not scan a time-range index.
+    // 只按key刷新趋势时必须按request身份定位，不能扫描时间范围索引，因此显式指定索引。
     let indexed = '';
     if (trendOnly && scope?.requestIds?.length) {
       const index = db
@@ -250,7 +254,7 @@ export class ReviewRepository {
     if (!db) {
       return [];
     }
-    // Extract ONLY stable metadata for association, never transfer historical bodies on list reads.
+    // 只提取用于关联的稳定元数据；列表读取时绝不传输历史消息内容。
     const turn = SESSION_PHYSICAL_TURN;
     const clauses: string[] = [],
       params: string[] = [];
@@ -333,6 +337,7 @@ export class ReviewRepository {
       const primaryById = new Map(
         telemetry.map((row) => [row.request_id, row]),
       );
+      // 先放inspection行，再用telemetry中的非null字段覆盖：telemetry是主测量来源。
       const merged = new Map<string, Row>();
       for (const row of inspection) {
         merged.set(row.request_id, { ...row, hasInspection: true });
@@ -368,8 +373,8 @@ export class ReviewRepository {
               byTurn: new Map<string, Set<string>>(),
             };
       for (const row of merged.values()) {
-        // Inspection recovery writes ended_at=restart time, NOT the HTTP end.
-        // Only an actual primary measurement can establish interrupted request timing.
+        // inspection恢复时写入的ended_at是重启时刻，并非HTTP结束时刻。
+        // 只有telemetry中的真实测量才能确定被中断请求的耗时。
         if (
           row.status === 'interrupted' &&
           n(primaryById.get(row.request_id)?.ended_at) === null
@@ -387,6 +392,7 @@ export class ReviewRepository {
           wake =
             s(row.wake_id) ??
             a.byRequest.get(row.request_id) ??
+            // 按turn反查时，只有唯一对应一个wake才采用，避免错误归属。
             (wakes?.size === 1 ? [...wakes][0]! : null);
         result.push({
           performance,
@@ -544,7 +550,7 @@ export class ReviewRepository {
       budget,
     );
     const assistant = a.messages.find((m) => m.request_id === id);
-    // Historical context is explicitly a fallback, not a reconstructed HTTP snapshot.
+    // 没有保存请求体时，用session中的历史消息作为回退，明确标注来源，并非还原的HTTP快照。
     const historical =
       assistant && typeof row?.request_json !== 'string'
         ? collectContent(
@@ -582,7 +588,7 @@ export class ReviewRepository {
         parse(row?.response_json) ??
           (assistant ? parse(assistant.message) : null),
       );
-    // Chains stay inside the currently authorized group, including session rotations.
+    // response链只在当前已授权的群内查找，session轮换后也能串起来。
     const chainIds =
       db && cols.has('response_id') && cols.has('previous_response_id')
         ? db
@@ -637,7 +643,10 @@ export class ReviewRepository {
     };
   }
 
-  /** One bounded metadata-only scope shared by the list and expanded review. */
+  /**
+   * 列表和展开的review共用的、有界且只含元数据的范围。
+   * 从wake出发经物理turn扩展，收集相关请求以及同turn涉及的其他wake。
+   */
   private wakeRequestScope(groupId: string, wakeId: string) {
     const initial = this.associations(groupId, { wakeIds: [wakeId] }),
       turns = new Set(initial.byTurn.keys());
@@ -840,9 +849,9 @@ export class ReviewRepository {
     const groups = this.base.groups
       .filter((g) => !groupId || g.groupId === groupId)
       .map((g) => g.groupId);
-    // Only connection/lifecycle events are global. Unknown null-group events fail closed.
+    // 只有连接/生命周期事件是全局的；未知的null-group事件一律不可见。
     const global = `(group_id IS NULL AND event IN (${GLOBAL_REVIEW_EVENTS.map(() => '?').join(',')}))`;
-    // Heartbeats support health inference, not the human event timeline.
+    // 心跳只用于推断health，不出现在给人看的事件时间线里。
     const terms = [
       'observed_at BETWEEN ? AND ?',
       'seq<?',
@@ -953,6 +962,7 @@ export class ReviewRepository {
         lastRequestAt,
       };
     });
+    // 心跳超过45秒未更新判为stale；否则优先采信比最近连接事件更新的心跳状态。
     let connectivity: HealthResponse['connectivity'] = 'unknown',
       lastHeartbeatAt: number | null = null,
       lastConnectionEventAt: number | null = null;
