@@ -12,7 +12,7 @@ import {
 
 export const plot = { left: 66, right: 20, top: 34, bottom: 58 };
 
-export interface ChartColors {
+interface ChartColors {
   text: string;
   muted: string;
   border: string;

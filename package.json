@@ -19,8 +19,7 @@
     "logs": "tsx src/cli/logs.ts",
     "faces:sync": "tsx src/cli/sync-faces.ts",
     "dashboard:dev": "tsx scripts/dashboard-dev.ts",
-    "dashboard:typecheck": "vue-tsc --noEmit -p src/dashboard/web/tsconfig.json && tsc --noEmit -p tsconfig.json",
-    "dashboard:build": "npm run dashboard:typecheck && npm run build && vite build --config src/dashboard/web/vite.config.ts",
+    "dashboard:build": "npm run typecheck && npm run build && vite build --config src/dashboard/web/vite.config.ts",
     "dashboard:start": "node dist/dashboard/server/index.js",
     "dashboard:test": "node scripts/test.mjs dashboard",
     "dashboard:test:browser": "playwright test --config playwright.config.ts"

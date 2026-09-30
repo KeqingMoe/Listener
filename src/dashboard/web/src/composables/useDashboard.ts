@@ -8,7 +8,7 @@ import type { ResourceSyncResponse } from '../../../contracts/resource-sync';
 export const refreshFailures = ref(0);
 export const refreshVersion = ref(0);
 export const activeRequests = ref(0);
-export const rangeEnd = ref(Date.now());
+const rangeEnd = ref(Date.now());
 
 export function refresh() {
   if (activeRequests.value || authenticated.value !== true) {

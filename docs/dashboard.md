@@ -59,7 +59,7 @@ npm run dashboard:start
 ## 构建与测试
 
 ```sh
-npm run dashboard:typecheck
+npm run typecheck
 npm run dashboard:test
 npm run dashboard:test:browser
 npm run dashboard:build
