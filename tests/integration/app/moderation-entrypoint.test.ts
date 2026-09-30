@@ -364,7 +364,7 @@ owner_id = "${LOCAL_OWNER}"
 [onebot]
 url = "ws://127.0.0.1:${wsPort}"
 token_env = "FIXTURE_TOKEN"
-[model]
+[models.main]
 base_url = "http://127.0.0.1:${httpPort}/v1"
 model = "fixture-moderation"
 api_key_env = "FIXTURE_KEY"

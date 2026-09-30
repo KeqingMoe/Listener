@@ -24,7 +24,7 @@ function fixture(t: { after(fn: () => void): void }) {
   writeFileSync(join(dir, 'persona.md'), 'test persona');
   writeFileSync(
     join(dir, 'config.toml'),
-    '[bot]\nowner_id="7001"\n[model]\nmodel="fixture-model"\n[storage]\ndirectory="data"\n[defaults]\nenabled=true\npersona="persona.md"\n[groups."2"]\nenabled=false\n',
+    '[bot]\nowner_id="7001"\n[models.main]\napi_key_env="OPENAI_API_KEY"\nmodel="fixture-model"\n[storage]\ndirectory="data"\n[defaults]\nenabled=true\npersona="persona.md"\n[groups."2"]\nenabled=false\n',
   );
   const app = loadAppConfig({
     configPath: join(dir, 'config.toml'),

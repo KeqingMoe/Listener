@@ -400,7 +400,7 @@ test('loaded TOML is the source of per-group registration without capability lea
   const path = join(dir, 'config.toml');
   writeFileSync(
     path,
-    '[bot]\nowner_id="778899"\n[model]\nmodel="fixture-model"\n[defaults.tools]\n' +
+    '[bot]\nowner_id="778899"\n[models.main]\napi_key_env="OPENAI_API_KEY"\nmodel="fixture-model"\n[defaults.tools]\n' +
       EXTENDED_TOOL_NAMES.map((name) => `${name}="off"`).join('\n') +
       '\n[groups."111"]\nenabled=true\ntools.get_group_info="direct"\n[groups."222"]\nenabled=true\ntools.get_group_info="off"\n',
   );

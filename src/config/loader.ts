@@ -15,10 +15,12 @@ import type {
   ResolvedGroupConfig,
   LoggingConfig,
   LogLevel,
+  ModelConfig,
   ModelTransport,
   WebSearchProviderConfig,
 } from './app.ts';
 import { OWNER_ID } from '../contracts/identity.ts';
+import { isObject } from '../contracts/json.ts';
 import { ConfigError, configFail as fail } from './errors.ts';
 import { assertStoragePaths } from './storage-paths.ts';
 import {
@@ -245,20 +247,59 @@ function tools(
   return result as ResolvedToolPolicies;
 }
 
-function modelTransport(value: unknown): ModelTransport {
+function modelTransport(value: unknown, path: string): ModelTransport {
   if (value === 'chat' || value === 'responses') {
     return value;
   }
-  const options = table(value, 'model.transport', ['type', 'incremental']);
+  const options = table(value, `${path}.transport`, ['type', 'incremental']);
   if (options.type !== 'responses') {
-    return fail('model.transport.type', '必须是responses');
+    return fail(`${path}.transport.type`, '必须是responses');
   }
   if (!own(options, 'incremental')) {
-    return fail('model.transport.incremental', '必须显式指定布尔值');
+    return fail(`${path}.transport.incremental`, '必须显式指定布尔值');
   }
   return {
     type: 'responses',
-    incremental: bool(options, 'incremental', 'model.transport', false),
+    incremental: bool(options, 'incremental', `${path}.transport`, false),
+  };
+}
+
+const MODEL_KEYS = [
+  'base_url',
+  'model',
+  'api_key_env',
+  'timeout_ms',
+  'max_output_tokens',
+  'opencode_headers',
+  'transport',
+] as const;
+
+/** 解析[models.<名字>]；密钥由调用方读取，这里只校验字段。 */
+function modelEntry(name: string, raw: Table, apiKey: string): ModelConfig {
+  const path = `models.${name}`;
+  return {
+    name,
+    transport: modelTransport(
+      own(raw, 'transport') ? raw.transport : 'chat',
+      path,
+    ),
+    baseUrl: url(
+      text(raw, 'base_url', path, 'https://api.openai.com/v1'),
+      `${path}.base_url`,
+      true,
+    ),
+    apiKey,
+    model: text(raw, 'model', path, ''),
+    timeoutMs: num(raw, 'timeout_ms', path, 180000, 1000, 300000),
+    maxTokens: num(
+      raw,
+      'max_output_tokens',
+      path,
+      32768,
+      1,
+      Number.MAX_SAFE_INTEGER,
+    ),
+    opencodeHeaders: bool(raw, 'opencode_headers', path, false),
   };
 }
 
@@ -294,6 +335,7 @@ function webSearch(value: unknown): WebSearchProviderConfig | undefined {
 
 const POLICY_KEYS = [
   'enabled',
+  'model',
   'persona',
   'reply',
   'session',
@@ -312,10 +354,23 @@ function policy(
   base: string,
   directory: string,
   groupId: string,
-  transport: ModelTransport,
+  models: ReadonlySet<string>,
   defaults?: ResolvedGroupConfig,
 ): ResolvedGroupConfig {
   const raw = table(rawValue, path, POLICY_KEYS);
+  let model: string;
+  if (own(raw, 'model')) {
+    model = text(raw, 'model', path, '');
+    if (!models.has(model)) {
+      fail(`${path}.model`, '引用了未定义的模型');
+    }
+  } else if (defaults) {
+    model = defaults.model;
+  } else if (models.size === 1) {
+    model = [...models][0]!;
+  } else {
+    model = fail(`${path}.model`, '定义了多个模型时必须指定默认模型');
+  }
   const reply = table(raw.reply, `${path}.reply`, [
     'mention',
     'quote_bot',
@@ -416,6 +471,7 @@ function policy(
   return {
     groupId,
     enabled: bool(raw, 'enabled', path, defaults?.enabled ?? false),
+    model,
     personaPath,
     persona:
       own(raw, 'persona') || !defaults
@@ -533,7 +589,7 @@ export function loadAppConfig(
   const root = table(parsed, 'config', [
     'bot',
     'onebot',
-    'model',
+    'models',
     'runtime',
     'web',
     'storage',
@@ -549,15 +605,6 @@ export function loadAppConfig(
       'reconnect_base_ms',
       'reconnect_max_ms',
       'heartbeat_ms',
-    ]),
-    model = table(root.model, 'model', [
-      'base_url',
-      'model',
-      'api_key_env',
-      'timeout_ms',
-      'max_output_tokens',
-      'opencode_headers',
-      'transport',
     ]),
     runtime = table(root.runtime, 'runtime', ['max_concurrent_turns']),
     web = table(root.web, 'web', ['search']),
@@ -661,9 +708,22 @@ export function loadAppConfig(
     artifactDirectory,
     napcatArtifactDirectory,
   };
-  const transport = modelTransport(
-    own(model, 'transport') ? model.transport : 'chat',
+  const rawModels = table(
+    root.models,
+    'models',
+    isObject(root.models) ? Object.keys(root.models) : [],
   );
+  const modelTables = new Map<string, Table>();
+  for (const [name, value] of Object.entries(rawModels)) {
+    if (!name.trim()) {
+      fail('models', '模型名不能为空');
+    }
+    modelTables.set(name, table(value, `models.${name}`, MODEL_KEYS));
+  }
+  if (!modelTables.size) {
+    fail('models', '至少需要定义一个模型');
+  }
+  const modelNames: ReadonlySet<string> = new Set(modelTables.keys());
   const defaultsRaw = table(root.defaults, 'defaults', POLICY_KEYS),
     defaultPolicy = policy(
       defaultsRaw,
@@ -671,7 +731,7 @@ export function loadAppConfig(
       base,
       directory,
       '1',
-      transport,
+      modelNames,
     );
   const defaultDatabaseExplicit = own(
     table(defaultsRaw.storage, 'defaults.storage', ['database']),
@@ -707,7 +767,7 @@ export function loadAppConfig(
       base,
       directory,
       groupId,
-      transport,
+      modelNames,
       inherited,
     );
   }
@@ -720,11 +780,18 @@ export function loadAppConfig(
     fail('bot.owner_id', '启用服务时必须在本地全局配置显式指定主人');
   }
   const ownerId = ownerConfigured ? id(bot.owner_id, 'bot.owner_id') : OWNER_ID;
-  const tokenEnv = text(one, 'token_env', 'onebot', 'ONEBOT_ACCESS_TOKEN'),
-    keyEnv = text(model, 'api_key_env', 'model', 'OPENAI_API_KEY');
+  const tokenEnv = text(one, 'token_env', 'onebot', 'ONEBOT_ACCESS_TOKEN');
+  const keyEnvs = new Map(
+    [...modelTables].map(([name, raw]) => [
+      name,
+      text(raw, 'api_key_env', `models.${name}`, ''),
+    ]),
+  );
   for (const [name, field] of [
     [tokenEnv, 'onebot.token_env'],
-    [keyEnv, 'model.api_key_env'],
+    ...[...keyEnvs].map(
+      ([model, env]) => [env, `models.${model}.api_key_env`] as const,
+    ),
   ] as const) {
     if (!/^[A-Z_][A-Z0-9_]*$/.test(name)) {
       fail(field, '必须是大写环境变量名称');
@@ -743,7 +810,9 @@ export function loadAppConfig(
   if (
     Object.keys(secrets).some(
       (key) =>
-        key !== tokenEnv && key !== keyEnv && key !== 'DASHBOARD_PASSWORD',
+        key !== tokenEnv &&
+        ![...keyEnvs.values()].includes(key) &&
+        key !== 'DASHBOARD_PASSWORD',
     )
   ) {
     fail('.env', '只允许所选的密钥变量');
@@ -832,26 +901,16 @@ export function loadAppConfig(
     configPath,
     identity: { name: text(bot, 'name', 'bot', 'Listener'), ownerId },
     onebot,
-    model: {
-      transport,
-      baseUrl: url(
-        text(model, 'base_url', 'model', 'https://api.openai.com/v1'),
-        'model.base_url',
-        true,
-      ),
-      apiKey: secret(keyEnv, 'model.api_key_env', true),
-      model: text(model, 'model', 'model', ''),
-      timeoutMs: num(model, 'timeout_ms', 'model', 180000, 1000, 300000),
-      maxTokens: num(
-        model,
-        'max_output_tokens',
-        'model',
-        32768,
-        1,
-        Number.MAX_SAFE_INTEGER,
-      ),
-      opencodeHeaders: bool(model, 'opencode_headers', 'model', false),
-    },
+    models: new Map(
+      [...modelTables].map(([name, raw]) => [
+        name,
+        modelEntry(
+          name,
+          raw,
+          secret(keyEnvs.get(name)!, `models.${name}.api_key_env`, true),
+        ),
+      ]),
+    ),
     runtime: {
       maxConcurrentTurns: num(
         runtime,

@@ -35,13 +35,13 @@ test('execution defaults are 96 calls and 240 seconds for configured and dynamic
     });
     assert.equal(g.enabled, false);
   }
-  assert.equal(app.model.maxTokens, 32768);
+  assert.equal(app.models.get('main')!.maxTokens, 32768);
   assert.equal(app.runtime.maxConcurrentTurns, 2);
 });
 
 test('execution inherits ordinary fields independently and contains no model credentials', (t) => {
   const app = fixture(t)(
-    '[model]\nmodel="synthetic-model"\nmax_output_tokens=16384\ntransport="responses"\n[runtime]\nmax_concurrent_turns=3\n[defaults.execution]\nmax_tool_calls_per_wake=128\nwake_timeout_ms=100000\n[groups."11".execution]\nmax_tool_calls_per_wake=64\n[groups."22".execution]\nwake_timeout_ms=120000',
+    '[models.main]\napi_key_env="OPENAI_API_KEY"\nmodel="synthetic-model"\nmax_output_tokens=16384\ntransport="responses"\n[runtime]\nmax_concurrent_turns=3\n[defaults.execution]\nmax_tool_calls_per_wake=128\nwake_timeout_ms=100000\n[groups."11".execution]\nmax_tool_calls_per_wake=64\n[groups."22".execution]\nwake_timeout_ms=120000',
   );
   assert.deepEqual(app.resolveGroup('11').execution, {
     maxToolCallsPerWake: 64,
@@ -55,22 +55,17 @@ test('execution inherits ordinary fields independently and contains no model cre
     maxToolCallsPerWake: 128,
     wakeTimeoutMs: 100000,
   });
-  assert.equal(app.model.model, 'synthetic-model');
-  assert.equal(app.model.apiKey, 'fixture-model-key');
-  assert.equal(app.model.maxTokens, 16384);
+  assert.equal(app.models.get('main')!.model, 'synthetic-model');
+  assert.equal(app.models.get('main')!.apiKey, 'fixture-model-key');
+  assert.equal(app.models.get('main')!.maxTokens, 16384);
   assert.equal(app.runtime.maxConcurrentTurns, 3);
   for (const id of ['11', '22', '99']) {
     const g = app.resolveGroup(id);
-    assert.equal(app.model.transport, 'responses');
+    assert.equal(app.models.get('main')!.transport, 'responses');
     assert.equal(Object.hasOwn(g.session, 'transport'), false);
-    for (const key of [
-      'model',
-      'apiKey',
-      'baseUrl',
-      'ownerId',
-      'onebot',
-      'runtime',
-    ]) {
+    // 群只记录所选模型的名字，不携带模型凭据或地址。
+    assert.equal(g.model, 'main');
+    for (const key of ['apiKey', 'baseUrl', 'ownerId', 'onebot', 'runtime']) {
       assert.equal(Object.hasOwn(g, key), false);
     }
   }

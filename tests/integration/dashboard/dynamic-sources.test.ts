@@ -171,7 +171,7 @@ test('explicit enabled history remains readable offline; dynamic groups require 
   writeFileSync(join(f.dir, 'persona.md'), 'Synthetic test persona.');
   writeFileSync(
     configPath,
-    `[bot]\nowner_id="100000001"\n[model]\nmodel="fixture-model"\n[storage]\ndirectory="."\n[defaults]\nenabled=true\npersona="persona.md"\n[groups."11"]\nenabled=true\nstorage.database="11"\n[groups."33"]\nenabled=false\n`,
+    `[bot]\nowner_id="100000001"\n[models.main]\napi_key_env="OPENAI_API_KEY"\nmodel="fixture-model"\n[storage]\ndirectory="."\n[defaults]\nenabled=true\npersona="persona.md"\n[groups."11"]\nenabled=true\nstorage.database="11"\n[groups."33"]\nenabled=false\n`,
   );
   const config = loadAppConfig({
     configPath,

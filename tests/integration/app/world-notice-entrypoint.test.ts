@@ -318,7 +318,7 @@ owner_id = "778899"
 [onebot]
 url = "ws://127.0.0.1:${(ws.address() as AddressInfo).port}"
 token_env = "FIXTURE_TOKEN"
-[model]
+[models.main]
 base_url = "http://127.0.0.1:${(http.address() as AddressInfo).port}/v1"
 model = "fixture-world-notices"
 api_key_env = "FIXTURE_KEY"

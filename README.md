@@ -15,7 +15,7 @@ npm run faces:sync
 cp config.example.toml config.toml
 cp .env.example .env
 # 编辑 config.toml：填写主人QQ、模型名称、服务地址和群号
-# 编辑 .env：填写 ONEBOT_ACCESS_TOKEN、OPENAI_API_KEY
+# 编辑 .env：填写 ONEBOT_ACCESS_TOKEN，以及 config.toml 中各模型 api_key_env 指定的密钥
 npm run config:check
 npm run build
 npm start
@@ -23,7 +23,7 @@ npm start
 
 模型名称和模型密钥必填。检查配置不联网、不创建数据库；检查通过后仍需确保 OneBot 已登录、Bot 已加入目标群、模型服务可用。
 
-传输统一配置在全局 `model.transport`：`"chat"`、`"responses"` 或 `{ type = "responses", incremental = false, }`。Responses字符串默认增量续接；对象中 `incremental` 必须显式为布尔值，`false` 使用完整上下文，`true` 启用增量续接。不支持chat对象、未知对象字段或旧的群级 `session.transport`；迁移时删除旧字段。支持多行内联表和尾随逗号，详见[模型传输](docs/configuration.md#模型传输)。
+模型定义在 `[models.<名字>]`，可以有多个；各群用 `model = "名字"` 选用，只定义一个时默认使用它。每个模型各自指定地址、模型ID、密钥变量和传输方式（`"chat"`、`"responses"` 或 `{ type = "responses", incremental = false, }`）。详见[具名模型](docs/configuration.md#具名模型)。
 
 收藏添加的受控文件桥目前要求Linux/procfs。NapCat位于容器时，需要把Bot侧原图目录映射到容器并配置两侧路径；这不是手工维护QQ表情清单。详见[收藏原图目录与容器部署](docs/configuration.md#收藏原图目录与容器部署)。
 

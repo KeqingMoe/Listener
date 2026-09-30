@@ -59,6 +59,7 @@ function fixture(
   const group: ResolvedGroupConfig = {
     groupId: GROUP,
     enabled: true,
+    model: 'main',
     personaPath: '/fixture/persona.md',
     persona: 'Complete replacement persona',
     reply: {

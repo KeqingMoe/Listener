@@ -338,7 +338,7 @@ owner_id = "778899"
 [onebot]
 url = "ws://127.0.0.1:${wsPort}"
 token_env = "FIXTURE_TOKEN"
-[model]
+[models.main]
 base_url = "http://127.0.0.1:${httpPort}/v1"
 model = "fixture-notice-model"
 api_key_env = "FIXTURE_KEY"

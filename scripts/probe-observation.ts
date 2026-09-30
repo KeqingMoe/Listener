@@ -12,12 +12,26 @@ import type { ModelRequestRecord } from '../src/observability/model-usage.ts';
 
 // 需显式开启：会消耗模型token，但从不连接OneBot/QQ、
 // 从不加载真实消息数据库，也从不提供发送工具。
-if (process.argv.slice(2).join(' ') !== '--allow-model-network') {
+// 可选 --model=<名字> 指定具名模型，默认使用defaults选用的模型。
+const argv = process.argv.slice(2);
+if (
+  !argv.includes('--allow-model-network') ||
+  argv.some(
+    (arg) => arg !== '--allow-model-network' && !arg.startsWith('--model='),
+  )
+) {
   throw new Error(
-    'Use --allow-model-network to run the bounded synthetic probe',
+    'Use --allow-model-network [--model=<name>] to run the bounded synthetic probe',
   );
 }
-const { model: config } = loadAppConfig();
+const app = loadAppConfig();
+const selected =
+  argv.find((arg) => arg.startsWith('--model='))?.slice('--model='.length) ??
+  app.resolveGroup('999001').model;
+const config = app.models.get(selected);
+if (!config) {
+  throw new Error(`Unknown model: ${selected}`);
+}
 const directory = mkdtempSync(join(tmpdir(), 'qqbot-observation-probe-'));
 const groupId = '999001',
   selfId = '999002';

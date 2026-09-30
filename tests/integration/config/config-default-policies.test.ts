@@ -99,7 +99,7 @@ function fixture(t: { after(fn: () => void): void }, policies = '') {
   );
   writeFileSync(
     join(root, 'config.toml'),
-    `[bot]\nowner_id="${OWNER}"\n[model]\nmodel="fixture"\n[logging]\nfile=false\n[defaults]\npersona="persona.md"\n${policies}\n`,
+    `[bot]\nowner_id="${OWNER}"\n[models.main]\napi_key_env="OPENAI_API_KEY"\nmodel="fixture"\n[logging]\nfile=false\n[defaults]\npersona="persona.md"\n${policies}\n`,
   );
   return loadAppConfig({ configPath: join(root, 'config.toml'), env: {} });
 }
@@ -273,7 +273,7 @@ test('the public example needs only real model setup and uses the approved tool 
   );
   assert.throws(
     () => loadAppConfig({ configPath: initial.configPath, env: {} }),
-    /model\.model/,
+    /models\.main\.model/,
   );
   writeFileSync(
     initial.configPath,

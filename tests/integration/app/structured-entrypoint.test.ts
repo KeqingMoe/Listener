@@ -399,7 +399,7 @@ owner_id = "${OWNER_ID}"
 [onebot]
 url = "ws://127.0.0.1:${wsPort}"
 token_env = "FIXTURE_TOKEN"
-[model]
+[models.main]
 base_url = "http://127.0.0.1:${httpPort}/v1"
 model = "fixture-structured"
 api_key_env = "FIXTURE_KEY"

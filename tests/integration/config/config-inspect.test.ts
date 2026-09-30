@@ -35,7 +35,7 @@ test('inspection explains field inheritance and atomic branch defaults without c
   const { directory, app } = fixture(
     t,
     `
-[model]
+[models.main]
 transport = "responses"
 [bot]
 owner_id = "100000001"

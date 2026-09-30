@@ -47,8 +47,8 @@ test('complete app/group defaults have no credentials in resolved policy and no 
     g = c.resolveGroup('22');
   assert.equal(Object.hasOwn(c.runtime, 'aiEnabled'), false);
   assert.equal(c.runtime.maxConcurrentTurns, 2);
-  assert.equal(c.model.maxTokens, 32768);
-  assert.equal(c.model.timeoutMs, 180000);
+  assert.equal(c.models.get('main')!.maxTokens, 32768);
+  assert.equal(c.models.get('main')!.timeoutMs, 180000);
   assert.equal(c.defaultsEnabled, false);
   assert.deepEqual(c.configuredGroupIds, []);
   assert.equal(g.enabled, false);
@@ -66,23 +66,23 @@ test('complete app/group defaults have no credentials in resolved policy and no 
   assert.equal(g.tools.mute_member.mode, 'confirm');
   assert.equal(g.tools.get_member_info.mode, 'direct');
   assert.equal('apiKey' in g, false);
-  assert.equal('model' in g, false);
+  assert.equal(g.model, 'main');
   assert.equal(existsSync(join(f.dir, 'data')), false);
 });
 
 test('opencode_headers defaults false and only accepts model-level booleans', (t) => {
   const f = fixture(t);
-  assert.equal(f.load().model.opencodeHeaders, false);
+  assert.equal(f.load().models.get('main')!.opencodeHeaders, false);
   for (const value of [true, false]) {
-    f.config(`[model]\nopencode_headers=${value}`);
-    assert.equal(f.load().model.opencodeHeaders, value);
+    f.config(`[models.main]\nopencode_headers=${value}`);
+    assert.equal(f.load().models.get('main')!.opencodeHeaders, value);
   }
   for (const value of ['"true"', '1', '[]', '{}']) {
-    f.config(`[model]\nopencode_headers=${value}`);
+    f.config(`[models.main]\nopencode_headers=${value}`);
     assert.throws(() => f.load(), ConfigError);
   }
   for (const source of [
-    '[model]\nopencode_go_headers=true',
+    '[models.main]\nopencode_go_headers=true',
     '[defaults]\nopencode_headers=true',
     '[groups."22"]\nopencode_headers=true',
   ]) {
@@ -221,8 +221,8 @@ test('numeric policy and application limits reject coercion, unsafe integers and
     }
   }
   for (const tokens of [1, 8192, 32768, Number.MAX_SAFE_INTEGER]) {
-    f.config(`[model]\nmax_output_tokens=${tokens}`);
-    assert.equal(f.load().model.maxTokens, tokens);
+    f.config(`[models.main]\nmax_output_tokens=${tokens}`);
+    assert.equal(f.load().models.get('main')!.maxTokens, tokens);
   }
 });
 
@@ -392,15 +392,15 @@ test('URL security rejects credentials, query, fragment, unsupported schemes and
     'http://127.0.0.1:8000/v1',
     'http://[::1]:8000/v1',
   ]) {
-    f.config(`[model]\nbase_url="${value}"`);
-    assert.equal(f.load().model.baseUrl, value);
+    f.config(`[models.main]\nbase_url="${value}"`);
+    assert.equal(f.load().models.get('main')!.baseUrl, value);
   }
 });
 
 test('selected secrets remain only secrets, process environment wins without mutation', (t) => {
   const f = fixture(
     t,
-    '[onebot]\ntoken_env="CUSTOM_TOKEN"\n[model]\nmodel="test-model"\napi_key_env="CUSTOM_KEY"',
+    '[onebot]\ntoken_env="CUSTOM_TOKEN"\n[models.main]\nmodel="test-model"\napi_key_env="CUSTOM_KEY"',
   );
   f.dotenv('CUSTOM_TOKEN=file-token\nCUSTOM_KEY=file-key');
   assert.equal(f.load({}).onebot.token, 'file-token');
@@ -412,8 +412,8 @@ test('selected secrets remain only secrets, process environment wins without mut
   };
   const c = f.load(env);
   assert.equal(c.onebot.token, 'env-token');
-  assert.equal(c.model.apiKey, 'env-key');
-  assert.equal(c.model.model, 'test-model');
+  assert.equal(c.models.get('main')!.apiKey, 'env-key');
+  assert.equal(c.models.get('main')!.model, 'test-model');
   assert.deepEqual(c.runtime, { maxConcurrentTurns: 2 });
   assert.equal(env.CUSTOM_TOKEN, ' env-token ');
   for (const name of ['lower', 'A-B', '1KEY', '秘密']) {
@@ -435,37 +435,53 @@ test('missing, empty, multiline and hidden malformed secret sources are rejected
   f.dotenv('ONEBOT_ACCESS_TOKEN="line\\nbreak"');
   assert.throws(() => f.load({ ONEBOT_ACCESS_TOKEN: 'override' }), ConfigError);
   f.dotenv('ONEBOT_ACCESS_TOKEN=token');
-  f.config('[model]\nmodel="test"');
+  f.config('[models.main]\napi_key_env="OPENAI_API_KEY"\nmodel="test"');
   assert.throws(
     () => f.load({}),
-    (e) => e instanceof ConfigError && e.message.includes('model.api_key_env'),
+    (e) =>
+      e instanceof ConfigError && e.message.includes('models.main.api_key_env'),
   );
-  writeFileSync(join(f.dir, 'config.toml'), '');
+  writeFileSync(
+    join(f.dir, 'config.toml'),
+    '[models.main]\napi_key_env="OPENAI_API_KEY"',
+  );
   assert.throws(
     () => f.load({ OPENAI_API_KEY: 'key' }),
-    (e) => e instanceof ConfigError && e.message.includes('model.model'),
+    (e) => e instanceof ConfigError && e.message.includes('models.main.model'),
   );
 });
 
 test('model credentials and name are required even with no enabled groups; no AI-off field remains', (t) => {
   const f = fixture(t);
-  for (const source of [
-    '',
-    '[model]',
-    '[model]\nmodel=""',
-    '[model]\nmodel="   "',
-    '[model]\nmodel=false',
+  for (const [source, field] of <[string, string][]>[
+    ['', 'models'],
+    ['[models.main]', 'models.main.api_key_env'],
+    ['[models.main]\nmodel="m"', 'models.main.api_key_env'],
   ]) {
     writeFileSync(join(f.dir, 'config.toml'), source);
     assert.throws(
       () => f.load(),
-      (e) => e instanceof ConfigError && e.message.includes('model.model'),
+      (e) => e instanceof ConfigError && e.message.includes(field),
+    );
+  }
+  for (const source of [
+    '[models.main]\napi_key_env="OPENAI_API_KEY"',
+    '[models.main]\napi_key_env="OPENAI_API_KEY"\nmodel=""',
+    '[models.main]\napi_key_env="OPENAI_API_KEY"\nmodel="   "',
+    '[models.main]\napi_key_env="OPENAI_API_KEY"\nmodel=false',
+  ]) {
+    writeFileSync(join(f.dir, 'config.toml'), source);
+    assert.throws(
+      () => f.load(),
+      (e) =>
+        e instanceof ConfigError && e.message.includes('models.main.model'),
     );
   }
   f.config('[defaults]\nenabled=false');
   assert.throws(
     () => f.load({ ONEBOT_ACCESS_TOKEN: 'fixture-token' }),
-    (e) => e instanceof ConfigError && e.message.includes('model.api_key_env'),
+    (e) =>
+      e instanceof ConfigError && e.message.includes('models.main.api_key_env'),
   );
   for (const value of ['false', 'true']) {
     f.config(`[runtime]\nai_enabled=${value}`);
@@ -688,13 +704,13 @@ test('distributed example requires a model name and validates once filled withou
     f = fixture(t, source);
   assert.throws(
     () => f.load(),
-    (e) => e instanceof ConfigError && e.message.includes('model.model'),
+    (e) => e instanceof ConfigError && e.message.includes('models.main.model'),
   );
   f.config(source.replace(/^model = ""/m, 'model = "fixture-model"'));
   const c = f.load();
   assert.equal(c.defaultsEnabled, false);
-  assert.equal(c.model.maxTokens, 32768);
-  assert.equal(c.model.timeoutMs, 180000);
+  assert.equal(c.models.get('main')!.maxTokens, 32768);
+  assert.equal(c.models.get('main')!.timeoutMs, 180000);
   assert.equal(existsSync(c.storage.directory), false);
   for (const id of c.configuredGroupIds) {
     assert.equal('apiKey' in c.resolveGroup(id), false);
@@ -731,7 +747,7 @@ test('syntax errors and check CLI never expose snippets or secret markers', (t) 
   assert.equal(ok.status, 0, ok.stderr);
   assert.match(ok.stdout, /config valid/);
   assert.doesNotMatch(ok.stdout + ok.stderr, /SENSITIVE/);
-  f.config('[model]\nmodel="SENSITIVE_PARSE');
+  f.config('[models.main]\nmodel="SENSITIVE_PARSE');
   assert.throws(
     () => f.load(),
     (e) => e instanceof ConfigError && !e.message.includes('SENSITIVE'),

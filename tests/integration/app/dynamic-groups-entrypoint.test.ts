@@ -289,7 +289,7 @@ token_env = "FIXTURE_TOKEN"
 api_timeout_ms = 1000
 reconnect_base_ms = 20
 reconnect_max_ms = 40
-[model]
+[models.main]
 base_url = "http://127.0.0.1:${(http.address() as AddressInfo).port}/v1"
 model = "unused-fixture-model"
 api_key_env = "FIXTURE_KEY"

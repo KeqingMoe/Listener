@@ -1,6 +1,6 @@
 # 首次使用时复制为 config.toml；不要覆盖已有配置。
 # QQ号、群号是占位值，必须替换；模型名称和模型密钥必填。
-# 密钥写入 .env：ONEBOT_ACCESS_TOKEN、OPENAI_API_KEY。
+# 密钥写入 .env：ONEBOT_ACCESS_TOKEN，以及每个模型 api_key_env 指定的变量。
 # 相对路径以 config.toml 所在目录为基准。完整参考：docs/configuration.md。
 
 [bot]
@@ -10,7 +10,10 @@ owner_id = "100000001"
 [onebot]
 url = "ws://127.0.0.1:3001"
 
-[model]
+# 具名模型：[models.<名字>]，名字用于群选用和用量统计。可以定义多个，
+# 群用 model = "名字" 选用；只定义一个时所有群默认使用它。
+[models.main]
+api_key_env = "OPENAI_API_KEY"
 transport = {
   type = "responses",
   incremental = false,
@@ -21,6 +24,13 @@ model = "" # 必填：填写服务商提供的、支持工具调用的模型名�
 max_output_tokens = 32768
 # 单次模型请求最长等待；长 reasoning 可能需要更久。
 timeout_ms = 180000
+
+# 另一个模型示例：某些群改用其他服务商或另一把key。
+# [models.other]
+# api_key_env = "OTHER_API_KEY"
+# transport = "chat"
+# base_url = "https://example.com/v1"
+# model = ""
 
 # 联网搜索服务；不配置时不提供 web_search。web_fetch 不依赖此项。详见 docs/web.md。
 # [web]
@@ -38,6 +48,8 @@ timeout_ms = 180000
 [defaults]
 # false：只服务显式启用的群；true：服务Bot加入的所有群，可按群排除。
 enabled = false
+# 定义了多个模型时必填；群内也可写 model = "名字" 覆盖。
+# model = "main"
 persona = "prompts/listener.md"
 reply.random = false
 # 一次唤醒全部工具共享调用次数；默认96，安全正整数范围1..9007199254740991。

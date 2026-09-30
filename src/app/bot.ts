@@ -56,8 +56,12 @@ let sandboxService: SandboxService | undefined;
 
 async function main(): Promise<void> {
   const app = loadAppConfig();
-  const { onebot: config, model: modelConfig, runtime } = app;
-  logger = configureLogging(app.logging, [config.token, modelConfig.apiKey]);
+  const { onebot: config, runtime } = app;
+  const secrets = [
+    config.token,
+    ...[...app.models.values()].map((model) => model.apiKey),
+  ];
+  logger = configureLogging(app.logging, secrets);
   log('info', 'app.start', {
     count: app.configuredGroupIds.filter(
       (groupId) => app.resolveGroup(groupId).enabled,
@@ -82,7 +86,7 @@ async function main(): Promise<void> {
     mode: 0o700,
   });
   telemetry = new TelemetryStore(app.storage.telemetryPath, {
-    secrets: [config.token, modelConfig.apiKey],
+    secrets,
   });
   try {
     runtimeEvents = new RuntimeEventStore(app.storage.telemetryPath);
@@ -140,7 +144,6 @@ async function main(): Promise<void> {
       providerDirectory: app.storage.napcatCustomFaceDirectory,
     }),
   };
-  const modelOptions = { ...modelConfig };
   const router: GroupRouter = new GroupRouter({
     enabled: (groupId) => enabledGroups.get(groupId) ?? app.defaultsEnabled,
     listGroups: () => client.call('get_group_list', { no_cache: true }),
@@ -158,6 +161,7 @@ async function main(): Promise<void> {
         router.groupIds.map((value) => app.resolveGroup(value)),
       );
       const group = toListenerConfig(app, policy);
+      const modelConfig = app.models.get(policy.model)!;
       let lastRequestId: string | undefined;
       let memory: SQLiteMemory | undefined,
         world: WorldEventStore | undefined,
@@ -180,8 +184,8 @@ async function main(): Promise<void> {
         };
       };
       const scoped = {
-        ...modelOptions,
-        ...(app.model.opencodeHeaders
+        ...modelConfig,
+        ...(modelConfig.opencodeHeaders
           ? {
               requestHeaders: () => {
                 if (!session) {
@@ -212,7 +216,7 @@ async function main(): Promise<void> {
           }
         },
       };
-      const transport = app.model.transport;
+      const transport = modelConfig.transport;
       const model =
         transport === 'chat'
           ? new OpenAIModel(scoped)

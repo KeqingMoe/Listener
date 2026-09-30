@@ -24,18 +24,24 @@ function fixture(t: { after(fn: () => void): void }) {
 
 test('global model transport strictly accepts strings or an explicit responses incremental object', (t) => {
   const load = fixture(t);
-  assert.equal(load('').model.transport, 'chat');
+  assert.equal(load('').models.get('main')!.transport, 'chat');
   for (const value of ['chat', 'responses']) {
-    assert.equal(load(`[model]\ntransport="${value}"`).model.transport, value);
+    assert.equal(
+      load(`[models.main]\ntransport="${value}"`).models.get('main')!.transport,
+      value,
+    );
   }
   for (const incremental of [false, true]) {
     for (const source of [
       `transport={type="responses",incremental=${incremental},}`,
       `transport={\n type="responses",\n incremental=${incremental},\n}`,
-      `[model.transport]\ntype="responses"\nincremental=${incremental}`,
+      `[models.main.transport]\ntype="responses"\nincremental=${incremental}`,
     ]) {
-      const app = load(`[model]\n${source}\n[groups."11"]`);
-      assert.deepEqual(app.model.transport, { type: 'responses', incremental });
+      const app = load(`[models.main]\n${source}\n[groups."11"]`);
+      assert.deepEqual(app.models.get('main')!.transport, {
+        type: 'responses',
+        incremental,
+      });
       for (const id of ['11', '99']) {
         const group = app.resolveGroup(id);
         assert.equal(Object.hasOwn(group.session, 'transport'), false);
@@ -59,10 +65,10 @@ test('global model transport strictly accepts strings or an explicit responses i
     '{type="responses",incremental=false,unknown="PRIVATE_VALUE"}',
   ]) {
     assert.throws(
-      () => load(`[model]\ntransport=${value}`),
+      () => load(`[models.main]\ntransport=${value}`),
       (e) =>
         e instanceof ConfigError &&
-        e.message.includes('model.transport') &&
+        e.message.includes('models.main.transport') &&
         !e.message.includes('PRIVATE_VALUE'),
     );
   }
@@ -87,14 +93,14 @@ test('session defaults are local transcript bounds, not provider compaction or g
     maxTranscriptBytes: 524288,
   });
   assert.equal(g.enabled, false);
-  assert.equal(app.model.model, 'fixture-model');
+  assert.equal(app.models.get('main')!.model, 'fixture-model');
 });
 
 test('ordinary session fields inherit independently across configured and dynamic groups', (t) => {
   const app = fixture(t)(
-    '[model]\ntransport="responses"\n[defaults.session]\nmax_transcript_bytes=1048576\n[groups."11".session]\n[groups."22".session]\nmax_transcript_bytes=65536',
+    '[models.main]\ntransport="responses"\n[defaults.session]\nmax_transcript_bytes=1048576\n[groups."11".session]\n[groups."22".session]\nmax_transcript_bytes=65536',
   );
-  assert.equal(app.model.transport, 'responses');
+  assert.equal(app.models.get('main')!.transport, 'responses');
   assert.deepEqual(app.resolveGroup('11').session, {
     maxTranscriptBytes: 1048576,
   });
@@ -119,7 +125,7 @@ test('session rejects provider compaction settings as unknown fields', (t) => {
       assert.throws(
         () =>
           load(
-            `[model]\ntransport="responses"\n[groups."11"]\nenabled=false\n[${scope}]\n${body}`,
+            `[models.main]\ntransport="responses"\n[groups."11"]\nenabled=false\n[${scope}]\n${body}`,
           ),
         ConfigError,
       );

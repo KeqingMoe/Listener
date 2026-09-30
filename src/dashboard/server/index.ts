@@ -24,7 +24,7 @@ const app = buildApp({
   auth,
   inspectionSecrets: [
     config.onebot.token,
-    config.model.apiKey,
+    ...[...config.models.values()].map((model) => model.apiKey),
     ...(password ? [password] : []),
   ],
   // 历史数据的读取授权与bot当前的群成员身份/路由相互独立。

@@ -149,18 +149,18 @@ test(
         join(dir, 'prompts/listener.md'),
         'Synthetic maintenance fixture.',
       );
-      const source = `[bot]\nowner_id="778899"\n[onebot]\nurl="ws://127.0.0.1:${(ws.address() as AddressInfo).port}"\ntoken_env="FIXTURE_TOKEN"\n[model]\nbase_url="http://127.0.0.1:${(http.address() as AddressInfo).port}/v1"\nmodel="fixture-model"\napi_key_env="FIXTURE_KEY"\n[defaults]\nenabled=true\n[groups."11"]\nenabled=true\n[logging]\nlevel="debug"\n`;
+      const source = `[bot]\nowner_id="778899"\n[onebot]\nurl="ws://127.0.0.1:${(ws.address() as AddressInfo).port}"\ntoken_env="FIXTURE_TOKEN"\n[models.main]\nbase_url="http://127.0.0.1:${(http.address() as AddressInfo).port}/v1"\nmodel="fixture-model"\napi_key_env="FIXTURE_KEY"\n[defaults]\nenabled=true\n[groups."11"]\nenabled=true\n[logging]\nlevel="debug"\n`;
       for (const invalid of [
         {
           config: source,
           secrets: 'FIXTURE_TOKEN=PRIVATE_TEST_TOKEN\n',
-          field: 'model.api_key_env',
+          field: 'models.main.api_key_env',
         },
         {
           config: source.replace('model="fixture-model"', 'model=""'),
           secrets:
             'FIXTURE_TOKEN=PRIVATE_TEST_TOKEN\nFIXTURE_KEY=PRIVATE_TEST_KEY\n',
-          field: 'model.model',
+          field: 'models.main.model',
         },
         {
           config: source + '[runtime]\nai_enabled=false\n',

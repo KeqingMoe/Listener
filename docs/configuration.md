@@ -28,9 +28,9 @@ npm run config:check -- --group 123456789
 | | `api_timeout_ms` | 10000 |
 | | `reconnect_base_ms` / `reconnect_max_ms` | 1000 / 30000；最大不得小于基础 |
 | | `heartbeat_ms` | 30000 |
-| `model` | `base_url` | `https://api.openai.com/v1`；HTTPS或支持的本机HTTP地址，不允许URL凭证、查询参数或fragment |
-| | `model` | **必填**，服务商提供的非空模型名称；模型须支持工具调用 |
-| | `api_key_env` | `OPENAI_API_KEY`，指定**必填**的模型密钥环境变量 |
+| `models.<名字>` | `base_url` | `https://api.openai.com/v1`；HTTPS或支持的本机HTTP地址，不允许URL凭证、查询参数或fragment |
+| | `model` | **必填**，请求时发给服务商的非空模型ID；模型须支持工具调用 |
+| | `api_key_env` | **必填**，该模型密钥所在的环境变量名 |
 | | `timeout_ms` | 180000，范围1000..300000 |
 | | `max_output_tokens` | 32768，安全正整数；单次模型输出预算，reasoning、正文和工具调用共享，仍受服务商限制 |
 | | `opencode_headers` | false；请求添加每群持久 `x-opencode-session` |
@@ -52,7 +52,7 @@ npm run config:check -- --group 123456789
 | | `max_file_mb` | 20，范围1..100 MiB |
 | | `max_total_mb` | 200，范围1..1000 MiB，且不得小于单文件上限 |
 
-OneBot毫秒参数的范围为1..2147483647。密钥变量名须为大写字母／数字／下划线组成的合法环境变量名称。`.env` 只接受选定的两个密钥名及面板访问凭证 `DASHBOARD_PASSWORD`；同名进程环境变量优先，包括显式空值。面板密码留空时拒绝访问，至少12字符、最多256字节，不含控制字符；修改后重启面板，详见 [Dashboard说明](dashboard.md)。不要把凭证写进URL或TOML。
+OneBot毫秒参数的范围为1..2147483647。密钥变量名须为大写字母／数字／下划线组成的合法环境变量名称。`.env` 只接受 `onebot.token_env`、各模型 `api_key_env` 选定的密钥名及面板访问凭证 `DASHBOARD_PASSWORD`；同名进程环境变量优先，包括显式空值。面板密码留空时拒绝访问，至少12字符、最多256字节，不含控制字符；修改后重启面板，详见 [Dashboard说明](dashboard.md)。不要把凭证写进URL或TOML。
 
 文件日志关闭写 `logging.file = false`；只改目录写 `logging.file.directory = "data/logs"`。关闭值不能与文件日志参数同时使用。多个选项可以组合为：
 
@@ -69,19 +69,37 @@ file = {
 
 文件日志关闭后，可用 `npm run logs -- --directory 路径` 查看指定目录中已存在的日志。
 
-### 模型传输
+### 具名模型
 
-`model.transport` 是全局设置，所有群共用；仅接受 `"chat"`、`"responses"` 或 `{type = "responses", incremental = true/false}`（最后一项为布尔值二选一）。`"responses"` 默认启用 `previous_response_id` 增量续接；`incremental = false` 发送完整上下文，`true` 启用增量续接。
+模型定义在 `[models.<名字>]`，至少一个。名字只要求非空，可以是 `opencode_go`、`qunyou_model` 或带引号的任意文本；它用于群选用、会话识别和用量统计，与请求时发出的模型ID无关。两个名字可以使用同一个模型ID、不同的key。
+
+群通过 `model = "名字"` 选用，可写在 `defaults` 或 `groups."群号"`；只定义一个模型时省略即使用它，定义多个时 `defaults.model` 必填。引用未定义的名字会报错；每个已定义模型的密钥都必须存在，即使暂时没有群使用。
 
 ```toml
-[model]
+[models.main]
+api_key_env = "OPENAI_API_KEY"
+model = "deepseek-v4.1-flash"
 transport = {
   type = "responses",
   incremental = false,
 }
+
+[models.friend]
+api_key_env = "FRIEND_API_KEY"
+base_url = "https://example.com/v1"
+model = "deepseek-v4.1-flash"
+
+[defaults]
+model = "main"
+
+[groups."123456789"]
+enabled = true
+model = "friend"
 ```
 
-对象必须同时提供 `type = "responses"` 和布尔值 `incremental`，不接受chat对象、缺少incremental的对象或未知字段。旧的 `defaults.session.transport` / `groups."群号".session.transport` 不再支持，必须删除并改用全局字段；不能按群选择传输。此迁移不改变人设、缓存键或OpenCode请求头设置。
+群切换到另一个模型名时会开始新的模型会话；只修改同名模型的地址、ID或key不会自动重置，必要时由主人发送 `/reset`。
+
+`transport` 仅接受 `"chat"`、`"responses"` 或 `{type = "responses", incremental = true/false}`（最后一项为布尔值二选一）。`"responses"` 默认启用 `previous_response_id` 增量续接；`incremental = false` 发送完整上下文，`true` 启用增量续接。对象必须同时提供 `type = "responses"` 和布尔值 `incremental`，不接受chat对象、缺少incremental的对象或未知字段。
 
 ## 群策略与继承
 
@@ -90,6 +108,7 @@ transport = {
 | 字段 | 程序默认 | 含义与范围 |
 | --- | --- | --- |
 | `enabled` | false | false时只服务显式启用的群；defaults为true时服务Bot加入的所有群，群级false用于排除 |
+| `model` | 唯一定义的模型 | 选用的具名模型；定义多个模型时defaults必须指定 |
 | `persona` | `prompts/listener.md` | UTF-8人设文件路径，非空普通文件，最多16KiB；群级文件完整替换默认人设 |
 | `reply.mention` | true | 被真正@时触发 |
 | `reply.quote_bot` | true | 有效引用Bot消息时触发 |

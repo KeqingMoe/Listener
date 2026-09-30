@@ -60,7 +60,7 @@ function fixture(
   writeFileSync(join(root, 'persona.md'), 'Synthetic fixture persona');
   writeFileSync(
     configPath,
-    `[bot]\nowner_id="100000001"\n[model]\nmodel="fixture-model"\n[logging]\nfile=false\n${input.storage !== undefined ? `[storage]\n${input.storage}\n` : ''}[defaults]\npersona="persona.md"\n${input.defaults ?? ''}\n${input.groups ?? ''}\n`,
+    `[bot]\nowner_id="100000001"\n[models.main]\napi_key_env="OPENAI_API_KEY"\nmodel="fixture-model"\n[logging]\nfile=false\n${input.storage !== undefined ? `[storage]\n${input.storage}\n` : ''}[defaults]\npersona="persona.md"\n${input.defaults ?? ''}\n${input.groups ?? ''}\n`,
   );
   const load = () =>
     loadAppConfig({
