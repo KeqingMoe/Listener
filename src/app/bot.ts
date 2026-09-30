@@ -191,7 +191,11 @@ async function main(): Promise<void> {
         };
       };
       const scoped = {
-        ...modelConfig,
+        baseUrl: modelConfig.baseUrl,
+        apiKey: modelConfig.apiKey,
+        model: modelConfig.model,
+        timeoutMs: modelConfig.timeoutMs,
+        maxTokens: modelConfig.maxTokens,
         ...(modelConfig.opencodeHeaders
           ? {
               requestHeaders: () => {
