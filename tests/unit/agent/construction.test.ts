@@ -1,10 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  safetyRules,
-  buildSystemPrompt,
-  observedSystemPrompt,
-} from '../../../src/agent/prompts.ts';
+import { safetyRules, buildSystemPrompt } from '../../../src/agent/prompts.ts';
 import {
   CHAT_TOOLS,
   buildToolDefinitions,
@@ -147,6 +143,7 @@ for (let mask = 0; mask < 8; mask++) {
       ...names(CHAT_TOOLS),
       ...(images ? ['view_images'] : []),
       ...(forward ? ['read_forward'] : []),
+      ...names(buildWorldTools()),
     ]);
     assert.equal(segmentKinds(tools).includes('at'), mention);
     assert.ok(segmentKinds(tools).includes('text'));
@@ -187,6 +184,7 @@ for (let mask = 0; mask < 8; mask++) {
       ...base,
       ...(react ? ['react_message'] : []),
       ...(query ? ['get_reaction_users'] : []),
+      ...names(buildWorldTools()),
     ]);
     assert.equal(prompt.includes('\n消息表情回应：'), react);
     assert.equal(prompt.includes('\n回应者查询：'), query);
@@ -243,19 +241,15 @@ test('resolved off permissions ignore stray enabled legacy module fields without
   const before = structuredClone(input),
     tools = buildToolDefinitions(input),
     prompt = buildSystemPrompt(input);
-  assert.deepEqual(
-    names(tools),
-    names(CHAT_TOOLS).filter(
+  assert.deepEqual(names(tools), [
+    ...names(CHAT_TOOLS).filter(
       (name) => !['get_group_members', 'get_member_info'].includes(name),
     ),
-  );
+    ...names(buildWorldTools()),
+  ]);
   assert.ok(!segmentKinds(tools).includes('at'));
   assert.ok(!prompt.includes('\n关注计划：'));
   assert.ok(!prompt.includes('\n收藏表情：'));
-  assert.deepEqual(names(buildToolDefinitions(input, true)), [
-    ...names(tools),
-    ...names(buildWorldTools()),
-  ]);
   assert.deepEqual(input, before);
 });
 
@@ -280,7 +274,7 @@ test('resolved selections preserve shared schema ordering and limits', () => {
     }),
   );
   const before = structuredClone(input),
-    tools = buildToolDefinitions(input, true);
+    tools = buildToolDefinitions(input);
   const moderation = buildModerationTools({
     ...offModeration,
     mute: 'confirm',
@@ -355,10 +349,10 @@ test('returned definitions are deeply independent across repeats, option changes
   ];
   const templateBefore = structuredClone(templates),
     before = structuredClone(input);
-  const baseline = structuredClone(buildToolDefinitions(input, true));
-  const poisoned = buildToolDefinitions(input, true);
+  const baseline = structuredClone(buildToolDefinitions(input));
+  const poisoned = buildToolDefinitions(input);
   pollute(poisoned);
-  assert.deepEqual(buildToolDefinitions(input, true), baseline);
+  assert.deepEqual(buildToolDefinitions(input), baseline);
   const reduced = freeze(
     config({
       toolPermissions: permissions({
@@ -370,7 +364,7 @@ test('returned definitions are deeply independent across repeats, option changes
     }),
   );
   assert.ok(!segmentKinds(buildToolDefinitions(reduced)).includes('at'));
-  assert.deepEqual(buildToolDefinitions(input, true), baseline);
+  assert.deepEqual(buildToolDefinitions(input), baseline);
   assert.deepEqual(templates, templateBefore);
   assert.deepEqual(input, before);
 });
@@ -404,7 +398,7 @@ test('identity and persona are scoped per prompt, preserve escaping, and never c
   assert.throws(() => buildSystemPrompt(config({ ownerId: 'invalid' })));
 });
 
-test('observed prompts replace only observation framing and use the explicit group without mutating config', () => {
+test('system prompt uses observation framing and the explicit group without mutating config', () => {
   const input = freeze(
     config({
       observeReactions: true,
@@ -414,35 +408,28 @@ test('observed prompts replace only observation framing and use the explicit gro
     }),
   );
   const before = structuredClone(input),
-    ordinary = buildSystemPrompt(input),
-    observed = observedSystemPrompt(input, '6677889');
+    prompt = buildSystemPrompt({ ...input, groupId: '6677889' });
+  assert.ok(!prompt.includes('current_batch'));
+  assert.ok(prompt.includes('本轮只服务群 6677889。'));
   assert.ok(
-    ordinary.split('\n').some((line) => line.startsWith('current_batch 是')),
-  );
-  assert.ok(
-    !observed.split('\n').some((line) => line.startsWith('current_batch 是')),
-  );
-  assert.ok(observed.includes('本轮只服务群 6677889。'));
-  assert.ok(
-    observed.includes(
+    prompt.includes(
       '新到达的消息仅在你再次调用读取工具时可见，不会自动插入上下文。',
     ),
   );
   assert.ok(
-    observed.includes(
+    prompt.includes(
       '消息对象旁的reactions仅在你调用读取工具后作为查询结果提供。',
     ),
   );
   assert.ok(
-    observed.includes(
+    prompt.includes(
       'get_wake_state 返回的attention_state显示当前计划、最近提交和本次命中原因',
     ),
   );
-  assert.ok(observed.includes('\n观察边界：'));
-  assert.ok(observed.includes('读取不自动确认'));
-  assert.ok(ordinary.includes('新到达的群友消息不加入当前范围。'));
-  assert.equal(buildSystemPrompt(input), ordinary);
-  assert.equal(observedSystemPrompt(input, '6677889'), observed);
+  assert.ok(prompt.includes('\n观察边界：'));
+  assert.ok(prompt.includes('读取不自动确认'));
+  assert.ok(!prompt.includes('新到达的群友消息不加入当前范围。'));
+  assert.equal(buildSystemPrompt({ ...input, groupId: '6677889' }), prompt);
   assert.deepEqual(input, before);
-  assert.throws(() => observedSystemPrompt(input, '0'));
+  assert.throws(() => buildSystemPrompt({ ...input, groupId: '0' }));
 });

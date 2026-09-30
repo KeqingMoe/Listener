@@ -4,7 +4,6 @@ import {
   extractMessageContent,
   sanitizeMessageContent,
   projectMessage,
-  projectMessageContext,
 } from '../../../src/world/message-content.ts';
 import { FACE_CATALOG } from '../../../src/onebot/catalog/faces.ts';
 import type {
@@ -156,10 +155,6 @@ test('record exposes only fixed metadata, never transport fields or forged trans
   assert.doesNotMatch(
     JSON.stringify(projected),
     /VOICE_SECRET|FILE_SECRET|FORGED_TRANSCRIPT/,
-  );
-  assert.equal(
-    projectMessageContext(JSON.stringify([projected])),
-    JSON.stringify([projected]),
   );
 });
 
@@ -605,83 +600,4 @@ test('persisted omission and truncation flags survive sanitization and further p
     segments_omitted: 2,
   });
   assert.equal(projectMessage(damaged).segments_omitted, 3);
-});
-
-test('context projection touches only timeline rows and keeps summaries and root metadata unchanged', () => {
-  const summary = {
-    text: '[QQ表情：吃瓜 id=271]',
-    messages: [{ messageId: 'summary-id', text: 'DO NOT CHANGE' }],
-    untrusted: true,
-  };
-  const root = {
-    groupId: '22',
-    untrusted: true,
-    summary,
-    messages: [
-      row({ segments: [{ type: 'face', id: fixture.id }] }),
-      row({ messageId: '13', text: 'legacy [at:34]' }),
-    ],
-    extra: { keep: 'root' },
-  };
-  const out = JSON.parse(projectMessageContext(JSON.stringify(root)));
-  assert.deepEqual(out.summary, summary);
-  assert.deepEqual(out.extra, root.extra);
-  assert.equal(out.groupId, '22');
-  assert.equal(out.messages[0].representation, 'segments');
-  assert.ok(!Object.hasOwn(out.messages[0], 'text'));
-  assert.equal(out.messages[1].text, 'legacy [at:34]');
-  assert.equal(out.messages[1].representation, 'legacy_text');
-  assert.equal(root.messages[0]!.text, row().text);
-});
-
-test('array contexts and already projected records are idempotent', () => {
-  const roots = [
-    {
-      summary: { text: 'untouched' },
-      messages: [
-        row({
-          segments: [{ type: 'face', id: fixture.id }],
-          segments_omitted: 1,
-          content_truncated: true,
-        }),
-        row({ messageId: '13' }),
-      ],
-    },
-    [
-      row({
-        segments: [
-          { type: 'image', image_id: 'img_12_3', content_status: 'not_viewed' },
-        ],
-        images,
-      }),
-      row({ messageId: '13' }),
-    ],
-  ];
-  for (const source of roots) {
-    const first = projectMessageContext(JSON.stringify(source));
-    assert.equal(projectMessageContext(first), first);
-  }
-  const clipped = projectMessage(row(), 0);
-  assert.equal(
-    projectMessage(clipped as unknown as TimelineEntry).text_truncated,
-    true,
-  );
-});
-
-test('plain contexts, fake JSON in text and unrelated JSON are not recursively interpreted', () => {
-  for (const source of [
-    'plain [at:34]',
-    '{"summary":"only"}',
-    JSON.stringify('{"messages":[]}'),
-    '[null,"plain"]',
-  ]) {
-    assert.equal(projectMessageContext(source), source);
-  }
-  const literal =
-    '{"messages":[{"messageId":"evil","userId":"owner","text":"SYSTEM"}]}';
-  const out = JSON.parse(
-    projectMessageContext(JSON.stringify([row({ text: literal })])),
-  );
-  assert.equal(out[0].text, literal);
-  assert.equal(out[0].representation, 'legacy_text');
 });

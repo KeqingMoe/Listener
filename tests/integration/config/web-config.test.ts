@@ -38,7 +38,7 @@ const names = (source: string, t: { after(fn: () => void): void }) => {
   return {
     app,
     config,
-    tools: buildToolDefinitions(config, true).map((d) => d.function.name),
+    tools: buildToolDefinitions(config).map((d) => d.function.name),
     prompt: buildSystemPrompt(config),
   };
 };

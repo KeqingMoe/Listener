@@ -25,8 +25,8 @@ export interface ListenerRuntime {
   sandbox?: SandboxService;
   sandboxSummary?: (selfId: string, groupId: string) => JsonObject;
   reminders?: ReminderStore;
-  world?: WorldEventStore;
-  session?: ModelSession;
+  world: WorldEventStore;
+  session: ModelSession;
   modelRequestId?: () => string | undefined;
   customFaces?: CustomFaceRuntime;
 }

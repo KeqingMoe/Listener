@@ -1,5 +1,5 @@
 import { isExecutionDiagnostic } from '../sandbox/protocol.ts';
-import { buildSystemPrompt, observedSystemPrompt } from './prompts.ts';
+import { buildSystemPrompt } from './prompts.ts';
 import {
   buildToolDefinitions,
   SANDBOX_EXCLUDED_TOOLS,
@@ -36,11 +36,7 @@ import { TOOL_NAMES } from '../config/tool-policy.ts';
 import { canonicalMessageId, id } from '../onebot/identity.ts';
 import { resolveGroupId, resolveOwnerId } from '../contracts/identity.ts';
 import { type Api } from '../contracts/onebot.ts';
-import {
-  type Model,
-  type ChatMessage,
-  type ChatContentPart,
-} from '../contracts/model.ts';
+import { type Model, type ChatContentPart } from '../contracts/model.ts';
 import { type Memory, type TimelineEntry } from '../contracts/messages.ts';
 import { type TurnContext, type ToolDefinition } from '../contracts/tools.ts';
 import { type JsonObject, isObject } from '../contracts/json.ts';
@@ -64,8 +60,7 @@ import {
   writeFailure,
 } from '../onebot/operation-result.ts';
 
-import { ReplyBatch, snapshotMemory, type BatchItem } from './reply-batch.ts';
-import { projectMessageContext } from '../world/message-content.ts';
+import { ReplyBatch, type BatchItem } from './reply-batch.ts';
 import type { TurnAdmission } from './scheduler.ts';
 import {
   AttentionEngine,
@@ -73,11 +68,7 @@ import {
   type AttentionTransaction,
 } from './attention.ts';
 import { ReactionObservations } from '../world/reaction-observations.ts';
-import {
-  annotateReactionBatch,
-  annotateReactionContext,
-  annotateReactionReadResult,
-} from './reaction-presentation.ts';
+import { annotateReactionReadResult } from './reaction-presentation.ts';
 import { normalizeOneBotEvent } from '../world/ingest.ts';
 
 import type { ModelSessionScope } from './session/store.ts';
@@ -131,7 +122,7 @@ export class Listener {
   private hasHostWork(): boolean {
     return (
       !!this.sandboxSelfId &&
-      !!this.runtime.session?.hasExternalEvents(this.sandboxSelfId)
+      this.runtime.session.hasExternalEvents(this.sandboxSelfId)
     );
   }
 
@@ -165,9 +156,9 @@ export class Listener {
     private memory: Memory | undefined,
     input: ListenerConfig,
     private random: () => number = Math.random,
-    private imageDownloader?: ImageDownloader,
-    private turnScheduler?: TurnAdmission,
-    private runtime: ListenerRuntime = {},
+    private imageDownloader: ImageDownloader | undefined,
+    private turnScheduler: TurnAdmission | undefined,
+    private runtime: ListenerRuntime,
   ) {
     for (const [key, min, max] of [
       ['maxToolCallsPerWake', 1, Number.MAX_SAFE_INTEGER],
@@ -200,10 +191,7 @@ export class Listener {
       this.groupId,
       GROUP_REQUEST_TOOL_NAMES.filter((name) => enabled.has(name)),
     );
-    if (runtime.session && !runtime.world) {
-      throw new Error('Model session requires world store');
-    }
-    if (runtime.world && runtime.world.groupId !== this.groupId) {
+    if (runtime.world.groupId !== this.groupId) {
       throw new Error('World group mismatch');
     }
     this.ownsCustomFaces =
@@ -500,7 +488,6 @@ export class Listener {
         result.selfId !== this.sandboxSelfId) ||
       this.stopped ||
       !this.connected ||
-      !this.runtime.session ||
       !this.config.enabled
     ) {
       throw new Error('sandbox_delivery_unavailable');
@@ -552,28 +539,26 @@ export class Listener {
     if (this.stopped || !this.connected) {
       return;
     }
-    if (this.runtime.world) {
-      const worldInput = normalizeOneBotEvent(event, selfId, 'onebot');
-      if (worldInput) {
-        try {
-          const stored = this.runtime.world.append(worldInput);
-          if (stored.payload.kind === 'message') {
-            this.worldMessageSequences.set(
-              stored.payload.message.messageId,
-              stored.sequence,
+    const worldInput = normalizeOneBotEvent(event, selfId, 'onebot');
+    if (worldInput) {
+      try {
+        const stored = this.runtime.world.append(worldInput);
+        if (stored.payload.kind === 'message') {
+          this.worldMessageSequences.set(
+            stored.payload.message.messageId,
+            stored.sequence,
+          );
+          if (this.worldMessageSequences.size > 512) {
+            this.worldMessageSequences.delete(
+              this.worldMessageSequences.keys().next().value!,
             );
-            if (this.worldMessageSequences.size > 512) {
-              this.worldMessageSequences.delete(
-                this.worldMessageSequences.keys().next().value!,
-              );
-            }
           }
-        } catch {
-          log('warn', 'message.world_store_failed', {
-            reason: 'storage_failed',
-          });
-          return;
         }
+      } catch {
+        log('warn', 'message.world_store_failed', {
+          reason: 'storage_failed',
+        });
+        return;
       }
     }
     if (isObject(event) && event.post_type === 'notice') {
@@ -972,7 +957,7 @@ export class Listener {
         this.memory?.clear();
         this.worldTools = undefined;
         this.worldMessageSequences.clear();
-        this.runtime.session?.reset('owner_reset');
+        this.runtime.session.reset('owner_reset');
         (this.model as (Model & { reset?: () => void }) | undefined)?.reset?.();
         await this.sendText('本群对话记忆已清空。', context);
       } else if (/^\/confirm [a-f0-9]{8,64}$/.test(text)) {
@@ -1118,17 +1103,17 @@ export class Listener {
     if (this.stopped) {
       return [];
     }
-    return buildToolDefinitions(this.config, !!this.runtime.session)
+    return buildToolDefinitions(this.config)
       .map((tool) => tool.function.name)
       .filter((name) => !SANDBOX_EXCLUDED_TOOLS.includes(name));
   }
 
-  /** session模式下的工具memory：读取实时的本群world，写入仍进聊天记录库；禁止快照与压缩。 */
+  /** 工具使用的memory：读取实时的本群world，写入仍进聊天记录库；禁止快照与压缩。 */
   private sessionMemory(): Memory {
     return {
       append: (entry) => this.memory!.append(entry),
-      recent: () => this.runtime.world!.recentMessages(128),
-      find: (messageId) => this.runtime.world!.findMessage(messageId),
+      recent: () => this.runtime.world.recentMessages(128),
+      find: (messageId) => this.runtime.world.findMessage(messageId),
       context: () => {
         throw new Error('session_snapshot_forbidden');
       },
@@ -1141,10 +1126,7 @@ export class Listener {
   }
 
   private hostMemory(): Memory | undefined {
-    if (this.runtime.session && this.runtime.world && this.memory) {
-      return this.sessionMemory();
-    }
-    return this.memory;
+    return this.memory ? this.sessionMemory() : undefined;
   }
 
   /**
@@ -1393,7 +1375,6 @@ export class Listener {
       this.commandBusy ||
       (!this.pending && !this.hasHostWork()) ||
       !this.model ||
-      (!this.memory && !this.runtime.session) ||
       !this.connected ||
       this.stopped
     ) {
@@ -1416,7 +1397,6 @@ export class Listener {
         entry: undefined,
         trigger: undefined,
       },
-      payload: (): JsonObject => ({}),
       add: () => {},
       addAttention: () => {},
     };
@@ -1431,10 +1411,6 @@ export class Listener {
     }
     // 唤醒开始前封存本批丢弃的未读条数；get_wake_state在唤醒中途读取时仍报告该值。
     const unreadOmitted = this.unreadOmitted;
-    const attentionContext =
-      this.attention && batch instanceof ReplyBatch
-        ? this.attentionContext(batch, unreadOmitted)
-        : undefined;
     for (const item of this.unreadItems()) {
       this.unread.delete(item.sequence);
     }
@@ -1495,24 +1471,10 @@ export class Listener {
         Date.now(),
         trigger.context.selfId,
       );
-      // 在任何await之前封存批次，新到达的消息不能改变本轮的模型上下文、呼唤者权限或工具来源范围。
-      // 有session时工具查询实时的本群world；无session时保留封存时的快照。
-      const frozen: Memory = session
-        ? this.sessionMemory()
-        : snapshotMemory(
-            this.memory!,
-            batch.items.map((item) => item.entry),
-            new Set(this.resolving.keys()),
-          );
+      // 工具查询实时的本群world；批次在任何await之前封存，新到达的消息只进入下一批唤醒。
       const sentEntries = new Map<string, TimelineEntry>();
-      const workingMemory = withSentEntries(frozen, sentEntries);
+      const workingMemory = withSentEntries(this.sessionMemory(), sentEntries);
       const moderationPolicy = this.config.tools.moderation;
-      const moderationCapabilities = {
-        mute: moderationPolicy?.mute ?? 'off',
-        unmute: moderationPolicy?.unmute ?? 'off',
-        recall: moderationPolicy?.recall ?? 'off',
-        member_card: moderationPolicy?.memberCard ?? 'off',
-      };
       const observations = this.reactionObservations;
       const lookupReaction = (messageId: string) =>
         observations?.get(messageId);
@@ -1534,155 +1496,64 @@ export class Listener {
         onSent: (entry) =>
           sentEntries.set(entry.messageId, structuredClone(entry)),
       });
-      const reactionContext = reactionTools
-        ? this.reactionContext(workingMemory)
-        : undefined;
-      const single =
-        batch.direct.length === 1
-          ? batch.direct[0]
-          : batch.items.length === 1
-            ? batch.items[0]
-            : undefined;
-      const actorIds = new Set(
-        (batch.direct.length ? batch.direct : batch.items).map(
-          (item) => item.context.actorId,
-        ),
-      );
       if (!valid()) {
         return;
       }
-      const reactionTargets =
-        observations && trigger.entry
-          ? [
-              trigger.entry.messageId,
-              ...batch.direct
-                .flatMap((item) =>
-                  item.entry.replyTo ? [item.entry.replyTo] : [],
-                )
-                .slice(0, 2),
-              ...frozen
-                .recent()
-                .filter(
-                  (entry) =>
-                    entry.bot && entry.userId === trigger.context.selfId,
-                )
-                .slice(-2)
-                .reverse()
-                .map((entry) => entry.messageId),
-              ...batch.items.map((item) => item.entry.messageId),
-            ]
-          : [];
-      if (!session) {
-        await observations?.refresh(
-          workingMemory,
-          reactionTargets,
-          controller.signal,
-        );
-      }
-      if (!valid()) {
-        return;
-      }
-      const displayMemory: Memory = {
-        ...workingMemory,
-        context: () => projectMessageContext(workingMemory.context()),
-      };
-      const payload = session
-        ? {}
-        : observations
-          ? annotateReactionBatch(batch.payload(), lookupReaction)
-          : batch.payload();
-      const currentRequest =
-        !session && single
-          ? (
-              (payload.current_batch as JsonObject).messages as JsonObject[]
-            ).find((entry) => entry.messageId === single.entry.messageId)
-          : undefined;
       const wakeBudget = () => ({
         max_tool_calls: toolCallsLimit,
         used_tool_calls: stats.toolCalls,
         remaining_tool_calls: toolCallsLimit - stats.toolCalls,
         remaining_ms: Math.max(0, wakeTimeoutMs - (Date.now() - started)),
       });
-      const tools = buildToolDefinitions(this.config, !!session);
-      if (session) {
-        this.worldWake = {
-          wakeId: batch.turnId,
-          startedAt: started / 1000,
+      const tools = buildToolDefinitions(this.config);
+      this.worldWake = {
+        wakeId: batch.turnId,
+        startedAt: started / 1000,
+        trigger: { type: batch.kind },
+      };
+      this.worldBudget = wakeBudget;
+      this.worldState = () => ({
+        ...(this.attention && batch instanceof ReplyBatch
+          ? { attention_state: this.attentionContext(batch, unreadOmitted) }
+          : {}),
+        ...(this.config.tools.reactions
+          ? { reaction_state: this.reactionContext(workingMemory) }
+          : {}),
+      });
+      this.worldTools ??= new WorldTools({
+        store: this.runtime.world,
+        groupId: this.groupId,
+        selfId: trigger.context.selfId,
+        wake: () => this.worldWake,
+        currentBudget: () => this.worldBudget(),
+        state: () => this.worldState(),
+      });
+      session.beginWake(
+        buildSystemPrompt({ ...this.config, groupId: this.groupId }),
+        tools,
+        {
+          wake_id: batch.turnId,
+          group_id: this.groupId,
           trigger: { type: batch.kind },
-        };
-        this.worldBudget = wakeBudget;
-        this.worldState = () => ({
-          ...(this.attention && batch instanceof ReplyBatch
-            ? { attention_state: this.attentionContext(batch, unreadOmitted) }
-            : {}),
-          ...(this.config.tools.reactions
-            ? { reaction_state: this.reactionContext(workingMemory) }
-            : {}),
-        });
-        this.worldTools ??= new WorldTools({
-          store: this.runtime.world!,
-          groupId: this.groupId,
-          selfId: trigger.context.selfId,
-          wake: () => this.worldWake,
-          currentBudget: () => this.worldBudget(),
-          state: () => this.worldState(),
-        });
-        session.beginWake(
-          observedSystemPrompt(this.config, this.groupId),
-          tools,
-          {
-            wake_id: batch.turnId,
-            group_id: this.groupId,
-            trigger: { type: batch.kind },
-            wake_budget: wakeBudget(),
-          },
+          wake_budget: wakeBudget(),
+        },
+      );
+      sessionStarted = true;
+      sessionScope = session.state();
+      session.projectExternalEvents(trigger.context.selfId);
+      if (this.runtime.sandboxSummary) {
+        const summary = this.runtime.sandboxSummary(
+          trigger.context.selfId,
+          this.groupId,
         );
-        sessionStarted = true;
-        sessionScope = session.state();
-        session.projectExternalEvents(trigger.context.selfId);
-        if (this.runtime.sandboxSummary) {
-          const summary = this.runtime.sandboxSummary(
-            trigger.context.selfId,
-            this.groupId,
+        if (Array.isArray(summary.jobs) && summary.jobs.length) {
+          session.appendInput(
+            JSON.stringify({
+              host_event: { type: 'javascript_job_summary', ...summary },
+            }),
           );
-          if (Array.isArray(summary.jobs) && summary.jobs.length) {
-            session.appendInput(
-              JSON.stringify({
-                host_event: { type: 'javascript_job_summary', ...summary },
-              }),
-            );
-          }
         }
       }
-      const messages: ChatMessage[] = session
-        ? []
-        : [
-            {
-              role: 'system',
-              content: buildSystemPrompt({
-                ...this.config,
-                groupId: this.groupId,
-              }),
-            },
-            {
-              role: 'user',
-              content: JSON.stringify({
-                untrusted_group_context: observations
-                  ? annotateReactionContext(displayMemory, lookupReaction)
-                  : displayMemory.context(),
-                ...payload,
-                ...(currentRequest ? { current_request: currentRequest } : {}),
-                trusted_actor_id:
-                  actorIds.size === 1 ? trigger.context.actorId : null,
-                moderation_capabilities: moderationCapabilities,
-                ...(attentionContext
-                  ? { attention_state: attentionContext }
-                  : {}),
-                ...(reactionContext ? { reaction_state: reactionContext } : {}),
-                wake_budget: wakeBudget(),
-              }),
-            },
-          ];
       const management = new WakeManagement(
         new Set(
           buildModerationTools(moderationPolicy).map(
@@ -1694,7 +1565,6 @@ export class Listener {
           moderation: () => this.moderation,
           sender: this.sender,
           memory: workingMemory,
-          session: !!session,
           stats,
           wake,
           valid,
@@ -1729,20 +1599,18 @@ export class Listener {
         call: { id: string; function?: { name: string } },
         result: JsonObject,
       ) => {
-        const readTime =
-          session &&
-          [
-            'get_group_members',
-            'get_member_info',
-            'read_message',
-            'read_forward',
-            'get_reaction_users',
-            'view_images',
-            'list_custom_faces',
-            'view_custom_face',
-          ].includes(call.function?.name ?? '')
-            ? Date.now() / 1000
-            : undefined;
+        const readTime = [
+          'get_group_members',
+          'get_member_info',
+          'read_message',
+          'read_forward',
+          'get_reaction_users',
+          'view_images',
+          'list_custom_faces',
+          'view_custom_face',
+        ].includes(call.function?.name ?? '')
+          ? Date.now() / 1000
+          : undefined;
         const boundedResult = {
           ...result,
           ...(readTime === undefined
@@ -1756,15 +1624,7 @@ export class Listener {
               }),
           wake_budget: wakeBudget(),
         };
-        if (session) {
-          session.finishTool(call.id, boundedResult, assistantSeq);
-        } else {
-          messages.push({
-            role: 'tool',
-            tool_call_id: call.id,
-            content: JSON.stringify(boundedResult),
-          });
-        }
+        session.finishTool(call.id, boundedResult, assistantSeq);
       };
       const forwardState = forwardTools?.createTurn();
       const reactionState = reactionTools?.createTurn();
@@ -1775,7 +1635,7 @@ export class Listener {
           break;
         }
         stats.modelRounds++;
-        const requestMessages = session ? session.messages() : messages;
+        const requestMessages = session.messages();
         let response: Awaited<ReturnType<Model['complete']>>;
         try {
           response = await withLogContext(
@@ -1785,7 +1645,6 @@ export class Listener {
           );
         } catch (error) {
           if (
-            session &&
             error instanceof ResponseStateExpiredError &&
             !recoveredResponseState &&
             valid()
@@ -1796,7 +1655,7 @@ export class Listener {
               this.model.reset();
             }
             session.beginWake(
-              observedSystemPrompt(this.config, this.groupId),
+              buildSystemPrompt({ ...this.config, groupId: this.groupId }),
               tools,
               {
                 wake_id: batch.turnId,
@@ -1815,20 +1674,18 @@ export class Listener {
           }
           throw error;
         }
-        if (session && !valid()) {
+        if (!valid()) {
           break;
         }
-        if (session) {
-          const checkpoint = session.appendAssistant(
-            response,
-            this.runtime.modelRequestId?.(),
+        const checkpoint = session.appendAssistant(
+          response,
+          this.runtime.modelRequestId?.(),
+        );
+        assistantSeq = checkpoint.assistantSeq;
+        if (this.model instanceof ResponsesModel) {
+          session.setTransportCheckpoint(
+            this.model.getContinuationCheckpoint(),
           );
-          assistantSeq = checkpoint.assistantSeq;
-          if (this.model instanceof ResponsesModel) {
-            session.setTransportCheckpoint(
-              this.model.getContinuationCheckpoint(),
-            );
-          }
         }
         if (!valid()) {
           break;
@@ -1837,13 +1694,6 @@ export class Listener {
           outcome = 'prose_suppressed';
           break;
         } // 模型的普通文本输出有意不转发到群里。
-        if (!session) {
-          messages.push({
-            role: 'assistant',
-            content: null,
-            tool_calls: response.tool_calls,
-          });
-        }
         const finishIndex = response.tool_calls.findIndex((call) => {
           if (call.function.name !== 'finish') {
             return false;
@@ -1891,7 +1741,7 @@ export class Listener {
           )
             ? call.function.name
             : 'invalid';
-          if (session && !session.startTool(call.id, assistantSeq)) {
+          if (!session.startTool(call.id, assistantSeq)) {
             throw new Error('tool_checkpoint_refused');
           }
           log('info', 'tool.start', { tool: toolName, round: round + 1 });
@@ -2007,7 +1857,6 @@ export class Listener {
             continue;
           }
           if (
-            session &&
             WORLD_TOOL_NAMES.includes(
               call.function.name as (typeof WORLD_TOOL_NAMES)[number],
             )
@@ -2226,30 +2075,17 @@ export class Listener {
         // Chat Completions要求所有工具结果都出现在下一条user图片消息之前。
         // 这些图片字节只存在于本轮，绝不追加到共享memory。
         if (imageContent.length && valid()) {
-          if (session) {
-            session.appendInput([
-              {
-                type: 'text',
-                text: VIEWED_IMAGES_NOTICE,
-              },
-              ...imageContent,
-            ]);
-          } else {
-            messages.push({
-              role: 'user',
-              content: [
-                {
-                  type: 'text',
-                  text: VIEWED_IMAGES_NOTICE,
-                },
-                ...imageContent,
-              ],
-            });
-          }
+          session.appendInput([
+            {
+              type: 'text',
+              text: VIEWED_IMAGES_NOTICE,
+            },
+            ...imageContent,
+          ]);
         }
       }
     } catch (error) {
-      if (session && sessionStarted) {
+      if (sessionStarted) {
         try {
           session.skipPending(
             !valid()
@@ -2266,7 +2102,6 @@ export class Listener {
         }
       }
       if (
-        session &&
         error instanceof ResponseStateExpiredError &&
         sessionScope &&
         session.state().sessionId === sessionScope.sessionId &&
@@ -2294,7 +2129,7 @@ export class Listener {
         outcome = cancelledOutcome(stats);
         reason = cancellationReason();
       }
-      if (session && sessionStarted) {
+      if (sessionStarted) {
         try {
           if (!valid()) {
             session.skipPending(cancellationReason(), sessionScope);
@@ -2419,8 +2254,8 @@ export class Listener {
       await delay(20);
     }
     this.memory?.close();
-    this.runtime.session?.close();
-    this.runtime.world?.close();
+    this.runtime.session.close();
+    this.runtime.world.close();
     if (this.ownsCustomFaces) {
       this.customFaces?.coordinator.close();
       this.customFaces?.store.close();

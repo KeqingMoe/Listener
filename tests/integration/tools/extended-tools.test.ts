@@ -384,7 +384,7 @@ test('extended capabilities default off and raw model calls cannot bypass absent
       );
     }
     assert.equal(
-      buildToolDefinitions(config(setting), true).some((d) =>
+      buildToolDefinitions(config(setting)).some((d) =>
         (EXTENDED_TOOL_NAMES as readonly string[]).includes(d.function.name),
       ),
       false,
@@ -437,7 +437,7 @@ test('loaded TOML is the source of per-group registration without capability lea
       group.groupId === '111' ? ['get_group_info'] : [],
     );
     assert.deepEqual(
-      buildToolDefinitions(group, true).filter((d) =>
+      buildToolDefinitions(group).filter((d) =>
         (EXTENDED_TOOL_NAMES as readonly string[]).includes(d.function.name),
       ),
       registry.definitions(),
@@ -476,13 +476,10 @@ test('each explicit capability appears identically in schema generation Listener
     );
     assert.equal(registry.has(name), true);
     assert.deepEqual(buildExtendedToolDefinitions(groupId, setting), defs);
-    const listenerDefs = buildToolDefinitions(
-      {
-        ...config(setting),
-        webSearch: { type: 'searxng', url: 'http://127.0.0.1:8888' },
-      },
-      true,
-    ).filter((d) =>
+    const listenerDefs = buildToolDefinitions({
+      ...config(setting),
+      webSearch: { type: 'searxng', url: 'http://127.0.0.1:8888' },
+    }).filter((d) =>
       (EXTENDED_TOOL_NAMES as readonly string[]).includes(d.function.name),
     );
     assert.deepEqual(listenerDefs, defs);

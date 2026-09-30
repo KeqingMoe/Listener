@@ -127,7 +127,7 @@ test('four favorite writes allow confirm while readonly confirmation is rejected
   });
   const app = f.load(),
     group = app.resolveGroup(GROUP);
-  const definitions = buildToolDefinitions(toListenerConfig(app, group), true);
+  const definitions = buildToolDefinitions(toListenerConfig(app, group));
   for (const name of WRITES) {
     assert.equal(group.tools[name].mode, 'confirm');
     assert.match(
@@ -164,7 +164,7 @@ test('explicit off survives defaults and only the selected group override re-ena
   )) {
     assert.equal(group.tools[name].mode, 'off', name);
   }
-  const names = buildToolDefinitions(toListenerConfig(app, group), true).map(
+  const names = buildToolDefinitions(toListenerConfig(app, group)).map(
     (tool) => tool.function.name,
   );
   assert.deepEqual(
@@ -194,9 +194,7 @@ test('favorite view permission is independent while the existing image parameter
   );
   assert.equal(second.images.enabled, false);
   assert.equal(second.images.maxDownloadMb, 10);
-  const names = buildToolDefinitions(second, true).map(
-    (tool) => tool.function.name,
-  );
+  const names = buildToolDefinitions(second).map((tool) => tool.function.name);
   assert.equal(names.includes('view_images'), false);
   assert.equal(names.includes('view_custom_face'), true);
   const wrongPlace = fixture(t, {

@@ -477,35 +477,3 @@ export function projectMessage(
       : {}),
   };
 }
-
-/** 只投影顶层timeline条目；摘要文本刻意视为不透明内容，不做改动。 */
-export function projectMessageContext(source: string): string {
-  let root: unknown;
-  try {
-    root = JSON.parse(source);
-  } catch {
-    return source;
-  }
-  const messages = array(root)
-    ? root
-    : isDataObject(root) && array(root.messages)
-      ? root.messages
-      : undefined;
-  if (!messages) {
-    return source;
-  }
-  let changed = false;
-  const projected = messages.map((value) => {
-    if (!isDataObject(value) || typeof value.messageId !== 'string') {
-      return value;
-    }
-    changed = true;
-    return projectMessage(value as unknown as TimelineEntry);
-  });
-  if (!changed) {
-    return source;
-  }
-  return JSON.stringify(
-    array(root) ? projected : { ...(root as JsonObject), messages: projected },
-  );
-}

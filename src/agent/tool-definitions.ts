@@ -34,10 +34,7 @@ export const CHAT_TOOLS: ToolDefinition[] = [
   ...GROUP_TOOLS,
 ];
 
-export function buildToolDefinitions(
-  input: ListenerConfig,
-  worldEnabled = false,
-): ToolDefinition[] {
+export function buildToolDefinitions(input: ListenerConfig): ToolDefinition[] {
   const config = applyToolPolicies(input);
   const tools = structuredClone(
     CHAT_TOOLS.filter((tool) =>
@@ -80,9 +77,7 @@ export function buildToolDefinitions(
   if (config.attention.enabled) {
     tools.push(structuredClone(MANAGE_ATTENTION_TOOL));
   }
-  if (worldEnabled) {
-    tools.push(...buildWorldTools());
-  }
+  tools.push(...buildWorldTools());
   tools.push(...buildModerationTools(config.tools.moderation));
   tools.push(
     ...buildExtendedToolDefinitions(

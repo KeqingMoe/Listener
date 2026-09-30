@@ -1,13 +1,10 @@
 import { type JsonObject, isObject } from '../contracts/json.ts';
-import type { Memory } from '../contracts/messages.ts';
 
-/** 把reaction观测结果作为只读标注附加到模型可见的消息投影上，受字符预算限制，不改动原始记录。 */
+/** 把reaction观测结果作为只读标注附加到read_message结果上，受字符预算限制，不改动原始记录。 */
 
 export type ReactionLookup = (messageId: string) => JsonObject | undefined;
 
-const ADDED_LIMIT = 6000,
-  SNAPSHOT_LIMIT = 1000,
-  BATCH_LIMIT = 24000,
+const SNAPSHOT_LIMIT = 1000,
   ITEM_LIMIT = 8;
 const statuses = new Set(['observed', 'stale', 'partial', 'empty_snapshot']);
 
@@ -130,119 +127,6 @@ function observation(
   } catch {
     return undefined;
   }
-}
-
-function candidates(
-  messages: unknown[],
-  lookup: ReactionLookup,
-): Array<{ message: JsonObject; info: JsonObject; index: number }> {
-  const result: Array<{
-    message: JsonObject;
-    info: JsonObject;
-    index: number;
-  }> = [];
-  messages.forEach((message, index) => {
-    if (!isObject(message)) {
-      return;
-    }
-    const info = observation(message, lookup);
-    if (info) {
-      result.push({ message, info, index });
-    }
-  });
-  // 有限的标注空间优先给有实际reaction的消息，其次是空快照，同类中优先较新的消息。
-  // 只排序候选列表，不改变对话本身的顺序。
-  return result.sort(
-    (a, b) =>
-      Number((b.info.items as unknown[]).length > 0) -
-        Number((a.info.items as unknown[]).length > 0) || b.index - a.index,
-  );
-}
-
-/** 只修改新克隆或新解析出的副本，绝不修改Memory中的条目。超出预算的标注会被撤回。 */
-function decorate(
-  root: unknown,
-  messages: unknown[],
-  lookup: ReactionLookup,
-  maximum: number,
-): boolean {
-  const initial = encoded(root);
-  if (initial === undefined || initial.length >= maximum) {
-    return false;
-  }
-  const limit = Math.min(maximum, initial.length + ADDED_LIMIT);
-  let changed = false;
-  for (const { message, info } of candidates(messages, lookup)) {
-    message.reactions = info;
-    const current = encoded(root);
-    if (current === undefined || current.length > limit) {
-      delete message.reactions;
-    } else {
-      changed = true;
-    }
-  }
-  return changed;
-}
-
-/** 保留全部原始消息文本和来源信息；输入本身已超预算时不做标注，也不裁剪原文。 */
-export function annotateReactionBatch(
-  payload: JsonObject,
-  lookup: ReactionLookup,
-): JsonObject {
-  const copy = structuredClone(payload);
-  if (
-    isObject(copy.current_batch) &&
-    Array.isArray(copy.current_batch.messages)
-  ) {
-    decorate(copy, copy.current_batch.messages, lookup, BATCH_LIMIT);
-  }
-  return copy;
-}
-
-/** 仅用于展示的投影；摘要仍以原始context为输入。 */
-export function annotateReactionContext(
-  memory: Memory,
-  lookup: ReactionLookup,
-): string {
-  const source = memory.context();
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(source);
-  } catch {
-    /* 纯文本context无法按文本匹配改写，改为在末尾追加观测记录。 */
-  }
-  const messages = Array.isArray(parsed)
-    ? parsed
-    : isObject(parsed) && Array.isArray(parsed.messages)
-      ? parsed.messages
-      : undefined;
-  if (messages) {
-    return decorate(parsed, messages, lookup, source.length + ADDED_LIMIT)
-      ? JSON.stringify(parsed)
-      : source;
-  }
-  const observations: JsonObject[] = [],
-    seen = new Set<string>();
-  let trailer = '';
-  const entries = memory.recent().filter((entry) => {
-    const messageId = id(entry);
-    if (!messageId || seen.has(messageId)) {
-      return false;
-    }
-    seen.add(messageId);
-    return true;
-  });
-  for (const { message, info } of candidates(entries, lookup)) {
-    const messageId = id(message)!;
-    observations.push({ message_id: messageId, reactions: info });
-    const next = JSON.stringify({ reaction_observations: observations });
-    if (next.length + 1 > ADDED_LIMIT) {
-      observations.pop();
-      continue;
-    }
-    trailer = next;
-  }
-  return trailer ? `${source}\n${trailer}` : source;
 }
 
 /** 调用方只对成功且限定在本群范围内的read_message结果调用。 */

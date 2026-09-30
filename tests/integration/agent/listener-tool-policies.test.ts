@@ -268,23 +268,22 @@ async function run(
   overrides: Partial<ResolvedToolPolicies>,
   calls: ReturnType<typeof tool>[],
   observe = false,
-  worldEnabled = true,
 ) {
   const f = fixture(overrides, observe),
     memory = new Cache(),
     rpc = transport();
   let results: Map<string, JsonObject> | undefined;
   const systemPrompts: string[] = [];
-  const world = worldEnabled
-    ? new WorldEventStore({
-        path: ':memory:',
-        groupId: GROUP,
-        retentionDays: 7,
-      })
-    : undefined;
-  const session = worldEnabled
-    ? new ModelSession({ model: 'main', path: ':memory:', groupId: GROUP })
-    : undefined;
+  const world = new WorldEventStore({
+    path: ':memory:',
+    groupId: GROUP,
+    retentionDays: 7,
+  });
+  const session = new ModelSession({
+    model: 'main',
+    path: ':memory:',
+    groupId: GROUP,
+  });
   const model: Model = {
     async complete(messages: ChatMessage[]) {
       systemPrompts.push(
@@ -363,9 +362,7 @@ test('every optional tool exposes only its explicit policy; required tools stay 
       ...(TOOL_CAPABILITIES[name].confirm ? ['confirm'] : []),
     ] as const) {
       const { config } = fixture({ [name]: { mode } as ToolPolicy });
-      const defs = buildToolDefinitions(config, true).map(
-        (t) => t.function.name,
-      );
+      const defs = buildToolDefinitions(config).map((t) => t.function.name);
       assert.deepEqual(
         TOOL_NAMES.filter((n) => defs.includes(n)),
         [name],
@@ -403,7 +400,7 @@ test('every optional tool exposes only its explicit policy; required tools stay 
   });
   assert.deepEqual(
     TOOL_NAMES.filter((n) =>
-      buildToolDefinitions(config, true).some((t) => t.function.name === n),
+      buildToolDefinitions(config).some((t) => t.function.name === n),
     ),
     [],
   );
@@ -529,11 +526,7 @@ test('reaction mutation, explicit responder query and passive observation have i
             query && observe,
           );
         }
-        assert.equal(
-          out.basePrompt.includes('程序自动采集的QQ反应快照'),
-          observe,
-        );
-        for (const prompt of out.systemPrompts) {
+        for (const prompt of [out.basePrompt, ...out.systemPrompts]) {
           assert.ok(!prompt.includes('程序自动采集的QQ反应快照'));
           assert.equal(
             prompt.includes('reactions仅在你调用读取工具后作为查询结果提供'),
@@ -565,17 +558,6 @@ test('explicit reaction query cache invalidates after mutation with background o
     out.calls.filter((c) => c.action === 'fetch_emoji_like').length,
     2,
   );
-});
-
-test('new policy path never invokes legacy summaries even in a low-level fixture without ModelSession', async () => {
-  const out = await run(
-    { get_member_info: { mode: 'direct' } },
-    [tool('get_member_info', { user_id: MEMBER })],
-    false,
-    false,
-  );
-  assert.equal(out.results.get('get_member_info')?.status, 'ok');
-  assert.equal(out.summaryCalls, 0);
 });
 
 test('resolved view_images options enforce only the per-image downloader byte budget', async () => {

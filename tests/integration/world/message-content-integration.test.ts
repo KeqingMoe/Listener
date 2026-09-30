@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Listener, normalizeEvent } from '../../../src/agent/listener.ts';
 import { GroupTools } from '../../../src/tools/messaging/tools.ts';
-import { ReplyBatch } from '../../../src/agent/reply-batch.ts';
 import { projectMessage } from '../../../src/world/message-content.ts';
 import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.ts';
 import { type Api } from '../../../src/contracts/onebot.ts';
@@ -137,18 +136,12 @@ test('native structure and literal marker text remain distinct across normalizat
       };
     },
   };
-  const tools = new GroupTools(api, memory, { groupId: LISTENER_GROUP }),
-    batch = new ReplyBatch(
-      { entry, context, sequence: 1, received: 0, trigger: 'mention' },
-      0,
-      false,
-      OWNER_ID,
-    );
-  const displayed = (batch.payload().current_batch as any).messages[0];
+  const tools = new GroupTools(api, memory, { groupId: LISTENER_GROUP });
+  const displayed = (
+    await tools.execute('read_message', { message_id: '1' }, context)
+  ).message as any;
   for (const row of [
     displayed,
-    (await tools.execute('read_message', { message_id: '1' }, context))
-      .message as any,
     (await tools.execute('read_message', { message_id: '2' }, context))
       .message as any,
   ]) {
@@ -362,56 +355,16 @@ test('model sees typed received and own historical faces without duplicated flat
   }
 });
 
-test('maximal structured batch fits 24000 characters without losing caller identities', () => {
-  const build = (i: number) =>
-    normalizeEvent(
-      event(String(i), [
-        { type: 'at', data: { qq: self } },
-        text('\\"'.repeat(3000)),
-        ...Array.from({ length: 100 }, () => ({
-          type: 'face',
-          data: { id: 271 },
-        })),
-      ]),
+test('legacy flat entries project as legacy_text without segments', () => {
+  const legacy = {
+    ...normalizeEvent(
+      event('1', [{ type: 'at', data: { qq: self } }, text(literal)]),
       self,
       LISTENER_GROUP,
-    )!;
-  const first = build(1),
-    batch = new ReplyBatch(
-      { entry: first, context, sequence: 1, received: 0, trigger: 'mention' },
-      0,
-      false,
-      OWNER_ID,
-    );
-  for (let i = 2; i <= 64; i++) {
-    const entry = build(i);
-    batch.add(
-      {
-        entry,
-        context: { ...context, messageId: String(i) },
-        sequence: i,
-        received: i,
-        trigger: 'mention',
-      },
-      0,
-    );
-  }
-  const payload = batch.payload(),
-    current = payload.current_batch as any;
-  assert.ok(JSON.stringify(payload).length <= 24000);
-  assert.equal(current.messages.length, 64);
-  assert.equal((payload.trusted_direct_requests as any[]).length, 64);
-  assert.deepEqual(
-    current.messages.map((r: any) => r.messageId),
-    Array.from({ length: 64 }, (_, i) => String(i + 1)),
-  );
-  assert.ok(current.truncated_message_ids.length > 0);
-  assert.ok(
-    current.messages.every(
-      (r: any) => r.text === undefined && Array.isArray(r.segments),
-    ),
-  );
-  const legacy = { ...first, segments: undefined, text: literal };
+    )!,
+    segments: undefined,
+    text: literal,
+  };
   const old = projectMessage(legacy);
   assert.equal(old.representation, 'legacy_text');
   assert.equal(old.text, literal);

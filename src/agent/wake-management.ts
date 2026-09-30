@@ -18,7 +18,6 @@ export interface WakeManagementDeps {
   moderation: () => Moderation;
   sender: GroupSender;
   memory: Memory;
-  session: boolean;
   stats: TurnStats;
   wake: WakeFlags;
   valid: () => boolean;
@@ -155,9 +154,6 @@ export class WakeManagement {
         );
         if (!valid()) {
           throw new Error('cancelled');
-        }
-        if (!this.deps.session && this.deps.memory.find(entry.messageId)) {
-          throw new Error('delivery_unknown');
         }
         this.deps.onNotified(entry);
         stats.sentMessages++;

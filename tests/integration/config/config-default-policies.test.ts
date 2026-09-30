@@ -148,10 +148,9 @@ test('all 61 optional tools have the approved defaults; opening tools never open
       assert.equal(TOOL_CAPABILITIES[name].confirm, true, name);
     }
   }
-  const definitions = buildToolDefinitions(
-    toListenerConfig(app, group),
-    true,
-  ).map((t) => t.function.name);
+  const definitions = buildToolDefinitions(toListenerConfig(app, group)).map(
+    (t) => t.function.name,
+  );
   // 未配置[web].search时，默认直接可用的web_search没有后端，因此不提供。
   assert.deepEqual(
     TOOL_NAMES.filter((n) => definitions.includes(n)).sort(),
@@ -357,7 +356,6 @@ test('every optional tool can still be explicitly disabled without affecting bas
   );
   const definitions = buildToolDefinitions(
     toListenerConfig(app, app.resolveGroup(GROUP)),
-    true,
   ).map((t) => t.function.name);
   assert.deepEqual(
     TOOL_NAMES.filter((n) => definitions.includes(n)),

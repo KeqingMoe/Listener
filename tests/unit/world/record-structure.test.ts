@@ -4,10 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WorldEventStore } from '../../../src/world/events.ts';
-import {
-  extractMessageContent,
-  projectMessageContext,
-} from '../../../src/world/message-content.ts';
+import { extractMessageContent } from '../../../src/world/message-content.ts';
 import type { TimelineEntry } from '../../../src/contracts/messages.ts';
 
 const record = { type: 'record', content_status: 'not_transcribed' } as const;
@@ -29,7 +26,7 @@ const row = (): TimelineEntry => ({
   ]),
 });
 
-test('world record remains identifiable by messageId through SQLite reopen and history/context projection', () => {
+test('world record remains identifiable by messageId through SQLite reopen and history reads', () => {
   const dir = mkdtempSync(join(tmpdir(), 'world-record-')),
     path = join(dir, 'world.sqlite');
   let store = new WorldEventStore({ path, groupId: '42' });
@@ -58,16 +55,8 @@ test('world record remains identifiable by messageId through SQLite reopen and h
     if (payload?.kind === 'message') {
       assert.deepEqual(payload.message.segments, [record]);
     }
-    const projected = JSON.parse(
-      projectMessageContext(JSON.stringify({ messages })),
-    );
-    assert.equal(projected.messages[0].messageId, '123');
-    assert.deepEqual(projected.messages[0].segments, [record]);
-    assert.deepEqual(projected.messages[1].segments, [
-      { type: 'unsupported', kind: 'record' },
-    ]);
     assert.doesNotMatch(
-      JSON.stringify([saved, messages, eventPage, projected]),
+      JSON.stringify([saved, messages, eventPage]),
       /VOICE_SECRET|FILE_SECRET|FORGED_TRANSCRIPT/,
     );
   } finally {
