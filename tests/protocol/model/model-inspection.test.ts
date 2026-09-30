@@ -189,13 +189,17 @@ test('Chat immutable start and finally end capture streaming request and assembl
   let wire = '';
   const starts: ModelRequestStart[] = [],
     ends: ModelRequestRecord[] = [];
-  t.mock.method(globalThis, 'fetch', async (_url, init) => {
-    wire = String(init?.body);
-    return chatStream(reply, {
-      'x-request-id': 'provider-id',
-      'set-cookie': 'never-capture',
-    });
-  });
+  t.mock.method(
+    globalThis,
+    'fetch',
+    async (_url: unknown, init?: RequestInit) => {
+      wire = String(init?.body);
+      return chatStream(reply, {
+        'x-request-id': 'provider-id',
+        'set-cookie': 'never-capture',
+      });
+    },
+  );
   const model = new OpenAIModel({
     ...options,
     onRequestStart: (r) => {
@@ -267,7 +271,7 @@ test('Chat cancellation without assistant output still has paired inspection and
   t.mock.method(
     globalThis,
     'fetch',
-    async (_url, init) =>
+    async (_url: unknown, init?: RequestInit) =>
       new Response(
         new ReadableStream({
           start(c) {

@@ -235,6 +235,7 @@ test('real TelemetryStore restart recovery time is not an interrupted HTTP end o
       transport: 'responses',
       model: 'test',
       requestJson: '{}',
+      requestMode: 'fresh',
     });
     store.close();
     store = new TelemetryStore(telemetryPath);
@@ -247,6 +248,7 @@ test('real TelemetryStore restart recovery time is not an interrupted HTTP end o
       transport: 'responses',
       model: 'test',
       requestJson: '{}',
+      requestMode: 'fresh',
     });
     store.record({
       requestId: 'measured',

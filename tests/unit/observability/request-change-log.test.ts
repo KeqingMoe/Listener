@@ -102,6 +102,8 @@ test('normal restart keeps epoch/revision and recovery is logged before new runn
       startedAt: Date.now(),
       transport: 'chat',
       model: 'model',
+      requestJson: '{}',
+      requestMode: 'fresh',
     });
     const before = meta(db);
     store.close();
@@ -113,6 +115,8 @@ test('normal restart keeps epoch/revision and recovery is logged before new runn
         startedAt: Date.now(),
         transport: 'chat',
         model: 'model',
+        requestJson: '{}',
+        requestMode: 'fresh',
       });
       assert.equal(meta(db).revision, 3);
       assert.equal(
@@ -252,6 +256,8 @@ test('inspection retention deletes emit dirty keys', () =>
       startedAt: Date.now(),
       transport: 'chat',
       model: 'model',
+      requestJson: '{}',
+      requestMode: 'fresh',
     });
     const rows = changes(db);
     assert.equal(rows.length, 3);
@@ -272,6 +278,8 @@ test('TelemetryStore completion logs upsert and ignored duplicate keeps old sema
       startedAt: Date.now(),
       transport: 'chat' as const,
       model: 'model',
+      requestJson: '{}',
+      requestMode: 'fresh',
     };
     store.beginRequest(value);
     const end = {

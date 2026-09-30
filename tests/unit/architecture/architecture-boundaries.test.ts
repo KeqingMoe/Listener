@@ -139,9 +139,9 @@ test('runtime graph detects real cycles, mixed imports and dynamic imports', asy
   });
   const result = await analyzeBoundaries(root);
   assert.equal(result.issues.length, 1);
-  assert.equal(result.issues[0].kind, 'runtime-cycle');
+  assert.equal(result.issues[0]!.kind, 'runtime-cycle');
   assert.match(
-    result.issues[0].message,
+    result.issues[0]!.message,
     /a.ts -> src\/world\/b.ts -> src\/world\/c.ts -> src\/world\/a.ts/,
   );
 });
@@ -183,7 +183,7 @@ test('unresolved relative imports are errors including type-only imports; direct
     result.issues.map((issue) => issue.kind),
     ['unresolved', 'unresolved'],
   );
-  assert.match(result.issues[1].message, /^type /);
+  assert.match(result.issues[1]!.message, /^type /);
 });
 
 test('TS and Vue generic arrows and assertions do not hide later dependencies; TSX still parses JSX', async (t) => {

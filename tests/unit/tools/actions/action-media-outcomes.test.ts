@@ -279,7 +279,7 @@ test('non-JSON Any results and wrong void results stay unknown without invoking 
       },
     },
   );
-  const array = [];
+  const array: unknown[] = [];
   Object.defineProperty(array, '0', {
     enumerable: true,
     get() {

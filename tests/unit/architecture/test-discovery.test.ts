@@ -91,7 +91,11 @@ test('discovery never follows directory or file symlinks, including loops', asyn
 test('discovery rejects invalid scopes and missing roots but returns an empty list for an empty tree', async (t) => {
   const { root } = fixture(t);
   for (const scope of ['', 'unknown', '--all', null]) {
-    await assert.rejects(discoverTests(root, scope), /Invalid test scope/);
+    // null故意越过类型，验证运行时校验。
+    await assert.rejects(
+      discoverTests(root, scope as string),
+      /Invalid test scope/,
+    );
   }
   await assert.rejects(discoverTests(join(root, 'absent')), /ENOENT/);
   assert.deepEqual(await discoverTests(root), []);

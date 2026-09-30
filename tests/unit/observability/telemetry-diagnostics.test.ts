@@ -77,9 +77,9 @@ test('old telemetry schema migrates nullable diagnostics and reopens idempotentl
       .all()
       .filter((row) => row.name === 'diagnostics');
     assert.equal(columns.length, 1);
-    assert.equal(columns[0].type, 'TEXT');
-    assert.equal(columns[0].notnull, 0);
-    assert.equal(columns[0].dflt_value, null);
+    assert.equal(columns[0]!.type, 'TEXT');
+    assert.equal(columns[0]!.notnull, 0);
+    assert.equal(columns[0]!.dflt_value, null);
   } finally {
     db.close();
   }

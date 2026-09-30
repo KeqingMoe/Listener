@@ -9,7 +9,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit -p tsconfig.json && vue-tsc --noEmit -p src/dashboard/web/tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.tests.json && vue-tsc --noEmit -p src/dashboard/web/tsconfig.json",
     "check": "npm run format:check && npm run lint && npm run check:boundaries && npm run typecheck && npm run test:all",
     "test": "node scripts/test.mjs core",
     "test:all": "node scripts/test.mjs all",

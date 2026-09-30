@@ -39,8 +39,8 @@ test('execution and task detail preserve guest diagnostics but host throws stay 
     diagnostic,
   );
   const job = { job_id: 'js_1', status: 'failed', diagnostic };
-  service.query = (() => job) as SandboxService['query'];
-  service.cancel = (() => job) as SandboxService['cancel'];
+  service.query = (() => job) as unknown as SandboxService['query'];
+  service.cancel = (() => job) as unknown as SandboxService['cancel'];
   for (const name of ['query_javascript_jobs', 'cancel_javascript_job']) {
     assert.deepEqual(
       (await tools.execute(name, { job_id: 'js_1' }, context)).job,
@@ -329,12 +329,12 @@ test('sandbox status projection distinguishes tool success from task status', as
     'ok',
   );
   const job = { job_id: 'js_1', status: 'cancelled' };
-  service.cancel = (() => job) as SandboxService['cancel'];
+  service.cancel = (() => job) as unknown as SandboxService['cancel'];
   assert.deepEqual(
     await tools.execute('cancel_javascript_job', { job_id: 'js_1' }, context),
     { status: 'ok', job },
   );
-  service.query = (() => job) as SandboxService['query'];
+  service.query = (() => job) as unknown as SandboxService['query'];
   assert.deepEqual(
     await tools.execute('query_javascript_jobs', { job_id: 'js_1' }, context),
     { status: 'ok', job },

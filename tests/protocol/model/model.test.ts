@@ -466,13 +466,13 @@ test('streamed reasoning and text are timed across distinct reads; one buffered 
         onRequest: (r) => records.push(r),
       });
       assert.equal((await m.complete([])).content, 'answer');
-      assert.ok(records[0].ttftMs! >= 0);
+      assert.ok(records[0]!.ttftMs! >= 0);
       if (delayed) {
-        assert.ok(records[0].decodeDurationMs! >= 10);
+        assert.ok(records[0]!.decodeDurationMs! >= 10);
       } else {
-        assert.equal(records[0].decodeDurationMs, 0);
+        assert.equal(records[0]!.decodeDurationMs, 0);
       }
-      assert.equal(records[0].inspection?.reasoningText, 'think');
+      assert.equal(records[0]!.inspection?.reasoningText, 'think');
     } finally {
       stop(fixture.server);
     }
@@ -617,8 +617,8 @@ test('charged reasoning remains measurable and repeated equal tool IDs are not c
         },
       });
       const out = await model.complete([]);
-      assert.equal(out.tool_calls[0].id, 'call-a');
-      assert.equal(out.tool_calls[0].function.arguments, '{}');
+      assert.equal(out.tool_calls![0]!.id, 'call-a');
+      assert.equal(out.tool_calls![0]!.function.arguments, '{}');
       assert.ok(record!.decodeDurationMs! > 10);
     } finally {
       stop(fixture.server);

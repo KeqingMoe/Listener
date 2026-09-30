@@ -53,7 +53,7 @@ function fixture(t: TestContext) {
       new URL(`../../../src/${name}.ts`, import.meta.url),
       'utf8',
     );
-    for (const [tree, extension, contents] of [
+    for (const [tree, extension, contents] of <[string, string, string][]>[
       ['src', 'ts', source],
       [
         'dist',

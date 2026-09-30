@@ -186,22 +186,22 @@ for (const transport of ['chat', 'responses'] as const) {
           !JSON.stringify(e).includes('secret'),
       );
       assert.equal(records.length, 1);
-      assert.equal(records[0].errorCode, 'http_error');
+      assert.equal(records[0]!.errorCode, 'http_error');
       assert.ok(
         !JSON.stringify(
           records.map(({ inspection, ...publicRecord }) => publicRecord),
         ).includes('secret'),
       );
       assert.ok(!JSON.stringify(records).includes(options.apiKey));
-      assert.equal(records[0].diagnostics?.requestMode, 'fresh');
+      assert.equal(records[0]!.diagnostics?.requestMode, 'fresh');
       if (body.startsWith('secret')) {
         assert.ok(
-          records[0].inspection?.errorText?.includes('secret non-json'),
+          records[0]!.inspection?.errorText?.includes('secret non-json'),
         );
       }
       if (transport === 'chat') {
-        assert.equal(records[0].diagnostics?.providerCategory, 'unknown');
-        assert.equal(records[0].diagnostics?.providerParameter, undefined);
+        assert.equal(records[0]!.diagnostics?.providerCategory, 'unknown');
+        assert.equal(records[0]!.diagnostics?.providerParameter, undefined);
       }
       t.mock.restoreAll();
     }
@@ -248,7 +248,7 @@ for (const transport of ['chat', 'responses'] as const) {
         },
       );
       assert.equal(records.length, 1);
-      assert.equal(records[0].diagnostics?.requestTimeoutMs, 5);
+      assert.equal(records[0]!.diagnostics?.requestTimeoutMs, 5);
       assert.ok(
         !JSON.stringify(
           records.map(({ inspection, ...publicRecord }) => publicRecord),
@@ -288,7 +288,7 @@ for (const transport of ['chat', 'responses'] as const) {
         e.diagnostics.abortSource === 'request_timeout' &&
         e.diagnostics.failureStage === 'response_body',
     );
-    assert.equal(records[0].diagnostics?.abortSource, 'request_timeout');
+    assert.equal(records[0]!.diagnostics?.abortSource, 'request_timeout');
   });
   test(`${transport}: successful late acknowledgement before budget preserves result despite observer`, async (t) => {
     const records: ModelRequestRecord[] = [];
@@ -297,8 +297,8 @@ for (const transport of ['chat', 'responses'] as const) {
       return transport === 'chat' ? chat() : response();
     });
     assert.equal((await make(records).complete([])).content, 'ok');
-    assert.equal(records[0].status, 'success');
-    assert.equal(records[0].diagnostics?.failureStage, undefined);
+    assert.equal(records[0]!.status, 'success');
+    assert.equal(records[0]!.diagnostics?.failureStage, undefined);
   });
   test(`${transport}: parse, validation and network stages`, async (t) => {
     for (const [kind, stage] of [
@@ -345,7 +345,7 @@ for (const transport of ['chat', 'responses'] as const) {
         make(records).complete([]),
         (e: any) => e.diagnostics.failureStage === stage,
       );
-      assert.equal(records[0].diagnostics?.failureStage, stage);
+      assert.equal(records[0]!.diagnostics?.failureStage, stage);
       t.mock.restoreAll();
     }
   });
@@ -396,8 +396,8 @@ test('Chat cancels stalled HTTP 400 body immediately without waiting for request
       );
       assert.equal(cancelled, true);
       assert.equal(upstream.signal.aborted, false);
-      assert.equal(records[0].errorCode, 'http_error');
-      assert.equal(records[0].diagnostics?.abortSource, undefined);
+      assert.equal(records[0]!.errorCode, 'http_error');
+      assert.equal(records[0]!.diagnostics?.abortSource, undefined);
     } finally {
       clearTimeout(wake);
       t.mock.restoreAll();
@@ -467,7 +467,7 @@ test('Responses records fresh/live/restored requests and preserves expiry marker
       e.diagnostics?.providerCategory === 'previous_response_missing',
   );
   assert.equal(requests, 4);
-  assert.equal(records[3].errorCode, 'invalid_response');
+  assert.equal(records[3]!.errorCode, 'invalid_response');
   assert.ok(
     !JSON.stringify(
       records.map(({ inspection, ...publicRecord }) => publicRecord),
@@ -493,5 +493,5 @@ test('Responses generation mismatch diagnoses cancellation without overwriting u
       e.diagnostics.abortSource === 'generation_changed' &&
       e.diagnostics.failureStage === 'post_response',
   );
-  assert.equal(records[0].diagnostics?.abortSource, 'generation_changed');
+  assert.equal(records[0]!.diagnostics?.abortSource, 'generation_changed');
 });

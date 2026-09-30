@@ -218,7 +218,7 @@ test('the public tool reference lists every capability with its actual default a
         'create_image',
         'list_artifacts',
       ].includes(name[1]!);
-      assert.equal(columns[4], helper ? 'Bot辅助' : 'QQ功能', name[1]);
+      assert.equal(columns[4], helper ? 'Bot辅助' : 'QQ功能', name[1]!);
       assert.equal(
         rows.has(name[1]!),
         false,

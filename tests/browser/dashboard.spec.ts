@@ -111,6 +111,7 @@ const request: ReviewRequest = {
   reasoningTokens: 30,
   tps: 40,
   ttftMs: 500,
+  decodeDurationMs: 2000,
   responseId: 'resp-synthetic-2',
   previousResponseId: 'resp-synthetic-1',
   providerRequestId: 'provider-synthetic-2',
@@ -177,6 +178,7 @@ const tool: ReviewTool = {
 const wake: WakeItem = {
   performance: performance('wake'),
   tps: 40,
+  ttftMs: 500,
   cacheHitRate: 0.6667,
   wakeId: 'wake-synthetic',
   groupId: '10001',
@@ -973,7 +975,7 @@ test('global refresh defaults to five seconds, polls overview and charts, and pa
   const initial = paths.map(count);
   await page.clock.runFor(5100);
   for (const [i, path] of paths.entries()) {
-    await expect.poll(() => count(path)).toBe(initial[i] + 1);
+    await expect.poll(() => count(path)).toBe(initial[i]! + 1);
   }
   expect(
     requests
@@ -1006,7 +1008,7 @@ test('global refresh defaults to five seconds, polls overview and charts, and pa
   });
   await page.clock.runFor(5100);
   for (const [i, path] of paths.entries()) {
-    await expect.poll(() => count(path)).toBeGreaterThan(hiddenCounts[i]);
+    await expect.poll(() => count(path)).toBeGreaterThan(hiddenCounts[i]!);
   }
   await page.getByRole('checkbox', { name: '自动刷新', exact: true }).uncheck();
   await expect(page.getByTestId('dashboard-refresh-status')).toHaveText(
@@ -1037,7 +1039,7 @@ test('global refresh defaults to five seconds, polls overview and charts, and pa
   }
   await page.getByRole('checkbox', { name: '自动刷新', exact: true }).check();
   for (const [i, path] of paths.entries()) {
-    await expect.poll(() => count(path)).toBeGreaterThan(pausedCounts[i]);
+    await expect.poll(() => count(path)).toBeGreaterThan(pausedCounts[i]!);
   }
 });
 
@@ -1070,7 +1072,7 @@ for (const [url, paths] of [
     const initial = paths.map(count);
     await page.clock.runFor(5100);
     for (const [i, path] of paths.entries()) {
-      await expect.poll(() => count(path)).toBe(initial[i] + 1);
+      await expect.poll(() => count(path)).toBe(initial[i]! + 1);
     }
   });
 }
@@ -1350,7 +1352,7 @@ test('compact overview has trifold token counts and factual health, never offlin
   await expect(page.locator('.metric-strip')).toContainText('模型累计');
   await expect(page.locator('.metric-strip')).toContainText('工具累计');
   const headers = await groupTable.locator('thead th').allTextContents();
-  for (const [label, value] of [
+  for (const [label, value] of <[string, string][]>[
     ['输入', '400'],
     ['缓存', '800'],
     ['输出', '160'],
@@ -1963,10 +1965,10 @@ test('resource patches and unchanged preserve selected detail, tab, search and s
   expect(top).toBeGreaterThan(0);
   await page.clock.runFor(5100);
   await expect(region).toContainText('needle patched final line');
-  expect(calls[1].searchParams.get('cursor')).toBe('detail-v1');
+  expect(calls[1]!.searchParams.get('cursor')).toBe('detail-v1');
   await page.clock.runFor(5100);
   await expect.poll(() => calls.length).toBe(3);
-  expect(calls[2].searchParams.get('cursor')).toBe('detail-v2');
+  expect(calls[2]!.searchParams.get('cursor')).toBe('detail-v2');
   await expect(page).toHaveURL(/selected=req-synthetic-2/);
   await expect(
     page.getByRole('tab', { name: '思考', exact: true }),
@@ -2364,7 +2366,7 @@ test('mobile multi-day lists distinguish identical clock times and retain visibl
     const labels = await times.allTextContents();
     expect(labels[0]).toMatch(/^9\/21 \d{2}:\d{2}:\d{2}$/);
     expect(labels[1]).toMatch(/^9\/20 \d{2}:\d{2}:\d{2}$/);
-    expect(labels[0].split(' ')[1]).toBe(labels[1].split(' ')[1]);
+    expect(labels[0]!.split(' ')[1]).toBe(labels[1]!.split(' ')[1]);
     await expect(times.first()).toHaveAttribute('title', /2026/);
     for (const column of ['cache-column', 'tps-column', 'duration-column']) {
       const box = await page
@@ -2388,7 +2390,7 @@ for (const viewport of [
     page.on('pageerror', (e) => errors.push(e.message));
     await mock(page, { dense: true });
     await mkdir(resolve('artifacts'), { recursive: true });
-    for (const [name, url, ready] of [
+    for (const [name, url, ready] of <[string, string, string][]>[
       ['overview', '/', '.metric-strip'],
       ['wakes', '/wakes', '.list-pane tbody tr'],
       ['requests', '/requests', '.list-pane tbody tr'],

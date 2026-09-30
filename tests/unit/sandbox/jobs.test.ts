@@ -231,7 +231,7 @@ function fake() {
   return (o: any) => {
     let done = false,
       resolve!: (r: any) => void;
-    const result = new Promise((r) => (resolve = r));
+    const result = new Promise<ExecutionResult>((r) => (resolve = r));
     const timer = setTimeout(
       () => {
         if (!done) {
@@ -270,8 +270,11 @@ test('sync persists, returns string result, and scopes queries', async () => {
     const jobs = s.query(scope, { status: 'completed' }) as any;
     assert.equal(jobs.jobs.length, 1);
     assert.equal(
-      s.query({ selfId: '100', groupId: '201' }, { status: 'completed' } as any)
-        .jobs.length,
+      (
+        s.query({ selfId: '100', groupId: '201' }, {
+          status: 'completed',
+        } as any) as any
+      ).jobs.length,
       0,
     );
     await s.stop();
@@ -288,7 +291,7 @@ test('auto detaches after foreground timeout and later result is pending', async
       store: f.store,
       executor: () => {
         let resolve!: any;
-        const result = new Promise((r) => (resolve = r));
+        const result = new Promise<ExecutionResult>((r) => (resolve = r));
         const timer = setTimeout(
           () => resolve({ status: 'completed', value: 'later', logs: [] }),
           40,

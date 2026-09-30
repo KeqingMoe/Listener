@@ -68,7 +68,7 @@ const sourceEntry = (): TimelineEntry => ({
   ],
 });
 
-function favorite(bytes = PNG, extra: JsonObject = {}): JsonObject {
+function favorite(bytes: Buffer = PNG, extra: JsonObject = {}): JsonObject {
   return {
     resId: 'NATIVE_SECRET_RESOURCE',
     emoId: 0,
@@ -82,7 +82,7 @@ function favorite(bytes = PNG, extra: JsonObject = {}): JsonObject {
   };
 }
 
-function wire(bytes = PNG): JsonObject {
+function wire(bytes: Buffer = PNG): JsonObject {
   return {
     message_id: '11',
     message_type: 'group',

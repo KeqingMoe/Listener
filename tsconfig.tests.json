@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    // 测试会引用面板前端模块（无扩展名导入），按打包器规则解析；src本身仍由tsconfig.json按NodeNext检查。
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": false,
+    "types": ["node", "vite/client"]
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts", "playwright.config.ts"],
+  "exclude": ["src/dashboard/web/**"]
+}

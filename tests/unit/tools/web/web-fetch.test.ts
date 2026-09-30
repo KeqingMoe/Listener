@@ -47,14 +47,16 @@ function network(port: number, answers: Record<string, string[]> = {}) {
         (_e: unknown, address: string) => pinned.push(address),
       );
       assert.equal(options.agent, false);
+      // 生产代码传入的是TLS选项（含servername）；fixture改走本地HTTP时去掉它。
+      const { servername: _servername, ...plain } =
+        options as RequestOptions & { servername?: string };
       return httpRequest(
         {
-          ...options,
+          ...plain,
           protocol: 'http:',
           hostname: '127.0.0.1',
           port,
           lookup: undefined,
-          servername: undefined,
         },
         callback,
       );
