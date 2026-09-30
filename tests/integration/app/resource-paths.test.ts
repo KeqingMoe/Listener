@@ -32,7 +32,7 @@ function fixture(t: TestContext) {
     for (const [tree, extension, contents] of [
       ['src', 'ts', source],
       ['dist', 'js', ts.transpileModule(source, {
-        compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.ESNext },
+        compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.ESNext, rewriteRelativeImportExtensions: true },
         fileName: `${name}.ts`,
       }).outputText],
     ]) {

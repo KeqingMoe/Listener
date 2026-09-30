@@ -1,6 +1,6 @@
 import {getQuickJS} from 'quickjs-emscripten';
 import type {QuickJSHandle,QuickJSContext,QuickJSDeferredPromise} from 'quickjs-emscripten';
-import {isExecutionDiagnostic,normalizeOptions,TOOL_CALL_LIMITS,type ExecutionResult,type ExecutionDiagnostic,type DiagnosticPhase} from './protocol.js';
+import {isExecutionDiagnostic,normalizeOptions,TOOL_CALL_LIMITS,type ExecutionResult,type ExecutionDiagnostic,type DiagnosticPhase} from './protocol.ts';
 let started=false,cancelled=false;
 interface ToolReply {type:'tool_result';id:number;json:string;attachments:Uint8Array[]}
 const replies=new Map<number,(reply:ToolReply)=>void>();

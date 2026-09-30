@@ -5,17 +5,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
-import { Listener } from "../../../../src/agent/listener.js";
-import { ModelSession } from "../../../../src/agent/session/store.js";
-import { WorldEventStore } from "../../../../src/world/events.js";
-import { SQLiteMemory } from "../../../../src/agent/memory.js";
-import { LISTENER_GROUP } from "../../../../src/contracts/identity.js";
-import { type Api } from "../../../../src/contracts/onebot.js";
-import { type ChatMessage, type Completion } from "../../../../src/contracts/model.js";
-import { type JsonObject } from "../../../../src/contracts/json.js";
-import { type TimelineEntry } from "../../../../src/contracts/messages.js";
-import type { ListenerConfig } from "../../../../src/config/listener.js";
-import type { ExtendedToolsConfig } from "../../../../src/config/extended-tools.js";
+import { Listener } from "../../../../src/agent/listener.ts";
+import { ModelSession } from "../../../../src/agent/session/store.ts";
+import { WorldEventStore } from "../../../../src/world/events.ts";
+import { SQLiteMemory } from "../../../../src/agent/memory.ts";
+import { LISTENER_GROUP } from "../../../../src/contracts/identity.ts";
+import { type Api } from "../../../../src/contracts/onebot.ts";
+import { type ChatMessage, type Completion } from "../../../../src/contracts/model.ts";
+import { type JsonObject } from "../../../../src/contracts/json.ts";
+import { type TimelineEntry } from "../../../../src/contracts/messages.ts";
+import type { ListenerConfig } from "../../../../src/config/listener.ts";
+import type { ExtendedToolsConfig } from "../../../../src/config/extended-tools.ts";
 
 const GROUP = LISTENER_GROUP,
   SELF = "900000001",

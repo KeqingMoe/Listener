@@ -1,8 +1,8 @@
-import { resolveGroupId } from '../contracts/identity.js';
-import { type Api } from '../contracts/onebot.js';
-import { type JsonObject } from '../contracts/json.js';
-import { type Memory } from '../contracts/messages.js';
-import { getReactionCatalog, type ReactionEntry } from '../onebot/catalog/reactions.js';
+import { resolveGroupId } from '../contracts/identity.ts';
+import { type Api } from '../contracts/onebot.ts';
+import { type JsonObject } from '../contracts/json.ts';
+import { type Memory } from '../contracts/messages.ts';
+import { getReactionCatalog, type ReactionEntry } from '../onebot/catalog/reactions.ts';
 
 const CAPACITY = 512, ITEM_LIMIT = 8, SCAN_LIMIT = 128, FRESH_MS = 15_000, FAILURE_MS = 5_000, DEADLINE_MS = 1_500;
 interface Snapshot { message_id: string; status: 'observed'|'partial'|'empty_snapshot'; observed_at: number; items: JsonObject[]; omitted?: number }

@@ -4,31 +4,31 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { ToolRegistry } from "../../../src/tools/registry.js";
-import { loadAppConfig } from "../../../src/config/loader.js";
-import { toListenerConfig } from "../../../src/config/runtime.js";
+import { ToolRegistry } from "../../../src/tools/registry.ts";
+import { loadAppConfig } from "../../../src/config/loader.ts";
+import { toListenerConfig } from "../../../src/config/runtime.ts";
 import {
   createExtendedTools,
   buildExtendedToolDefinitions,
-} from "../../../src/tools/extended.js";
+} from "../../../src/tools/extended.ts";
 import {
   EXTENDED_TOOL_NAMES,
   enabledExtendedTools,
   type ExtendedToolsConfig,
-} from "../../../src/config/extended-tools.js";
-import { GROUP_ACTION_TOOL_NAMES } from "../../../src/tools/actions/tools.js";
-import { GROUP_OBSERVATION_TOOL_NAMES } from "../../../src/tools/observation/tools.js";
-import { Listener } from "../../../src/agent/listener.js";
-import { buildToolDefinitions } from "../../../src/agent/tool-definitions.js";
-import { ModelSession } from "../../../src/agent/session/store.js";
-import { WorldEventStore } from "../../../src/world/events.js";
-import type { ListenerConfig } from "../../../src/config/listener.js";
-import { LISTENER_GROUP } from "../../../src/contracts/identity.js";
-import { type Api } from "../../../src/contracts/onebot.js";
-import { type ChatMessage, type Completion } from "../../../src/contracts/model.js";
-import { type JsonObject } from "../../../src/contracts/json.js";
-import { type Memory, type TimelineEntry } from "../../../src/contracts/messages.js";
-import { type ToolDefinition, type TurnContext } from "../../../src/contracts/tools.js";
+} from "../../../src/config/extended-tools.ts";
+import { GROUP_ACTION_TOOL_NAMES } from "../../../src/tools/actions/tools.ts";
+import { GROUP_OBSERVATION_TOOL_NAMES } from "../../../src/tools/observation/tools.ts";
+import { Listener } from "../../../src/agent/listener.ts";
+import { buildToolDefinitions } from "../../../src/agent/tool-definitions.ts";
+import { ModelSession } from "../../../src/agent/session/store.ts";
+import { WorldEventStore } from "../../../src/world/events.ts";
+import type { ListenerConfig } from "../../../src/config/listener.ts";
+import { LISTENER_GROUP } from "../../../src/contracts/identity.ts";
+import { type Api } from "../../../src/contracts/onebot.ts";
+import { type ChatMessage, type Completion } from "../../../src/contracts/model.ts";
+import { type JsonObject } from "../../../src/contracts/json.ts";
+import { type Memory, type TimelineEntry } from "../../../src/contracts/messages.ts";
+import { type ToolDefinition, type TurnContext } from "../../../src/contracts/tools.ts";
 
 const self = "900000001",
   actor = "12345",

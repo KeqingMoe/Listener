@@ -1,14 +1,14 @@
-import type { ChatMessage, Completion, Model } from '../contracts/model.js';
-import { MODEL_USER_AGENT } from '../config/version.js';
-import type { ToolCall, ToolDefinition } from '../contracts/tools.js';
-import { log } from '../observability/logger.js';
-import { EXTENDED_TOOL_NAMES } from '../config/extended-tools.js';
+import type { ChatMessage, Completion, Model } from '../contracts/model.ts';
+import { MODEL_USER_AGENT } from '../config/version.ts';
+import type { ToolCall, ToolDefinition } from '../contracts/tools.ts';
+import { log } from '../observability/logger.ts';
+import { EXTENDED_TOOL_NAMES } from '../config/extended-tools.ts';
 import { randomUUID } from 'node:crypto';
-import { providerRequestId, readErrorInspection, responseInspection } from '../observability/request-inspection.js';
-import { parseChatUsage, type ModelRequestInspection, type ModelRequestStart, type ModelRequestRecord, type ModelUsage } from '../observability/model-usage.js';
-export type { ModelRequestRecord, ModelUsage, ModelRequestDiagnostics } from '../observability/model-usage.js';
-import { normalizeModelRequestDiagnostics, providerDiagnostics, upstreamAbortSource, type ModelRequestDiagnostics } from '../observability/model-diagnostics.js';
-import { readSse, SseError } from './sse.js';
+import { providerRequestId, readErrorInspection, responseInspection } from '../observability/request-inspection.ts';
+import { parseChatUsage, type ModelRequestInspection, type ModelRequestStart, type ModelRequestRecord, type ModelUsage } from '../observability/model-usage.ts';
+export type { ModelRequestRecord, ModelUsage, ModelRequestDiagnostics } from '../observability/model-usage.ts';
+import { normalizeModelRequestDiagnostics, providerDiagnostics, upstreamAbortSource, type ModelRequestDiagnostics } from '../observability/model-diagnostics.ts';
+import { readSse, SseError } from './sse.ts';
 
 export type ModelErrorCode = 'cancelled' | 'timeout' | 'http_error' | 'network_error' | 'response_too_large' | 'invalid_response' | 'truncated_response';
 export class ModelError extends Error {

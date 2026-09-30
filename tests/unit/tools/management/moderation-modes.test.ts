@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Moderation, buildModerationTools, MODERATION_TOOLS, HELP } from '../../../../src/tools/management/moderation.js';
-import { MAX_MUTE_SECONDS } from '../../../../src/contracts/tool-limits.js';
-import type { ModerationPolicy, ModerationMode } from '../../../../src/config/listener.js';
-import { LISTENER_GROUP, OWNER_ID } from '../../../../src/contracts/identity.js';
-import { type Api } from '../../../../src/contracts/onebot.js';
-import { type JsonObject } from '../../../../src/contracts/json.js';
-import { type TurnContext } from '../../../../src/contracts/tools.js';
+import { Moderation, buildModerationTools, MODERATION_TOOLS, HELP } from '../../../../src/tools/management/moderation.ts';
+import { MAX_MUTE_SECONDS } from '../../../../src/contracts/tool-limits.ts';
+import type { ModerationPolicy, ModerationMode } from '../../../../src/config/listener.ts';
+import { LISTENER_GROUP, OWNER_ID } from '../../../../src/contracts/identity.ts';
+import { type Api } from '../../../../src/contracts/onebot.ts';
+import { type JsonObject } from '../../../../src/contracts/json.ts';
+import { type TurnContext } from '../../../../src/contracts/tools.ts';
 
 const self = '303', target = '202';
 const ctx: TurnContext = { groupId: LISTENER_GROUP, selfId: self, actorId: '101', messageId: '5' };

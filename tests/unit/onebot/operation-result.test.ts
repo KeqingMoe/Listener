@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { OneBotError } from '../../../src/onebot/client.js';
-import { submittedResult, writeFailure, afterDispatch } from '../../../src/onebot/operation-result.js';
+import { OneBotError } from '../../../src/onebot/client.ts';
+import { submittedResult, writeFailure, afterDispatch } from '../../../src/onebot/operation-result.ts';
 
 test('provider submission is successful without claiming a QQ state or permitting replay',()=>{
   const result=submittedResult({action:'set_group_title',group_id:'123',status:'executed',submitted:false,effect_confirmed:true});

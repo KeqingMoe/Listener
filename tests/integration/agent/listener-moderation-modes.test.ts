@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
-import {Listener} from '../../../src/agent/listener.js';
-import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.js';
-import { type Api } from '../../../src/contracts/onebot.js';
-import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.js';
-import { type ChatMessage, type Completion, type Model } from '../../../src/contracts/model.js';
-import type {ListenerConfig,ModerationPolicy} from '../../../src/config/listener.js';
+import {Listener} from '../../../src/agent/listener.ts';
+import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.ts';
+import { type Api } from '../../../src/contracts/onebot.ts';
+import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.ts';
+import { type ChatMessage, type Completion, type Model } from '../../../src/contracts/model.ts';
+import type {ListenerConfig,ModerationPolicy} from '../../../src/config/listener.ts';
 const self='999',actor='123',target='456';
 const config:ListenerConfig={enabled:true,baseUrl:'https://example.invalid/v1',apiKey:'test',model:'test',timeoutMs:3000,maxTokens:128,debounceMs:1,cooldownMs:0,memoryPath:':memory:',maxContextChars:8000,retentionDays:7,randomReplyProbability:0};
 const policy=(override:Partial<ModerationPolicy>):ModerationPolicy=>({mute:'off',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600,...override});

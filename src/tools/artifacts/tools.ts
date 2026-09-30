@@ -1,7 +1,7 @@
 import sharp from 'sharp';
-import type { ToolDefinition, TurnContext } from '../../contracts/tools.js';
-import type { JsonObject } from '../../contracts/json.js';
-import { ARTIFACT_LIMITS, ArtifactError, type Artifact, type ArtifactStore } from '../../artifacts/store.js';
+import type { ToolDefinition, TurnContext } from '../../contracts/tools.ts';
+import type { JsonObject } from '../../contracts/json.ts';
+import { ARTIFACT_LIMITS, ArtifactError, type Artifact, type ArtifactStore } from '../../artifacts/store.ts';
 
 export const ARTIFACT_TOOL_NAMES = ['create_artifact', 'create_image', 'list_artifacts'] as const;
 export type ArtifactToolName = (typeof ARTIFACT_TOOL_NAMES)[number];

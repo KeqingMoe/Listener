@@ -1,7 +1,7 @@
-import type { AppConfig, ResolvedGroupConfig } from '../../config/app.js';
-import { assertStoragePaths } from '../../config/loader.js';
-import { readGroupRegistry } from '../../config/group-registry.js';
-import type { GroupSource } from './repository.js';
+import type { AppConfig, ResolvedGroupConfig } from '../../config/app.ts';
+import { assertStoragePaths } from '../../config/loader.ts';
+import { readGroupRegistry } from '../../config/group-registry.ts';
+import type { GroupSource } from './repository.ts';
 
 /** Dashboard historical-read scope, deliberately NOT the bot's routing authority.
  * Explicit enabled groups remain readable offline. Unconfigured groups need a

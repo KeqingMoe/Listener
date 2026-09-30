@@ -1,14 +1,14 @@
 import test from 'node:test';
-import { SideEffectPacer } from '../../../src/agent/pacing.js';
+import { SideEffectPacer } from '../../../src/agent/pacing.ts';
 import assert from 'node:assert/strict';
 import {setTimeout as delay,setImmediate as flush} from 'node:timers/promises';
-import {Listener} from '../../../src/agent/listener.js';
-import { OWNER_ID } from '../../../src/contracts/identity.js';
-import { type Api } from '../../../src/contracts/onebot.js';
-import { type ChatMessage, type Completion, type Model } from '../../../src/contracts/model.js';
-import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.js';
-import { type ToolDefinition } from '../../../src/contracts/tools.js';
-import type {ListenerConfig} from '../../../src/config/listener.js';
+import {Listener} from '../../../src/agent/listener.ts';
+import { OWNER_ID } from '../../../src/contracts/identity.ts';
+import { type Api } from '../../../src/contracts/onebot.ts';
+import { type ChatMessage, type Completion, type Model } from '../../../src/contracts/model.ts';
+import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.ts';
+import { type ToolDefinition } from '../../../src/contracts/tools.ts';
+import type {ListenerConfig} from '../../../src/config/listener.ts';
 
 const GROUP='22',SELF='99999',A='111',B='222';
 const tools:NonNullable<ListenerConfig['tools']>={members:true,mention:true,reactions:true,moderation:{mute:'confirm',unmute:'confirm',recall:'confirm',memberCard:'confirm',confirmationTtlSeconds:60,maxMuteSeconds:600}};

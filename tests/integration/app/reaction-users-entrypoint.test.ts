@@ -10,8 +10,8 @@ import {createServer} from 'node:http';
 import type {AddressInfo,Socket} from 'node:net';
 import {DatabaseSync} from 'node:sqlite';
 import {WebSocketServer,type WebSocket} from 'ws';
-import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.js';
-import { sendChatStream } from '../../support/model-sse.js';
+import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.ts';
+import { sendChatStream } from '../../support/model-sse.ts';
 
 const GROUP=LISTENER_GROUP,SELF='99999',TARGET='9001';
 function message(id:string,body:string,user=OWNER_ID){return {post_type:'message',message_type:'group',group_id:GROUP,user_id:user,self_id:SELF,message_id:id,time:Math.floor(Date.now()/1000),sender:{user_id:user,nickname:'fixture'},message:[{type:'at',data:{qq:SELF}},{type:'text',data:{text:body}}]};}

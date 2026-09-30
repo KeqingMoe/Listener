@@ -1,5 +1,5 @@
-import { ConfigError, loadAppConfig } from '../config/loader.js';
-import { inspectGroupConfig } from '../config/inspect.js';
+import { ConfigError, loadAppConfig } from '../config/loader.ts';
+import { inspectGroupConfig } from '../config/inspect.ts';
 
 try {
   const args = process.argv.slice(2);

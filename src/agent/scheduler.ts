@@ -1,4 +1,4 @@
-import { resolveGroupId } from '../contracts/identity.js';
+import { resolveGroupId } from '../contracts/identity.ts';
 
 export interface TurnAdmission { acquire(groupId: string, signal?: AbortSignal): Promise<() => void> }
 interface Waiting {

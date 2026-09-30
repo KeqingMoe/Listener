@@ -1,9 +1,9 @@
-import { id } from '../onebot/identity.js';
-import { resolveGroupId } from '../contracts/identity.js';
-import { withLogContext } from '../observability/logger.js';
-import { normalizeOneBotEvent } from '../world/ingest.js';
+import { id } from '../onebot/identity.ts';
+import { resolveGroupId } from '../contracts/identity.ts';
+import { withLogContext } from '../observability/logger.ts';
+import { normalizeOneBotEvent } from '../world/ingest.ts';
 import { types } from 'node:util';
-import type { Reminder, DeliveryOutcome } from '../reminders/store.js';
+import type { Reminder, DeliveryOutcome } from '../reminders/store.ts';
 
 export interface GroupHandler {
   receive(event: unknown, selfId: string): Promise<void>;
@@ -12,7 +12,7 @@ export interface GroupHandler {
   receiveSandboxResult?(result: {selfId:string;groupId:string;jobId:string;[key:string]:unknown}): Promise<boolean>;
   resumeSandboxResults?(selfId:string):void;
   hostToolNames?():string[];
-  executeHostTool?(name:string,args:unknown,context:{groupId:string;selfId:string;actorId:string;messageId:string},signal:AbortSignal):Promise<import('../contracts/json.js').JsonObject>;
+  executeHostTool?(name:string,args:unknown,context:{groupId:string;selfId:string;actorId:string;messageId:string},signal:AbortSignal):Promise<import('../contracts/json.ts').JsonObject>;
   setConnected(value: boolean): void;
   stop(): Promise<void>;
 }
@@ -100,7 +100,7 @@ export class GroupRouter {
     return this.handlers.get(groupId)?.hostToolNames?.()??[];
   }
   /** A sandbox tool call, validated against the live account, membership and handler at call time. */
-  async executeHostTool(context:{groupId:string;selfId:string;actorId:string;messageId:string},name:string,args:unknown,signal:AbortSignal):Promise<import('../contracts/json.js').JsonObject>{
+  async executeHostTool(context:{groupId:string;selfId:string;actorId:string;messageId:string},name:string,args:unknown,signal:AbortSignal):Promise<import('../contracts/json.ts').JsonObject>{
     const {groupId,selfId}=context;
     if(id(groupId)!==groupId||id(selfId)!==selfId||this.reminderAccount!==selfId||!this.enabled(groupId)||!this.members.has(groupId)||this.departed.has(groupId)||this.closing.has(groupId))return {status:'error',error:'host_unavailable'};
     const handler=this.handlers.get(groupId);

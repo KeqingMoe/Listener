@@ -1,10 +1,10 @@
-import type { Availability, Range, WakeItem } from './contracts.js';
-import type { CacheMetrics } from './metrics.js';
-import type { ModelRequestDiagnostics } from '../../observability/model-diagnostics.js';
-import type { RequestOutcome, ToolOutcome } from './outcomes.js';
+import type { Availability, Range, WakeItem } from './contracts.ts';
+import type { CacheMetrics } from './metrics.ts';
+import type { ModelRequestDiagnostics } from '../../observability/model-diagnostics.ts';
+import type { RequestOutcome, ToolOutcome } from './outcomes.ts';
 /** All unknown scalars are null. inputTokens is explicitly UNCACHED input. */
 export interface ReviewRequest extends CacheMetrics {
-  performance: import('./metrics.js').PerformanceMetrics;
+  performance: import('./metrics.ts').PerformanceMetrics;
   requestId: string; groupId: string; wakeId: string | null; turnId: string | null;
   model: string | null; transport: string; startedAt: number; endedAt: number | null;
   durationMs: number | null; status: string; outcome: RequestOutcome | 'running' | 'interrupted';

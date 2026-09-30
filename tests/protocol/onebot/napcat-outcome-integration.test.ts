@@ -7,18 +7,18 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { AddressInfo } from "node:net";
 import { WebSocketServer, type WebSocket } from "ws";
-import { OneBotClient } from "../../../src/onebot/client.js";
-import { ArtifactStore } from "../../../src/artifacts/store.js";
-import { Listener } from "../../../src/agent/listener.js";
-import { ModelSession } from "../../../src/agent/session/store.js";
-import { WorldEventStore } from "../../../src/world/events.js";
-import { configureLogging } from "../../../src/observability/logger.js";
-import { OWNER_ID } from "../../../src/contracts/identity.js";
-import { type ChatMessage, type Completion } from "../../../src/contracts/model.js";
-import { type JsonObject } from "../../../src/contracts/json.js";
-import { type Memory, type TimelineEntry } from "../../../src/contracts/messages.js";
-import type { ListenerConfig } from "../../../src/config/listener.js";
-import type { ExtendedToolsConfig } from "../../../src/config/extended-tools.js";
+import { OneBotClient } from "../../../src/onebot/client.ts";
+import { ArtifactStore } from "../../../src/artifacts/store.ts";
+import { Listener } from "../../../src/agent/listener.ts";
+import { ModelSession } from "../../../src/agent/session/store.ts";
+import { WorldEventStore } from "../../../src/world/events.ts";
+import { configureLogging } from "../../../src/observability/logger.ts";
+import { OWNER_ID } from "../../../src/contracts/identity.ts";
+import { type ChatMessage, type Completion } from "../../../src/contracts/model.ts";
+import { type JsonObject } from "../../../src/contracts/json.ts";
+import { type Memory, type TimelineEntry } from "../../../src/contracts/messages.ts";
+import type { ListenerConfig } from "../../../src/config/listener.ts";
+import type { ExtendedToolsConfig } from "../../../src/config/extended-tools.ts";
 
 const GROUP = "123456",
   SELF = "999",

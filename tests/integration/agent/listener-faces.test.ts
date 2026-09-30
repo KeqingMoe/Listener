@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { Listener, normalizeEvent } from '../../../src/agent/listener.js';
-import { buildToolDefinitions } from '../../../src/agent/tool-definitions.js';
-import { buildSystemPrompt } from '../../../src/agent/prompts.js';
-import { faceMarker, FACE_LAYOUT_GUIDANCE } from '../../../src/tools/faces/tools.js';
-import type { ListenerConfig } from '../../../src/config/listener.js';
-import { LISTENER_GROUP } from '../../../src/contracts/identity.js';
-import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.js';
-import { type Api } from '../../../src/contracts/onebot.js';
-import { type Model, type Completion, type ChatMessage } from '../../../src/contracts/model.js';
+import { Listener, normalizeEvent } from '../../../src/agent/listener.ts';
+import { buildToolDefinitions } from '../../../src/agent/tool-definitions.ts';
+import { buildSystemPrompt } from '../../../src/agent/prompts.ts';
+import { faceMarker, FACE_LAYOUT_GUIDANCE } from '../../../src/tools/faces/tools.ts';
+import type { ListenerConfig } from '../../../src/config/listener.ts';
+import { LISTENER_GROUP } from '../../../src/contracts/identity.ts';
+import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.ts';
+import { type Api } from '../../../src/contracts/onebot.ts';
+import { type Model, type Completion, type ChatMessage } from '../../../src/contracts/model.ts';
 
 const self = '900000001';
 const config: ListenerConfig = { enabled: true, baseUrl: 'https://example.invalid/v1', apiKey: 'test', model: 'test', timeoutMs: 2000,

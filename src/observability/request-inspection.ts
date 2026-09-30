@@ -1,4 +1,4 @@
-import type { ModelRequestInspection } from './model-usage.js';
+import type { ModelRequestInspection } from './model-usage.ts';
 
 // Private diagnostic material only. Never pass these values to the public logger.
 export const INSPECTION_FIELD_BYTES = 64 * 1024;

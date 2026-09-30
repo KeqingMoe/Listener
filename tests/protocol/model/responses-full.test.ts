@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {ResponsesModel} from '../../../src/model/responses.js';
-import {ModelSession} from '../../../src/agent/session/store.js';
-import type {ChatMessage,Completion} from '../../../src/contracts/model.js';
+import {ResponsesModel} from '../../../src/model/responses.ts';
+import {ModelSession} from '../../../src/agent/session/store.ts';
+import type {ChatMessage,Completion} from '../../../src/contracts/model.ts';
 const options={baseUrl:'https://example.invalid/v1',apiKey:'private-key',model:'test',timeoutMs:1000,maxTokens:100,sessionId:'group',incremental:false};
 const sse=(raw:any)=>new Response(`data: ${JSON.stringify({type:'response.'+raw.status,response:raw})}\n\n`,{headers:{'content-type':'text/event-stream'}});
 const output=(n:number)=>[

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GroupReminderTools, buildReminderTools } from '../../../../src/tools/reminders/tools.js';
-import { ReminderStore } from '../../../../src/reminders/store.js';
+import { GroupReminderTools, buildReminderTools } from '../../../../src/tools/reminders/tools.ts';
+import { ReminderStore } from '../../../../src/reminders/store.ts';
 const group='123456789', self='987654321', actor='111222333';
 const now=Date.parse('2026-01-01T00:00:00Z');
 const entry={messageId:'42',userId:actor,nickname:'u',text:'please remind me',time:now/1000};

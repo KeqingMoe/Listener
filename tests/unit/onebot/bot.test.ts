@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Bot, parseCommand } from '../../../src/onebot/command-bot.js';
-import type { Config } from '../../../src/config/onebot.js';
+import { Bot, parseCommand } from '../../../src/onebot/command-bot.ts';
+import type { Config } from '../../../src/config/onebot.ts';
 
 // Legacy command-handler regressions use typed fixtures; runtime configuration is TOML only.
 const config = (extra: Partial<Config> = {}): Config => ({

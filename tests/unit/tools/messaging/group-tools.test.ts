@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GroupTools, GROUP_TOOLS, SEND_MESSAGE_TOOL, type GroupToolsOptions } from '../../../../src/tools/messaging/tools.js';
-import { LISTENER_GROUP } from '../../../../src/contracts/identity.js';
-import { type Api } from '../../../../src/contracts/onebot.js';
-import { type JsonObject } from '../../../../src/contracts/json.js';
-import { type Memory, type TimelineEntry } from '../../../../src/contracts/messages.js';
-import { type TurnContext } from '../../../../src/contracts/tools.js';
+import { GroupTools, GROUP_TOOLS, SEND_MESSAGE_TOOL, type GroupToolsOptions } from '../../../../src/tools/messaging/tools.ts';
+import { LISTENER_GROUP } from '../../../../src/contracts/identity.ts';
+import { type Api } from '../../../../src/contracts/onebot.ts';
+import { type JsonObject } from '../../../../src/contracts/json.ts';
+import { type Memory, type TimelineEntry } from '../../../../src/contracts/messages.ts';
+import { type TurnContext } from '../../../../src/contracts/tools.ts';
 
 const context: TurnContext = { groupId: LISTENER_GROUP, actorId: '123', selfId: '999', messageId: '1' };
 const record = (user_id = '123', extra = {}) => ({ group_id: LISTENER_GROUP, user_id, nickname: 'Alice', card: 'team', role: 'member', ...extra });

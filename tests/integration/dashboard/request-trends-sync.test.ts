@@ -4,12 +4,12 @@ import { mkdtempSync, rmSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
-import { buildApp } from '../../../src/dashboard/server/app.js';
-import { installRequestChangeLog } from '../../../src/observability/request-change-log.js';
-import { AuthStore } from '../../../src/dashboard/server/auth.js';
-import { ReviewRepository } from '../../../src/dashboard/server/review-repository.js';
-import { TREND_SYNC_TTL_MS } from '../../../src/dashboard/server/request-trends-sync.js';
-import type { RequestTrendsSyncResponse } from '../../../src/dashboard/contracts/request-trends.js';
+import { buildApp } from '../../../src/dashboard/server/app.ts';
+import { installRequestChangeLog } from '../../../src/observability/request-change-log.ts';
+import { AuthStore } from '../../../src/dashboard/server/auth.ts';
+import { ReviewRepository } from '../../../src/dashboard/server/review-repository.ts';
+import { TREND_SYNC_TTL_MS } from '../../../src/dashboard/server/request-trends-sync.ts';
+import type { RequestTrendsSyncResponse } from '../../../src/dashboard/contracts/request-trends.ts';
 
 function fixture(journal = true) {
   const dir = mkdtempSync(join(tmpdir(), 'trends-sync-')), telemetryPath = join(dir, 't.sqlite');

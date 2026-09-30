@@ -1,7 +1,7 @@
 import {fork, type ChildProcess} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {dirname,join} from 'node:path';
-import {isExecutionDiagnostic,normalizeOptions,TOOL_CALL_LIMITS,type ExecutionOptions,type ExecutionResult} from './protocol.js';
+import {isExecutionDiagnostic,normalizeOptions,TOOL_CALL_LIMITS,type ExecutionOptions,type ExecutionResult} from './protocol.ts';
 
 /** Replace guest {"$bytes":i} placeholders; every attachment must be referenced exactly once. */
 export function decodeToolValue(json:string,attachments:readonly Uint8Array[]):unknown {

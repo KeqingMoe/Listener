@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setImmediate as tick } from 'node:timers/promises';
-import { ReactionTools, createReactionTool, type ReactionTurn } from '../../../../src/tools/reactions/tools.js';
-import { submittedResult } from '../../../../src/onebot/operation-result.js';
-import { LISTENER_GROUP } from '../../../../src/contracts/identity.js';
-import { type Api } from '../../../../src/contracts/onebot.js';
-import { type Memory, type TimelineEntry } from '../../../../src/contracts/messages.js';
-import { type TurnContext } from '../../../../src/contracts/tools.js';
-import { type JsonObject } from '../../../../src/contracts/json.js';
+import { ReactionTools, createReactionTool, type ReactionTurn } from '../../../../src/tools/reactions/tools.ts';
+import { submittedResult } from '../../../../src/onebot/operation-result.ts';
+import { LISTENER_GROUP } from '../../../../src/contracts/identity.ts';
+import { type Api } from '../../../../src/contracts/onebot.ts';
+import { type Memory, type TimelineEntry } from '../../../../src/contracts/messages.ts';
+import { type TurnContext } from '../../../../src/contracts/tools.ts';
+import { type JsonObject } from '../../../../src/contracts/json.ts';
 
 const group = '22';
 const context: TurnContext = { groupId: group, actorId: '123', selfId: '456', messageId: '1' };

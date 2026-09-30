@@ -7,11 +7,11 @@ import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import sharp from 'sharp';
-import { configureLogging, withLogContext } from '../../../../src/observability/logger.js';
-import { createImageDownloader, prepareImage, type ImageDownloadDependencies } from '../../../../src/tools/images/download.js';
-import { ImageTools } from '../../../../src/tools/images/tools.js';
-import { LISTENER_GROUP } from '../../../../src/contracts/identity.js';
-import { type Memory } from '../../../../src/contracts/messages.js';
+import { configureLogging, withLogContext } from '../../../../src/observability/logger.ts';
+import { createImageDownloader, prepareImage, type ImageDownloadDependencies } from '../../../../src/tools/images/download.ts';
+import { ImageTools } from '../../../../src/tools/images/tools.ts';
+import { LISTENER_GROUP } from '../../../../src/contracts/identity.ts';
+import { type Memory } from '../../../../src/contracts/messages.ts';
 
 const secret = 'PRIVATE_IMAGE_HEADER_BODY_TOKEN';
 const url = `https://gchat.qpic.cn/image?token=${secret}`;

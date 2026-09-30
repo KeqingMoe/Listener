@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,symlinkSync,statSync,writeFileSync,linkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {ReminderStore,REMINDER_GRACE_MS} from '../../../src/reminders/store.js';
+import {ReminderStore,REMINDER_GRACE_MS} from '../../../src/reminders/store.ts';
 const input={selfId:'1',groupId:'2',creatorId:'3',sourceMessageId:'-4',text:'remind me',dueAt:2000,timeZone:'Asia/Shanghai'};
 const scope=(r:ReturnType<ReminderStore['create']>)=>({selfId:r.selfId,groupId:r.groupId,id:r.id,expectedRevision:r.revision});
 test('scope, revision CAS, pending edits and cancellation',()=>{

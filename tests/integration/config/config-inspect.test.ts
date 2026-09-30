@@ -1,12 +1,12 @@
 import test from 'node:test';
-import {withFixtureModel} from '../../support/config-fixture.js';
+import {withFixtureModel} from '../../support/config-fixture.ts';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { loadAppConfig } from '../../../src/config/loader.js';
-import { inspectGroupConfig } from '../../../src/config/inspect.js';
+import { loadAppConfig } from '../../../src/config/loader.ts';
+import { inspectGroupConfig } from '../../../src/config/inspect.ts';
 
 function fixture(t: { after(fn: () => void): void }, text: string) {
   const directory = mkdtempSync(join(tmpdir(), 'config-inspect-'));

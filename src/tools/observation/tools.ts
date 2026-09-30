@@ -1,7 +1,7 @@
-import { resolveGroupId } from "../../contracts/identity.js";
-import { type Api } from "../../contracts/onebot.js";
-import { type JsonObject } from "../../contracts/json.js";
-import { type ToolDefinition, type TurnContext } from "../../contracts/tools.js";
+import { resolveGroupId } from "../../contracts/identity.ts";
+import { type Api } from "../../contracts/onebot.ts";
+import { type JsonObject } from "../../contracts/json.ts";
+import { type ToolDefinition, type TurnContext } from "../../contracts/tools.ts";
 
 // Contract sources pinned to NapCat v4.18.28:
 // https://github.com/NapNeko/NapCatQQ/tree/v4.18.28/packages/napcat-onebot/action/group

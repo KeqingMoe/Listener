@@ -1,4 +1,4 @@
-import type { ForwardReference } from '../contracts/messages.js';
+import type { ForwardReference } from '../contracts/messages.ts';
 export interface ExtractedForward { resourceId?: string; inline?: unknown[]; count?: number; countSource?: 'hint' | 'verified' }
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const resource = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 512 && v.trim().length > 0 && !/[\u0000-\u001f\u007f-\u009f]/.test(v);

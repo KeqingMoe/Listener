@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {ReplyBatch,type BatchItem} from '../../../src/agent/reply-batch.js';
-import type { MessageSegment } from '../../../src/contracts/messages.js';
+import {ReplyBatch,type BatchItem} from '../../../src/agent/reply-batch.ts';
+import type { MessageSegment } from '../../../src/contracts/messages.ts';
 
 const digits=(prefix:string,index:number)=>prefix.repeat(29)+String(index).padStart(3,'0');
 function item(index:number,signed=false,segments:MessageSegment[]=[{type:'text',text:'literal'}]):BatchItem{

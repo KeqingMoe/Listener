@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {once} from 'node:events';
 import {setTimeout as delay} from 'node:timers/promises';
-import {OpenAIModel} from '../../../src/model/chat.js';
-import {Listener} from '../../../src/agent/listener.js';
-import { LISTENER_GROUP } from '../../../src/contracts/identity.js';
-import { sendChatStream } from '../../support/model-sse.js';
-import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.js';
-import type {ListenerConfig} from '../../../src/config/listener.js';
+import {OpenAIModel} from '../../../src/model/chat.ts';
+import {Listener} from '../../../src/agent/listener.ts';
+import { LISTENER_GROUP } from '../../../src/contracts/identity.ts';
+import { sendChatStream } from '../../support/model-sse.ts';
+import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.ts';
+import type {ListenerConfig} from '../../../src/config/listener.ts';
 const self='999',actor='123';
 const tool=(id:string,name:string,args:string)=>({id,type:'function',function:{name,arguments:args}});
 class Mem implements Memory{rows:TimelineEntry[]=[];append(row:TimelineEntry){this.rows.push(row);return true;}recent(){return this.rows;}find(id:string){return this.rows.find(row=>row.messageId===id);}context(){return JSON.stringify(this.rows);}async compact(){}clear(){this.rows=[];}close(){}}

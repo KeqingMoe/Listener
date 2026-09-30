@@ -1,8 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { sessionToken } from './auth.js';
-import { Repository } from './repository.js';
-import { RESOURCE_SYNC_MAX_PAYLOAD_BYTES, type ResourcePatch, type ResourceSyncResponse } from '../contracts/resource-sync.js';
+import { sessionToken } from './auth.ts';
+import { Repository } from './repository.ts';
+import { RESOURCE_SYNC_MAX_PAYLOAD_BYTES, type ResourcePatch, type ResourceSyncResponse } from '../contracts/resource-sync.ts';
 
 export const RESOURCE_SYNC_TTL_MS = 5 * 60_000;
 export const RESOURCE_SYNC_MAX_ENTRIES = 64;

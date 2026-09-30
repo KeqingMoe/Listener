@@ -1,6 +1,6 @@
-import type { ModelRequestDiagnostics } from "../../observability/model-diagnostics.js";
-import type { RequestOutcome, ToolOutcome } from "./outcomes.js";
-import type { CacheMetrics } from './metrics.js';
+import type { ModelRequestDiagnostics } from "../../observability/model-diagnostics.ts";
+import type { RequestOutcome, ToolOutcome } from "./outcomes.ts";
+import type { CacheMetrics } from './metrics.ts';
 export interface Range {
   since: number;
   until: number;
@@ -20,7 +20,7 @@ export interface MetaResponse {
   availability: Availability;
 }
 export interface UsageSummary {
-  performance: import('./metrics.js').PerformanceMetrics;
+  performance: import('./metrics.ts').PerformanceMetrics;
   requests: number;
   successes: number;
   errors: number;
@@ -48,7 +48,7 @@ export interface OverviewResponse {
   groups: Array<UsageSummary & { groupId: string }>;
 }
 export interface WakeItem extends CacheMetrics {
-  performance: import('./metrics.js').PerformanceMetrics;
+  performance: import('./metrics.ts').PerformanceMetrics;
   tps: number | null;
   ttftMs: number | null;
   wakeId: string;
@@ -76,7 +76,7 @@ export interface WakesResponse {
   nextCursor: string | null;
 }
 export interface RequestItem extends CacheMetrics {
-  performance: import('./metrics.js').PerformanceMetrics;
+  performance: import('./metrics.ts').PerformanceMetrics;
   tps: number | null;
   ttftMs: number | null;
   requestId: string;

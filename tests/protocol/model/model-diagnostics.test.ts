@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { normalizeModelRequestDiagnostics as normalize, providerDiagnostics } from '../../../src/observability/model-diagnostics.js';
-import { ModelError, OpenAIModel } from '../../../src/model/chat.js';
-import { ResponsesModel, ResponseStateExpiredError } from '../../../src/model/responses.js';
-import type { ModelRequestRecord } from '../../../src/observability/model-usage.js';
-import type { ChatMessage } from '../../../src/contracts/model.js';
+import { normalizeModelRequestDiagnostics as normalize, providerDiagnostics } from '../../../src/observability/model-diagnostics.ts';
+import { ModelError, OpenAIModel } from '../../../src/model/chat.ts';
+import { ResponsesModel, ResponseStateExpiredError } from '../../../src/model/responses.ts';
+import type { ModelRequestRecord } from '../../../src/observability/model-usage.ts';
+import type { ChatMessage } from '../../../src/contracts/model.ts';
 
 const options={baseUrl:'https://invalid.example/v1',apiKey:'secret-key',model:'test',timeoutMs:1000,maxTokens:100,sessionId:'test'};
 const chat=()=>new Response('data: '+JSON.stringify({choices:[{index:0,delta:{content:'ok'},finish_reason:'stop'}]})+'\n\ndata: [DONE]\n\n',{headers:{'content-type':'text/event-stream'}});

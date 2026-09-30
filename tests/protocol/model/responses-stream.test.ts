@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ResponsesModel } from '../../../src/model/responses.js';
-import type { ModelRequestRecord } from '../../../src/observability/model-usage.js';
+import { ResponsesModel } from '../../../src/model/responses.ts';
+import type { ModelRequestRecord } from '../../../src/observability/model-usage.ts';
 const encode=(value:unknown)=>new TextEncoder().encode(`data: ${JSON.stringify(value)}\n\n`);
 const options={baseUrl:'https://fixture.invalid/v1',apiKey:'fixture',model:'fixture',timeoutMs:1000,maxTokens:100,sessionId:'fixture'};
 const output=[{id:'msg',type:'message',role:'assistant',content:[{type:'output_text',text:'hello'}]}];

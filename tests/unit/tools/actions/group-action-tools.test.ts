@@ -3,11 +3,11 @@ import assert from "node:assert/strict";
 import {
   GROUP_ACTION_TOOL_NAMES,
   GroupActionTools,
-} from "../../../../src/tools/actions/tools.js";
-import type { Api } from "../../../../src/contracts/onebot.js";
-import type { JsonObject } from "../../../../src/contracts/json.js";
-import type { Memory, TimelineEntry } from "../../../../src/contracts/messages.js";
-import type { TurnContext } from "../../../../src/contracts/tools.js";
+} from "../../../../src/tools/actions/tools.ts";
+import type { Api } from "../../../../src/contracts/onebot.ts";
+import type { JsonObject } from "../../../../src/contracts/json.ts";
+import type { Memory, TimelineEntry } from "../../../../src/contracts/messages.ts";
+import type { TurnContext } from "../../../../src/contracts/tools.ts";
 const groupId = "123456",
   selfId = "333",
   actorId = "444",

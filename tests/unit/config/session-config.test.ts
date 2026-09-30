@@ -1,12 +1,12 @@
 import test from 'node:test';
-import {withFixtureModel} from '../../support/config-fixture.js';
+import {withFixtureModel} from '../../support/config-fixture.ts';
 import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {loadAppConfig,ConfigError} from '../../../src/config/loader.js';
-import type {AppConfig} from '../../../src/config/app.js';
-import {toListenerConfig} from '../../../src/config/runtime.js';
+import {loadAppConfig,ConfigError} from '../../../src/config/loader.ts';
+import type {AppConfig} from '../../../src/config/app.ts';
+import {toListenerConfig} from '../../../src/config/runtime.ts';
 function fixture(t:{after(fn:()=>void):void}){
   const dir=mkdtempSync(join(tmpdir(),'session-policy-config-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
   mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'persona');

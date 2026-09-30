@@ -1,12 +1,12 @@
 import { randomBytes } from 'node:crypto';
-import { MAX_MUTE_SECONDS } from '../../contracts/tool-limits.js';
-import { writeFailure } from '../../onebot/operation-result.js';
-import { log } from '../../observability/logger.js';
-import type { ModerationPolicy } from '../../config/listener.js';
-import { LISTENER_GROUP, resolveGroupId, OWNER_ID, resolveOwnerId } from '../../contracts/identity.js';
-import { type Api } from '../../contracts/onebot.js';
-import { type JsonObject } from '../../contracts/json.js';
-import { type ToolDefinition, type TurnContext } from '../../contracts/tools.js';
+import { MAX_MUTE_SECONDS } from '../../contracts/tool-limits.ts';
+import { writeFailure } from '../../onebot/operation-result.ts';
+import { log } from '../../observability/logger.ts';
+import type { ModerationPolicy } from '../../config/listener.ts';
+import { LISTENER_GROUP, resolveGroupId, OWNER_ID, resolveOwnerId } from '../../contracts/identity.ts';
+import { type Api } from '../../contracts/onebot.ts';
+import { type JsonObject } from '../../contracts/json.ts';
+import { type ToolDefinition, type TurnContext } from '../../contracts/tools.ts';
 
 type Mode = 'off' | 'confirm' | 'direct';
 const userIdSchema = { type: 'string', maxLength: 32, pattern: '^[1-9][0-9]*$', description: 'Target QQ user ID in this group; actual QQ permissions apply. Nicknames are not identity proof.' };

@@ -4,8 +4,8 @@ import { mkdtempSync, rmSync, chmodSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { RuntimeEventStore } from '../../../src/observability/runtime-events.js';
-import { configureLogging, log, observeLogs } from '../../../src/observability/logger.js';
+import { RuntimeEventStore } from '../../../src/observability/runtime-events.ts';
+import { configureLogging, log, observeLogs } from '../../../src/observability/logger.ts';
 
 function fixture(){const dir=mkdtempSync(join(tmpdir(),'runtime-events-'));chmodSync(dir,0o700);return{dir,path:join(dir,'events.sqlite'),close(){rmSync(dir,{recursive:true,force:true});}};}
 

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ReminderStore} from '../../../src/reminders/store.js';
-import {ReminderScheduler,type ReminderSchedulerOptions} from '../../../src/reminders/scheduler.js';
+import {ReminderStore} from '../../../src/reminders/store.ts';
+import {ReminderScheduler,type ReminderSchedulerOptions} from '../../../src/reminders/scheduler.ts';
 const input={selfId:'1',groupId:'2',creatorId:'3',sourceMessageId:'4',text:'private',dueAt:2000,timeZone:'UTC'};
 function setup(dispatch:ReminderSchedulerOptions['dispatch']){const store=new ReminderStore({path:':memory:'});let account:string|undefined='1',online=true,now=2000;const r=store.create(input,1000);const scheduler=new ReminderScheduler({store,currentAccount:()=>account,eligible:()=>online,dispatch,now:()=>now});return{store,r,scheduler,account:(v:string|undefined)=>{account=v;},online:(v:boolean)=>{online=v;},now:(v:number)=>{now=v;}};}
 test('offline never dispatches, preclaim throws remain pending and next tick retries',async()=>{

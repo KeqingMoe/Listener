@@ -1,8 +1,8 @@
-import type { Api } from '../../contracts/onebot.js';
-import type { Memory } from '../../contracts/messages.js';
-import type { JsonObject } from '../../contracts/json.js';
-import type { ToolDefinition, TurnContext } from '../../contracts/tools.js';
-import { ReminderStore, REMINDER_GRACE_MS, type Reminder, type ReminderState } from '../../reminders/store.js';
+import type { Api } from '../../contracts/onebot.ts';
+import type { Memory } from '../../contracts/messages.ts';
+import type { JsonObject } from '../../contracts/json.ts';
+import type { ToolDefinition, TurnContext } from '../../contracts/tools.ts';
+import { ReminderStore, REMINDER_GRACE_MS, type Reminder, type ReminderState } from '../../reminders/store.ts';
 
 export const REMINDER_TOOL_NAMES = ['create_reminder','list_reminders','update_reminder','cancel_reminder'] as const;
 const STATES: ReminderState[] = ['pending','sending','sent','unknown','failed','cancelled','expired'];

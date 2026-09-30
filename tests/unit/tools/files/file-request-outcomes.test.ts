@@ -2,17 +2,17 @@ import test, { after } from "node:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ArtifactStore } from "../../../../src/artifacts/store.js";
+import { ArtifactStore } from "../../../../src/artifacts/store.ts";
 import assert from "node:assert/strict";
 import {
   GroupFileTools,
   GROUP_FILE_TOOL_NAMES,
-} from "../../../../src/tools/files/tools.js";
-import { GroupRequestTools } from "../../../../src/tools/requests/tools.js";
-import { OneBotError } from "../../../../src/onebot/client.js";
-import type { Api } from "../../../../src/contracts/onebot.js";
-import type { JsonObject } from "../../../../src/contracts/json.js";
-import type { TurnContext } from "../../../../src/contracts/tools.js";
+} from "../../../../src/tools/files/tools.ts";
+import { GroupRequestTools } from "../../../../src/tools/requests/tools.ts";
+import { OneBotError } from "../../../../src/onebot/client.ts";
+import type { Api } from "../../../../src/contracts/onebot.ts";
+import type { JsonObject } from "../../../../src/contracts/json.ts";
+import type { TurnContext } from "../../../../src/contracts/tools.ts";
 
 const artifactDir = mkdtempSync(join(tmpdir(), "file-request-outcomes-"));
 const store = new ArtifactStore({

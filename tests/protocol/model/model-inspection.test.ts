@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { OpenAIModel, ModelError } from '../../../src/model/chat.js';
-import { ResponsesModel, ResponseStateExpiredError } from '../../../src/model/responses.js';
-import { sanitizeInspection, sanitizeInspectionValue } from '../../../src/observability/request-inspection.js';
-import type { ModelRequestRecord, ModelRequestStart } from '../../../src/observability/model-usage.js';
+import { OpenAIModel, ModelError } from '../../../src/model/chat.ts';
+import { ResponsesModel, ResponseStateExpiredError } from '../../../src/model/responses.ts';
+import { sanitizeInspection, sanitizeInspectionValue } from '../../../src/observability/request-inspection.ts';
+import type { ModelRequestRecord, ModelRequestStart } from '../../../src/observability/model-usage.ts';
 const options={baseUrl:'http://127.0.0.1:1/v1',apiKey:'fixture-api-key',model:'fixture',timeoutMs:1000,maxTokens:10};
 const reply={id:'chat-business-id',choices:[{index:0,finish_reason:'stop',delta:{role:'assistant',content:'hello',reasoning_content:'actual provider reasoning'}}]};
 const chatStream=(raw:unknown,headers:Record<string,string>={})=>new Response(`data: ${JSON.stringify(raw)}\n\ndata: [DONE]\n\n`,{headers:{'content-type':'text/event-stream',...headers}});

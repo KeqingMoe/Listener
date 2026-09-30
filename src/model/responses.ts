@@ -1,12 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { ChatContentPart, ChatMessage, Completion, Model } from '../contracts/model.js';
-import type { ToolCall, ToolDefinition } from '../contracts/tools.js';
-import { ModelError, type ModelErrorCode, type OpenAIModelOptions } from './chat.js';
-import { providerRequestId, responseInspection } from '../observability/request-inspection.js';
-import { parseResponsesUsage, type ModelRequestInspection, type ModelRequestRecord, type ModelUsage } from '../observability/model-usage.js';
-import { normalizeModelRequestDiagnostics, providerDiagnostics, upstreamAbortSource, type ModelRequestDiagnostics } from '../observability/model-diagnostics.js';
-import { MODEL_USER_AGENT } from '../config/version.js';
-import { readSse, SseError } from './sse.js';
+import type { ChatContentPart, ChatMessage, Completion, Model } from '../contracts/model.ts';
+import type { ToolCall, ToolDefinition } from '../contracts/tools.ts';
+import { ModelError, type ModelErrorCode, type OpenAIModelOptions } from './chat.ts';
+import { providerRequestId, responseInspection } from '../observability/request-inspection.ts';
+import { parseResponsesUsage, type ModelRequestInspection, type ModelRequestRecord, type ModelUsage } from '../observability/model-usage.ts';
+import { normalizeModelRequestDiagnostics, providerDiagnostics, upstreamAbortSource, type ModelRequestDiagnostics } from '../observability/model-diagnostics.ts';
+import { MODEL_USER_AGENT } from '../config/version.ts';
+import { readSse, SseError } from './sse.ts';
 
 const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 const MAX_BYTES=2*1024*1024, MAX_WIRE_BYTES=32*1024*1024, MAX_ARGS=16*1024;

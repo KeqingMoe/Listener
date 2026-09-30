@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { Listener } from '../../../src/agent/listener.js';
-import type { ListenerConfig } from '../../../src/config/listener.js';
-import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.js';
-import { type Api } from '../../../src/contracts/onebot.js';
-import { type ChatMessage, type Completion, type Model } from '../../../src/contracts/model.js';
-import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.js';
+import { Listener } from '../../../src/agent/listener.ts';
+import type { ListenerConfig } from '../../../src/config/listener.ts';
+import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.ts';
+import { type Api } from '../../../src/contracts/onebot.ts';
+import { type ChatMessage, type Completion, type Model } from '../../../src/contracts/model.ts';
+import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.ts';
 
 const self = '900000001';
 const cfg: ListenerConfig = {

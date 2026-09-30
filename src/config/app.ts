@@ -1,6 +1,6 @@
-import type { Config } from './onebot.js';
-import type { LoggingConfig } from '../observability/logger.js';
-import type { ResolvedToolPolicies } from './tool-policy.js';
+import type { Config } from './onebot.ts';
+import type { LoggingConfig } from '../observability/logger.ts';
+import type { ResolvedToolPolicies } from './tool-policy.ts';
 /** Tagged union so further providers add branches without reinterpreting fields. */
 export type WebSearchProviderConfig={type:'searxng';url:string};
 export type ModelTransport='chat'|'responses'|{type:'responses';incremental:boolean};

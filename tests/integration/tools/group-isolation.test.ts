@@ -4,15 +4,15 @@ import { mkdtempSync, rmSync, readFileSync, chmodSync, statSync, existsSync } fr
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { GroupTools } from '../../../src/tools/messaging/tools.js';
-import { ImageTools } from '../../../src/tools/images/tools.js';
-import { ForwardTools } from '../../../src/tools/forwards/tools.js';
-import { Moderation } from '../../../src/tools/management/moderation.js';
-import { SQLiteMemory } from '../../../src/agent/memory.js';
-import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.js';
-import { type Api } from '../../../src/contracts/onebot.js';
-import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.js';
-import { type TurnContext } from '../../../src/contracts/tools.js';
+import { GroupTools } from '../../../src/tools/messaging/tools.ts';
+import { ImageTools } from '../../../src/tools/images/tools.ts';
+import { ForwardTools } from '../../../src/tools/forwards/tools.ts';
+import { Moderation } from '../../../src/tools/management/moderation.ts';
+import { SQLiteMemory } from '../../../src/agent/memory.ts';
+import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.ts';
+import { type Api } from '../../../src/contracts/onebot.ts';
+import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.ts';
+import { type TurnContext } from '../../../src/contracts/tools.ts';
 
 const A='111111', B='222222', self='999', user='123';
 const ctx=(groupId:string,actorId=user):TurnContext=>({groupId,actorId,selfId:self,messageId:'1'});

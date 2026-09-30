@@ -1,14 +1,14 @@
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {loadAppConfig} from '../src/config/loader.js';
-import {ResponsesModel} from '../src/model/responses.js';
-import {ModelSession} from '../src/agent/session/store.js';
-import {WorldEventStore} from '../src/world/events.js';
-import {WorldTools,buildWorldTools} from '../src/tools/world/tools.js';
-import type { JsonObject } from '../src/contracts/json.js';
-import type { ToolDefinition } from '../src/contracts/tools.js';
-import type {ModelRequestRecord} from '../src/observability/model-usage.js';
+import {loadAppConfig} from '../src/config/loader.ts';
+import {ResponsesModel} from '../src/model/responses.ts';
+import {ModelSession} from '../src/agent/session/store.ts';
+import {WorldEventStore} from '../src/world/events.ts';
+import {WorldTools,buildWorldTools} from '../src/tools/world/tools.ts';
+import type { JsonObject } from '../src/contracts/json.ts';
+import type { ToolDefinition } from '../src/contracts/tools.ts';
+import type {ModelRequestRecord} from '../src/observability/model-usage.ts';
 
 // Deliberately opt-in: this spends model tokens, never connects to OneBot/QQ,
 // never loads real message databases, and never offers a sending tool.

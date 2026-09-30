@@ -1,11 +1,11 @@
 import { randomBytes } from 'node:crypto';
-import { requestChangeLogSchemaIntact } from '../../observability/request-change-log.js';
+import { requestChangeLogSchemaIntact } from '../../observability/request-change-log.ts';
 import type { DatabaseSync } from 'node:sqlite';
-import type { Range } from '../contracts/contracts.js';
-import type { RequestTrendSyncPoint, RequestTrendsSyncResponse } from '../contracts/request-trends.js';
-import { ReviewRepository } from './review-repository.js';
-import { ResourceLimit } from './repository.js';
-import { buildRequestTrends, buildRequestTrendBuckets, MAX_REQUEST_TREND_POINTS } from './request-trends.js';
+import type { Range } from '../contracts/contracts.ts';
+import type { RequestTrendSyncPoint, RequestTrendsSyncResponse } from '../contracts/request-trends.ts';
+import { ReviewRepository } from './review-repository.ts';
+import { ResourceLimit } from './repository.ts';
+import { buildRequestTrends, buildRequestTrendBuckets, MAX_REQUEST_TREND_POINTS } from './request-trends.ts';
 
 type Meta = { epoch: string; revision: number; floor_revision: number };
 type Snapshot = { binding: string; db: DatabaseSync | null; epoch: string | null; revision: number; range: Range; expires: number; points: Map<string, RequestTrendSyncPoint> };

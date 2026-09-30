@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { resolveGroupId } from "../../contracts/identity.js";
-import { type Api } from "../../contracts/onebot.js";
-import { type JsonObject } from "../../contracts/json.js";
-import { type ToolDefinition, type TurnContext } from "../../contracts/tools.js";
-import { submittedResult, writeFailure, afterDispatch } from '../../onebot/operation-result.js';
+import { resolveGroupId } from "../../contracts/identity.ts";
+import { type Api } from "../../contracts/onebot.ts";
+import { type JsonObject } from "../../contracts/json.ts";
+import { type ToolDefinition, type TurnContext } from "../../contracts/tools.ts";
+import { submittedResult, writeFailure, afterDispatch } from '../../onebot/operation-result.ts';
 
 export const GROUP_VOICE_TOOL_NAMES = [
   "get_group_ai_voices",

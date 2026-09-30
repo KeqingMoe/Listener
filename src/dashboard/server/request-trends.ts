@@ -1,7 +1,7 @@
-import type { Availability, Range } from '../contracts/contracts.js';
-import type { ReviewRequest } from '../contracts/review.js';
-import type { RequestTrendBucket, RequestTrendPoint, RequestTrendsResponse } from '../contracts/request-trends.js';
-import { ResourceLimit } from './repository.js';
+import type { Availability, Range } from '../contracts/contracts.ts';
+import type { ReviewRequest } from '../contracts/review.ts';
+import type { RequestTrendBucket, RequestTrendPoint, RequestTrendsResponse } from '../contracts/request-trends.ts';
+import { ResourceLimit } from './repository.ts';
 
 /** Same hard ceiling as ReviewRepository: never return a silently sampled scatter plot. */
 export const MAX_REQUEST_TREND_POINTS = 10000;

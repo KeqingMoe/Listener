@@ -8,7 +8,7 @@ import {
   createGroupTextDownloader,
   downloadGroupText,
   type GroupTextDownloadDependencies,
-} from "../../../../src/tools/files/download.js";
+} from "../../../../src/tools/files/download.ts";
 
 const REMOTE =
   "https://files.qq.example/ftn_handler/PRIVATE_PATH?token=PRIVATE_TOKEN";

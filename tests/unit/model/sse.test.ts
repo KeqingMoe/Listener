@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readSse, SseError } from '../../../src/model/sse.js';
+import { readSse, SseError } from '../../../src/model/sse.ts';
 
 function stream(chunks: Uint8Array[], onCancel?: () => void): ReadableStream<Uint8Array> {
   return new ReadableStream({

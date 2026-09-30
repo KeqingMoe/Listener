@@ -5,8 +5,8 @@ import { chmodSync, existsSync, linkSync, mkdtempSync, readFileSync, rmSync, sta
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { CustomFaceCoordinator } from '../../../../src/tools/custom-faces/coordinator.js';
-import { CustomFaceStore } from '../../../../src/tools/custom-faces/store.js';
+import { CustomFaceCoordinator } from '../../../../src/tools/custom-faces/coordinator.ts';
+import { CustomFaceStore } from '../../../../src/tools/custom-faces/store.ts';
 const ACCOUNT = '123456789', OTHER = '100000001';
 const key = (value: string) => createHash('sha256').update(value).digest('hex');
 const fixture = () => { const directory = mkdtempSync(join(tmpdir(), 'custom-face-journal-test-')); return { directory, path: join(directory, 'operations.sqlite'), clean: () => rmSync(directory, { recursive: true, force: true }) }; };

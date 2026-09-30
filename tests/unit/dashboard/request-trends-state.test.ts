@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { RequestTrendSyncPoint, RequestTrendsSyncResponse } from '../../../src/dashboard/contracts/request-trends.js';
-import { applyTrendSync } from '../../../src/dashboard/web/src/composables/requestTrendsState.js';
+import type { RequestTrendSyncPoint, RequestTrendsSyncResponse } from '../../../src/dashboard/contracts/request-trends.ts';
+import { applyTrendSync } from '../../../src/dashboard/web/src/composables/requestTrendsState.ts';
 
 const point = (key: string, startedAt = 100): RequestTrendSyncPoint => ({ key, startedAt, outcome: 'running', durationMs: null, inputTokens: 0, totalInputTokens: 0, cachedInputTokens: 0, outputTokens: null, tps: null, cacheHitRate: null });
 const response = (overrides: Partial<RequestTrendsSyncResponse> = {}): RequestTrendsSyncResponse => ({ mode: 'snapshot', cursor: 'one', range: { since: 0, until: 200 }, availability: { telemetry: true, sessions: [] }, bucketMs: 100, buckets: [], upserts: [], removals: [], ...overrides });

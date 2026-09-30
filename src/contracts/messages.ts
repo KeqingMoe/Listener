@@ -1,4 +1,4 @@
-import type { Model } from './model.js';
+import type { Model } from './model.ts';
 
 export interface ForwardReference { id: string; index: number; count?: number; countSource?: 'hint' | 'verified' }
 export interface ImageReference { id: string; index: number }

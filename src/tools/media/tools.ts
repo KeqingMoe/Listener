@@ -1,16 +1,16 @@
 import { createHash } from "node:crypto";
-import { resolveGroupId } from "../../contracts/identity.js";
-import { type Api } from "../../contracts/onebot.js";
-import { type JsonObject } from "../../contracts/json.js";
-import { type Memory, type TimelineEntry } from "../../contracts/messages.js";
-import { type ToolDefinition, type TurnContext } from "../../contracts/tools.js";
-import { ImageTools } from "../images/tools.js";
-import { imageReferences } from "../../onebot/image-references.js";
-import { downloadSendImage, type ImageDownloader } from "../images/download.js";
-import { extractMessageContent } from "../../world/message-content.js";
+import { resolveGroupId } from "../../contracts/identity.ts";
+import { type Api } from "../../contracts/onebot.ts";
+import { type JsonObject } from "../../contracts/json.ts";
+import { type Memory, type TimelineEntry } from "../../contracts/messages.ts";
+import { type ToolDefinition, type TurnContext } from "../../contracts/tools.ts";
+import { ImageTools } from "../images/tools.ts";
+import { imageReferences } from "../../onebot/image-references.ts";
+import { downloadSendImage, type ImageDownloader } from "../images/download.ts";
+import { extractMessageContent } from "../../world/message-content.ts";
 import sharp from "sharp";
-import type { ArtifactStore } from "../../artifacts/store.js";
-import { afterDispatch, writeFailure, DuplicateMessageAckError, UnverifiedMessageAckError } from '../../onebot/operation-result.js';
+import type { ArtifactStore } from "../../artifacts/store.ts";
+import { afterDispatch, writeFailure, DuplicateMessageAckError, UnverifiedMessageAckError } from '../../onebot/operation-result.ts';
 
 export const GROUP_MEDIA_TOOL_NAMES = [
   "send_group_image",

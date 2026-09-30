@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GroupActionTools, GROUP_ACTION_TOOL_NAMES } from '../../../../src/tools/actions/tools.js';
-import { GroupMediaTools } from '../../../../src/tools/media/tools.js';
-import { GroupVoiceTools } from '../../../../src/tools/voice/tools.js';
-import { OneBotError } from '../../../../src/onebot/client.js';
-import { DuplicateMessageAckError } from '../../../../src/onebot/operation-result.js';
-import type { Api } from '../../../../src/contracts/onebot.js';
-import type { JsonObject } from '../../../../src/contracts/json.js';
-import type { Memory, TimelineEntry } from '../../../../src/contracts/messages.js';
-import type { TurnContext } from '../../../../src/contracts/tools.js';
+import { GroupActionTools, GROUP_ACTION_TOOL_NAMES } from '../../../../src/tools/actions/tools.ts';
+import { GroupMediaTools } from '../../../../src/tools/media/tools.ts';
+import { GroupVoiceTools } from '../../../../src/tools/voice/tools.ts';
+import { OneBotError } from '../../../../src/onebot/client.ts';
+import { DuplicateMessageAckError } from '../../../../src/onebot/operation-result.ts';
+import type { Api } from '../../../../src/contracts/onebot.ts';
+import type { JsonObject } from '../../../../src/contracts/json.ts';
+import type { Memory, TimelineEntry } from '../../../../src/contracts/messages.ts';
+import type { TurnContext } from '../../../../src/contracts/tools.ts';
 const groupId='123',selfId='456',target='789';
 const ctx:TurnContext={groupId,selfId,actorId:'234',messageId:'1'};
 class Mem implements Memory {

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {getLogContext,withLogContext,sanitizeLogFields} from '../../../src/observability/logger.js';
-import {TelemetryStore} from '../../../src/observability/telemetry.js';
+import {getLogContext,withLogContext,sanitizeLogFields} from '../../../src/observability/logger.ts';
+import {TelemetryStore} from '../../../src/observability/telemetry.ts';
 
 test('request telemetry trace remains scoped across concurrent async operations',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'telemetry-context-')),store=new TelemetryStore(join(dir,'metrics.sqlite'));

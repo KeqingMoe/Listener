@@ -5,9 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { extractReactionCatalog, loadReactionCatalog, getReactionCatalog, isKnownReactionId, createReactionTool } from '../../../../src/onebot/catalog/reactions.js';
-import { FACE_DATA_LIMIT } from '../../../../src/onebot/catalog/schema.js';
-import { fullReactionCatalogFixture } from '../../../fixtures/reaction-catalog.js';
+import { extractReactionCatalog, loadReactionCatalog, getReactionCatalog, isKnownReactionId, createReactionTool } from '../../../../src/onebot/catalog/reactions.ts';
+import { FACE_DATA_LIMIT } from '../../../../src/onebot/catalog/schema.ts';
+import { fullReactionCatalogFixture } from '../../../fixtures/reaction-catalog.ts';
 
 const source = () => ({ sysface: [{ QSid: '0', QDes: '/惊讶', extra: { private: 'omit' } }, { QSid: '375', QDes: '/超级鼓掌', AniStickerType: 1 }],
   emoji: [{ QSid: '😊', QCid: '128522', QDes: '/嘿嘿', EMCode: 'not-the-id' }] });

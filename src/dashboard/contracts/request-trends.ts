@@ -1,5 +1,5 @@
-import type { Availability, Range } from './contracts.js';
-import type { ReviewRequest } from './review.js';
+import type { Availability, Range } from './contracts.ts';
+import type { ReviewRequest } from './review.ts';
 
 export type RequestTrendOutcome = ReviewRequest['outcome'];
 export const REQUEST_TREND_OUTCOMES = ['running', 'interrupted', 'success', 'failed', 'timeout', 'cancelled', 'unknown'] as const satisfies readonly RequestTrendOutcome[];

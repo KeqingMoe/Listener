@@ -1,15 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as delay } from "node:timers/promises";
-import { Listener } from "../../../src/agent/listener.js";
-import { buildToolDefinitions } from "../../../src/agent/tool-definitions.js";
-import { OWNER_ID } from "../../../src/contracts/identity.js";
-import { type Api } from "../../../src/contracts/onebot.js";
-import { type Memory, type TimelineEntry } from "../../../src/contracts/messages.js";
-import { type ChatMessage, type Completion, type Model } from "../../../src/contracts/model.js";
-import { type JsonObject } from "../../../src/contracts/json.js";
-import type { ListenerConfig } from "../../../src/config/listener.js";
-import type { ExtendedToolsConfig } from "../../../src/config/extended-tools.js";
+import { Listener } from "../../../src/agent/listener.ts";
+import { buildToolDefinitions } from "../../../src/agent/tool-definitions.ts";
+import { OWNER_ID } from "../../../src/contracts/identity.ts";
+import { type Api } from "../../../src/contracts/onebot.ts";
+import { type Memory, type TimelineEntry } from "../../../src/contracts/messages.ts";
+import { type ChatMessage, type Completion, type Model } from "../../../src/contracts/model.ts";
+import { type JsonObject } from "../../../src/contracts/json.ts";
+import type { ListenerConfig } from "../../../src/config/listener.ts";
+import type { ExtendedToolsConfig } from "../../../src/config/extended-tools.ts";
 const GROUP = "123456",
   SELF = "999",
   ACTOR = "111",

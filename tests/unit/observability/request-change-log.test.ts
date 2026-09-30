@@ -4,8 +4,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { TelemetryStore } from '../../../src/observability/telemetry.js';
-import { installRequestChangeLog } from '../../../src/observability/request-change-log.js';
+import { TelemetryStore } from '../../../src/observability/telemetry.ts';
+import { installRequestChangeLog } from '../../../src/observability/request-change-log.ts';
 
 function fixture(run: (path: string, store: TelemetryStore, db: DatabaseSync) => void): void {
   const dir = mkdtempSync(join(tmpdir(), 'request-changes-'));

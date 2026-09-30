@@ -1,11 +1,11 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { resolveGroupId } from '../../contracts/identity.js';
-import { type Api } from '../../contracts/onebot.js';
-import { type JsonObject } from '../../contracts/json.js';
-import { type ToolDefinition, type TurnContext } from '../../contracts/tools.js';
-import { downloadGroupText, type GroupTextDownloader } from './download.js';
-import { afterDispatch, submittedResult, writeFailure } from '../../onebot/operation-result.js';
-import type { Artifact, ArtifactStore } from '../../artifacts/store.js';
+import { resolveGroupId } from '../../contracts/identity.ts';
+import { type Api } from '../../contracts/onebot.ts';
+import { type JsonObject } from '../../contracts/json.ts';
+import { type ToolDefinition, type TurnContext } from '../../contracts/tools.ts';
+import { downloadGroupText, type GroupTextDownloader } from './download.ts';
+import { afterDispatch, submittedResult, writeFailure } from '../../onebot/operation-result.ts';
+import type { Artifact, ArtifactStore } from '../../artifacts/store.ts';
 
 export const GROUP_FILE_TOOL_NAMES = ['get_group_file_space', 'list_group_files', 'read_group_text_file', 'upload_group_file', 'create_group_folder', 'delete_group_file', 'delete_group_folder'] as const;
 export type GroupFileToolName = typeof GROUP_FILE_TOOL_NAMES[number];

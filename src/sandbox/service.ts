@@ -1,8 +1,8 @@
 import {createHash} from 'node:crypto';
-import {startExecution,encodeToolValue} from './executor.js';
-import type {JsonObject} from '../contracts/json.js';
-import type {ExecutionOptions,ExecutionResult,ExecutionDiagnostic} from './protocol.js';
-import {SandboxJobStore,validateInput,validateScope,type Job,type JobInput,type JobScope,type JobQuery,type JobStatus,type ToolCallSummary,type ToolCallStatus} from './store.js';
+import {startExecution,encodeToolValue} from './executor.ts';
+import type {JsonObject} from '../contracts/json.ts';
+import type {ExecutionOptions,ExecutionResult,ExecutionDiagnostic} from './protocol.ts';
+import {SandboxJobStore,validateInput,validateScope,type Job,type JobInput,type JobScope,type JobQuery,type JobStatus,type ToolCallSummary,type ToolCallStatus} from './store.ts';
 export type JobResponse={status:'pending';job_id:string}|{status:'completed';job_id:string;value:string;logs:string[];diagnostic?:ExecutionDiagnostic;tool_calls?:ToolCallSummary}|{status:'failed'|'cancelled'|'interrupted'|'timeout';job_id?:string;error:string;logs:string[];diagnostic?:ExecutionDiagnostic;tool_calls?:ToolCallSummary};
 /** Who started a job. Held in memory only: jobs never survive a restart. */
 export interface JobCaller {actorId:string;messageId:string}

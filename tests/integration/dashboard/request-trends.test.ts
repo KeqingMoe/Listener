@@ -4,9 +4,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
-import { buildApp } from '../../../src/dashboard/server/app.js';
-import { AuthStore } from '../../../src/dashboard/server/auth.js';
-import type { RequestTrendsResponse } from '../../../src/dashboard/contracts/request-trends.js';
+import { buildApp } from '../../../src/dashboard/server/app.ts';
+import { AuthStore } from '../../../src/dashboard/server/auth.ts';
+import type { RequestTrendsResponse } from '../../../src/dashboard/contracts/request-trends.ts';
 function fixture(old = false) {
   const dir=mkdtempSync(join(tmpdir(),'trends-')),telemetryPath=join(dir,'t.sqlite');
   const db=new DatabaseSync(telemetryPath);

@@ -1,5 +1,5 @@
-import type { JsonObject } from '../contracts/json.js';
-import type { Memory } from '../contracts/messages.js';
+import type { JsonObject } from '../contracts/json.ts';
+import type { Memory } from '../contracts/messages.ts';
 
 export type ReactionLookup = (messageId:string)=>JsonObject|undefined;
 const ADDED_LIMIT=6000, SNAPSHOT_LIMIT=1000, BATCH_LIMIT=24000, ITEM_LIMIT=8;

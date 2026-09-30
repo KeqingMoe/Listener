@@ -1,13 +1,13 @@
-import { resolveGroupId } from '../../contracts/identity.js';
-import { type Api } from '../../contracts/onebot.js';
-import { type Memory, type TimelineEntry } from '../../contracts/messages.js';
-import { type JsonObject } from '../../contracts/json.js';
-import { type ToolDefinition, type TurnContext } from '../../contracts/tools.js';
+import { resolveGroupId } from '../../contracts/identity.ts';
+import { type Api } from '../../contracts/onebot.ts';
+import { type Memory, type TimelineEntry } from '../../contracts/messages.ts';
+import { type JsonObject } from '../../contracts/json.ts';
+import { type ToolDefinition, type TurnContext } from '../../contracts/tools.ts';
 
-import { imageReferences } from '../../onebot/image-references.js';
-import { forwardReferences } from '../../onebot/forward-references.js';
-import { FACE_ID_SCHEMA, FACE_LAYOUT_GUIDANCE, faceMarker, isKnownFaceId } from '../faces/tools.js';
-import { extractMessageContent, projectMessage } from '../../world/message-content.js';
+import { imageReferences } from '../../onebot/image-references.ts';
+import { forwardReferences } from '../../onebot/forward-references.ts';
+import { FACE_ID_SCHEMA, FACE_LAYOUT_GUIDANCE, faceMarker, isKnownFaceId } from '../faces/tools.ts';
+import { extractMessageContent, projectMessage } from '../../world/message-content.ts';
 
 export interface GroupToolsOptions {
   members?: boolean;

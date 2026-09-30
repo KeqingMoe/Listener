@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import { once } from 'node:events';
 import { test } from 'node:test';
-import { OpenAIModel } from '../../../src/model/chat.js';
-import type { ToolDefinition } from '../../../src/contracts/tools.js';
+import { OpenAIModel } from '../../../src/model/chat.ts';
+import type { ToolDefinition } from '../../../src/contracts/tools.ts';
 
 test('request observer sees charged truncated usage once and cannot mask model errors',async()=>{
   const fixture=await server((_req,res)=>res.end(JSON.stringify({...reply({role:'assistant',content:'secret-body'},'length'),usage:{prompt_tokens:100,completion_tokens:20,total_tokens:120,prompt_cache_hit_tokens:60}})));
-  const records:import('../../../src/observability/model-usage.js').ModelRequestRecord[]=[];
+  const records:import('../../../src/observability/model-usage.ts').ModelRequestRecord[]=[];
   try {const model=new OpenAIModel({baseUrl:fixture.url,apiKey:secret,model:'test-model',timeoutMs:1000,maxTokens:100,onRequest:r=>{records.push(r);throw Error('observer secret');}});
     await assert.rejects(model.complete([{role:'user',content:'secret-prompt'}]),(e:unknown)=>(e as any).code==='truncated_response');
     assert.equal(records.length,1);assert.equal(records[0]!.usage.cachedInputTokens,60);assert.equal(records[0]!.errorCode,'truncated_response');assert.ok(!JSON.stringify(records.map(({inspection,...publicRecord})=>publicRecord)).includes('secret'));assert.ok(records[0]!.inspection?.requestJson?.includes('secret-prompt'));assert.ok(records[0]!.inspection?.responseJson?.includes('secret-body'));assert.ok(!JSON.stringify(records).includes(secret));
@@ -129,7 +129,7 @@ test('timeout covers stalled body and caller abort is redacted', async () => {
 });
 
 test('streamed reasoning and text are timed across distinct reads; one buffered batch still records completion interval',async()=>{
- for(const delayed of [false,true]){const records:import('../../../src/observability/model-usage.js').ModelRequestRecord[]=[];
+ for(const delayed of [false,true]){const records:import('../../../src/observability/model-usage.ts').ModelRequestRecord[]=[];
  const fixture=await server((_req,res)=>{res.setHeader('content-type','text/event-stream');const a='data: '+JSON.stringify({choices:[{index:0,delta:{reasoning_content:'think'},finish_reason:null}]})+'\n\n';const b='data: '+JSON.stringify({choices:[{index:0,delta:{content:'answer'},finish_reason:'stop'}],usage:{completion_tokens:4}})+'\n\ndata: [DONE]\n\n';if(delayed){res.write(a);setTimeout(()=>res.end(b),30);}else res.end(a+b);});
  try{const m=new OpenAIModel({baseUrl:fixture.url,apiKey:secret,model:'x',maxTokens:100,timeoutMs:1000,onRequest:r=>records.push(r)});assert.equal((await m.complete([])).content,'answer');assert.ok(records[0].ttftMs!>=0);if(delayed)assert.ok(records[0].decodeDurationMs!>=10);else assert.equal(records[0].decodeDurationMs,0);assert.equal(records[0].inspection?.reasoningText,'think');}finally{stop(fixture.server);}
  }
@@ -146,7 +146,7 @@ test('rejects wrong choice, function type, conflicting ids, post-finish output a
  const fixture=await server((_q,res)=>{res.setHeader('content-type','application/text/event-stream-fake');res.end('data: '+JSON.stringify(frame({content:'x'},0,'stop'))+'\n\ndata: [DONE]\n\n');});try{await assert.rejects(fixture.model.complete([]));}finally{stop(fixture.server);}
 });
 test('charged reasoning remains measurable and repeated equal tool IDs are not concatenated',async()=>{
- for(const hidden of [false,true]){let record:import('../../../src/observability/model-usage.js').ModelRequestRecord|undefined;
+ for(const hidden of [false,true]){let record:import('../../../src/observability/model-usage.ts').ModelRequestRecord|undefined;
  const fixture=await server((_q,res)=>{res.setHeader('content-type','text/event-stream');res.write('data: '+JSON.stringify({choices:[{index:0,delta:{tool_calls:[{index:0,id:'call-a',type:'function',function:{name:'lookup',arguments:'{'}}]},finish_reason:null}]})+'\n\n');setTimeout(()=>res.end('data: '+JSON.stringify({choices:[{index:0,delta:{tool_calls:[{index:0,id:'call-a',function:{arguments:'}'}}]},finish_reason:'tool_calls'}],usage:{completion_tokens:10,completion_tokens_details:{reasoning_tokens:hidden?5:0}}})+'\n\ndata: [DONE]\n\n'),30);});
  try{const model=new OpenAIModel({baseUrl:fixture.url,apiKey:secret,model:'x',maxTokens:100,timeoutMs:1000,onRequest:r=>{record=r;}});const out=await model.complete([]);assert.equal(out.tool_calls[0].id,'call-a');assert.equal(out.tool_calls[0].function.arguments,'{}');assert.ok(record!.decodeDurationMs!>10);}finally{stop(fixture.server);}}
 });

@@ -1,43 +1,43 @@
-import type { Api } from "../contracts/onebot.js";
-import type { Memory } from "../contracts/messages.js";
-import type { ToolDefinition, TurnContext } from "../contracts/tools.js";
-import type { JsonObject } from "../contracts/json.js";
-import type { ImageDownloader } from "./images/download.js";
+import type { Api } from "../contracts/onebot.ts";
+import type { Memory } from "../contracts/messages.ts";
+import type { ToolDefinition, TurnContext } from "../contracts/tools.ts";
+import type { JsonObject } from "../contracts/json.ts";
+import type { ImageDownloader } from "./images/download.ts";
 import {
   GroupMediaTools,
   type GroupMediaOptions,
   GROUP_MEDIA_TOOL_NAMES,
-} from "./media/tools.js";
+} from "./media/tools.ts";
 import {
   GroupVoiceTools,
   GROUP_VOICE_TOOL_NAMES,
-} from "./voice/tools.js";
-import { GroupFileTools, GROUP_FILE_TOOL_NAMES } from "./files/tools.js";
+} from "./voice/tools.ts";
+import { GroupFileTools, GROUP_FILE_TOOL_NAMES } from "./files/tools.ts";
 import {
   GroupRequestTools,
   GROUP_REQUEST_TOOL_NAMES,
-} from "./requests/tools.js";
+} from "./requests/tools.ts";
 import {
   enabledExtendedTools,
   type ExtendedToolsConfig,
   type ExtendedToolName,
-} from "../config/extended-tools.js";
-import { GroupObservationTools } from "./observation/tools.js";
+} from "../config/extended-tools.ts";
+import { GroupObservationTools } from "./observation/tools.ts";
 import {
   GroupActionTools,
   GROUP_ACTION_TOOL_NAMES,
-} from "./actions/tools.js";
-import { ToolRegistry, type RegisteredTool } from "./registry.js";
-import { GroupTranscriptionTools } from './transcription/tools.js';
-import { GroupReminderTools, buildReminderTools, REMINDER_TOOL_NAMES } from './reminders/tools.js';
-import type { ReminderStore } from '../reminders/store.js';
-import type { SandboxService } from '../sandbox/service.js';
-import { SandboxTools, SANDBOX_TOOL_NAMES, buildSandboxTools } from './sandbox/tools.js';
-import { WebTools, WEB_TOOL_NAMES, buildWebToolDefinitions } from './web/tools.js';
-import { ArtifactTools, ARTIFACT_TOOL_NAMES, buildArtifactToolDefinitions } from './artifacts/tools.js';
-import type { ArtifactStore } from '../artifacts/store.js';
-import { resolveOwnerId } from '../contracts/identity.js';
-import { CustomFaceTools, CUSTOM_FACE_TOOL_NAMES, buildCustomFaceToolDefinitions, type CustomFaceOptions } from './custom-faces/tools.js';
+} from "./actions/tools.ts";
+import { ToolRegistry, type RegisteredTool } from "./registry.ts";
+import { GroupTranscriptionTools } from './transcription/tools.ts';
+import { GroupReminderTools, buildReminderTools, REMINDER_TOOL_NAMES } from './reminders/tools.ts';
+import type { ReminderStore } from '../reminders/store.ts';
+import type { SandboxService } from '../sandbox/service.ts';
+import { SandboxTools, SANDBOX_TOOL_NAMES, buildSandboxTools } from './sandbox/tools.ts';
+import { WebTools, WEB_TOOL_NAMES, buildWebToolDefinitions } from './web/tools.ts';
+import { ArtifactTools, ARTIFACT_TOOL_NAMES, buildArtifactToolDefinitions } from './artifacts/tools.ts';
+import type { ArtifactStore } from '../artifacts/store.ts';
+import { resolveOwnerId } from '../contracts/identity.ts';
+import { CustomFaceTools, CUSTOM_FACE_TOOL_NAMES, buildCustomFaceToolDefinitions, type CustomFaceOptions } from './custom-faces/tools.ts';
 
 export interface ExtendedToolOptions {
   downloader?: ImageDownloader;

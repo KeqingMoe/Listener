@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import {
   GroupMediaTools,
   GROUP_MEDIA_TOOL_NAMES,
-} from "../../../../src/tools/media/tools.js";
-import type { Api } from "../../../../src/contracts/onebot.js";
-import type { JsonObject } from "../../../../src/contracts/json.js";
-import type { Memory, TimelineEntry } from "../../../../src/contracts/messages.js";
-import type { TurnContext } from "../../../../src/contracts/tools.js";
-import type { ImageDownloader } from "../../../../src/tools/images/download.js";
+} from "../../../../src/tools/media/tools.ts";
+import type { Api } from "../../../../src/contracts/onebot.ts";
+import type { JsonObject } from "../../../../src/contracts/json.ts";
+import type { Memory, TimelineEntry } from "../../../../src/contracts/messages.ts";
+import type { TurnContext } from "../../../../src/contracts/tools.ts";
+import type { ImageDownloader } from "../../../../src/tools/images/download.ts";
 
 const GROUP = "12345",
   SELF = "99999",

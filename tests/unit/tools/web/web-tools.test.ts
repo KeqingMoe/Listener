@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createSearxngBackend, runSearch, SEARCH_LIMITS, type HttpFetch, type WebSource } from '../../../../src/tools/web/search.js';
-import { WebTools, WEB_LIMITS, buildWebToolDefinitions } from '../../../../src/tools/web/tools.js';
-import { htmlToMarkdown, htmlTitle, exceedsDepth } from '../../../../src/tools/web/html.js';
-import { FetchError } from '../../../../src/tools/web/fetch.js';
+import { createSearxngBackend, runSearch, SEARCH_LIMITS, type HttpFetch, type WebSource } from '../../../../src/tools/web/search.ts';
+import { WebTools, WEB_LIMITS, buildWebToolDefinitions } from '../../../../src/tools/web/tools.ts';
+import { htmlToMarkdown, htmlTitle, exceedsDepth } from '../../../../src/tools/web/html.ts';
+import { FetchError } from '../../../../src/tools/web/fetch.ts';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 

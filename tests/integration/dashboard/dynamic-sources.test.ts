@@ -4,11 +4,11 @@ import { mkdtempSync, rmSync, renameSync, writeFileSync, readFileSync, mkdirSync
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { buildAuthenticatedApp as buildApp } from '../../support/dashboard-auth.js';
-import { Repository, type GroupSource } from '../../../src/dashboard/server/repository.js';
-import { loadAppConfig } from '../../../src/config/loader.js';
-import { GroupRegistry } from '../../../src/config/group-registry.js';
-import { dashboardGroupSources } from '../../../src/dashboard/server/sources.js';
+import { buildAuthenticatedApp as buildApp } from '../../support/dashboard-auth.ts';
+import { Repository, type GroupSource } from '../../../src/dashboard/server/repository.ts';
+import { loadAppConfig } from '../../../src/config/loader.ts';
+import { GroupRegistry } from '../../../src/config/group-registry.ts';
+import { dashboardGroupSources } from '../../../src/dashboard/server/sources.ts';
 
 const privateText = 'PRIVATE_CHAT_ARGUMENT_CHECKPOINT';
 function session(path: string, groupId: string, wakeId = 'wake') {

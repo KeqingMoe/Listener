@@ -1,16 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Moderation, MODERATION_TOOLS, buildModerationTools } from '../../../../src/tools/management/moderation.js';
-import { MAX_MUTE_SECONDS } from '../../../../src/contracts/tool-limits.js';
-import type { ModerationPolicy } from '../../../../src/config/listener.js';
-import { configureLogging } from '../../../../src/observability/logger.js';
+import { Moderation, MODERATION_TOOLS, buildModerationTools } from '../../../../src/tools/management/moderation.ts';
+import { MAX_MUTE_SECONDS } from '../../../../src/contracts/tool-limits.ts';
+import type { ModerationPolicy } from '../../../../src/config/listener.ts';
+import { configureLogging } from '../../../../src/observability/logger.ts';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { LISTENER_GROUP, OWNER_ID } from '../../../../src/contracts/identity.js';
-import { type Api } from '../../../../src/contracts/onebot.js';
-import { type JsonObject } from '../../../../src/contracts/json.js';
-import { type TurnContext } from '../../../../src/contracts/tools.js';
+import { LISTENER_GROUP, OWNER_ID } from '../../../../src/contracts/identity.ts';
+import { type Api } from '../../../../src/contracts/onebot.ts';
+import { type JsonObject } from '../../../../src/contracts/json.ts';
+import { type TurnContext } from '../../../../src/contracts/tools.ts';
 
 const context: TurnContext = { actorId: OWNER_ID, groupId: LISTENER_GROUP, selfId: '900000001', messageId: '100' };
 const target = '123456';

@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { normalizeWakeDiagnostics } from '../../../src/observability/wake-diagnostics.js';
-import { ModelSession } from '../../../src/agent/session/store.js';
-import { WorldEventStore } from '../../../src/world/events.js';
-import { Listener } from '../../../src/agent/listener.js';
-import { ModelError } from '../../../src/model/chat.js';
-import { LISTENER_GROUP } from '../../../src/contracts/identity.js';
-import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.js';
-import { type Completion } from '../../../src/contracts/model.js';
-import type { ListenerConfig } from '../../../src/config/listener.js';
+import { normalizeWakeDiagnostics } from '../../../src/observability/wake-diagnostics.ts';
+import { ModelSession } from '../../../src/agent/session/store.ts';
+import { WorldEventStore } from '../../../src/world/events.ts';
+import { Listener } from '../../../src/agent/listener.ts';
+import { ModelError } from '../../../src/model/chat.ts';
+import { LISTENER_GROUP } from '../../../src/contracts/identity.ts';
+import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.ts';
+import { type Completion } from '../../../src/contracts/model.ts';
+import type { ListenerConfig } from '../../../src/config/listener.ts';
 
 const call=(id:string,name:string,args:unknown={})=>({id,type:'function' as const,function:{name,arguments:JSON.stringify(args)}});
 const result=(...tool_calls:Completion['tool_calls']):Completion=>({content:null,tool_calls});

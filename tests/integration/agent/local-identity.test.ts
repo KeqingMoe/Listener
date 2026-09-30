@@ -1,16 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
-import { Listener } from '../../../src/agent/listener.js';
-import { buildSystemPrompt } from '../../../src/agent/prompts.js';
-import {Moderation} from '../../../src/tools/management/moderation.js';
-import {ReplyBatch,type BatchItem} from '../../../src/agent/reply-batch.js';
-import { OWNER_ID } from '../../../src/contracts/identity.js';
-import { type Api } from '../../../src/contracts/onebot.js';
-import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.js';
-import { type Model, type Completion } from '../../../src/contracts/model.js';
-import { type JsonObject } from '../../../src/contracts/json.js';
-import type {ListenerConfig} from '../../../src/config/listener.js';
+import { Listener } from '../../../src/agent/listener.ts';
+import { buildSystemPrompt } from '../../../src/agent/prompts.ts';
+import {Moderation} from '../../../src/tools/management/moderation.ts';
+import {ReplyBatch,type BatchItem} from '../../../src/agent/reply-batch.ts';
+import { OWNER_ID } from '../../../src/contracts/identity.ts';
+import { type Api } from '../../../src/contracts/onebot.ts';
+import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.ts';
+import { type Model, type Completion } from '../../../src/contracts/model.ts';
+import { type JsonObject } from '../../../src/contracts/json.ts';
+import type {ListenerConfig} from '../../../src/config/listener.ts';
 
 const OWNER_A='778899',OWNER_B='889900',GROUP='334455',SELF='990011',TARGET='123456';
 const config:ListenerConfig={enabled:true,groupId:GROUP,baseUrl:'https://example.invalid/v1',apiKey:'fixture',model:'fixture',timeoutMs:1000,maxTokens:128,debounceMs:0,delayMaxMs:0,cooldownMs:0,memoryPath:':memory:',maxContextChars:8000,retentionDays:7,randomReplyProbability:0,tools:{members:false,mention:false,moderation:{mute:'confirm',unmute:'off',recall:'off',memberCard:'off',confirmationTtlSeconds:60,maxMuteSeconds:600}}};

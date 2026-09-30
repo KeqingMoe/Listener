@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay, setImmediate as flush } from 'node:timers/promises';
-import { Listener } from '../../../src/agent/listener.js';
-import { GroupRouter } from '../../../src/app/group-router.js';
-import { TurnScheduler } from '../../../src/agent/scheduler.js';
-import { OWNER_ID } from '../../../src/contracts/identity.js';
-import { type Api } from '../../../src/contracts/onebot.js';
-import { type ChatMessage, type Completion, type Model } from '../../../src/contracts/model.js';
-import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.js';
-import { type ToolDefinition } from '../../../src/contracts/tools.js';
-import type { ListenerConfig } from '../../../src/config/listener.js';
+import { Listener } from '../../../src/agent/listener.ts';
+import { GroupRouter } from '../../../src/app/group-router.ts';
+import { TurnScheduler } from '../../../src/agent/scheduler.ts';
+import { OWNER_ID } from '../../../src/contracts/identity.ts';
+import { type Api } from '../../../src/contracts/onebot.ts';
+import { type ChatMessage, type Completion, type Model } from '../../../src/contracts/model.ts';
+import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.ts';
+import { type ToolDefinition } from '../../../src/contracts/tools.ts';
+import type { ListenerConfig } from '../../../src/config/listener.ts';
 
 const SELF='99999';
 const A='22',B='33',C='44';

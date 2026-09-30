@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { AuthStore, sessionToken } from "./auth.js";
+import { AuthStore, sessionToken } from "./auth.ts";
 export const authWrites = new Set(["/api/auth/login", "/api/auth/logout"]);
 export function registerAuthRoutes(app: FastifyInstance, auth: AuthStore) {
   app.get("/api/auth/session", async req => ({

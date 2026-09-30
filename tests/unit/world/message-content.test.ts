@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractMessageContent, sanitizeMessageContent, projectMessage, projectMessageContext } from '../../../src/world/message-content.js';
-import { FACE_CATALOG } from '../../../src/onebot/catalog/faces.js';
-import type { TimelineEntry, MessageSegment } from '../../../src/contracts/messages.js';
+import { extractMessageContent, sanitizeMessageContent, projectMessage, projectMessageContext } from '../../../src/world/message-content.ts';
+import { FACE_CATALOG } from '../../../src/onebot/catalog/faces.ts';
+import type { TimelineEntry, MessageSegment } from '../../../src/contracts/messages.ts';
 
 const text=(value:string)=>({type:'text',data:{text:value}});
 const row=(extra:Partial<TimelineEntry>={}):TimelineEntry=>({messageId:'12',userId:'34',nickname:'fixture',time:123,text:'compatibility text [QQ表情：吃瓜 id=271]',...extra});

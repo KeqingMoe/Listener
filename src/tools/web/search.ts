@@ -1,4 +1,4 @@
-import type { WebSearchProviderConfig } from '../../config/app.js';
+import type { WebSearchProviderConfig } from '../../config/app.ts';
 
 export interface WebSource { url: string; title: string; snippet?: string; published_at?: string }
 export interface WebSearchResult { sources: WebSource[]; truncated: boolean; failed_queries: number }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {GroupRouter,type GroupHandler} from '../../../src/app/group-router.js';
+import {GroupRouter,type GroupHandler} from '../../../src/app/group-router.ts';
 
 function handler(){
  const calls:unknown[]=[],connections:boolean[]=[];let stopped=0;

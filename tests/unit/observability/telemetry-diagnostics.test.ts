@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { TelemetryStore, type TelemetryRecord } from '../../../src/observability/telemetry.js';
+import { TelemetryStore, type TelemetryRecord } from '../../../src/observability/telemetry.ts';
 
 const base = (requestId: string): TelemetryRecord => ({
   requestId, startedAt: 100, endedAt: 110, durationMs: 10,

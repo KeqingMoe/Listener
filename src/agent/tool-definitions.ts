@@ -1,18 +1,18 @@
-import { applyToolPolicies, optionalToolEnabled } from '../config/runtime.js';
-import { resolveGroupId } from '../contracts/identity.js';
-import { type ToolDefinition } from '../contracts/tools.js';
-import { type JsonObject } from '../contracts/json.js';
-import { buildModerationTools } from '../tools/management/moderation.js';
-import type { ListenerConfig } from '../config/listener.js';
-import { GROUP_TOOLS, SEND_MESSAGE_TOOL } from '../tools/messaging/tools.js';
-import { VIEW_IMAGES_TOOL } from '../tools/images/tools.js';
-import { READ_FORWARD_TOOL } from '../tools/forwards/tools.js';
-import { FACE_LAYOUT_GUIDANCE } from '../tools/faces/tools.js';
-import { MANAGE_ATTENTION_TOOL } from './attention.js';
-import { createReactionTool } from '../tools/reactions/tools.js';
-import { GET_REACTION_USERS_TOOL } from '../tools/reactions/users.js';
-import { buildWorldTools } from '../tools/world/tools.js';
-import { buildExtendedToolDefinitions } from '../tools/extended.js';
+import { applyToolPolicies, optionalToolEnabled } from '../config/runtime.ts';
+import { resolveGroupId } from '../contracts/identity.ts';
+import { type ToolDefinition } from '../contracts/tools.ts';
+import { type JsonObject } from '../contracts/json.ts';
+import { buildModerationTools } from '../tools/management/moderation.ts';
+import type { ListenerConfig } from '../config/listener.ts';
+import { GROUP_TOOLS, SEND_MESSAGE_TOOL } from '../tools/messaging/tools.ts';
+import { VIEW_IMAGES_TOOL } from '../tools/images/tools.ts';
+import { READ_FORWARD_TOOL } from '../tools/forwards/tools.ts';
+import { FACE_LAYOUT_GUIDANCE } from '../tools/faces/tools.ts';
+import { MANAGE_ATTENTION_TOOL } from './attention.ts';
+import { createReactionTool } from '../tools/reactions/tools.ts';
+import { GET_REACTION_USERS_TOOL } from '../tools/reactions/users.ts';
+import { buildWorldTools } from '../tools/world/tools.ts';
+import { buildExtendedToolDefinitions } from '../tools/extended.ts';
 
 const objectSchema = (properties: JsonObject, required: string[]) => ({ type: 'object', properties, required, additionalProperties: false });
 export const CHAT_TOOLS: ToolDefinition[] = [

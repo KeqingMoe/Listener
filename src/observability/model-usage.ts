@@ -1,5 +1,5 @@
-import type { ModelRequestDiagnostics } from './model-diagnostics.js';
-export type { ModelRequestDiagnostics } from './model-diagnostics.js';
+import type { ModelRequestDiagnostics } from './model-diagnostics.ts';
+export type { ModelRequestDiagnostics } from './model-diagnostics.ts';
 export interface ModelUsage {
   inputTokens?: number | null;
   outputTokens?: number | null;

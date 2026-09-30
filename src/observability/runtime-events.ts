@@ -1,6 +1,6 @@
 import { constants, openSync, closeSync, fstatSync, fchmodSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { sanitizeLogFields, type ObservedLog } from './logger.js';
+import { sanitizeLogFields, type ObservedLog } from './logger.ts';
 
 const MAX_ROWS=30000, RETENTION_MS=7*86400000;
 /** A bounded private index of structured runtime events; never a sink for raw chat or exceptions. */

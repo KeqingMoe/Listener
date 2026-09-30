@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { withFixtureModel } from '../../support/config-fixture.js';
-import { ConfigError, loadAppConfig } from '../../../src/config/loader.js';
-import { toListenerConfig, applyToolPolicies } from '../../../src/config/runtime.js';
-import { buildToolDefinitions } from '../../../src/agent/tool-definitions.js';
-import { buildSystemPrompt } from '../../../src/agent/prompts.js';
+import { withFixtureModel } from '../../support/config-fixture.ts';
+import { ConfigError, loadAppConfig } from '../../../src/config/loader.ts';
+import { toListenerConfig, applyToolPolicies } from '../../../src/config/runtime.ts';
+import { buildToolDefinitions } from '../../../src/agent/tool-definitions.ts';
+import { buildSystemPrompt } from '../../../src/agent/prompts.ts';
 
 const GROUP = '22';
 function fixture(t: { after(fn: () => void): void }) {

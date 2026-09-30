@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {startExecution} from '../../../src/sandbox/executor.js';
-import {isExecutionDiagnostic} from '../../../src/sandbox/protocol.js';
+import {startExecution} from '../../../src/sandbox/executor.ts';
+import {isExecutionDiagnostic} from '../../../src/sandbox/protocol.ts';
 test('guest diagnostics preserve compile, ReferenceError, promise rejection and thrown primitives',async()=>{
  for(const [code,error,name,text] of [
  ['return Intl.DateTimeFormat();','execution_error','ReferenceError','Intl'],

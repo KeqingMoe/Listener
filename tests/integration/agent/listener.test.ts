@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { Listener, normalizeEvent } from '../../../src/agent/listener.js';
-import { buildSystemPrompt } from '../../../src/agent/prompts.js';
-import { buildToolDefinitions } from '../../../src/agent/tool-definitions.js';
-import type { ListenerConfig } from '../../../src/config/listener.js';
-import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.js';
-import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.js';
-import { type Model, type Completion, type ChatMessage } from '../../../src/contracts/model.js';
-import { type Api } from '../../../src/contracts/onebot.js';
+import { Listener, normalizeEvent } from '../../../src/agent/listener.ts';
+import { buildSystemPrompt } from '../../../src/agent/prompts.ts';
+import { buildToolDefinitions } from '../../../src/agent/tool-definitions.ts';
+import type { ListenerConfig } from '../../../src/config/listener.ts';
+import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.ts';
+import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.ts';
+import { type Model, type Completion, type ChatMessage } from '../../../src/contracts/model.ts';
+import { type Api } from '../../../src/contracts/onebot.ts';
 const self='900000001';
 class MockMemory implements Memory {
   entries:TimelineEntry[]=[]; closed=false;

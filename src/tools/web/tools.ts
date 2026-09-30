@@ -1,8 +1,8 @@
-import type { JsonObject } from '../../contracts/json.js';
-import type { ToolDefinition } from '../../contracts/tools.js';
-import { SEARCH_LIMITS, runSearch, type WebSearchBackend } from './search.js';
-import { FetchError, createWebFetcher, type FetchOutcome } from './fetch.js';
-import { htmlTitle, htmlToMarkdown } from './html.js';
+import type { JsonObject } from '../../contracts/json.ts';
+import type { ToolDefinition } from '../../contracts/tools.ts';
+import { SEARCH_LIMITS, runSearch, type WebSearchBackend } from './search.ts';
+import { FetchError, createWebFetcher, type FetchOutcome } from './fetch.ts';
+import { htmlTitle, htmlToMarkdown } from './html.ts';
 
 export const WEB_TOOL_NAMES = ['web_search', 'web_fetch'] as const;
 export const WEB_LIMITS = { contentChars: 20_000, concurrent: 4 } as const;

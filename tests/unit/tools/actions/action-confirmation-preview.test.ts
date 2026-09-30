@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { Api } from '../../../../src/contracts/onebot.js';
-import type { JsonObject } from '../../../../src/contracts/json.js';
-import type { TurnContext } from '../../../../src/contracts/tools.js';
-import type { TimelineEntry } from '../../../../src/contracts/messages.js';
-import { GroupActionTools, GROUP_ACTION_TOOL_NAMES } from '../../../../src/tools/actions/tools.js';
+import type { Api } from '../../../../src/contracts/onebot.ts';
+import type { JsonObject } from '../../../../src/contracts/json.ts';
+import type { TurnContext } from '../../../../src/contracts/tools.ts';
+import type { TimelineEntry } from '../../../../src/contracts/messages.ts';
+import { GroupActionTools, GROUP_ACTION_TOOL_NAMES } from '../../../../src/tools/actions/tools.ts';
 const ctx: TurnContext={groupId:'123',selfId:'456',actorId:'789',messageId:'1'};
 function fixture() {
   const calls: {action:string;params?:JsonObject}[]=[];

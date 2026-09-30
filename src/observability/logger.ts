@@ -4,7 +4,7 @@ import { constants } from 'node:fs';
 import { chmod, lstat, mkdir, open, readdir, unlink, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
 import pino from 'pino';
-import { EXTENDED_TOOL_NAMES } from '../config/extended-tools.js';
+import { EXTENDED_TOOL_NAMES } from '../config/extended-tools.ts';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 export interface LoggingConfig {

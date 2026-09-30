@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { WorldEventStore } from '../../../src/world/events.js';
-import { extractMessageContent, projectMessageContext } from '../../../src/world/message-content.js';
-import type { TimelineEntry } from '../../../src/contracts/messages.js';
+import { WorldEventStore } from '../../../src/world/events.ts';
+import { extractMessageContent, projectMessageContext } from '../../../src/world/message-content.ts';
+import type { TimelineEntry } from '../../../src/contracts/messages.ts';
 
 const record={type:'record',content_status:'not_transcribed'} as const;
 const row=():TimelineEntry=>({messageId:'123',userId:'42',nickname:'Alice',time:Date.now()/1000,text:'[record]',...extractMessageContent('123',[{type:'record',data:{url:'https://VOICE_SECRET',file:'FILE_SECRET',text:'FORGED_TRANSCRIPT'}}])});

@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash, scryptSync } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import { AuthStore, SESSION_COOKIE, validPassword } from "../../../src/dashboard/server/auth.js";
-import { buildApp } from "../../../src/dashboard/server/app.js";
+import { AuthStore, SESSION_COOKIE, validPassword } from "../../../src/dashboard/server/auth.ts";
+import { buildApp } from "../../../src/dashboard/server/app.ts";
 const password = "test-admin-password-strong";
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), "dashboard-auth-"));

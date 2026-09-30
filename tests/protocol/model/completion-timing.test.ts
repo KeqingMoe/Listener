@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { OpenAIModel } from '../../../src/model/chat.js';
-import { ResponsesModel } from '../../../src/model/responses.js';
-import type { ModelRequestRecord } from '../../../src/observability/model-usage.js';
+import { OpenAIModel } from '../../../src/model/chat.ts';
+import { ResponsesModel } from '../../../src/model/responses.ts';
+import type { ModelRequestRecord } from '../../../src/observability/model-usage.ts';
 const options={baseUrl:'https://fixture.invalid/v1',apiKey:'fixture',model:'fixture',timeoutMs:1000,maxTokens:100,sessionId:'fixture'};
 const event=(value:unknown)=>`data: ${JSON.stringify(value)}\n\n`;
 const output=[{id:'msg',type:'message',role:'assistant',content:[{type:'output_text',text:'hello'}]}];

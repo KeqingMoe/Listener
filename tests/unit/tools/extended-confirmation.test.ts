@@ -1,31 +1,31 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { Api } from "../../../src/contracts/onebot.js";
-import type { Memory } from "../../../src/contracts/messages.js";
-import type { JsonObject } from "../../../src/contracts/json.js";
-import type { ToolDefinition } from "../../../src/contracts/tools.js";
-import { prepareExtendedConfirmation as prepare } from "../../../src/tools/confirmation.js";
+import type { Api } from "../../../src/contracts/onebot.ts";
+import type { Memory } from "../../../src/contracts/messages.ts";
+import type { JsonObject } from "../../../src/contracts/json.ts";
+import type { ToolDefinition } from "../../../src/contracts/tools.ts";
+import { prepareExtendedConfirmation as prepare } from "../../../src/tools/confirmation.ts";
 import {
   GroupActionTools,
   GROUP_ACTION_TOOL_NAMES,
-} from "../../../src/tools/actions/tools.js";
-import { GroupObservationTools } from "../../../src/tools/observation/tools.js";
+} from "../../../src/tools/actions/tools.ts";
+import { GroupObservationTools } from "../../../src/tools/observation/tools.ts";
 import {
   buildGroupFileTools,
   GROUP_FILE_TOOL_NAMES,
-} from "../../../src/tools/files/tools.js";
+} from "../../../src/tools/files/tools.ts";
 import {
   GroupMediaTools,
   GROUP_MEDIA_TOOL_NAMES,
-} from "../../../src/tools/media/tools.js";
+} from "../../../src/tools/media/tools.ts";
 import {
   GroupVoiceTools,
   GROUP_VOICE_TOOL_NAMES,
-} from "../../../src/tools/voice/tools.js";
+} from "../../../src/tools/voice/tools.ts";
 import {
   GroupRequestTools,
   GROUP_REQUEST_TOOL_NAMES,
-} from "../../../src/tools/requests/tools.js";
+} from "../../../src/tools/requests/tools.ts";
 const api: Api = {
   async call() {
     throw new Error("No API is allowed during a proposal");

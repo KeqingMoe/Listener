@@ -1,5 +1,5 @@
-import { OneBotError } from './client.js';
-import type { JsonObject } from '../contracts/json.js';
+import { OneBotError } from './client.ts';
+import type { JsonObject } from '../contracts/json.ts';
 
 /** A reused message ID is not evidence of a new send; distinguish it from local storage failure. */
 export class DuplicateMessageAckError extends Error {

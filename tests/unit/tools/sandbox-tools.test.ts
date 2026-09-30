@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SandboxTools, SANDBOX_TOOL_NAMES } from '../../../src/tools/sandbox/tools.js';
-import { buildExtendedToolDefinitions, createExtendedTools } from '../../../src/tools/extended.js';
-import { TOOL_CAPABILITIES } from '../../../src/config/tool-policy.js';
-import type { SandboxService } from '../../../src/sandbox/service.js';
+import { SandboxTools, SANDBOX_TOOL_NAMES } from '../../../src/tools/sandbox/tools.ts';
+import { buildExtendedToolDefinitions, createExtendedTools } from '../../../src/tools/extended.ts';
+import { TOOL_CAPABILITIES } from '../../../src/config/tool-policy.ts';
+import type { SandboxService } from '../../../src/sandbox/service.ts';
 const context={selfId:'1',groupId:'2',actorId:'3',messageId:'4'};
 test('execution and task detail preserve guest diagnostics but host throws stay sanitized',async()=>{
  const {tools,service}=fixture();const diagnostic={kind:'guest_exception' as const,phase:'execute' as const,name:'ReferenceError',message:"'Intl' is not defined",truncated:false};

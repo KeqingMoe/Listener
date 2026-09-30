@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { Listener } from '../../../src/agent/listener.js';
-import type { ListenerConfig } from '../../../src/config/listener.js';
-import { LISTENER_GROUP } from '../../../src/contracts/identity.js';
-import { type Api } from '../../../src/contracts/onebot.js';
-import { type ChatMessage, type Completion, type Model } from '../../../src/contracts/model.js';
-import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.js';
+import { Listener } from '../../../src/agent/listener.ts';
+import type { ListenerConfig } from '../../../src/config/listener.ts';
+import { LISTENER_GROUP } from '../../../src/contracts/identity.ts';
+import { type Api } from '../../../src/contracts/onebot.ts';
+import { type ChatMessage, type Completion, type Model } from '../../../src/contracts/model.ts';
+import { type Memory, type TimelineEntry } from '../../../src/contracts/messages.ts';
 const self='900000001';
 const cfg:ListenerConfig={enabled:true,baseUrl:'https://example.invalid',apiKey:'x',model:'x',timeoutMs:5000,maxTokens:64,debounceMs:1,delayMaxMs:1,cooldownMs:1,memoryPath:':memory:',maxContextChars:8000,retentionDays:7,randomReplyProbability:1,randomCooldownMs:0,randomMaxPerMinute:10,maxToolCallsPerWake:96,wakeTimeoutMs:90000};
 class Mem implements Memory{rows:TimelineEntry[]=[];append(e:TimelineEntry){this.rows.push(e);return true;}recent(){return this.rows;}find(id:string){return this.rows.find(e=>e.messageId===id);}context(){return JSON.stringify(this.rows);}async compact(){}clear(){this.rows=[];}close(){}}

@@ -7,16 +7,16 @@ import {
   ResourceLimit,
   summarize,
   type Sources,
-} from "./repository.js";
-import type { Range } from "../contracts/contracts.js";
-import { registerReviewRoutes } from './review-routes.js';
-import { ReviewRepository } from './review-repository.js';
-import { buildRequestTrends } from './request-trends.js';
-import { RequestTrendsSync } from './request-trends-sync.js';
-import { registerResourceSync } from './resource-sync.js';
+} from "./repository.ts";
+import type { Range } from "../contracts/contracts.ts";
+import { registerReviewRoutes } from './review-routes.ts';
+import { ReviewRepository } from './review-repository.ts';
+import { buildRequestTrends } from './request-trends.ts';
+import { RequestTrendsSync } from './request-trends-sync.ts';
+import { registerResourceSync } from './resource-sync.ts';
 import { isIP } from "node:net";
-import { AuthStore, sessionToken } from "./auth.js";
-import { authWrites, registerAuthRoutes } from "./auth-routes.js";
+import { AuthStore, sessionToken } from "./auth.ts";
+import { authWrites, registerAuthRoutes } from "./auth-routes.ts";
 export interface AppOptions extends Sources {
   /** Required at runtime: absent stores fail closed. Caller owns store lifetime. */
   auth?: AuthStore;

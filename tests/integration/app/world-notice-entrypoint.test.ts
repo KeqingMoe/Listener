@@ -1,5 +1,5 @@
 import test from "node:test";
-import { sendChatStream } from '../../support/model-sse.js';
+import { sendChatStream } from '../../support/model-sse.ts';
 import assert from "node:assert/strict";
 import {
   mkdtempSync,
@@ -17,7 +17,7 @@ import { createServer } from "node:http";
 import type { AddressInfo, Socket } from "node:net";
 import { DatabaseSync } from "node:sqlite";
 import { WebSocketServer, type WebSocket } from "ws";
-import { LISTENER_GROUP } from "../../../src/contracts/identity.js";
+import { LISTENER_GROUP } from "../../../src/contracts/identity.ts";
 
 const GROUP = LISTENER_GROUP,
   OTHER = "22",

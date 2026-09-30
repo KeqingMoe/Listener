@@ -1,7 +1,7 @@
 import {createHash,randomUUID} from 'node:crypto';
 import {closeSync,constants,fchmodSync,fstatSync,lstatSync,openSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
-import {isExecutionDiagnostic,type ExecutionDiagnostic} from './protocol.js';
+import {isExecutionDiagnostic,type ExecutionDiagnostic} from './protocol.ts';
 export type JobMode='sync'|'async'|'auto';
 export type JobStatus='queued'|'running'|'completed'|'failed'|'cancelled'|'interrupted'|'timeout';
 export interface JobScope {selfId:string;groupId:string}

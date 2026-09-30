@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildRequestTrends, MAX_REQUEST_TREND_POINTS, requestTrendBucketMs } from '../../../src/dashboard/server/request-trends.js';
-import { ResourceLimit } from '../../../src/dashboard/server/repository.js';
-import { REQUEST_TREND_OUTCOMES } from '../../../src/dashboard/contracts/request-trends.js';
-import type { ReviewRequest } from '../../../src/dashboard/contracts/review.js';
-import { performanceMetrics } from '../../../src/dashboard/contracts/metrics.js';
+import { buildRequestTrends, MAX_REQUEST_TREND_POINTS, requestTrendBucketMs } from '../../../src/dashboard/server/request-trends.ts';
+import { ResourceLimit } from '../../../src/dashboard/server/repository.ts';
+import { REQUEST_TREND_OUTCOMES } from '../../../src/dashboard/contracts/request-trends.ts';
+import type { ReviewRequest } from '../../../src/dashboard/contracts/review.ts';
+import { performanceMetrics } from '../../../src/dashboard/contracts/metrics.ts';
 const availability = { telemetry: true, sessions: [] };
 const row = (startedAt: number, patch: Partial<ReviewRequest> = {}): ReviewRequest => ({
   requestId: 'private-id', groupId: '11', model: 'private-model',

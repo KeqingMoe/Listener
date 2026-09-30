@@ -1,7 +1,7 @@
-import type { JsonObject } from '../../contracts/json.js';
-import type { ToolDefinition, TurnContext } from '../../contracts/tools.js';
-import type { SandboxService } from '../../sandbox/service.js';
-import { JOB_BOUNDS, type JobQuery, type JobStatus } from '../../sandbox/store.js';
+import type { JsonObject } from '../../contracts/json.ts';
+import type { ToolDefinition, TurnContext } from '../../contracts/tools.ts';
+import type { SandboxService } from '../../sandbox/service.ts';
+import { JOB_BOUNDS, type JobQuery, type JobStatus } from '../../sandbox/store.ts';
 
 export const SANDBOX_TOOL_NAMES = ['execute_javascript','query_javascript_jobs','cancel_javascript_job'] as const;
 const statuses: JobStatus[] = ['queued','running','completed','failed','cancelled','interrupted','timeout'];

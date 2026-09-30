@@ -4,10 +4,10 @@ import { mkdtempSync, rmSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
-import { buildApp } from '../../../src/dashboard/server/app.js';
-import { AuthStore } from '../../../src/dashboard/server/auth.js';
-import { ReviewRepository } from '../../../src/dashboard/server/review-repository.js';
-import { RESOURCE_SYNC_TTL_MS, RESOURCE_SYNC_MAX_ENTRIES } from '../../../src/dashboard/server/resource-sync.js';
+import { buildApp } from '../../../src/dashboard/server/app.ts';
+import { AuthStore } from '../../../src/dashboard/server/auth.ts';
+import { ReviewRepository } from '../../../src/dashboard/server/review-repository.ts';
+import { RESOURCE_SYNC_TTL_MS, RESOURCE_SYNC_MAX_ENTRIES } from '../../../src/dashboard/server/resource-sync.ts';
 function fixture() {
  const dir=mkdtempSync(join(tmpdir(),'resource-sync-')),telemetryPath=join(dir,'t.sqlite'),sessionPath=join(dir,'s.sqlite');
  const db=new DatabaseSync(telemetryPath),session=new DatabaseSync(sessionPath);

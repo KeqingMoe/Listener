@@ -11,8 +11,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { buildApp as rawBuildApp } from "../../../src/dashboard/server/app.js";
-import { AuthStore } from '../../../src/dashboard/server/auth.js';
+import { buildApp as rawBuildApp } from "../../../src/dashboard/server/app.ts";
+import { AuthStore } from '../../../src/dashboard/server/auth.ts';
 function buildApp(options: Parameters<typeof rawBuildApp>[0]) {
   const app = rawBuildApp(options);
   const login = options.auth!.login('test-password-long', '127.0.0.1');
@@ -22,7 +22,7 @@ function buildApp(options: Parameters<typeof rawBuildApp>[0]) {
   app.inject = ((value: any) => inject(typeof value === 'string' ? {url:value,headers:{cookie:`dashboard_session=${token}`}} : {...value,headers:{cookie:`dashboard_session=${token}`,...value.headers}})) as typeof app.inject;
   return app;
 }
-import { status as statusLabel } from "../../../src/dashboard/web/src/api/client.js";
+import { status as statusLabel } from "../../../src/dashboard/web/src/api/client.ts";
 const sentinel = "PRIVATE_ARGUMENT_RESULT_MESSAGE_CHECKPOINT_PATH";
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), "dashboard-"));

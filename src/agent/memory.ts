@@ -1,12 +1,12 @@
 import { chmodSync, closeSync, openSync, existsSync, statSync } from 'node:fs';
-import { log } from '../observability/logger.js';
-import { sanitizeForwardReferences } from '../onebot/forward-references.js';
+import { log } from '../observability/logger.ts';
+import { sanitizeForwardReferences } from '../onebot/forward-references.ts';
 import { DatabaseSync } from 'node:sqlite';
-import { resolveGroupId } from '../contracts/identity.js';
-import { type JsonObject } from '../contracts/json.js';
-import { type Memory, type TimelineEntry } from '../contracts/messages.js';
-import { type Model } from '../contracts/model.js';
-import { projectMessage, sanitizeMessageContent } from '../world/message-content.js';
+import { resolveGroupId } from '../contracts/identity.ts';
+import { type JsonObject } from '../contracts/json.ts';
+import { type Memory, type TimelineEntry } from '../contracts/messages.ts';
+import { type Model } from '../contracts/model.ts';
+import { projectMessage, sanitizeMessageContent } from '../world/message-content.ts';
 
 export interface SQLiteMemoryOptions { path: string; maxContextChars: number; retentionDays: number; groupId?: string }
 type Row = { seq: number; entry: string; time: number };

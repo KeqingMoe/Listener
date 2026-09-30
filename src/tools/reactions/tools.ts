@@ -1,10 +1,10 @@
-import { LISTENER_GROUP, resolveGroupId } from '../../contracts/identity.js';
-import { type Api } from '../../contracts/onebot.js';
-import { type Memory, type TimelineEntry } from '../../contracts/messages.js';
-import { type JsonObject } from '../../contracts/json.js';
-import { type TurnContext } from '../../contracts/tools.js';
-import { isKnownReactionId, createReactionTool as catalogReactionTool } from '../../onebot/catalog/reactions.js';
-import { submittedResult, writeFailure, afterDispatch } from '../../onebot/operation-result.js';
+import { LISTENER_GROUP, resolveGroupId } from '../../contracts/identity.ts';
+import { type Api } from '../../contracts/onebot.ts';
+import { type Memory, type TimelineEntry } from '../../contracts/messages.ts';
+import { type JsonObject } from '../../contracts/json.ts';
+import { type TurnContext } from '../../contracts/tools.ts';
+import { isKnownReactionId, createReactionTool as catalogReactionTool } from '../../onebot/catalog/reactions.ts';
+import { submittedResult, writeFailure, afterDispatch } from '../../onebot/operation-result.ts';
 export function createReactionTool() {
   const tool = catalogReactionTool();
   tool.function.description = tool.function.description.replace('即时执行，后续取消本轮不回滚已执行操作。', '即时向provider提交请求，后续取消本轮不回滚提交。') + ' 正常结果submitted=true只证明provider接受提交，不代表已观察到QQ贴上或移除表情，也不是失败。重复同一动作返回原提交而不重发；明确要求的add/remove可作为新的期望状态独立提交，但不得仅因缺少业务回执而盲目反向试探或补偿。真实unknown仍禁止同一消息与表情的双向重试。';

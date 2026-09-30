@@ -4,12 +4,12 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
-import { GroupMediaTools } from '../../../../src/tools/media/tools.js';
-import { ImageTools } from '../../../../src/tools/images/tools.js';
-import { ArtifactStore } from '../../../../src/artifacts/store.js';
-import type { Api } from '../../../../src/contracts/onebot.js';
-import type { JsonObject } from '../../../../src/contracts/json.js';
-import type { Memory, TimelineEntry } from '../../../../src/contracts/messages.js';
+import { GroupMediaTools } from '../../../../src/tools/media/tools.ts';
+import { ImageTools } from '../../../../src/tools/images/tools.ts';
+import { ArtifactStore } from '../../../../src/artifacts/store.ts';
+import type { Api } from '../../../../src/contracts/onebot.ts';
+import type { JsonObject } from '../../../../src/contracts/json.ts';
+import type { Memory, TimelineEntry } from '../../../../src/contracts/messages.ts';
 
 const GROUP = '12345', SELF = '99999';
 const ctx = { groupId: GROUP, selfId: SELF, actorId: '22222', messageId: '1' };

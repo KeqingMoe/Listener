@@ -1,6 +1,6 @@
-import type { JsonObject } from '../../contracts/json.js';
-import { FACE_CATALOG } from '../../onebot/catalog/faces.js';
-import { canonicalFaceId } from '../../onebot/catalog/schema.js';
+import type { JsonObject } from '../../contracts/json.ts';
+import { FACE_CATALOG } from '../../onebot/catalog/faces.ts';
+import { canonicalFaceId } from '../../onebot/catalog/schema.ts';
 
 const facesById = new Map(FACE_CATALOG.map(face => [face.id, face]));
 

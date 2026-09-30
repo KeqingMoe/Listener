@@ -1,9 +1,9 @@
 import { randomBytes } from 'node:crypto';
-import { resolveGroupId } from '../../contracts/identity.js';
-import { type JsonObject } from '../../contracts/json.js';
-import { type ToolDefinition, type TurnContext } from '../../contracts/tools.js';
-import { projectMessage } from '../../world/message-content.js';
-import { WorldEventStore, WORLD_EVENT_TYPES, type MessageView, type ProjectedWorldEvent, type ReadEventsInput, type WorldEventType } from '../../world/events.js';
+import { resolveGroupId } from '../../contracts/identity.ts';
+import { type JsonObject } from '../../contracts/json.ts';
+import { type ToolDefinition, type TurnContext } from '../../contracts/tools.ts';
+import { projectMessage } from '../../world/message-content.ts';
+import { WorldEventStore, WORLD_EVENT_TYPES, type MessageView, type ProjectedWorldEvent, type ReadEventsInput, type WorldEventType } from '../../world/events.ts';
 
 export interface WakeMetadata { wakeId?: string; startedAt?: number; trigger?: unknown; [key: string]: unknown }
 export interface WorldToolsOptions {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AttentionEngine,MANAGE_ATTENTION_TOOL,type AttentionTransaction} from '../../../src/agent/attention.js';
+import {AttentionEngine,MANAGE_ATTENTION_TOOL,type AttentionTransaction} from '../../../src/agent/attention.ts';
 
 const make=(maxPlans=16,random=()=>0.5)=>new AttentionEngine({enabled:true,maxPlans},random);
 const next={type:'next_message'};

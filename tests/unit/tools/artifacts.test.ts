@@ -4,8 +4,8 @@ import { mkdtempSync, rmSync, readdirSync, statSync, writeFileSync, utimesSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
-import { ArtifactStore, ARTIFACT_LIMITS } from '../../../src/artifacts/store.js';
-import { ArtifactTools, buildArtifactToolDefinitions } from '../../../src/tools/artifacts/tools.js';
+import { ArtifactStore, ARTIFACT_LIMITS } from '../../../src/artifacts/store.ts';
+import { ArtifactTools, buildArtifactToolDefinitions } from '../../../src/tools/artifacts/tools.ts';
 
 const context = { selfId: '1', groupId: '2', actorId: '3', messageId: '4' };
 function fixture(now = () => Date.now()) {

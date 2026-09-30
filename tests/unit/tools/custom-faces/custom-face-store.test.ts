@@ -4,7 +4,7 @@ import { chmodSync, linkSync, mkdtempSync, readFileSync, rmSync, statSync, symli
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
-import { CustomFaceStore, type CustomFaceInput } from '../../../../src/tools/custom-faces/store.js';
+import { CustomFaceStore, type CustomFaceInput } from '../../../../src/tools/custom-faces/store.ts';
 
 const ACCOUNT = '10001', OTHER_ACCOUNT = '10002', GROUP = '20001', OTHER_GROUP = '20002';
 const HASH = 'a'.repeat(32), OTHER_HASH = 'b'.repeat(32);

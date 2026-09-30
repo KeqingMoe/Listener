@@ -1,5 +1,5 @@
-import type { ImageReference } from '../contracts/messages.js';
-import type { JsonObject } from '../contracts/json.js';
+import type { ImageReference } from '../contracts/messages.ts';
+import type { JsonObject } from '../contracts/json.ts';
 
 const ID_PATTERN = '^img_(-?\\d{1,32})_(0|[1-9]\\d?|1[01]\\d|12[0-7])$';
 const imageId = new RegExp(ID_PATTERN);

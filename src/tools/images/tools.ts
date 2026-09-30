@@ -1,15 +1,15 @@
-import { LISTENER_GROUP, resolveGroupId } from '../../contracts/identity.js';
-import { type Api } from '../../contracts/onebot.js';
-import { type ChatContentPart } from '../../contracts/model.js';
-import { type Memory } from '../../contracts/messages.js';
-import { type JsonObject } from '../../contracts/json.js';
-import { type ToolDefinition, type TurnContext } from '../../contracts/tools.js';
-import type { ImagesConfig } from '../../config/listener.js';
-import { downloadImage, prepareImage, type ImageDownloader } from './download.js';
-import type { ArtifactStore } from '../../artifacts/store.js';
+import { LISTENER_GROUP, resolveGroupId } from '../../contracts/identity.ts';
+import { type Api } from '../../contracts/onebot.ts';
+import { type ChatContentPart } from '../../contracts/model.ts';
+import { type Memory } from '../../contracts/messages.ts';
+import { type JsonObject } from '../../contracts/json.ts';
+import { type ToolDefinition, type TurnContext } from '../../contracts/tools.ts';
+import type { ImagesConfig } from '../../config/listener.ts';
+import { downloadImage, prepareImage, type ImageDownloader } from './download.ts';
+import type { ArtifactStore } from '../../artifacts/store.ts';
 const ARTIFACT_ID = /^art_[a-f0-9]{24}$/;
-import { log, withLogContext } from '../../observability/logger.js';
-import { ID_PATTERN, parseId, identifier, object } from '../../onebot/image-references.js';
+import { log, withLogContext } from '../../observability/logger.ts';
+import { ID_PATTERN, parseId, identifier, object } from '../../onebot/image-references.ts';
 
 function downloadFailure(error: unknown): string {
   // Do not invoke exception getters from an injected transport while classifying it.

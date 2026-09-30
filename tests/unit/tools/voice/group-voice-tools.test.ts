@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import {
   GroupVoiceTools,
   GROUP_VOICE_TOOL_NAMES,
-} from "../../../../src/tools/voice/tools.js";
-import type { Api } from "../../../../src/contracts/onebot.js";
-import type { JsonObject } from "../../../../src/contracts/json.js";
-import type { TurnContext } from "../../../../src/contracts/tools.js";
+} from "../../../../src/tools/voice/tools.ts";
+import type { Api } from "../../../../src/contracts/onebot.ts";
+import type { JsonObject } from "../../../../src/contracts/json.ts";
+import type { TurnContext } from "../../../../src/contracts/tools.ts";
 const GROUP = "12345",
   SELF = "99999",
   SECRET = "PRIVATE_PREVIEW_TOKEN_FILE_URL";

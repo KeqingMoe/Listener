@@ -2,12 +2,12 @@ import { chmodSync, closeSync, constants, existsSync, fstatSync, lstatSync, open
 import { dirname, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
-import { normalizeWakeDiagnostics } from '../../observability/wake-diagnostics.js';
-import { SESSION_INSPECTION_INDEXES } from './indexes.js';
-import { resolveGroupId } from '../../contracts/identity.js';
-import { type ChatContentPart, type ChatMessage, type Completion } from '../../contracts/model.js';
-import { type JsonObject } from '../../contracts/json.js';
-import { type ToolDefinition } from '../../contracts/tools.js';
+import { normalizeWakeDiagnostics } from '../../observability/wake-diagnostics.ts';
+import { SESSION_INSPECTION_INDEXES } from './indexes.ts';
+import { resolveGroupId } from '../../contracts/identity.ts';
+import { type ChatContentPart, type ChatMessage, type Completion } from '../../contracts/model.ts';
+import { type JsonObject } from '../../contracts/json.ts';
+import { type ToolDefinition } from '../../contracts/tools.ts';
 
 export interface ModelSessionOptions { path:string; groupId?:string; maxTranscriptBytes?:number }
 export interface ModelSessionState { sessionId:string; generation:number; wakeId?:string; resetReason?:string; needsRecovery:boolean }

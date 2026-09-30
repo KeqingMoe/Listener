@@ -1,13 +1,13 @@
 import { randomBytes } from 'node:crypto';
-import { LISTENER_GROUP, resolveGroupId } from '../../contracts/identity.js';
-import { type Api } from '../../contracts/onebot.js';
-import { type JsonObject } from '../../contracts/json.js';
-import { type Memory, type MessageSegment } from '../../contracts/messages.js';
-import { type ToolDefinition, type TurnContext } from '../../contracts/tools.js';
-import { extractForward, type ExtractedForward } from '../../onebot/forward-references.js';
-import { type ForwardReference } from '../../contracts/messages.js';
-import { log } from '../../observability/logger.js';
-import { extractMessageContent } from '../../world/message-content.js';
+import { LISTENER_GROUP, resolveGroupId } from '../../contracts/identity.ts';
+import { type Api } from '../../contracts/onebot.ts';
+import { type JsonObject } from '../../contracts/json.ts';
+import { type Memory, type MessageSegment } from '../../contracts/messages.ts';
+import { type ToolDefinition, type TurnContext } from '../../contracts/tools.ts';
+import { extractForward, type ExtractedForward } from '../../onebot/forward-references.ts';
+import { type ForwardReference } from '../../contracts/messages.ts';
+import { log } from '../../observability/logger.ts';
+import { extractMessageContent } from '../../world/message-content.ts';
 
 export interface ForwardConfig { enabled: boolean }
 const ROOT = /^fwd_(-?\d{1,32})_(0|[1-9]\d?|1[01]\d|12[0-7])$/;

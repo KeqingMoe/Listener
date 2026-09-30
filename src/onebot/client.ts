@@ -1,8 +1,8 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
-import type { Config } from '../config/onebot.js';
-import { log } from '../observability/logger.js';
+import type { Config } from '../config/onebot.ts';
+import { log } from '../observability/logger.ts';
 
 const ERROR_MESSAGES = {
   api_failed:'OneBot API failed', unavailable:'OneBot unavailable', busy:'OneBot busy',

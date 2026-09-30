@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import test from 'node:test';
-import { LogReader, parseLogArgs } from '../../../src/cli/logs.js';
-import { managedLogFilename } from '../../../src/observability/logger.js';
+import { LogReader, parseLogArgs } from '../../../src/cli/logs.ts';
+import { managedLogFilename } from '../../../src/observability/logger.ts';
 
 const turn = 't_0123456789abcdef';
 const otherTurn = 't_fedcba9876543210';

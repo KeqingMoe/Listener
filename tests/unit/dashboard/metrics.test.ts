@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { performanceMetrics, intervalUnion, intervalDuration } from '../../../src/dashboard/contracts/metrics.js';
-import { summarize } from '../../../src/dashboard/server/repository.js';
+import { performanceMetrics, intervalUnion, intervalDuration } from '../../../src/dashboard/contracts/metrics.ts';
+import { summarize } from '../../../src/dashboard/server/repository.ts';
 const request=(start:number,end:number,output:number|null,status='success')=>({started_at:start,ended_at:end,duration_ms:end-start,decode_duration_ms:end-start,ttft_ms:0,output_tokens:output,status});
 test('TPS never reads legacy generation durations or impossible decode intervals',()=>{
  const old={...request(0,1000,100),generation_duration_ms:500,decode_duration_ms:null};

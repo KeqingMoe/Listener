@@ -3,10 +3,10 @@ import { dirname, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { parse as parseToml } from 'smol-toml';
 import { parse as parseDotenv } from 'dotenv';
-import type { AppConfig, ResolvedGroupConfig, ModelTransport, WebSearchProviderConfig } from './app.js';
-import type { LoggingConfig, LogLevel } from '../observability/logger.js';
-import { OWNER_ID } from '../contracts/identity.js';
-import { TOOL_NAMES, TOOL_CAPABILITIES, type ResolvedToolPolicies, type ToolMode, type ToolName, type ToolPolicy } from './tool-policy.js';
+import type { AppConfig, ResolvedGroupConfig, ModelTransport, WebSearchProviderConfig } from './app.ts';
+import type { LoggingConfig, LogLevel } from '../observability/logger.ts';
+import { OWNER_ID } from '../contracts/identity.ts';
+import { TOOL_NAMES, TOOL_CAPABILITIES, type ResolvedToolPolicies, type ToolMode, type ToolName, type ToolPolicy } from './tool-policy.ts';
 
 /** Errors contain schema paths and static explanations, never supplied values. */
 export class ConfigError extends Error { constructor(message:string){super(message);this.name='ConfigError';} }

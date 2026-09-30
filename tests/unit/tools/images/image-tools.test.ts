@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ImageTools, VIEW_IMAGES_TOOL } from '../../../../src/tools/images/tools.js';
-import { imageReferences, imageMarker } from '../../../../src/onebot/image-references.js';
-import { LISTENER_GROUP } from '../../../../src/contracts/identity.js';
-import { type Api } from '../../../../src/contracts/onebot.js';
-import { type Memory, type TimelineEntry } from '../../../../src/contracts/messages.js';
-import { type TurnContext } from '../../../../src/contracts/tools.js';
-import type { ImagesConfig } from '../../../../src/config/listener.js';
-import type { ImageDownloader } from '../../../../src/tools/images/download.js';
+import { ImageTools, VIEW_IMAGES_TOOL } from '../../../../src/tools/images/tools.ts';
+import { imageReferences, imageMarker } from '../../../../src/onebot/image-references.ts';
+import { LISTENER_GROUP } from '../../../../src/contracts/identity.ts';
+import { type Api } from '../../../../src/contracts/onebot.ts';
+import { type Memory, type TimelineEntry } from '../../../../src/contracts/messages.ts';
+import { type TurnContext } from '../../../../src/contracts/tools.ts';
+import type { ImagesConfig } from '../../../../src/config/listener.ts';
+import type { ImageDownloader } from '../../../../src/tools/images/download.ts';
 
 const context: TurnContext = { groupId: LISTENER_GROUP, actorId: '123', messageId: '1', selfId: '999' };
 const options: ImagesConfig = { enabled: true, maxDownloadMb: 10 };

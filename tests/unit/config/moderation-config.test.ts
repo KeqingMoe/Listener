@@ -1,11 +1,11 @@
 import test from 'node:test';
-import {withFixtureModel} from '../../support/config-fixture.js';
+import {withFixtureModel} from '../../support/config-fixture.ts';
 import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,writeFileSync,rmSync,existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {ConfigError,loadAppConfig} from '../../../src/config/loader.js';
-import type {AppConfig} from '../../../src/config/app.js';
+import {ConfigError,loadAppConfig} from '../../../src/config/loader.ts';
+import type {AppConfig} from '../../../src/config/app.ts';
 const names=['mute_member','unmute_member','recall_message','set_member_card'] as const;
 function fixture(t:{after(fn:()=>void):void}){
   const dir=mkdtempSync(join(tmpdir(),'moderation-policy-config-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));

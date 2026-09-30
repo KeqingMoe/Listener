@@ -1,18 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { safetyRules, SAFETY_RULES, buildSystemPrompt, observedSystemPrompt } from '../../../src/agent/prompts.js';
-import { CHAT_TOOLS, buildToolDefinitions } from '../../../src/agent/tool-definitions.js';
-import type { ListenerConfig, ModerationPolicy } from '../../../src/config/listener.js';
-import { TOOL_NAMES, TOOL_CAPABILITIES, type ResolvedToolPolicies, type ToolName, type ToolPolicy } from '../../../src/config/tool-policy.js';
-import { LISTENER_GROUP } from '../../../src/contracts/identity.js';
-import type { ToolDefinition } from '../../../src/contracts/tools.js';
-import { VIEW_IMAGES_TOOL } from '../../../src/tools/images/tools.js';
-import { READ_FORWARD_TOOL } from '../../../src/tools/forwards/tools.js';
-import { GET_REACTION_USERS_TOOL } from '../../../src/tools/reactions/users.js';
-import { MANAGE_ATTENTION_TOOL } from '../../../src/agent/attention.js';
-import { buildModerationTools } from '../../../src/tools/management/moderation.js';
-import { buildExtendedToolDefinitions } from '../../../src/tools/extended.js';
-import { buildWorldTools } from '../../../src/tools/world/tools.js';
+import { safetyRules, SAFETY_RULES, buildSystemPrompt, observedSystemPrompt } from '../../../src/agent/prompts.ts';
+import { CHAT_TOOLS, buildToolDefinitions } from '../../../src/agent/tool-definitions.ts';
+import type { ListenerConfig, ModerationPolicy } from '../../../src/config/listener.ts';
+import { TOOL_NAMES, TOOL_CAPABILITIES, type ResolvedToolPolicies, type ToolName, type ToolPolicy } from '../../../src/config/tool-policy.ts';
+import { LISTENER_GROUP } from '../../../src/contracts/identity.ts';
+import type { ToolDefinition } from '../../../src/contracts/tools.ts';
+import { VIEW_IMAGES_TOOL } from '../../../src/tools/images/tools.ts';
+import { READ_FORWARD_TOOL } from '../../../src/tools/forwards/tools.ts';
+import { GET_REACTION_USERS_TOOL } from '../../../src/tools/reactions/users.ts';
+import { MANAGE_ATTENTION_TOOL } from '../../../src/agent/attention.ts';
+import { buildModerationTools } from '../../../src/tools/management/moderation.ts';
+import { buildExtendedToolDefinitions } from '../../../src/tools/extended.ts';
+import { buildWorldTools } from '../../../src/tools/world/tools.ts';
 
 function freeze<T>(value: T): T {
   if (value && typeof value === 'object') {

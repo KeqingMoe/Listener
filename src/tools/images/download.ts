@@ -5,8 +5,8 @@ import type { ClientRequest, IncomingMessage } from 'node:http';
 import { isIP } from 'node:net';
 import ipaddr from 'ipaddr.js';
 import sharp from 'sharp';
-import { MODEL_IMAGE_MAX_EDGE } from '../../contracts/tool-limits.js';
-import { log } from '../../observability/logger.js';
+import { MODEL_IMAGE_MAX_EDGE } from '../../contracts/tool-limits.ts';
+import { log } from '../../observability/logger.ts';
 
 export interface DownloadedImage {
   dataUrl: string;

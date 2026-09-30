@@ -1,8 +1,8 @@
-import { resolveGroupId } from '../../contracts/identity.js';
-import type { Api } from '../../contracts/onebot.js';
-import type { Memory } from '../../contracts/messages.js';
-import type { JsonObject } from '../../contracts/json.js';
-import type { ToolDefinition, TurnContext } from '../../contracts/tools.js';
+import { resolveGroupId } from '../../contracts/identity.ts';
+import type { Api } from '../../contracts/onebot.ts';
+import type { Memory } from '../../contracts/messages.ts';
+import type { JsonObject } from '../../contracts/json.ts';
+import type { ToolDefinition, TurnContext } from '../../contracts/tools.ts';
 
 const OUTPUT_BYTES = 24_000;
 const NAME = 'transcribe_voice';

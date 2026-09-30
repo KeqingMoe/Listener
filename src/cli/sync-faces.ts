@@ -3,7 +3,7 @@ import { mkdir, lstat, open, rename, unlink } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
-import { FACE_CATALOG_VERSION, FACE_CATALOG_SOURCE, FACE_CATALOG_LICENSE, FACE_DATA_LIMIT, extractFaceCatalog } from '../onebot/catalog/schema.js';
+import { FACE_CATALOG_VERSION, FACE_CATALOG_SOURCE, FACE_CATALOG_LICENSE, FACE_DATA_LIMIT, extractFaceCatalog } from '../onebot/catalog/schema.ts';
 
 async function download(url: string): Promise<Buffer> {
   const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(15_000) });

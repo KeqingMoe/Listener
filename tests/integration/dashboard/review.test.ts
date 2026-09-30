@@ -4,12 +4,12 @@ import { mkdtempSync,rmSync,readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
-import { buildApp } from '../../../src/dashboard/server/app.js';
-import { AuthStore } from '../../../src/dashboard/server/auth.js';
-import { eventTitle } from '../../../src/dashboard/contracts/event-labels.js';
-import { Repository } from '../../../src/dashboard/server/repository.js';
-import { ReviewRepository } from '../../../src/dashboard/server/review-repository.js';
-import { TelemetryStore } from '../../../src/observability/telemetry.js';
+import { buildApp } from '../../../src/dashboard/server/app.ts';
+import { AuthStore } from '../../../src/dashboard/server/auth.ts';
+import { eventTitle } from '../../../src/dashboard/contracts/event-labels.ts';
+import { Repository } from '../../../src/dashboard/server/repository.ts';
+import { ReviewRepository } from '../../../src/dashboard/server/review-repository.ts';
+import { TelemetryStore } from '../../../src/observability/telemetry.ts';
 function fixture(old=false){
  const dir=mkdtempSync(join(tmpdir(),'review-')),telemetryPath=join(dir,'t.sqlite'),sessionPath=join(dir,'s.sqlite');
  const db=new DatabaseSync(telemetryPath);

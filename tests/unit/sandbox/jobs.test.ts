@@ -1,8 +1,8 @@
 import test from 'node:test';
-import type {ExecutionDiagnostic,ExecutionResult} from '../../../src/sandbox/protocol.js';
+import type {ExecutionDiagnostic,ExecutionResult} from '../../../src/sandbox/protocol.ts';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';import {join} from 'node:path';
-import {SandboxJobStore,validateInput,type JobInput} from '../../../src/sandbox/store.js';import {SandboxService} from '../../../src/sandbox/service.js';
+import {SandboxJobStore,validateInput,type JobInput} from '../../../src/sandbox/store.ts';import {SandboxService} from '../../../src/sandbox/service.ts';
 const scope={selfId:'100',groupId:'200'};
 const diagnostic:ExecutionDiagnostic={kind:'guest_exception',phase:'execute',name:'ReferenceError',message:"'Intl' is not defined",stack:'at sandbox:3',truncated:false};
 test('diagnostics survive foreground, detached completion, query, cancel and reopen',async()=>{

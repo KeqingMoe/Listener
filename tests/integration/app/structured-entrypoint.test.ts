@@ -1,5 +1,5 @@
 import test from 'node:test';
-import { sendChatStream } from '../../support/model-sse.js';
+import { sendChatStream } from '../../support/model-sse.ts';
 import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -11,9 +11,9 @@ import {createServer} from 'node:http';
 import type {AddressInfo,Socket} from 'node:net';
 import {DatabaseSync} from 'node:sqlite';
 import {WebSocketServer,type WebSocket} from 'ws';
-import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.js';
-import {SQLiteMemory} from '../../../src/agent/memory.js';
-import {FACE_CATALOG} from '../../../src/onebot/catalog/faces.js';
+import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.ts';
+import {SQLiteMemory} from '../../../src/agent/memory.ts';
+import {FACE_CATALOG} from '../../../src/onebot/catalog/faces.ts';
 
 const GROUP=LISTENER_GROUP,SELF='99999';
 const LITERAL='[QQ表情：吃瓜 id=271] [at:all] [CQ:at,qq=all]';

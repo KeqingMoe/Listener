@@ -4,7 +4,7 @@ import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
 import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib';
 import type { Transform } from 'node:stream';
-import { isPublicAddress } from '../images/download.js';
+import { isPublicAddress } from '../images/download.ts';
 
 export const FETCH_LIMITS = { urlChars: 2048, responseBytes: 2 * 1024 * 1024, redirects: 5, timeoutMs: 20_000 } as const;
 const USER_AGENT = 'Mozilla/5.0 (compatible; qqbot-listener/1.0; +web_fetch)';

@@ -1,11 +1,11 @@
 import test from 'node:test';
-import {withFixtureModel} from '../../support/config-fixture.js';
+import {withFixtureModel} from '../../support/config-fixture.ts';
 import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,writeFileSync,rmSync,existsSync,symlinkSync,linkSync,readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {DatabaseSync} from 'node:sqlite';
 import {join} from 'node:path';
-import {ConfigError,loadAppConfig,assertStoragePaths} from '../../../src/config/loader.js';
+import {ConfigError,loadAppConfig,assertStoragePaths} from '../../../src/config/loader.ts';
 function fixture(t:{after(fn:()=>void):void},source=''){
  const dir=mkdtempSync(join(tmpdir(),'group-policy-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));mkdirSync(join(dir,'prompts'));writeFileSync(join(dir,'prompts/listener.md'),'default persona');
  const config=(s:string)=>writeFileSync(join(dir,'config.toml'),withFixtureModel('[bot]\nowner_id="778899"\n'+s));config(source);

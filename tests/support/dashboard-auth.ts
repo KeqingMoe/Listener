@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildApp, type AppOptions } from "../../src/dashboard/server/app.js";
-import { AuthStore, SESSION_COOKIE } from "../../src/dashboard/server/auth.js";
+import { buildApp, type AppOptions } from "../../src/dashboard/server/app.ts";
+import { AuthStore, SESSION_COOKIE } from "../../src/dashboard/server/auth.ts";
 
 /** Test-only real credentials: all requests still traverse production auth hooks. */
 export function buildAuthenticatedApp(options: AppOptions) {

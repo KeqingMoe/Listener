@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GroupTranscriptionTools } from '../../../../src/tools/transcription/tools.js';
-import type { Memory, TimelineEntry } from '../../../../src/contracts/messages.js';
-import type { Api } from '../../../../src/contracts/onebot.js';
-import type { JsonObject } from '../../../../src/contracts/json.js';
-import type { TurnContext } from '../../../../src/contracts/tools.js';
+import { GroupTranscriptionTools } from '../../../../src/tools/transcription/tools.ts';
+import type { Memory, TimelineEntry } from '../../../../src/contracts/messages.ts';
+import type { Api } from '../../../../src/contracts/onebot.ts';
+import type { JsonObject } from '../../../../src/contracts/json.ts';
+import type { TurnContext } from '../../../../src/contracts/tools.ts';
 
 const context: TurnContext = { groupId: '12345', selfId: '99999', actorId: '88888', messageId: '1' };
 const entry = (overrides: Partial<TimelineEntry> = {}): TimelineEntry => ({ messageId: '42', userId: '88888', nickname: 'user', text: '[语音]', time: 1, ...overrides });

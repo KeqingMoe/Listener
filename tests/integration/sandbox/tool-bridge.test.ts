@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Listener} from '../../../src/agent/listener.js';
-import {SideEffectPacer,SIDE_EFFECT_PACING} from '../../../src/agent/pacing.js';
-import {SandboxService} from '../../../src/sandbox/service.js';
-import {SandboxJobStore} from '../../../src/sandbox/store.js';
-import {startExecution} from '../../../src/sandbox/executor.js';
-import {ModelSession} from '../../../src/agent/session/store.js';
-import {WorldEventStore} from '../../../src/world/events.js';
-import type {Memory,TimelineEntry} from '../../../src/contracts/messages.js';
-import type {ListenerConfig} from '../../../src/config/listener.js';
-import type {JsonObject} from '../../../src/contracts/json.js';
+import {Listener} from '../../../src/agent/listener.ts';
+import {SideEffectPacer,SIDE_EFFECT_PACING} from '../../../src/agent/pacing.ts';
+import {SandboxService} from '../../../src/sandbox/service.ts';
+import {SandboxJobStore} from '../../../src/sandbox/store.ts';
+import {startExecution} from '../../../src/sandbox/executor.ts';
+import {ModelSession} from '../../../src/agent/session/store.ts';
+import {WorldEventStore} from '../../../src/world/events.ts';
+import type {Memory,TimelineEntry} from '../../../src/contracts/messages.ts';
+import type {ListenerConfig} from '../../../src/config/listener.ts';
+import type {JsonObject} from '../../../src/contracts/json.ts';
 
 const group='123456',self='999',actor='42';
 const config=(extended:Record<string,string>={}):ListenerConfig=>({groupId:group,enabled:true,baseUrl:'https://example.invalid',apiKey:'x',model:'x',timeoutMs:1000,maxTokens:128,debounceMs:1,cooldownMs:0,memoryPath:':memory:',maxContextChars:8000,retentionDays:7,randomReplyProbability:0,tools:{members:true,mention:true,extended:{execute_javascript:'direct',get_group_info:'direct',...extended} as never}});
@@ -115,7 +115,7 @@ test('confirm-mode tools from the sandbox post the normal confirmation and repor
 
 test('sandbox code creates image artifacts from Uint8Array pixels',async()=>{
  const {mkdtempSync,rmSync}=await import('node:fs');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
- const {ArtifactStore}=await import('../../../src/artifacts/store.js');
+ const {ArtifactStore}=await import('../../../src/artifacts/store.ts');
  const root=mkdtempSync(join(tmpdir(),'bridge-art-'));const artifacts=new ArtifactStore({path:join(root,'a.sqlite'),directory:join(root,'files'),providerDirectory:'/napcat/art'});
  const cfg=config({create_image:'direct',list_artifacts:'direct'});
  const mem=memory(),session=new ModelSession({path:':memory:',groupId:group}),world=new WorldEventStore({path:':memory:',groupId:group});

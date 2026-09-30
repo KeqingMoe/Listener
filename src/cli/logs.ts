@@ -3,8 +3,8 @@ import { constants } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
-import { loadAppConfig } from '../config/loader.js';
-import { formatLogLine, managedLogFilename, type LogLevel } from '../observability/logger.js';
+import { loadAppConfig } from '../config/loader.ts';
+import { formatLogLine, managedLogFilename, type LogLevel } from '../observability/logger.ts';
 
 const levels: Record<LogLevel,number> = {debug:10,info:20,warn:30,error:40};
 const CHUNK = 256 * 1024;

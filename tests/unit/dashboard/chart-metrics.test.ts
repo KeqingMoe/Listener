@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { RequestTrendPoint, RequestTrendsResponse } from '../../../src/dashboard/contracts/request-trends.js';
-import { chartMetrics, metricValue, resolveMetric, scatterSummary, resolveChartRange, outcomes } from '../../../src/dashboard/web/src/components/overview/chartMetrics.js';
-import { chartOptions } from '../../../src/dashboard/web/src/components/overview/chartOptions.js';
+import type { RequestTrendPoint, RequestTrendsResponse } from '../../../src/dashboard/contracts/request-trends.ts';
+import { chartMetrics, metricValue, resolveMetric, scatterSummary, resolveChartRange, outcomes } from '../../../src/dashboard/web/src/components/overview/chartMetrics.ts';
+import { chartOptions } from '../../../src/dashboard/web/src/components/overview/chartOptions.ts';
 
 const point: RequestTrendPoint = { startedAt: 1234567890123, outcome: 'failed', durationMs: 1500, ttftMs: null, inputTokens: 0, totalInputTokens: 100, cachedInputTokens: 100, outputTokens: null, tps: null, cacheHitRate: 1 };
 test('all eight metrics preserve zero and missing values; duration uses seconds and TPS is never inferred', () => {

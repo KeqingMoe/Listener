@@ -1,5 +1,5 @@
 import test from 'node:test';
-import { sendChatStream } from '../../support/model-sse.js';
+import { sendChatStream } from '../../support/model-sse.ts';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { createServer, type IncomingHttpHeaders } from 'node:http';
@@ -7,9 +7,9 @@ import { once } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { OpenAIModel } from '../../../src/model/chat.js';
-import { ResponsesModel } from '../../../src/model/responses.js';
-import { ModelSession } from '../../../src/agent/session/store.js';
+import { OpenAIModel } from '../../../src/model/chat.ts';
+import { ResponsesModel } from '../../../src/model/responses.ts';
+import { ModelSession } from '../../../src/agent/session/store.ts';
 const version=createRequire(import.meta.url)('../../../package.json').version;
 for(const transport of ['chat','responses'] as const)test(`${transport}: always versioned UA, optional dynamic persisted session headers`,async()=>{
  const dir=mkdtempSync(join(tmpdir(),'headers-'));let session=new ModelSession({path:join(dir,'session.sqlite'),groupId:'22',maxTranscriptBytes:524288});

@@ -1,9 +1,9 @@
 import { randomBytes } from 'node:crypto';
-import { LISTENER_GROUP, resolveGroupId } from '../../contracts/identity.js';
-import { type Api } from '../../contracts/onebot.js';
-import { type JsonObject } from '../../contracts/json.js';
-import { type Memory } from '../../contracts/messages.js';
-import { type ToolDefinition, type TurnContext } from '../../contracts/tools.js';
+import { LISTENER_GROUP, resolveGroupId } from '../../contracts/identity.ts';
+import { type Api } from '../../contracts/onebot.ts';
+import { type JsonObject } from '../../contracts/json.ts';
+import { type Memory } from '../../contracts/messages.ts';
+import { type ToolDefinition, type TurnContext } from '../../contracts/tools.ts';
 
 export const GET_REACTION_USERS_TOOL:ToolDefinition={type:'function',function:{
  name:'get_reaction_users',

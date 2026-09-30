@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import test from 'node:test';
-import { configureLogging, formatLogLine, log, managedLogFilename, newTraceId, sanitizeLogFields, withLogContext, type LoggingConfig } from '../../../src/observability/logger.js';
+import { configureLogging, formatLogLine, log, managedLogFilename, newTraceId, sanitizeLogFields, withLogContext, type LoggingConfig } from '../../../src/observability/logger.ts';
 
 const config = (directory: string, extra: Partial<LoggingConfig> = {}): LoggingConfig => ({ level: 'debug', console: false, file: true, directory, retentionDays: 7, maxFileMb: 1, maxTotalMb: 2, ...extra });
 async function fixture(t: { after(fn: () => Promise<void>): void }) {

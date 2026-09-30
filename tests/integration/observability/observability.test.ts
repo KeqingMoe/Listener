@@ -3,15 +3,15 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { configureLogging, withLogContext } from '../../../src/observability/logger.js';
-import { OpenAIModel, ModelError } from '../../../src/model/chat.js';
-import { SQLiteMemory } from '../../../src/agent/memory.js';
-import { Moderation } from '../../../src/tools/management/moderation.js';
-import { ImageTools } from '../../../src/tools/images/tools.js';
-import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.js';
-import { type Api } from '../../../src/contracts/onebot.js';
-import { type Memory } from '../../../src/contracts/messages.js';
-import { type TurnContext } from '../../../src/contracts/tools.js';
+import { configureLogging, withLogContext } from '../../../src/observability/logger.ts';
+import { OpenAIModel, ModelError } from '../../../src/model/chat.ts';
+import { SQLiteMemory } from '../../../src/agent/memory.ts';
+import { Moderation } from '../../../src/tools/management/moderation.ts';
+import { ImageTools } from '../../../src/tools/images/tools.ts';
+import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.ts';
+import { type Api } from '../../../src/contracts/onebot.ts';
+import { type Memory } from '../../../src/contracts/messages.ts';
+import { type TurnContext } from '../../../src/contracts/tools.ts';
 
 const secret = 'private-body-header-key-card';
 async function capture(work: () => Promise<void>) {

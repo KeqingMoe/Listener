@@ -4,9 +4,9 @@ import {mkdtempSync,rmSync,writeFileSync,symlinkSync,readFileSync} from 'node:fs
 import {DatabaseSync} from 'node:sqlite';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {ModelSession} from '../../../../src/agent/session/store.js';
-import type { Completion } from '../../../../src/contracts/model.js';
-import type { ToolDefinition } from '../../../../src/contracts/tools.js';
+import {ModelSession} from '../../../../src/agent/session/store.ts';
+import type { Completion } from '../../../../src/contracts/model.ts';
+import type { ToolDefinition } from '../../../../src/contracts/tools.ts';
 const tool:ToolDefinition={type:'function',function:{name:'finish',description:'end',parameters:{type:'object',properties:{},required:[]}}};
 const second:ToolDefinition={type:'function',function:{name:'send_message',description:'send',parameters:{type:'object'}}};
 const completion=(...calls:any[]):Completion=>({content:null,tool_calls:calls});

@@ -4,17 +4,17 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { loadAppConfig } from '../../../src/config/loader.js';
-import { inspectGroupConfig } from '../../../src/config/inspect.js';
-import { toListenerConfig } from '../../../src/config/runtime.js';
-import { TOOL_NAMES, TOOL_CAPABILITIES } from '../../../src/config/tool-policy.js';
-import { Listener } from '../../../src/agent/listener.js';
-import { buildToolDefinitions } from '../../../src/agent/tool-definitions.js';
-import { buildSystemPrompt } from '../../../src/agent/prompts.js';
-import type { Api } from '../../../src/contracts/onebot.js';
-import type { JsonObject } from '../../../src/contracts/json.js';
-import type { Memory, TimelineEntry } from '../../../src/contracts/messages.js';
-import type { Model } from '../../../src/contracts/model.js';
+import { loadAppConfig } from '../../../src/config/loader.ts';
+import { inspectGroupConfig } from '../../../src/config/inspect.ts';
+import { toListenerConfig } from '../../../src/config/runtime.ts';
+import { TOOL_NAMES, TOOL_CAPABILITIES } from '../../../src/config/tool-policy.ts';
+import { Listener } from '../../../src/agent/listener.ts';
+import { buildToolDefinitions } from '../../../src/agent/tool-definitions.ts';
+import { buildSystemPrompt } from '../../../src/agent/prompts.ts';
+import type { Api } from '../../../src/contracts/onebot.ts';
+import type { JsonObject } from '../../../src/contracts/json.ts';
+import type { Memory, TimelineEntry } from '../../../src/contracts/messages.ts';
+import type { Model } from '../../../src/contracts/model.ts';
 
 const GROUP = '123456789', OWNER = '100000001', SELF = '100000002', MEMBER = '100000003';
 // Explicit product contract, independent of the implementation's default-mode calculation.

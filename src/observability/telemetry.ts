@@ -2,10 +2,10 @@ import { closeSync, constants, fchmodSync, fstatSync, openSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { types } from 'node:util';
-import { normalizeModelRequestDiagnostics } from './model-diagnostics.js';
-import { REQUEST_ERRORS, normalizeUsage, type ModelRequestRecord, type ModelRequestStart, type ModelRequestInspection } from './model-usage.js';
-import { sanitizeInspection } from './request-inspection.js';
-import { installRequestChangeLog } from './request-change-log.js';
+import { normalizeModelRequestDiagnostics } from './model-diagnostics.ts';
+import { REQUEST_ERRORS, normalizeUsage, type ModelRequestRecord, type ModelRequestStart, type ModelRequestInspection } from './model-usage.ts';
+import { sanitizeInspection } from './request-inspection.ts';
+import { installRequestChangeLog } from './request-change-log.ts';
 
 export interface TelemetryContext {
   groupId?: string | null;

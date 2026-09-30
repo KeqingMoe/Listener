@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { Listener } from '../../../src/agent/listener.js';
-import type { ListenerConfig } from '../../../src/config/listener.js';
-import type { Api } from '../../../src/contracts/onebot.js';
-import type { ChatMessage, Completion, Model } from '../../../src/contracts/model.js';
-import type { Memory, TimelineEntry } from '../../../src/contracts/messages.js';
-import type { ToolCall } from '../../../src/contracts/tools.js';
-import { LISTENER_GROUP } from '../../../src/contracts/identity.js';
+import { Listener } from '../../../src/agent/listener.ts';
+import type { ListenerConfig } from '../../../src/config/listener.ts';
+import type { Api } from '../../../src/contracts/onebot.ts';
+import type { ChatMessage, Completion, Model } from '../../../src/contracts/model.ts';
+import type { Memory, TimelineEntry } from '../../../src/contracts/messages.ts';
+import type { ToolCall } from '../../../src/contracts/tools.ts';
+import { LISTENER_GROUP } from '../../../src/contracts/identity.ts';
 
 const self='900000001', actor='12345';
 const voice={type:'record',data:{file:'PRIVATE_TOKEN',url:'https://private.invalid/voice'}};

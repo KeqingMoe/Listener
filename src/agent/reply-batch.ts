@@ -1,10 +1,10 @@
-import { OWNER_ID, resolveOwnerId } from '../contracts/identity.js';
-import { type JsonObject } from '../contracts/json.js';
-import { type Memory, type TimelineEntry } from '../contracts/messages.js';
-import { type TurnContext } from '../contracts/tools.js';
-import { newTraceId } from '../observability/logger.js';
-import type { AttentionHit } from './attention.js';
-import { projectMessage } from '../world/message-content.js';
+import { OWNER_ID, resolveOwnerId } from '../contracts/identity.ts';
+import { type JsonObject } from '../contracts/json.ts';
+import { type Memory, type TimelineEntry } from '../contracts/messages.ts';
+import { type TurnContext } from '../contracts/tools.ts';
+import { newTraceId } from '../observability/logger.ts';
+import type { AttentionHit } from './attention.ts';
+import { projectMessage } from '../world/message-content.ts';
 
 export interface BatchItem {
   entry: TimelineEntry;

@@ -1,6 +1,6 @@
-import type { Config } from '../config/onebot.js';
+import type { Config } from '../config/onebot.ts';
 
-import { id } from './identity.js';
+import { id } from './identity.ts';
 
 export function parseCommand(message: unknown, selfId: string): '/ping' | '/help' | undefined {
   if (!Array.isArray(message) || message.length > 64) return undefined;

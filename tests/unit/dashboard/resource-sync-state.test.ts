@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyResourceSync } from '../../../src/dashboard/web/src/composables/resourceSyncState.js';
+import { applyResourceSync } from '../../../src/dashboard/web/src/composables/resourceSyncState.ts';
 
 test('resource sync preserves unchanged identity and applies escaped array/object patches immutably', () => {
   const current = { items: ['a', 'b'], 'a/b': { '~key': 1 } };

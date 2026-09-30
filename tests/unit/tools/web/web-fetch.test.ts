@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { createServer, request as httpRequest, type Server, type IncomingMessage, type ServerResponse, type RequestOptions } from 'node:http';
 import { gzipSync } from 'node:zlib';
 import type { AddressInfo } from 'node:net';
-import { createWebFetcher, validateFetchUrl, FetchError, FETCH_LIMITS, type FetchDependencies } from '../../../../src/tools/web/fetch.js';
+import { createWebFetcher, validateFetchUrl, FetchError, FETCH_LIMITS, type FetchDependencies } from '../../../../src/tools/web/fetch.ts';
 
 const PUBLIC = '93.184.216.34';
 async function serve(handler: (req: IncomingMessage, res: ServerResponse) => void): Promise<{ server: Server; port: number }> {

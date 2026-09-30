@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import { types } from 'node:util';
-import { resolveGroupId } from "../../contracts/identity.js";
-import { type Api } from "../../contracts/onebot.js";
-import { type JsonObject } from "../../contracts/json.js";
-import { type Memory } from "../../contracts/messages.js";
-import { type ToolDefinition, type TurnContext } from "../../contracts/tools.js";
-import { submittedResult, writeFailure, afterDispatch } from '../../onebot/operation-result.js';
+import { resolveGroupId } from "../../contracts/identity.ts";
+import { type Api } from "../../contracts/onebot.ts";
+import { type JsonObject } from "../../contracts/json.ts";
+import { type Memory } from "../../contracts/messages.ts";
+import { type ToolDefinition, type TurnContext } from "../../contracts/tools.ts";
+import { submittedResult, writeFailure, afterDispatch } from '../../onebot/operation-result.ts';
 
 /** NapCat v4.18.28: set_group_leave ignores is_dismiss; no dismiss tool is offered. */
 export const GROUP_ACTION_TOOL_NAMES = [

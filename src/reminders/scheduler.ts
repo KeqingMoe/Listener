@@ -1,4 +1,4 @@
-import { ReminderStore, type Reminder, type DeliveryOutcome } from './store.js';
+import { ReminderStore, type Reminder, type DeliveryOutcome } from './store.ts';
 export interface ReminderSchedulerOptions {
   store: ReminderStore; currentAccount: () => string | undefined; eligible: (groupId: string) => boolean;
   dispatch: (reminder: Reminder, beforeDispatchClaim: () => boolean) => Promise<DeliveryOutcome>;

@@ -1,5 +1,5 @@
 import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
-import { FACE_CATALOG_VERSION, FACE_CATALOG_SOURCE, FACE_DATA_LIMIT, validateFaceCatalog, type FaceCatalogEntry } from './schema.js';
+import { FACE_CATALOG_VERSION, FACE_CATALOG_SOURCE, FACE_DATA_LIMIT, validateFaceCatalog, type FaceCatalogEntry } from './schema.ts';
 
 export { FACE_CATALOG_VERSION, FACE_CATALOG_SOURCE, validateFaceCatalog };
 export type { FaceCatalogEntry };

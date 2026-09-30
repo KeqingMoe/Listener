@@ -1,10 +1,10 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { setImmediate as tick } from 'node:timers/promises';
-import { ReactionObservations } from '../../../src/world/reaction-observations.js';
-import type { Api } from '../../../src/contracts/onebot.js';
-import type { JsonObject } from '../../../src/contracts/json.js';
-import type { Memory, TimelineEntry } from '../../../src/contracts/messages.js';
+import { ReactionObservations } from '../../../src/world/reaction-observations.ts';
+import type { Api } from '../../../src/contracts/onebot.ts';
+import type { JsonObject } from '../../../src/contracts/json.ts';
+import type { Memory, TimelineEntry } from '../../../src/contracts/messages.ts';
 
 const group = '22';
 const entry = (id: string, replyTo?: string): TimelineEntry => ({ messageId: id, userId: '123', nickname: 'member', text: 'not a trusted ID: 888', time: Number(id), ...(replyTo ? { replyTo } : {}) });
