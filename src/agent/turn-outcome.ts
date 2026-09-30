@@ -29,6 +29,30 @@ export function newTurnStats(): TurnStats {
   };
 }
 
+/** 记一次非重复的表情回应结果；失败码最多保留32个。 */
+export function countReaction(
+  stats: TurnStats,
+  errors: string[],
+  result: { status?: unknown; submitted?: unknown; error?: unknown },
+): void {
+  if (result.status === 'ok') {
+    if (result.submitted === true) {
+      stats.reactionSubmitted++;
+    } else {
+      stats.reactions++;
+    }
+  } else if (result.status === 'unknown') {
+    stats.reactionUnknown++;
+  } else {
+    stats.reactionFailures++;
+  }
+  if (result.status !== 'ok' && errors.length < 32) {
+    errors.push(
+      typeof result.error === 'string' ? result.error : 'reaction_failed',
+    );
+  }
+}
+
 /** 模型正常结束且没有发出确认消息时，按已提交但未确认的副作用细化outcome。 */
 export function silentOutcome(stats: TurnStats): string {
   return stats.sentSubmissions
