@@ -1,3 +1,4 @@
+import { canonicalMessageId } from '../../onebot/identity.ts';
 import type { Api } from '../../contracts/onebot.ts';
 import type { Memory } from '../../contracts/messages.ts';
 import type { JsonObject } from '../../contracts/json.ts';
@@ -403,7 +404,7 @@ export class GroupReminderTools {
       if (name === 'create_reminder') {
         if (
           typeof args.source_message_id !== 'string' ||
-          !identity(args.source_message_id, true)
+          !canonicalMessageId(args.source_message_id)
         ) {
           fail('invalid_arguments');
         }
@@ -472,7 +473,7 @@ export class GroupReminderTools {
           !object(remote) ||
           remote.message_type !== 'group' ||
           identity(remote.group_id) !== this.groupId ||
-          identity(remote.message_id, true) !== sourceId ||
+          canonicalMessageId(remote.message_id) !== sourceId ||
           !object(remote.sender) ||
           identity(remote.sender.user_id) !== sourceAuthor ||
           (Object.hasOwn(remote, 'user_id') &&

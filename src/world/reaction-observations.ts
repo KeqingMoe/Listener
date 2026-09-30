@@ -1,3 +1,4 @@
+import { canonicalMessageId } from '../onebot/identity.ts';
 import { resolveGroupId } from '../contracts/identity.ts';
 import { type Api } from '../contracts/onebot.ts';
 import { type JsonObject } from '../contracts/json.ts';
@@ -56,26 +57,8 @@ function object(value: unknown): value is JsonObject {
   }
 }
 
-function shortId(value: unknown): string | undefined {
-  if (typeof value === 'number') {
-    return Number.isSafeInteger(value) && !Object.is(value, -0)
-      ? String(value)
-      : undefined;
-  }
-  if (
-    typeof value !== 'string' ||
-    value.length > 17 ||
-    !/^(0|-?[1-9][0-9]*)$/.test(value) ||
-    String(Number(value)) !== value ||
-    !Number.isSafeInteger(Number(value))
-  ) {
-    return undefined;
-  }
-  return value;
-}
-
 function unsigned(value: unknown): string | undefined {
-  const id = shortId(value);
+  const id = canonicalMessageId(value);
   return id !== undefined && !id.startsWith('-') ? id : undefined;
 }
 
@@ -117,7 +100,7 @@ function proof(
             .some(
               (entry) =>
                 object(entry) &&
-                shortId(entry.messageId) === entry.messageId &&
+                canonicalMessageId(entry.messageId) === entry.messageId &&
                 identity(entry.userId) &&
                 entry.replyTo === id,
             )
@@ -140,7 +123,7 @@ function verified(
     !object(raw) ||
     raw.message_type !== 'group' ||
     identity(raw.group_id) !== groupId ||
-    shortId(raw.message_id) !== id ||
+    canonicalMessageId(raw.message_id) !== id ||
     !object(raw.sender)
   ) {
     return false;
@@ -254,7 +237,10 @@ export class ReactionObservations {
    * 因此旧响应不能刷新更新的证据。
    */
   revision(messageId: string): number {
-    if (typeof messageId !== 'string' || shortId(messageId) !== messageId) {
+    if (
+      typeof messageId !== 'string' ||
+      canonicalMessageId(messageId) !== messageId
+    ) {
       return 0;
     }
     this.prune();
@@ -262,7 +248,10 @@ export class ReactionObservations {
   }
 
   markDirty(messageId: string): void {
-    if (typeof messageId !== 'string' || shortId(messageId) !== messageId) {
+    if (
+      typeof messageId !== 'string' ||
+      canonicalMessageId(messageId) !== messageId
+    ) {
       return;
     }
     this.prune();
@@ -280,7 +269,7 @@ export class ReactionObservations {
     ) {
       return false;
     }
-    const id = shortId(event.message_id);
+    const id = canonicalMessageId(event.message_id);
     if (id === undefined || !proof(memory, id)) {
       return false;
     }
@@ -319,7 +308,10 @@ export class ReactionObservations {
     memory: Memory,
     expectedRevision?: number,
   ): void {
-    if (typeof messageId !== 'string' || shortId(messageId) !== messageId) {
+    if (
+      typeof messageId !== 'string' ||
+      canonicalMessageId(messageId) !== messageId
+    ) {
       return;
     }
     this.prune();
@@ -387,7 +379,10 @@ export class ReactionObservations {
   }
 
   get(messageId: string): JsonObject | undefined {
-    if (typeof messageId !== 'string' || shortId(messageId) !== messageId) {
+    if (
+      typeof messageId !== 'string' ||
+      canonicalMessageId(messageId) !== messageId
+    ) {
       return undefined;
     }
     this.prune();
@@ -407,7 +402,7 @@ export class ReactionObservations {
     id: string,
     origin: (id: string) => Proof | undefined,
   ): boolean {
-    if (shortId(id) !== id || !origin(id) || this.pending.has(id)) {
+    if (canonicalMessageId(id) !== id || !origin(id) || this.pending.has(id)) {
       return false;
     }
     const entry = this.cache.get(id),
@@ -534,7 +529,7 @@ export class ReactionObservations {
           if (
             !object(entry) ||
             typeof entry.messageId !== 'string' ||
-            shortId(entry.messageId) !== entry.messageId ||
+            canonicalMessageId(entry.messageId) !== entry.messageId ||
             !identity(entry.userId)
           ) {
             continue;
@@ -542,7 +537,7 @@ export class ReactionObservations {
           recentIds.push(entry.messageId);
           if (
             typeof entry.replyTo === 'string' &&
-            shortId(entry.replyTo) === entry.replyTo
+            canonicalMessageId(entry.replyTo) === entry.replyTo
           ) {
             quoted.add(entry.replyTo);
           }

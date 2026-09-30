@@ -1,3 +1,4 @@
+import { canonicalMessageId } from './identity.ts';
 import type { ForwardReference } from '../contracts/messages.ts';
 
 export interface ExtractedForward {
@@ -80,12 +81,7 @@ export function forwardReferences(
   messageId: string,
   segments: unknown,
 ): ForwardReference[] {
-  if (
-    typeof messageId !== 'string' ||
-    !/^-?\d{1,32}$/.test(messageId) ||
-    messageId.trim() !== messageId ||
-    !Array.isArray(segments)
-  ) {
+  if (canonicalMessageId(messageId) !== messageId || !Array.isArray(segments)) {
     return [];
   }
   const refs: ForwardReference[] = [];
@@ -112,12 +108,7 @@ export function sanitizeForwardReferences(
   messageId: string,
   refs: unknown,
 ): ForwardReference[] {
-  if (
-    typeof messageId !== 'string' ||
-    messageId.trim() !== messageId ||
-    !/^-?\d{1,32}$/.test(messageId) ||
-    !Array.isArray(refs)
-  ) {
+  if (canonicalMessageId(messageId) !== messageId || !Array.isArray(refs)) {
     return [];
   }
   const output: ForwardReference[] = [],

@@ -1,3 +1,4 @@
+import { canonicalMessageId } from '../../onebot/identity.ts';
 import { randomBytes } from 'node:crypto';
 import { MAX_MUTE_SECONDS } from '../../contracts/tool-limits.ts';
 import { writeFailure } from '../../onebot/operation-result.ts';
@@ -154,21 +155,6 @@ function id(value: unknown): string | undefined {
     : undefined;
 }
 
-function messageId(value: unknown): string | undefined {
-  if (typeof value === 'number') {
-    return Number.isSafeInteger(value) && !Object.is(value, -0)
-      ? String(value)
-      : undefined;
-  }
-  return typeof value === 'string' &&
-    value.length <= 17 &&
-    /^(0|-?[1-9][0-9]*)$/.test(value) &&
-    Number.isSafeInteger(Number(value)) &&
-    String(Number(value)) === value
-    ? value
-    : undefined;
-}
-
 class Denied extends Error {
   constructor(readonly code: string) {
     super(code);
@@ -283,7 +269,7 @@ export class Moderation {
       id(context.selfId) !== context.selfId ||
       context.selfId === this.ownerId ||
       typeof context.messageId !== 'string' ||
-      messageId(context.messageId) !== context.messageId
+      canonicalMessageId(context.messageId) !== context.messageId
     ) {
       deny('forbidden_context');
     }
@@ -316,7 +302,7 @@ export class Moderation {
     if (name === 'recall_message') {
       if (
         typeof args.message_id !== 'string' ||
-        messageId(args.message_id) !== args.message_id
+        canonicalMessageId(args.message_id) !== args.message_id
       ) {
         return deny('invalid_arguments');
       }
@@ -428,7 +414,7 @@ export class Moderation {
         !record(message) ||
         message.message_type !== 'group' ||
         id(message.group_id) !== this.groupId ||
-        messageId(message.message_id) !== action.message_id ||
+        canonicalMessageId(message.message_id) !== action.message_id ||
         !record(message.sender)
       ) {
         return deny();

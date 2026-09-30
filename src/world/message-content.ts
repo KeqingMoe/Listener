@@ -1,3 +1,4 @@
+import { canonicalMessageId } from '../onebot/identity.ts';
 import type {
   ImageReference,
   MessageSegment,
@@ -56,11 +57,7 @@ function item(values: unknown[], index: number): unknown {
   }
 }
 
-function numeric(
-  value: unknown,
-  signed = false,
-  positive = false,
-): string | undefined {
+function numeric(value: unknown, positive = false): string | undefined {
   if (typeof value === 'number') {
     if (!Number.isSafeInteger(value) || Object.is(value, -0)) {
       return;
@@ -71,13 +68,7 @@ function numeric(
     typeof value !== 'string' ||
     value.length > 33 ||
     value.trim() !== value ||
-    !(
-      signed
-        ? /^(0|-?[1-9][0-9]{0,31})$/
-        : positive
-          ? /^[1-9][0-9]{0,31}$/
-          : /^(0|[1-9][0-9]{0,31})$/
-    ).test(value)
+    !(positive ? /^[1-9][0-9]{0,31}$/ : /^(0|[1-9][0-9]{0,31})$/).test(value)
   ) {
     return;
   }
@@ -106,7 +97,7 @@ function safeRefs(
     images: [],
     forwards: [],
   };
-  if (numeric(messageId, true) !== messageId) {
+  if (canonicalMessageId(messageId) !== messageId) {
     return output;
   }
   for (const [values, prefix, dest] of [
@@ -255,11 +246,11 @@ function part(
   }
   if (type === 'at') {
     const id = wire ? data.qq : data.user_id;
-    const user_id = id === 'all' ? 'all' : numeric(id, false, true);
+    const user_id = id === 'all' ? 'all' : numeric(id, true);
     return user_id ? { segment: { type, user_id }, lost: false } : bad();
   }
   if (type === 'reply') {
-    const message_id = numeric(wire ? data.id : data.message_id, true);
+    const message_id = canonicalMessageId(wire ? data.id : data.message_id);
     return message_id ? { segment: { type, message_id }, lost: false } : bad();
   }
   return bad();
@@ -438,7 +429,7 @@ export function projectMessage(
   }
   if (
     typeof source.replyTo === 'string' &&
-    numeric(source.replyTo, true) === source.replyTo
+    canonicalMessageId(source.replyTo) === source.replyTo
   ) {
     projected.replyTo = source.replyTo;
   }

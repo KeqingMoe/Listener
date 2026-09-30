@@ -1,3 +1,4 @@
+import { canonicalMessageId } from './identity.ts';
 import type { ImageReference } from '../contracts/messages.ts';
 import type { JsonObject } from '../contracts/json.ts';
 
@@ -18,15 +19,11 @@ function parseId(
   }
 }
 
-function identifier(v: unknown, message = false): string | undefined {
+function identifier(v: unknown): string | undefined {
   if (typeof v === 'number' && Number.isSafeInteger(v)) {
     v = String(v);
   }
-  if (
-    typeof v === 'string' &&
-    v.trim() === v &&
-    (message ? /^-?\d{1,32}$/ : /^[1-9]\d{0,31}$/).test(v)
-  ) {
+  if (typeof v === 'string' && v.trim() === v && /^[1-9]\d{0,31}$/.test(v)) {
     return v;
   }
 }
@@ -38,7 +35,7 @@ export function imageReferences(
 ): ImageReference[] {
   if (
     typeof messageId !== 'string' ||
-    identifier(messageId, true) !== messageId ||
+    canonicalMessageId(messageId) !== messageId ||
     !Array.isArray(segments)
   ) {
     return [];

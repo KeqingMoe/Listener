@@ -1,3 +1,4 @@
+import { canonicalMessageId } from '../../onebot/identity.ts';
 import { randomBytes } from 'node:crypto';
 import { LISTENER_GROUP, resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
@@ -118,23 +119,7 @@ function object(value: unknown): value is JsonObject {
 }
 
 function short(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.length <= 17 &&
-    /^(0|-?[1-9][0-9]*)$/.test(value) &&
-    Number.isSafeInteger(Number(value)) &&
-    String(Number(value)) === value
-  );
-}
-
-function remoteId(value: unknown): string | undefined {
-  return typeof value === 'number' &&
-    Number.isSafeInteger(value) &&
-    !Object.is(value, -0)
-    ? String(value)
-    : short(value)
-      ? value
-      : undefined;
+  return typeof value === 'string' && canonicalMessageId(value) === value;
 }
 
 function identity(value: unknown): string | undefined {
@@ -406,7 +391,7 @@ export class ReactionUserTools {
       !object(raw) ||
       raw.message_type !== 'group' ||
       identity(raw.group_id) !== this.groupId ||
-      remoteId(raw.message_id) !== query.message_id ||
+      canonicalMessageId(raw.message_id) !== query.message_id ||
       !object(raw.sender)
     ) {
       return save(failure('verification_failed'));

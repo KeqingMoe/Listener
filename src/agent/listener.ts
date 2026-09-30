@@ -16,7 +16,7 @@ import {
   observesReactions,
 } from '../config/runtime.ts';
 import { TOOL_NAMES } from '../config/tool-policy.ts';
-import { id } from '../onebot/identity.ts';
+import { canonicalMessageId, id } from '../onebot/identity.ts';
 import {
   LISTENER_GROUP,
   resolveGroupId,
@@ -148,20 +148,6 @@ export interface ListenerRuntime {
   session?: ModelSession;
   modelRequestId?: () => string | undefined;
   customFaces?: CustomFaceRuntime;
-}
-
-export function messageId(value: unknown): string | undefined {
-  if (typeof value === 'number' && Number.isSafeInteger(value)) {
-    return String(value);
-  }
-  if (
-    typeof value === 'string' &&
-    value === value.trim() &&
-    /^-?\d{1,32}$/.test(value)
-  ) {
-    return value;
-  }
-  return undefined;
 }
 
 function object(value: unknown): value is JsonObject {
@@ -313,7 +299,7 @@ export function normalizeEvent(
     return;
   }
   const userId = id(event.user_id);
-  const msgId = messageId(event.message_id);
+  const msgId = canonicalMessageId(event.message_id);
   if (
     !userId ||
     userId.length > 32 ||
@@ -329,7 +315,7 @@ export function normalizeEvent(
   // 先扫描完整片段数组取引用：后续内容截断不能抹掉位于数组靠后位置的真实引用来源。
   for (const segment of event.message) {
     if (object(segment) && segment.type === 'reply' && object(segment.data)) {
-      replyTo = messageId(segment.data.id);
+      replyTo = canonicalMessageId(segment.data.id);
     }
   }
   const images = imageReferences(msgId, event.message);
@@ -943,7 +929,7 @@ export class Listener {
             object(ref) &&
             id(ref.group_id) === this.groupId &&
             ref.message_type === 'group' &&
-            messageId(ref.message_id) === entry.replyTo &&
+            canonicalMessageId(ref.message_id) === entry.replyTo &&
             object(ref.sender) &&
             id(ref.sender.user_id)
           ) {
@@ -1610,7 +1596,9 @@ export class Listener {
       });
       throw error;
     }
-    const msgId = object(result) ? messageId(result.message_id) : undefined;
+    const msgId = object(result)
+      ? canonicalMessageId(result.message_id)
+      : undefined;
     log('info', 'send.complete', {
       message_id: msgId,
       duration_ms: Date.now() - started,

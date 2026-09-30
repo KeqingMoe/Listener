@@ -20,7 +20,8 @@ function item(
       nickname: 'nickname is expendable',
       text: 'internal compatibility only',
       time: 1700000000 + index,
-      replyTo: `${signed ? '-' : ''}${'3'.repeat(32)}`,
+      // 消息ID最多16位（安全整数范围）。
+      replyTo: `${signed ? '-' : ''}${'3'.repeat(16)}`,
       segments,
     },
     context: { groupId: '22', selfId: '99', actorId: userId, messageId },
@@ -75,7 +76,7 @@ for (const signed of [false, true]) {
       assert.equal(message.replyTo, original.replyTo);
       assert.equal(message.time, original.time);
       assert.equal(message.messageId.length, signed ? 33 : 32);
-      assert.equal(message.replyTo.length, signed ? 33 : 32);
+      assert.equal(message.replyTo.length, signed ? 17 : 16);
       assert.equal(message.userId.length, 32);
       assert.equal(message.content_truncated, true);
       assert.ok(message.segments_omitted > 0);

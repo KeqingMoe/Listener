@@ -1,3 +1,4 @@
+import { canonicalMessageId } from '../../onebot/identity.ts';
 import { resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
 import { type Memory, type TimelineEntry } from '../../contracts/messages.ts';
@@ -128,15 +129,19 @@ function fields(v: unknown, allowed: string[]): asserts v is JsonObject {
   }
 }
 
-function identifier(v: unknown, message = false, remote = false): string {
+function identifier(v: unknown, remote = false): string {
   if (remote && typeof v === 'number' && Number.isSafeInteger(v)) {
     v = String(v);
   }
-  if (
-    typeof v !== 'string' ||
-    v !== v.trim() ||
-    !(message ? /^-?\d{1,32}$/ : /^[1-9]\d{0,31}$/).test(v)
-  ) {
+  if (typeof v !== 'string' || v !== v.trim() || !/^[1-9]\d{0,31}$/.test(v)) {
+    fail();
+  }
+  return v;
+}
+
+/** 模型参数中的消息ID必须是规范形式的字符串。 */
+function messageArgument(v: unknown): string {
+  if (typeof v !== 'string' || canonicalMessageId(v) !== v) {
     fail();
   }
   return v;
@@ -166,10 +171,10 @@ function member(
   expectedGroup: string,
   expected?: string,
 ): JsonObject {
-  if (!object(v) || identifier(v.group_id, false, true) !== expectedGroup) {
+  if (!object(v) || identifier(v.group_id, true) !== expectedGroup) {
     fail('verification_failed');
   }
-  const userId = identifier(v.user_id, false, true);
+  const userId = identifier(v.user_id, true);
   if (expected !== undefined && userId !== expected) {
     fail('verification_failed');
   }
@@ -264,17 +269,14 @@ export class GroupTools {
     if (
       !object(raw) ||
       raw.message_type !== 'group' ||
-      identifier(raw.group_id, false, true) !== this.groupId ||
-      identifier(raw.message_id, true, true) !== messageId ||
+      identifier(raw.group_id, true) !== this.groupId ||
+      canonicalMessageId(raw.message_id) !== messageId ||
       !object(raw.sender)
     ) {
       fail('verification_failed');
     }
-    const userId = identifier(raw.sender.user_id, false, true);
-    if (
-      raw.user_id !== undefined &&
-      identifier(raw.user_id, false, true) !== userId
-    ) {
+    const userId = identifier(raw.sender.user_id, true);
+    if (raw.user_id !== undefined && identifier(raw.user_id, true) !== userId) {
       fail('verification_failed');
     }
     if (!Array.isArray(raw.message) || raw.message.length > 128) {
@@ -415,7 +417,7 @@ export class GroupTools {
       }
       if (name === 'read_message') {
         fields(args, ['message_id']);
-        const messageId = identifier(args.message_id, true);
+        const messageId = messageArgument(args.message_id);
         const local = this.memory.find(messageId);
         if (local) {
           return { status: 'ok', message: localMessage(local) };
@@ -505,7 +507,7 @@ export class GroupTools {
       fail();
     }
     const replyTo = Object.hasOwn(args, 'reply_to')
-      ? identifier(args.reply_to, true)
+      ? messageArgument(args.reply_to)
       : undefined;
     for (const target of targets) {
       member(

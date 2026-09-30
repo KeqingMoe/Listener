@@ -1,3 +1,4 @@
+import { canonicalMessageId } from '../../onebot/identity.ts';
 import { LISTENER_GROUP, resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
 import { type ChatContentPart } from '../../contracts/model.ts';
@@ -272,7 +273,7 @@ export class ImageTools {
             : !recent.some(
                 (entry) =>
                   entry.replyTo === messageId &&
-                  identifier(entry.messageId, true) === entry.messageId &&
+                  canonicalMessageId(entry.messageId) === entry.messageId &&
                   identifier(entry.userId) === entry.userId,
               )
         ) {
@@ -290,7 +291,7 @@ export class ImageTools {
           !object(raw) ||
           raw.message_type !== 'group' ||
           identifier(raw.group_id) !== this.groupId ||
-          identifier(raw.message_id, true) !== messageId ||
+          canonicalMessageId(raw.message_id) !== messageId ||
           !object(raw.sender)
         ) {
           throw new Error();

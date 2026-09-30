@@ -1,3 +1,4 @@
+import { canonicalMessageId } from '../../onebot/identity.ts';
 import { LISTENER_GROUP, resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
 import { type Memory, type TimelineEntry } from '../../contracts/messages.ts';
@@ -63,24 +64,7 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 
 function messageId(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.length <= 17 &&
-    /^(0|-?[1-9][0-9]*)$/.test(value) &&
-    Number.isSafeInteger(Number(value)) &&
-    String(Number(value)) === value
-  );
-}
-
-function remoteMessageId(value: unknown): string | undefined {
-  if (
-    typeof value === 'number' &&
-    Number.isSafeInteger(value) &&
-    !Object.is(value, -0)
-  ) {
-    return String(value);
-  }
-  return messageId(value) ? value : undefined;
+  return typeof value === 'string' && canonicalMessageId(value) === value;
 }
 
 function identity(value: unknown): string | undefined {
@@ -297,7 +281,7 @@ export class ReactionTools {
       !record(remote) ||
       remote.message_type !== 'group' ||
       identity(remote.group_id) !== this.groupId ||
-      remoteMessageId(remote.message_id) !== id ||
+      canonicalMessageId(remote.message_id) !== id ||
       !record(remote.sender)
     ) {
       return remember(error('verification_failed'));

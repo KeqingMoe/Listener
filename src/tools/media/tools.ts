@@ -1,3 +1,4 @@
+import { canonicalMessageId } from '../../onebot/identity.ts';
 import { createHash } from 'node:crypto';
 import { resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
@@ -53,17 +54,6 @@ const userId = (v: unknown): string | undefined => {
     v = String(v);
   }
   return typeof v === 'string' && /^[1-9]\d{0,31}$/.test(v) ? v : undefined;
-};
-// NapCat MessageUnique短ID会经过数字转换，拒绝非规范或不安全的值，避免指向另一条缓存消息。
-const messageId = (v: unknown): string | undefined => {
-  if (typeof v === 'number' && Number.isSafeInteger(v)) {
-    v = String(v);
-  }
-  return typeof v === 'string' &&
-    /^-?[1-9]\d{0,15}$/.test(v) &&
-    Number.isSafeInteger(Number(v))
-    ? v
-    : undefined;
 };
 
 class ReadFailure extends Error {}
@@ -185,7 +175,7 @@ export class GroupMediaTools {
       !recent.some(
         (e) =>
           e.replyTo === id &&
-          messageId(e.messageId) === e.messageId &&
+          canonicalMessageId(e.messageId) === e.messageId &&
           userId(e.userId) === e.userId,
       )
     ) {
@@ -214,7 +204,7 @@ export class GroupMediaTools {
       !object(raw) ||
       raw.message_type !== 'group' ||
       userId(raw.group_id) !== this.groupId ||
-      messageId(raw.message_id) !== id ||
+      canonicalMessageId(raw.message_id) !== id ||
       !object(raw.sender)
     ) {
       fail('forbidden_reference');
@@ -264,13 +254,13 @@ export class GroupMediaTools {
         typeof id === 'string'
           ? /^img_(-?[1-9]\d{0,15})_(0|[1-9]\d?|1[01]\d|12[0-7])$/.exec(id)
           : null;
-      if (!match || !messageId(match[1])) {
+      if (!match || !canonicalMessageId(match[1])) {
         fail('invalid_arguments');
       }
     } else if (name === 'forward_message') {
       if (
         typeof value.message_id !== 'string' ||
-        messageId(value.message_id) !== value.message_id
+        canonicalMessageId(value.message_id) !== value.message_id
       ) {
         fail('invalid_arguments');
       }
@@ -280,7 +270,7 @@ export class GroupMediaTools {
         !value.message_ids.length ||
         value.message_ids.length > MAX_REFS ||
         value.message_ids.some(
-          (v) => typeof v !== 'string' || messageId(v) !== v,
+          (v) => typeof v !== 'string' || canonicalMessageId(v) !== v,
         )
       ) {
         fail('invalid_arguments');
@@ -503,7 +493,7 @@ export class GroupMediaTools {
           !!signal?.aborted,
         );
       }
-      const id = object(ack) ? messageId(ack.message_id) : undefined;
+      const id = object(ack) ? canonicalMessageId(ack.message_id) : undefined;
       if (!id) {
         return unknown();
       }

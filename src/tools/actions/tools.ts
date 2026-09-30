@@ -1,3 +1,4 @@
+import { canonicalMessageId } from '../../onebot/identity.ts';
 import { createHash } from 'node:crypto';
 import { types } from 'node:util';
 import { resolveGroupId } from '../../contracts/identity.ts';
@@ -106,20 +107,6 @@ function id(value: unknown): string | undefined {
   }
   return typeof value === 'string' && /^[1-9]\d{0,31}$/.test(value)
     ? value
-    : undefined;
-}
-
-function mid(value: unknown): string | undefined {
-  const text =
-    typeof value === 'number' &&
-    Number.isSafeInteger(value) &&
-    !Object.is(value, -0)
-      ? String(value)
-      : value;
-  return typeof text === 'string' &&
-    /^(0|-?[1-9]\d{0,16})$/.test(text) &&
-    Number.isSafeInteger(Number(text))
-    ? text
     : undefined;
 }
 
@@ -278,7 +265,7 @@ export class GroupActionTools {
         typeof ctx.actorId !== 'string' ||
         id(ctx.actorId) !== ctx.actorId ||
         typeof ctx.messageId !== 'string' ||
-        mid(ctx.messageId) !== ctx.messageId
+        canonicalMessageId(ctx.messageId) !== ctx.messageId
       ) {
         fail('invalid_context');
       }
@@ -322,7 +309,7 @@ export class GroupActionTools {
         typeof ctx.actorId !== 'string' ||
         id(ctx.actorId) !== ctx.actorId ||
         typeof ctx.messageId !== 'string' ||
-        mid(ctx.messageId) !== ctx.messageId
+        canonicalMessageId(ctx.messageId) !== ctx.messageId
       ) {
         fail('invalid_context');
       }
@@ -376,7 +363,7 @@ export class GroupActionTools {
     if (
       'message_id' in args &&
       (typeof args.message_id !== 'string' ||
-        mid(args.message_id) !== args.message_id)
+        canonicalMessageId(args.message_id) !== args.message_id)
     ) {
       fail('invalid_arguments');
     }
@@ -463,7 +450,9 @@ export class GroupActionTools {
     if (
       !recent.some(
         (entry) =>
-          entry.replyTo === message && mid(entry.messageId) && id(entry.userId),
+          entry.replyTo === message &&
+          canonicalMessageId(entry.messageId) &&
+          id(entry.userId),
       )
     ) {
       fail('forbidden_reference');
@@ -539,7 +528,7 @@ export class GroupActionTools {
         !record(message) ||
         message.message_type !== 'group' ||
         id(message.group_id) !== this.groupId ||
-        mid(message.message_id) !== args.message_id ||
+        canonicalMessageId(message.message_id) !== args.message_id ||
         !record(message.sender)
       ) {
         fail('verification_failed');

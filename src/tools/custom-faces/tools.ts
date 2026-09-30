@@ -1,3 +1,4 @@
+import { canonicalMessageId } from '../../onebot/identity.ts';
 import type { CustomFaceStager } from './staging.ts';
 import { createHash } from 'node:crypto';
 import { types } from 'node:util';
@@ -132,18 +133,6 @@ function identity(value: unknown): string | undefined {
   return typeof value === 'string' &&
     value.trim() === value &&
     /^[1-9]\d{0,31}$/.test(value)
-    ? value
-    : undefined;
-}
-
-function messageId(value: unknown): string | undefined {
-  if (typeof value === 'number' && Number.isSafeInteger(value)) {
-    value = String(value);
-  }
-  return typeof value === 'string' &&
-    value.trim() === value &&
-    /^-?[1-9]\d{0,15}$/.test(value) &&
-    Number.isSafeInteger(Number(value))
     ? value
     : undefined;
 }
@@ -403,7 +392,7 @@ export class CustomFaceTools {
         !/^img_(-?[1-9]\d{0,15})_(0|[1-9]\d?|1[01]\d|12[0-7])$/.test(
           args.image_id,
         ) ||
-        !messageId(/^img_(.*?)_/.exec(args.image_id)?.[1]))
+        !canonicalMessageId(/^img_(.*?)_/.exec(args.image_id)?.[1]))
     ) {
       fail('invalid_arguments');
     }
@@ -571,7 +560,7 @@ export class CustomFaceTools {
     userId?: string;
   } {
     const match = /^img_(-?[1-9]\d{0,15})_(\d+)$/.exec(image);
-    if (!match || !messageId(match[1])) {
+    if (!match || !canonicalMessageId(match[1])) {
       fail('forbidden_reference');
     }
     const id = match[1]!,
@@ -591,7 +580,7 @@ export class CustomFaceTools {
       !recent.some(
         (e) =>
           e.replyTo === id &&
-          messageId(e.messageId) === e.messageId &&
+          canonicalMessageId(e.messageId) === e.messageId &&
           identity(e.userId) === e.userId,
       )
     ) {
@@ -616,7 +605,7 @@ export class CustomFaceTools {
     if (
       field(raw, 'message_type') !== 'group' ||
       identity(field(raw, 'group_id')) !== this.groupId ||
-      messageId(field(raw, 'message_id')) !== initial.messageId
+      canonicalMessageId(field(raw, 'message_id')) !== initial.messageId
     ) {
       fail('forbidden_reference');
     }
@@ -985,7 +974,7 @@ export class CustomFaceTools {
     }
     let id: string | undefined;
     try {
-      id = messageId(field(ack, 'message_id'));
+      id = canonicalMessageId(field(ack, 'message_id'));
     } catch {
       /* ACK格式异常，视为结果不确定 */
     }

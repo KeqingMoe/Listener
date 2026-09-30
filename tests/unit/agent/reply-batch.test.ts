@@ -209,12 +209,12 @@ test('payload retains full text when it fits, sanitizes names, and omits attachm
   ]);
 });
 
-test('worst escaped bodies, names, and 32-digit provenance remain within 24000 serialized characters', () => {
+test('worst escaped bodies, names, and maximal provenance remain within 24000 serialized characters', () => {
   const inputs = Array.from({ length: 64 }, (_, i) => {
     const value = item(i, i % 2 ? 'quote' : 'mention');
     value.entry.messageId = String(i).padStart(32, '9');
     value.entry.userId = '8'.repeat(32);
-    value.entry.replyTo = '7'.repeat(32);
+    value.entry.replyTo = '7'.repeat(16);
     value.entry.text = '\u0000\n"\\'.repeat(5000);
     value.entry.nickname = '"\\'.repeat(100);
     return value;

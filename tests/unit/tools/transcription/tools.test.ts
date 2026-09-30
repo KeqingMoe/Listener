@@ -143,7 +143,6 @@ test('rejects numeric aliases before any API, retains canonical negative safe ID
   for (const messageId of [
     '042',
     '-042',
-    '0',
     '-0',
     '+42',
     '1e2',

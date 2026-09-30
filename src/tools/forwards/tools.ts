@@ -1,3 +1,4 @@
+import { canonicalMessageId } from '../../onebot/identity.ts';
 import { randomBytes } from 'node:crypto';
 import { LISTENER_GROUP, resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
@@ -24,15 +25,11 @@ const CHILD = /^fwdn_[a-f0-9]{16}$/;
 const object = (v: unknown): v is JsonObject =>
   v !== null && typeof v === 'object' && !Array.isArray(v);
 
-function identifier(v: unknown, message = false): string | undefined {
+function identifier(v: unknown): string | undefined {
   if (typeof v === 'number' && Number.isSafeInteger(v)) {
     v = String(v);
   }
-  if (
-    typeof v === 'string' &&
-    v.trim() === v &&
-    (message ? /^-?\d{1,32}$/ : /^[1-9]\d{0,31}$/).test(v)
-  ) {
+  if (typeof v === 'string' && v.trim() === v && /^[1-9]\d{0,31}$/.test(v)) {
     return v;
   }
 }
@@ -257,7 +254,7 @@ export class ForwardTools {
       !recent.some(
         (e) =>
           e.replyTo === messageId &&
-          identifier(e.messageId, true) === e.messageId &&
+          canonicalMessageId(e.messageId) === e.messageId &&
           identifier(e.userId) === e.userId,
       )
     ) {
@@ -360,7 +357,7 @@ export class ForwardTools {
           !object(message) ||
           message.message_type !== 'group' ||
           identifier(message.group_id) !== this.groupId ||
-          identifier(message.message_id, true) !== scope.messageId ||
+          canonicalMessageId(message.message_id) !== scope.messageId ||
           !object(message.sender)
         ) {
           fail('invalid_origin');

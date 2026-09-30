@@ -1,3 +1,4 @@
+import { canonicalMessageId } from '../../onebot/identity.ts';
 import { resolveGroupId } from '../../contracts/identity.ts';
 import type { Api } from '../../contracts/onebot.ts';
 import type { Memory } from '../../contracts/messages.ts';
@@ -25,14 +26,11 @@ function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function id(value: unknown, message = false): string | undefined {
+function id(value: unknown): string | undefined {
   if (typeof value === 'number' && Number.isSafeInteger(value)) {
     value = String(value);
   }
-  // NapCat会把短消息ID转成Number：前导零、-0或不安全整数等别名不能授权到另一条缓存消息。
-  return typeof value === 'string' &&
-    (message ? /^-?[1-9]\d{0,15}$/ : /^[1-9]\d{0,31}$/).test(value) &&
-    (!message || Number.isSafeInteger(Number(value)))
+  return typeof value === 'string' && /^[1-9]\d{0,31}$/.test(value)
     ? value
     : undefined;
 }
@@ -50,7 +48,7 @@ function messageArgument(value: unknown): string {
     !field ||
     !('value' in field) ||
     typeof field.value !== 'string' ||
-    !id(field.value, true)
+    !canonicalMessageId(field.value)
   ) {
     fail('invalid_arguments');
   }
@@ -187,7 +185,7 @@ export class GroupTranscriptionTools {
             (entry) =>
               entry.replyTo === messageId &&
               typeof entry.messageId === 'string' &&
-              !!id(entry.messageId, true) &&
+              !!canonicalMessageId(entry.messageId) &&
               typeof entry.userId === 'string' &&
               !!id(entry.userId),
           )
@@ -203,7 +201,7 @@ export class GroupTranscriptionTools {
         !object(raw) ||
         raw.message_type !== 'group' ||
         id(raw.group_id) !== this.groupId ||
-        id(raw.message_id, true) !== messageId ||
+        canonicalMessageId(raw.message_id) !== messageId ||
         !object(raw.sender)
       ) {
         fail('verification_failed');

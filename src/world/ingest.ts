@@ -1,3 +1,4 @@
+import { canonicalMessageId } from '../onebot/identity.ts';
 import { createHash } from 'node:crypto';
 import { extractMessageContent } from './message-content.ts';
 import { imageReferences } from '../onebot/image-references.ts';
@@ -73,18 +74,6 @@ function id(value: unknown): string | undefined {
     : undefined;
 }
 
-function messageId(value: unknown): string | undefined {
-  if (typeof value === 'number') {
-    if (!Number.isSafeInteger(value) || Object.is(value, -0)) {
-      return;
-    }
-    value = String(value);
-  }
-  return typeof value === 'string' && /^(0|-?[1-9][0-9]{0,31})$/.test(value)
-    ? value
-    : undefined;
-}
-
 function metadataName(value: unknown): string | undefined {
   if (typeof value !== 'string' || !value) {
     return;
@@ -140,7 +129,7 @@ function normalizeMessage(
   observedAt: number,
   selfId: string,
 ): WorldEventInput | undefined {
-  const msgId = messageId(event.message_id),
+  const msgId = canonicalMessageId(event.message_id),
     userId = id(event.user_id),
     wire = event.message;
   if (
@@ -255,7 +244,7 @@ export function normalizeOneBotEvent(
     provenance: { source, verified: false },
   };
   if (event.notice_type === 'group_recall') {
-    const msgId = messageId(event.message_id);
+    const msgId = canonicalMessageId(event.message_id);
     if (msgId === undefined) {
       return;
     }
@@ -278,7 +267,7 @@ export function normalizeOneBotEvent(
     };
   }
   if (event.notice_type === 'group_msg_emoji_like') {
-    const msgId = messageId(event.message_id);
+    const msgId = canonicalMessageId(event.message_id);
     if (msgId === undefined) {
       return;
     }
