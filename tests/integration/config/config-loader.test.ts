@@ -62,7 +62,6 @@ test('complete app/group defaults have no credentials in resolved policy and no 
   assert.equal(c.storage.registryPath, join(f.dir, 'data/group-registry.json'));
   assert.equal(c.identity.ownerId, OWNER_ID);
   assert.equal(g.reply.random, false);
-  assert.equal(g.session.compaction, false);
   assert.equal(g.execution.maxToolCallsPerWake, 96);
   assert.equal(g.tools.mute_member.mode, 'confirm');
   assert.equal(g.tools.get_member_info.mode, 'direct');
@@ -123,7 +122,6 @@ test('old root fields, version, and every unknown nested field are rejected with
     'defaults.reply',
     'defaults.reply.random',
     'defaults.session',
-    'defaults.session.compaction',
     'defaults.execution',
     'defaults.messages',
     'defaults.observation',

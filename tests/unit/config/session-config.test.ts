@@ -6,7 +6,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadAppConfig, ConfigError } from '../../../src/config/loader.ts';
 import type { AppConfig } from '../../../src/config/app.ts';
-import { toListenerConfig } from '../../../src/config/runtime.ts';
 
 function fixture(t: { after(fn: () => void): void }) {
   const dir = mkdtempSync(join(tmpdir(), 'session-policy-config-'));
@@ -39,10 +38,6 @@ test('global model transport strictly accepts strings or an explicit responses i
       for (const id of ['11', '99']) {
         const group = app.resolveGroup(id);
         assert.equal(Object.hasOwn(group.session, 'transport'), false);
-        assert.deepEqual(toListenerConfig(app, group).transport, {
-          type: 'responses',
-          incremental,
-        });
       }
     }
   }
@@ -82,14 +77,6 @@ test('global model transport strictly accepts strings or an explicit responses i
       );
     }
   }
-  for (const incremental of [false, true]) {
-    assert.deepEqual(
-      load(
-        `[model]\ntransport={type="responses",incremental=${incremental}}\n[defaults.session]\ncompaction={threshold_tokens=100}`,
-      ).resolveGroup('11').session.compaction,
-      { thresholdTokens: 100 },
-    );
-  }
 });
 
 test('session defaults are local transcript bounds, not provider compaction or group enablement', (t) => {
@@ -97,7 +84,6 @@ test('session defaults are local transcript bounds, not provider compaction or g
     g = app.resolveGroup('11');
   assert.deepEqual(g.session, {
     maxTranscriptBytes: 524288,
-    compaction: false,
   });
   assert.equal(g.enabled, false);
   assert.equal(app.model.model, 'fixture-model');
@@ -110,11 +96,9 @@ test('ordinary session fields inherit independently across configured and dynami
   assert.equal(app.model.transport, 'responses');
   assert.deepEqual(app.resolveGroup('11').session, {
     maxTranscriptBytes: 1048576,
-    compaction: false,
   });
   assert.deepEqual(app.resolveGroup('22').session, {
     maxTranscriptBytes: 65536,
-    compaction: false,
   });
   const g = app.resolveGroup('99');
   assert.equal(g.session.maxTranscriptBytes, 1048576);
@@ -122,131 +106,32 @@ test('ordinary session fields inherit independently across configured and dynami
   assert.equal(app.resolveGroup('99').session.maxTranscriptBytes, 1048576);
 });
 
-test('responses compaction object is accepted as configuration, never a user supplied runtime verification claim', (t) => {
+test('session rejects provider compaction settings as unknown fields', (t) => {
   const load = fixture(t);
   for (const scope of ['defaults.session', 'groups."11".session']) {
-    for (const threshold of [1, 65536, 1000001, Number.MAX_SAFE_INTEGER]) {
-      const app = load(
-        `[model]\ntransport="responses"\n[${scope}]\ncompaction={threshold_tokens=${threshold}}`,
-      );
-      assert.deepEqual(app.resolveGroup('11').session.compaction, {
-        thresholdTokens: threshold,
-      });
-      assert.equal(app.model.model, 'fixture-model'); // 能解析不代表provider支持压缩。
-    }
-  }
-  for (const scope of ['defaults.session', 'groups."11".session']) {
     for (const body of [
-      'compaction={threshold_tokens=100,verified=true}',
-      'compaction={threshold_tokens=100,server_compaction_verified=true}',
-      'compaction={threshold_tokens=100,enabled=true}',
-      'verified=true',
-    ]) {
-      assert.throws(
-        () => load(`[model]\ntransport="responses"\n[${scope}]\n${body}`),
-        ConfigError,
-      );
-    }
-  }
-});
-
-test('compaction is a whole union: false clears inherited options and object replacement requires its own threshold', (t) => {
-  const load = fixture(t),
-    base =
-      '[model]\ntransport="responses"\n[defaults.session]\ncompaction={threshold_tokens=4096}\n';
-  const app = load(
-    base +
-      '[groups."11".session]\ncompaction=false\n[groups."22".session]\ncompaction={threshold_tokens=8192}',
-  );
-  assert.equal(app.resolveGroup('11').session.compaction, false);
-  assert.equal(app.model.transport, 'responses');
-  assert.deepEqual(app.resolveGroup('22').session.compaction, {
-    thresholdTokens: 8192,
-  });
-  assert.deepEqual(app.resolveGroup('99').session.compaction, {
-    thresholdTokens: 4096,
-  });
-  const snapshot = app.resolveGroup('99').session.compaction;
-  assert.notEqual(snapshot, false);
-  if (snapshot !== false) {
-    snapshot.thresholdTokens = 1;
-  }
-  assert.deepEqual(app.resolveGroup('99').session.compaction, {
-    thresholdTokens: 4096,
-  });
-  assert.throws(
-    () => load(base + '[groups."11".session]\ncompaction={}'),
-    ConfigError,
-  );
-  assert.throws(
-    () =>
-      load(
-        base +
-          '[groups."11"]\nenabled=false\n[groups."11".session]\ntransport="chat"',
-      ),
-    ConfigError,
-  );
-  assert.throws(
-    () =>
-      load(
-        base +
-          '[bot]\nowner_id="778899"\n[groups."11"]\nenabled=true\n[groups."11".session]\ntransport="chat"',
-      ),
-    ConfigError,
-  );
-});
-
-test('compaction rejects product-state aliases, missing thresholds, malformed values and chat combinations', (t) => {
-  const load = fixture(t);
-  for (const scope of ['defaults.session', 'groups."11".session']) {
-    for (const value of [
-      'true',
-      '0',
-      '1',
-      '[]',
-      '{}',
-      '"off"',
-      '"auto"',
-      '{enabled=false,threshold_tokens=1024}',
-    ]) {
-      assert.throws(
-        () =>
-          load(
-            `[model]\ntransport="responses"\n[groups."11"]\nenabled=false\n[${scope}]\ncompaction=${value}`,
-          ),
-        ConfigError,
-      );
-    }
-    for (const value of [
-      '0',
-      '-1',
-      '1.5',
-      '"4096"',
-      'false',
-      '[]',
-      '{}',
-      'nan',
-      'inf',
-      '-inf',
-      '9007199254740992',
-    ]) {
-      assert.throws(
-        () =>
-          load(
-            `[model]\ntransport="responses"\n[groups."11"]\nenabled=false\n[${scope}]\ncompaction={threshold_tokens=${value}}`,
-          ),
-        ConfigError,
-      );
-    }
-    for (const body of [
-      'compaction={threshold_tokens=1}',
-      'transport="chat"\ncompaction={threshold_tokens=4096}',
-      'compaction=false\nthreshold_tokens=4096',
-      'compaction=false\ncompact_threshold=4096',
+      'compaction=false',
+      'compaction={threshold_tokens=4096}',
+      'threshold_tokens=4096',
       'server_compaction="off"',
     ]) {
-      assert.throws(() => load(`[${scope}]\n${body}`), ConfigError);
+      assert.throws(
+        () =>
+          load(
+            `[model]\ntransport="responses"\n[groups."11"]\nenabled=false\n[${scope}]\n${body}`,
+          ),
+        ConfigError,
+      );
     }
+  }
+  for (const enabled of ['false', 'true']) {
+    assert.throws(
+      () =>
+        load(
+          `[bot]\nowner_id="778899"\n[groups."11"]\nenabled=${enabled}\n[groups."11".session]\ntransport="chat"`,
+        ),
+      ConfigError,
+    );
   }
 });
 

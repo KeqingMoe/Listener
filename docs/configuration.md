@@ -97,7 +97,6 @@ transport = {
 | `reply.cooldown_ms` | 5000 | 范围1000..60000 |
 | `reply.random` | false | 随机参与关闭；开启用参数对象，不能写true |
 | `session.max_transcript_bytes` | 524288 | 范围65536..8388608；本地模型会话容量，不是服务商的token窗口 |
-| `session.compaction` | false | 服务端压缩关闭；参数形式为`{threshold_tokens}`，当前运行入口不支持启用，保持false |
 | `execution.max_tool_calls_per_wake` | 96 | 安全正整数，范围1..9007199254740991；一次唤醒全部工具共享 |
 | `execution.wake_timeout_ms` | 240000 | 范围1000..600000；一次完整唤醒的时间预算 |
 | `messages.mentions` | true | 允许Bot发送成员@，不改变被@触发；不支持@全体或@自己 |
@@ -116,7 +115,6 @@ transport = {
 以下三种设置按**完整功能**覆盖：
 
 - `reply.random`
-- `session.compaction`
 - 每一个 `tools.<工具名>`
 
 本群没有写这个功能时，完整继承 `defaults`。一旦写了，就替换该功能的整项配置；未写的参数使用该功能的程序默认值，**不继承被替换项的参数**。
@@ -140,8 +138,6 @@ reply.random.probability = 0.1
 ```
 
 随机参与开启后的参数为：`probability`（默认0.03，范围0..1）、`cooldown_ms`（默认60000，范围1000..3600000）、`max_per_minute`（默认2，范围1..10）。关闭写 `false`。
-
-服务端压缩的参数形式为 `session.compaction.threshold_tokens = 65536`，要求responses和正整数阈值；**当前不可启用，运行入口会拒绝**，应使用 `session.compaction = false`。关闭值和参数对象不能同时写；chat模式不能配置压缩对象。
 
 ### 文件路径与数据保留
 

@@ -39,11 +39,7 @@ export function inspectGroupConfig(
   const defaults = document.defaults;
   const groups = document.groups;
   const group = object(groups) ? groups[groupId] : undefined;
-  const unions = [
-    'reply.random',
-    'session.compaction',
-    ...TOOL_NAMES.map((name) => `tools.${name}`),
-  ];
+  const unions = ['reply.random', ...TOOL_NAMES.map((name) => `tools.${name}`)];
   function origin(path: string): Origin {
     const union = unions.find(
       (node) => path === node || path.startsWith(node + '.'),

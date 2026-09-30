@@ -23,7 +23,6 @@ export interface ResolvedGroupConfig {
   };
   session: {
     maxTranscriptBytes: number;
-    compaction: false | { thresholdTokens: number };
   };
   execution: { maxToolCallsPerWake: number; wakeTimeoutMs: number };
   messages: { mentions: boolean };

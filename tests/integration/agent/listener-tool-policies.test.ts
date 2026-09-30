@@ -65,7 +65,7 @@ function fixture(
       cooldownMs: 0,
       random: false,
     },
-    session: { maxTranscriptBytes: 524288, compaction: false },
+    session: { maxTranscriptBytes: 524288 },
     execution: { maxToolCallsPerWake: 96, wakeTimeoutMs: 90000 },
     messages: { mentions: false },
     observation: { reactions: observe },
@@ -319,13 +319,9 @@ test('unique adapter combines app credentials and group policy without leaking s
     mute_member: { mode: 'confirm', maxSeconds: 45 },
     manage_attention: { mode: 'direct', maxPlans: 5 },
   });
-  assert.equal(config.apiKey, app.model.apiKey);
-  assert.equal(config.maxTokens, 8192);
+  assert.equal('apiKey' in config, false);
   assert.equal(config.ownerId, OWNER);
   assert.equal(config.persona, group.persona);
-  assert.equal(config.sessionMaxContextBytes, 524288);
-  assert.equal(config.serverCompaction, 'off');
-  assert.equal(config.compactThreshold, undefined);
   assert.equal(config.tools?.moderation.maxMuteSeconds, 45);
   assert.equal(config.tools?.moderation.confirmationTtlSeconds, 37);
   assert.deepEqual(config.images, { enabled: true, maxDownloadMb: 4 });
@@ -333,11 +329,6 @@ test('unique adapter combines app credentials and group policy without leaking s
   assert.equal('apiKey' in group, false);
   group.tools.mute_member.mode = 'off';
   assert.equal(config.toolPermissions?.mute_member.mode, 'confirm');
-  group.session.compaction = { thresholdTokens: 8192 };
-  const compact = toListenerConfig(app, group);
-  assert.equal(compact.serverCompaction, 'auto');
-  assert.equal(compact.compactThreshold, 8192);
-  assert.equal('serverCompactionVerified' in compact, false);
   assert.equal(config.enabled, true);
   group.enabled = false;
   assert.equal(toListenerConfig(app, group).enabled, false);

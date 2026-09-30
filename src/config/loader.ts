@@ -336,7 +336,6 @@ function policy(
   ]);
   const session = table(raw.session, `${path}.session`, [
     'max_transcript_bytes',
-    'compaction',
   ]);
   const execution = table(raw.execution, `${path}.execution`, [
     'max_tool_calls_per_wake',
@@ -392,35 +391,6 @@ function policy(
         ),
       };
     }
-  }
-  let compaction: ResolvedGroupConfig['session']['compaction'] =
-    defaults?.session.compaction === undefined
-      ? false
-      : structuredClone(defaults.session.compaction);
-  if (own(session, 'compaction')) {
-    if (session.compaction === false) {
-      compaction = false;
-    } else {
-      const c = table(session.compaction, `${path}.session.compaction`, [
-        'threshold_tokens',
-      ]);
-      if (!own(c, 'threshold_tokens')) {
-        fail(`${path}.session.compaction.threshold_tokens`, '必须显式指定阈值');
-      }
-      compaction = {
-        thresholdTokens: num(
-          c,
-          'threshold_tokens',
-          `${path}.session.compaction`,
-          1,
-          1,
-          Number.MAX_SAFE_INTEGER,
-        ),
-      };
-    }
-  }
-  if (compaction !== false && transport === 'chat') {
-    fail(`${path}.session.compaction`, '需要responses传输');
   }
   const delay = own(reply, 'delay_ms')
     ? reply.delay_ms
@@ -495,7 +465,6 @@ function policy(
         65536,
         8388608,
       ),
-      compaction,
     },
     execution: {
       maxToolCallsPerWake: num(

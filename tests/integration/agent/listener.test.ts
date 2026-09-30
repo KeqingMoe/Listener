@@ -56,15 +56,8 @@ const cfg: ListenerConfig = {
   groupId: LISTENER_GROUP,
   ownerId: OWNER_ID,
   enabled: true,
-  baseUrl: 'https://example.com/v1',
-  apiKey: 'test',
-  model: 'test',
-  timeoutMs: 1000,
-  maxTokens: 128,
   debounceMs: 5,
   cooldownMs: 5,
-  memoryPath: ':memory:',
-  maxContextChars: 8000,
   retentionDays: 7,
 };
 

@@ -92,20 +92,12 @@ async function main(): Promise<void> {
   } catch {
     log('warn', 'app.diagnostics_unavailable', { reason: 'storage_failed' });
   }
-  // 在联系provider之前拒绝不受支持的compaction配置，包括全群模式下未列出群走的defaults分支。
   const declared = app.configuredGroupIds.map((groupId) =>
     app.resolveGroup(groupId),
   );
   const enabledGroups = new Map(
     declared.map((group) => [group.groupId, group.enabled]),
   );
-  if (
-    declared.some(
-      (group) => group.enabled && group.session.compaction !== false,
-    )
-  ) {
-    throw new Error('Server compaction is not verified for this endpoint');
-  }
   registry = new GroupRegistry(app, () =>
     log('warn', 'app.registry_failed', { reason: 'storage_failed' }),
   );
@@ -155,17 +147,6 @@ async function main(): Promise<void> {
     enabled: (groupId) => enabledGroups.get(groupId) ?? app.defaultsEnabled,
     listGroups: () => client.call('get_group_list', { no_cache: true }),
     membershipChanged: (groupIds) => {
-      for (const groupId of groupIds) {
-        if (app.resolveGroup(groupId).session.compaction !== false) {
-          log('error', 'app.group_policy_failed', {
-            group_id: groupId,
-            reason: 'server_compaction_unverified',
-          });
-          throw new Error(
-            'Server compaction is not verified for this endpoint',
-          );
-        }
-      }
       registry!.update(groupIds);
     },
     onError: (reason) => log('warn', 'app.group_discovery_failed', { reason }),
@@ -173,9 +154,6 @@ async function main(): Promise<void> {
       const policy = app.resolveGroup(groupId);
       if (!policy.enabled) {
         throw new Error('Group disabled');
-      }
-      if (policy.session.compaction !== false) {
-        throw new Error('Server compaction is not verified for this endpoint');
       }
       assertStoragePaths(
         app.storage,
@@ -254,7 +232,8 @@ async function main(): Promise<void> {
         });
         memory = new SQLiteMemory({
           path: policy.storage.databasePath,
-          maxContextChars: group.maxContextChars,
+          // 仅作为缓存构造参数的上限；生产环境的ModelSession不会按此预算做摘要。
+          maxContextChars: 24000,
           retentionDays: policy.history.retentionDays,
           groupId,
         });

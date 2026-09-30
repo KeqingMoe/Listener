@@ -53,8 +53,6 @@ export class ResponseStateExpiredError extends ModelError {
 export interface ResponsesModelOptions extends OpenAIModelOptions {
   sessionId: string;
   incremental?: boolean;
-  compactionThreshold?: number;
-  serverCompactionVerified?: boolean;
 }
 
 /** 包含对话内容，按隐私数据处理，不要写进日志。 */
@@ -284,13 +282,8 @@ export class ResponsesModel implements Model {
         options.timeoutMs > 2147483647 ||
         !Number.isSafeInteger(options.maxTokens) ||
         options.maxTokens < 1 ||
-        (options.compactionThreshold !== undefined &&
-          (!Number.isSafeInteger(options.compactionThreshold) ||
-            options.compactionThreshold < 1)) ||
         (options.incremental !== undefined &&
-          typeof options.incremental !== 'boolean') ||
-        (options.serverCompactionVerified !== undefined &&
-          typeof options.serverCompactionVerified !== 'boolean')
+          typeof options.incremental !== 'boolean')
       ) {
         throw new Error();
       }
@@ -631,17 +624,6 @@ export class ResponsesModel implements Model {
         ...(functions.length ? { tools: functions, tool_choice: 'auto' } : {}),
         ...(reuse ? { previous_response_id: responseId } : {}),
       };
-      if (
-        this.options.serverCompactionVerified &&
-        this.options.compactionThreshold !== undefined
-      ) {
-        body.context_management = [
-          {
-            type: 'compaction',
-            compact_threshold: this.options.compactionThreshold,
-          },
-        ];
-      }
       const requestJson = JSON.stringify(body);
       inspection.requestJson = requestJson;
       try {

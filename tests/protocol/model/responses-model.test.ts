@@ -145,7 +145,7 @@ test('system-only empty input; checkpoint retains opaque output and tools change
     );
   });
   try {
-    const m = make(f.url, { compactionThreshold: 2000 });
+    const m = make(f.url);
     const messages: ChatMessage[] = [{ role: 'system', content: 'stable' }];
     const r = await m.complete(messages, [tool]);
     assert.deepEqual(bodies[0].input, []);
@@ -754,32 +754,6 @@ test('timeout includes stalled body and oversized response is bounded', async ()
     assert.equal(records.length, 2);
   } finally {
     f.server.closeAllConnections();
-    f.server.close();
-  }
-});
-
-test('compaction is opt-in and usage is normalized', async () => {
-  let body: any;
-  const f = await fixture((b, res) => {
-    body = b;
-    res.end(JSON.stringify(response('r')));
-  });
-  try {
-    const m = new ResponsesModel({
-      baseUrl: f.url,
-      apiKey: 'x',
-      model: 'm',
-      timeoutMs: 1000,
-      maxTokens: 100,
-      sessionId: 'g1',
-      serverCompactionVerified: true,
-      compactionThreshold: 1000,
-    });
-    await m.complete([{ role: 'system', content: 's' }], [tool]);
-    assert.deepEqual(body.context_management, [
-      { type: 'compaction', compact_threshold: 1000 },
-    ]);
-  } finally {
     f.server.close();
   }
 });

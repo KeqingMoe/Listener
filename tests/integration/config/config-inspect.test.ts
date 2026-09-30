@@ -42,13 +42,11 @@ owner_id = "100000001"
 [defaults]
 enabled = false
 reply = { cooldown_ms = 9000, random = { probability = 0.2, cooldown_ms = 15000, max_per_minute = 6 } }
-session.compaction.threshold_tokens = 65536
 [defaults.tools]
 mute_member = { mode = "direct", max_seconds = 120 }
 [groups."22"]
 enabled = true
 reply.random = { probability = 0.1 }
-session.compaction = false
 tools.mute_member = "confirm"
 `,
   );
@@ -70,8 +68,6 @@ tools.mute_member = "confirm"
     result.sources['tools.mute_member.max_seconds'],
     'program_default',
   );
-  assert.equal(result.values.session.compaction, false);
-  assert.equal(result.sources['session.compaction'], 'group');
   assert.doesNotMatch(
     JSON.stringify(result),
     /PRIVATE_PERSONA_BODY|PRIVATE_BOT_TOKEN|PRIVATE_MODEL_KEY/,

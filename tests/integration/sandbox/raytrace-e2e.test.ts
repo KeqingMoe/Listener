@@ -60,7 +60,7 @@ function fixture(
       cooldownMs: 0,
       random: false,
     },
-    session: { maxTranscriptBytes: 524288, compaction: false },
+    session: { maxTranscriptBytes: 524288 },
     execution: { maxToolCallsPerWake: 96, wakeTimeoutMs: 90000 },
     messages: { mentions: false },
     observation: { reactions: observe },

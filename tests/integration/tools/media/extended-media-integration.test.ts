@@ -206,31 +206,20 @@ function fixture(options: {
     ownerId: OWNER_ID,
     enabled: true,
     groupId: GROUP,
-    baseUrl: 'https://fixture.invalid',
-    apiKey: 'fixture',
-    model: 'fixture',
-    timeoutMs: 1000,
-    maxTokens: 128,
     debounceMs: 1,
     cooldownMs: 1,
-    memoryPath: paths.memory,
-    maxContextChars: 8000,
     retentionDays: 7,
     randomReplyProbability: 0,
     ...(options.images
       ? {
-          groupId: LISTENER_GROUP,
-          ownerId: OWNER_ID,
           images: { enabled: true, maxDownloadMb: 10 },
         }
-      : { groupId: LISTENER_GROUP, ownerId: OWNER_ID }),
+      : {}),
     ...(options.forward
       ? {
-          groupId: LISTENER_GROUP,
-          ownerId: OWNER_ID,
           forward: { enabled: true },
         }
-      : { groupId: LISTENER_GROUP, ownerId: OWNER_ID }),
+      : {}),
     tools: {
       members: false,
       mention: false,

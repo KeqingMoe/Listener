@@ -20,16 +20,9 @@ const cfg: ListenerConfig = {
   groupId: LISTENER_GROUP,
   ownerId: OWNER_ID,
   enabled: true,
-  baseUrl: 'https://example.invalid',
-  apiKey: 'x',
-  model: 'x',
-  timeoutMs: 5000,
-  maxTokens: 64,
   debounceMs: 1,
   delayMaxMs: 1,
   cooldownMs: 1,
-  memoryPath: ':memory:',
-  maxContextChars: 8000,
   retentionDays: 7,
   randomReplyProbability: 1,
   randomCooldownMs: 0,
@@ -288,7 +281,7 @@ test('custom wake timeout is independent of model request timeout', async () => 
         tool_calls: [call('get_group_members', { limit: 1 })],
       };
     },
-    { maxToolCallsPerWake: 96, wakeTimeoutMs: 1000, timeoutMs: 5000 },
+    { maxToolCallsPerWake: 96, wakeTimeoutMs: 1000 },
   );
   try {
     await s.bot.receive(event(), self);

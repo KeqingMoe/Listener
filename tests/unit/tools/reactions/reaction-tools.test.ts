@@ -163,7 +163,7 @@ test('scope and turn ownership checks happen before every API/cache access', asy
   assert.throws(() => new ReactionTools(f.api, f.memory, '022'));
 });
 
-test('legacy constructor default remains bound to the original installation group', async () => {
+test('tools stay bound to the constructor group', async () => {
   const f = fixture({ remote: verified('1', '123', LISTENER_GROUP) });
   const tools = new ReactionTools(f.api, f.memory, LISTENER_GROUP),
     state = tools.createTurn();

@@ -95,7 +95,7 @@ function proposal(
   return result.code as string;
 }
 
-test('external proposal uses default group and existing confirmation protocol without RPC or execution', async () => {
+test('external proposal uses the configured group and existing confirmation protocol without RPC or execution', async () => {
   const f = fixture({ confirmationTtlSeconds: 7 });
   let invoked = 0;
   const r = f.moderation.requestExternal(

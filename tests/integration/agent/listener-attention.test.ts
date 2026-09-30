@@ -28,16 +28,9 @@ const base: ListenerConfig = {
   ownerId: OWNER_ID,
   groupId: GROUP,
   enabled: true,
-  baseUrl: 'https://example.invalid/v1',
-  apiKey: 'fixture',
-  model: 'fixture',
-  timeoutMs: 2000,
-  maxTokens: 128,
   debounceMs: 3,
   delayMaxMs: 3,
   cooldownMs: 0,
-  memoryPath: ':memory:',
-  maxContextChars: 8000,
   retentionDays: 7,
   randomReplyProbability: 0,
   randomCooldownMs: 0,
@@ -511,7 +504,6 @@ for (const failure of ['model', 'send', 'reset', 'timeout'] as const) {
     const hold = gate<Completion>();
     const s = setup({
       settings: {
-        timeoutMs: 2000,
         wakeTimeoutMs: failure === 'timeout' ? 1000 : 90000,
       },
       respond: (r) =>

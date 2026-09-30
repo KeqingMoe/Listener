@@ -1,4 +1,4 @@
-import type { ModelTransport, WebSearchProviderConfig } from './app.ts';
+import type { WebSearchProviderConfig } from './app.ts';
 import type { ResolvedToolPolicies } from './tool-policy.ts';
 import type { ForwardConfig } from '../tools/forwards/tools.ts';
 import type { ExtendedToolsConfig } from './extended-tools.ts';
@@ -33,21 +33,10 @@ export interface ListenerConfig {
   /** 可信的全局部署owner；从不接受来自群级覆盖或聊天内容的值。 */
   ownerId: string;
   enabled: boolean;
-  baseUrl: string;
-  apiKey: string;
-  model: string;
-  timeoutMs: number;
-  maxTokens: number;
   debounceMs: number;
   cooldownMs: number;
   maxToolCallsPerWake?: number;
   wakeTimeoutMs?: number;
-  transport?: ModelTransport;
-  sessionMaxContextBytes?: number;
-  serverCompaction?: 'off' | 'auto';
-  compactThreshold?: number;
-  memoryPath: string;
-  maxContextChars: number;
   retentionDays: number;
   randomReplyProbability?: number;
   randomCooldownMs?: number;

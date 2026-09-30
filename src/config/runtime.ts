@@ -95,7 +95,6 @@ export function toListenerConfig(
     ownerId: app.identity.ownerId,
     botName: app.identity.name,
     enabled: group.enabled,
-    ...app.model,
     persona: group.persona,
     debounceMs: group.reply.delayMs[0],
     delayMaxMs: group.reply.delayMs[1],
@@ -105,18 +104,10 @@ export function toListenerConfig(
     randomReplyProbability: random ? random.probability : 0,
     randomCooldownMs: random ? random.cooldownMs : 60000,
     randomMaxPerMinute: random ? random.maxPerMinute : 2,
-    sessionMaxContextBytes: group.session.maxTranscriptBytes,
-    serverCompaction: group.session.compaction ? 'auto' : 'off',
-    ...(group.session.compaction
-      ? { compactThreshold: group.session.compaction.thresholdTokens }
-      : {}),
     maxToolCallsPerWake: group.execution.maxToolCallsPerWake,
     wakeTimeoutMs: group.execution.wakeTimeoutMs,
     ...(app.web.search ? { webSearch: structuredClone(app.web.search) } : {}),
-    memoryPath: group.storage.databasePath,
     retentionDays: group.history.retentionDays,
-    // 仅作为缓存构造参数的上限；生产环境的ModelSession不会按此预算做摘要。
-    maxContextChars: 24000,
     // 没有配置后端的工具直接不提供，而不是可见但调用失败。
     toolPermissions: {
       ...structuredClone(group.tools),
