@@ -21,8 +21,9 @@ data/
 *.db
 *.db-*
 
-# 本地提示词和人设
-prompts/
+# 本地提示词和人设（仅示例入库）
+prompts/*
+!prompts/listener.example.md
 
 # 日志和临时文件
 *.log

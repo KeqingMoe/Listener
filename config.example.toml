@@ -50,7 +50,7 @@ timeout_ms = 180000
 enabled = false
 # 定义了多个模型时必填；群内也可写 model = "名字" 覆盖。
 # model = "main"
-persona = "prompts/listener.md"
+persona = "prompts/listener.example.md"
 reply.random = false
 # 一次唤醒全部工具共享调用次数；默认96，安全正整数范围1..9007199254740991。
 execution.max_tool_calls_per_wake = 96

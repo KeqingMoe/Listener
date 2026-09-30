@@ -265,7 +265,7 @@ test('the public example needs only real model setup and uses the approved tool 
   const example = readFileSync(
     new URL('../../../config.example.toml', import.meta.url),
     'utf8',
-  ).replace('prompts/listener.md', 'persona.md');
+  ).replace('prompts/listener.example.md', 'persona.md');
   writeFileSync(initial.configPath, example);
   writeFileSync(
     join(dirname(initial.configPath), '.env'),

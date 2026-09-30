@@ -697,10 +697,11 @@ test('logging.file is false or a strict enabled object with unchanged internal d
 });
 
 test('distributed example requires a model name and validates once filled without creating storage', (t) => {
+  // fixture目录只带prompts/listener.md，示例人设路径指向它。
   const source = readFileSync(
       new URL('../../../config.example.toml', import.meta.url),
       'utf8',
-    ),
+    ).replace('prompts/listener.example.md', 'prompts/listener.md'),
     f = fixture(t, source);
   assert.throws(
     () => f.load(),
