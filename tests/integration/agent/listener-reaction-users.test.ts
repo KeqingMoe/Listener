@@ -141,7 +141,7 @@ class Mem implements Memory {
   closed = false;
   append(entry: TimelineEntry) {
     if (this.closed) {
-      throw Error('write after close');
+      throw new Error('write after close');
     }
     if (this.find(entry.messageId)) {
       return false;
@@ -233,7 +233,7 @@ function setup(
           'set_msg_emoji_like',
         ].includes(action)
       ) {
-        throw Error('unexpected mock action');
+        throw new Error('unexpected mock action');
       }
       return normal;
     },
@@ -855,7 +855,7 @@ for (const mode of ['throw', 'native_failure', 'malformed'] as const) {
           return;
         }
         if (mode === 'throw') {
-          throw Error('provider secret must not leak');
+          throw new Error('provider secret must not leak');
         }
         return mode === 'native_failure'
           ? { result: 99, errMsg: 'provider secret must not leak' }

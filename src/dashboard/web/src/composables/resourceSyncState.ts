@@ -14,6 +14,7 @@ export function applyResourceSync<T>(
   if (response.mode === 'unchanged') {
     return current;
   }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 按JSON Pointer逐层修改任意结构的快照
   let next: any = structuredClone(current);
   for (const operation of response.patch) {
     if (operation.path === '') {

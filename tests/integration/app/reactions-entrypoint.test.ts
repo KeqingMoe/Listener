@@ -183,7 +183,7 @@ test(
             tool('finish'),
           ];
         } else {
-          throw Error('unexpected fixture model request');
+          throw new Error('unexpected fixture model request');
         }
         for (const op of operations) {
           if (op.function.name !== 'react_message') {
@@ -319,7 +319,7 @@ test(
             events.set(id, own);
             data = { message_id: id };
           } else {
-            throw Error(`unexpected OneBot action ${call.action}`);
+            throw new Error(`unexpected OneBot action ${call.action}`);
           }
           socket.send(
             JSON.stringify({ status: 'ok', retcode: 0, data, echo: call.echo }),

@@ -135,6 +135,8 @@ export class OneBotClient extends EventEmitter {
       if (binary || this.socket !== ws || this.stopped) {
         return;
       }
+      // 以下逐字段做运行时校验，再按OneBot约定读取。
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let packet: any;
       try {
         packet = JSON.parse(raw.toString());

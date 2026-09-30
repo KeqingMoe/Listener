@@ -136,7 +136,7 @@ class Mem implements Memory {
   closed = false;
   append(e: TimelineEntry) {
     if (this.closed) {
-      throw Error('write after close');
+      throw new Error('write after close');
     }
     if (this.find(e.messageId)) {
       return false;
@@ -233,7 +233,7 @@ function setup(
           ],
         };
       }
-      throw Error(`unexpected API ${action}`);
+      throw new Error(`unexpected API ${action}`);
     },
   };
   const model: Model = {
@@ -454,7 +454,7 @@ for (const unknown of [false, true]) {
           : complete(silent()),
       api: (action) => {
         if (unknown && action === 'set_msg_emoji_like') {
-          throw Error('transport uncertain');
+          throw new Error('transport uncertain');
         }
       },
     });
@@ -591,7 +591,7 @@ for (const ending of ['model', 'prose', 'timeout'] as const) {
           return complete(next(), react());
         }
         if (ending === 'model') {
-          throw Error('model failed');
+          throw new Error('model failed');
         }
         if (ending === 'prose') {
           return { content: 'ordinary prose', tool_calls: [] };

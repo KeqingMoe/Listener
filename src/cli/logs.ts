@@ -38,7 +38,7 @@ export function parseLogArgs(args: string[]): LogViewOptions {
   for (let i = 0; i < args.length; i++) {
     const flag = args[i]!;
     if (seen.has(flag)) {
-      throw Error('Invalid log arguments');
+      throw new Error('Invalid log arguments');
     }
     seen.add(flag);
     if (flag === '--follow') {
@@ -48,17 +48,17 @@ export function parseLogArgs(args: string[]): LogViewOptions {
     } else if (['--level', '--turn', '--lines', '--directory'].includes(flag)) {
       const value = args[++i];
       if (!value || value.startsWith('--')) {
-        throw Error('Invalid log arguments');
+        throw new Error('Invalid log arguments');
       }
       if (flag === '--level') {
         if (!Object.hasOwn(levels, value)) {
-          throw Error('Invalid log level');
+          throw new Error('Invalid log level');
         }
         options.level = value as LogLevel;
       }
       if (flag === '--turn') {
         if (!/^t_[a-f0-9]{16}$/.test(value)) {
-          throw Error('Invalid turn id');
+          throw new Error('Invalid turn id');
         }
         options.turn = value;
       }
@@ -68,7 +68,7 @@ export function parseLogArgs(args: string[]): LogViewOptions {
           Number(value) < 1 ||
           Number(value) > 1000
         ) {
-          throw Error('Invalid line count');
+          throw new Error('Invalid line count');
         }
         options.lines = Number(value);
       }
@@ -76,7 +76,7 @@ export function parseLogArgs(args: string[]): LogViewOptions {
         options.directory = resolve(value);
       }
     } else {
-      throw Error('Invalid log arguments');
+      throw new Error('Invalid log arguments');
     }
   }
   return options;
@@ -102,7 +102,7 @@ export class LogReader {
     try {
       const stat = await lstat(this.directory);
       if (!stat.isDirectory() || stat.isSymbolicLink()) {
-        throw Error();
+        throw new Error();
       }
       names = (await readdir(this.directory))
         .filter(managedLogFilename)
@@ -112,7 +112,7 @@ export class LogReader {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         return [];
       }
-      throw Error('Log directory unavailable');
+      throw new Error('Log directory unavailable');
     }
     const present = new Set(names);
     for (const name of this.cursors.keys()) {
@@ -207,7 +207,7 @@ export class LogReader {
             (error as NodeJS.ErrnoException).code ?? '',
           )
         ) {
-          throw Error('Log file unavailable');
+          throw new Error('Log file unavailable');
         }
       } finally {
         await file?.close();

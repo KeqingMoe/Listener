@@ -179,7 +179,7 @@ test('downloader classifies rejected URL DNS transfer decode and timeout without
       createImageDownloader({
         ...network(Buffer.from(secret)),
         lookup: async () => {
-          throw Error(secret);
+          throw new Error(secret);
         },
       })(url, 1024),
       /^Error: Image download failed$/,

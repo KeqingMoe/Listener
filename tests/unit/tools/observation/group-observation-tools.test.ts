@@ -31,7 +31,7 @@ function fixture(
       calls.push({ action, params });
       options.hook?.(action);
       if (options.fail) {
-        throw Error('PRIVATE_SECRET https://remote/private /tmp/private');
+        throw new Error('PRIVATE_SECRET https://remote/private /tmp/private');
       }
       return action === 'get_login_info'
         ? (options.login ?? { user_id: SELF })

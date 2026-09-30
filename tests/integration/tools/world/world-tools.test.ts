@@ -339,7 +339,7 @@ test('required limit and scope validation reject invalid types, unknown fields a
           Object.defineProperty({ limit: 1 }, 'cursor', {
             enumerable: true,
             get() {
-              throw Error('PRIVATE');
+              throw new Error('PRIVATE');
             },
           }),
         )

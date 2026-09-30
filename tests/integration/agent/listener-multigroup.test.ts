@@ -142,7 +142,7 @@ class TestMemory implements Memory {
 
   append(entry: TimelineEntry) {
     if (this.closed) {
-      throw Error('write after close');
+      throw new Error('write after close');
     }
     if (this.find(entry.messageId)) {
       return false;
@@ -214,7 +214,7 @@ function setup(
       if (action === 'send_group_msg') {
         return { message_id: String(90000 + calls.length) };
       }
-      throw Error('unexpected API action');
+      throw new Error('unexpected API action');
     },
   };
   const model: Model = {
@@ -575,7 +575,7 @@ test('global concurrency two covers conversation requests without obsolete summa
   for (const memory of s.memories.values()) {
     memory.compactHook = async () => {
       summaries++;
-      throw Error('obsolete_summary');
+      throw new Error('obsolete_summary');
     };
   }
   try {
@@ -611,7 +611,7 @@ test('a failed active model releases its permit for another group', async () => 
     complete: async (r) => {
       if (r.group === A) {
         await abortable(first.promise, r.signal);
-        throw Error('simulated provider failure');
+        throw new Error('simulated provider failure');
       }
       return reply('B survived');
     },

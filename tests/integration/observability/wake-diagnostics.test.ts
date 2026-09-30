@@ -44,7 +44,7 @@ test('wake diagnostics allow only finite local codes and numeric counters withou
   Object.defineProperty(input, 'tool_calls', {
     get() {
       reads++;
-      throw Error('PRIVATE');
+      throw new Error('PRIVATE');
     },
   });
   assert.deepEqual(normalizeWakeDiagnostics(input), {
@@ -67,7 +67,7 @@ test('wake diagnostics allow only finite local codes and numeric counters withou
         {},
         {
           ownKeys() {
-            throw Error('PRIVATE');
+            throw new Error('PRIVATE');
           },
         },
       ),
@@ -166,7 +166,7 @@ async function until(check: () => boolean) {
     }
     await delay(5);
   }
-  throw Error('fixture timeout');
+  throw new Error('fixture timeout');
 }
 
 function fixture(mode: 'timeout' | 'disconnect' | 'reset') {
@@ -193,8 +193,7 @@ function fixture(mode: 'timeout' | 'disconnect' | 'reset') {
   let rounds = 0,
     sends = 0,
     abortReason: unknown;
-  let bot: Listener;
-  bot = new Listener(
+  const bot: Listener = new Listener(
     {
       async call(action) {
         assert.equal(action, 'send_group_msg');

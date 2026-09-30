@@ -897,7 +897,7 @@ test('read text denies wrong-group URLs, oversized or unknown metadata and non-t
 });
 
 test('UTF-8 text projection respects JSON escaping byte budget without splitting codepoints', async () => {
-  const content = '😀\\\"\n\t'.repeat(9000);
+  const content = '😀\\"\n\t'.repeat(9000);
   const h = harness({ downloader: async () => content });
   const t = await handles(h);
   const result = await h.run('read_group_text_file', {

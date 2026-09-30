@@ -107,8 +107,6 @@ function reply(text: string): Completion {
   return result;
 }
 
-const finish = () => tool('finish', {});
-
 function setup(
   responses: Completion[] = [reply('你好呀')],
   settings: Partial<ListenerConfig> = {},

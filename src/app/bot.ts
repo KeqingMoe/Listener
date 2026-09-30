@@ -161,8 +161,7 @@ async function main(): Promise<void> {
     }),
   };
   const modelOptions = { ...modelConfig };
-  let router: GroupRouter;
-  router = new GroupRouter({
+  const router: GroupRouter = new GroupRouter({
     enabled: (groupId) => enabledGroups.get(groupId) ?? app.defaultsEnabled,
     listGroups: () => client.call('get_group_list', { no_cache: true }),
     membershipChanged: (groupIds) => {

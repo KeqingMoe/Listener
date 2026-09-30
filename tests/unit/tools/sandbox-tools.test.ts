@@ -67,7 +67,7 @@ const memory = {
 };
 const api = {
   async call() {
-    throw Error('provider must not run');
+    throw new Error('provider must not run');
   },
 };
 
@@ -283,7 +283,7 @@ test('sandbox accessors are rejected without execution and service failures do n
   assert.equal(reads, 0);
   assert.equal(calls.length, 0);
   service.query = () => {
-    throw Error('/private/path SECRET');
+    throw new Error('/private/path SECRET');
   };
   assert.deepEqual(await tools.execute('query_javascript_jobs', {}, context), {
     status: 'error',

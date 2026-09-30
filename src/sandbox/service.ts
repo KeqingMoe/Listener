@@ -148,7 +148,7 @@ export class SandboxService {
     this.queued = options.maxQueued ?? 64;
     for (const n of [this.concurrency, this.queued]) {
       if (!Number.isSafeInteger(n) || n <= 0 || n > 2147483647) {
-        throw Error('invalid_limits');
+        throw new Error('invalid_limits');
       }
     }
   }

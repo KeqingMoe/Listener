@@ -216,7 +216,7 @@ test('shutdown attempts every group even when one fails', async () => {
   const a = handler(),
     b = handler();
   a.service.stop = async () => {
-    throw Error('mock');
+    throw new Error('mock');
   };
   const router = new GroupRouter([
     ['1', a.service],

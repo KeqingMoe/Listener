@@ -36,8 +36,8 @@ process.on('message', async (message: unknown) => {
     return;
   }
   started = true;
-  let logs: string[] = [],
-    logSize = 0,
+  const logs: string[] = [];
+  let logSize = 0,
     diagnostic: ExecutionDiagnostic | undefined;
   const contract = (message: string): ExecutionDiagnostic => ({
     kind: 'contract_error',
@@ -54,7 +54,7 @@ process.on('message', async (message: unknown) => {
   };
   try {
     if (!message || typeof message !== 'object') {
-      throw Error('invalid_request');
+      throw new Error('invalid_request');
     }
     const { code, limits } = normalizeOptions(
       message as Parameters<typeof normalizeOptions>[0],
@@ -68,7 +68,7 @@ process.on('message', async (message: unknown) => {
           (n) => typeof n !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(n),
         ))
     ) {
-      throw Error('invalid_request');
+      throw new Error('invalid_request');
     }
     const Q = await getQuickJS(),
       runtime = Q.newRuntime();
@@ -90,7 +90,7 @@ process.on('message', async (message: unknown) => {
     );
     if (init.error) {
       init.error.dispose();
-      throw Error('execution_error');
+      throw new Error('execution_error');
     }
     const extractor = init.value;
     const diagnose = (
@@ -133,7 +133,7 @@ process.on('message', async (message: unknown) => {
         diagnostic = contract(
           `Expected a primitive string, received ${vm.typeof(h)}; serialize the result explicitly before returning.`,
         );
-        throw Error('invalid_return_type');
+        throw new Error('invalid_return_type');
       }
       const len = vm.getProp(h, 'length');
       let length: number;
@@ -143,11 +143,11 @@ process.on('message', async (message: unknown) => {
         len.dispose();
       }
       if (length > max) {
-        throw Error('output_too_large');
+        throw new Error('output_too_large');
       }
       const value = vm.getString(h);
       if (Buffer.byteLength(value) > max) {
-        throw Error('output_too_large');
+        throw new Error('output_too_large');
       }
       return value;
     };
@@ -162,14 +162,14 @@ process.on('message', async (message: unknown) => {
               const separator = parts.length ? 1 : 0;
               const available = limits.logBytes - logSize - size - separator;
               if (available < 0) {
-                throw Error('logs_too_large');
+                throw new Error('logs_too_large');
               }
               const part = string(h, available);
               size += separator + Buffer.byteLength(part);
               parts.push(part);
             }
             if (logSize + size > limits.logBytes) {
-              throw Error('logs_too_large');
+              throw new Error('logs_too_large');
             }
             logSize += size;
             logs.push(parts.join(' '));
@@ -178,7 +178,7 @@ process.on('message', async (message: unknown) => {
               error instanceof Error && error.message === 'invalid_return_type'
                 ? 'invalid_log_type'
                 : 'logs_too_large';
-            throw Error('Log arguments must be bounded strings');
+            throw new Error('Log arguments must be bounded strings');
           }
         });
         vm.setProp(consoleObject, name, fn);
@@ -223,13 +223,13 @@ process.on('message', async (message: unknown) => {
       promise = evaluation.value;
       while (true) {
         if (fault) {
-          throw Error(fault);
+          throw new Error(fault);
         }
         if (cancelled) {
-          throw Error('cancelled');
+          throw new Error('cancelled');
         }
         if (performance.now() >= deadline) {
-          throw Error('execution_timeout');
+          throw new Error('execution_timeout');
         }
         const state = vm.getPromiseState(promise);
         if (state.type === 'fulfilled') {
@@ -244,13 +244,13 @@ process.on('message', async (message: unknown) => {
         if (state.type === 'rejected') {
           diagnostic = diagnose(state.error, 'execute');
           state.error.dispose();
-          throw Error('execution_error');
+          throw new Error('execution_error');
         }
         const jobs = runtime.executePendingJobs(64);
         if (jobs.error) {
           diagnostic = diagnose(jobs.error, 'execute');
           jobs.error.dispose();
-          throw Error('execution_error');
+          throw new Error('execution_error');
         }
         // Yield to IPC/watchdog between bounded microtask batches; an unresolved promise may wait indefinitely.
         await new Promise<void>((resolve) =>
@@ -352,7 +352,7 @@ function installTools(vm: QuickJSContext, names: string[]): () => void {
   const bridge = vm.newFunction('call', (nameH, jsonH, buffersH) => {
     const name = vm.getString(nameH);
     if (vm.typeof(jsonH) !== 'string') {
-      throw Error('Invalid tool call');
+      throw new Error('Invalid tool call');
     }
     const json = vm.getString(jsonH);
     if (Buffer.byteLength(json) > TOOL_CALL_LIMITS.jsonBytes) {
@@ -447,7 +447,7 @@ function installTools(vm: QuickJSContext, names: string[]): () => void {
   bridge.dispose();
   if (installed.error) {
     installed.error.dispose();
-    throw Error('execution_error');
+    throw new Error('execution_error');
   }
   decoder = installed.value;
   return () => {

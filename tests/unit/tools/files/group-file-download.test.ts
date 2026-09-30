@@ -170,7 +170,7 @@ test('accepts native QQ HTTP public-IP links and HTTPS DNS with pinned lookup an
   });
   assert.equal(fake.options!.auth, undefined);
   assert.equal(fake.options!.checkServerIdentity, undefined);
-  const pinned = fake.options!.lookup as Function;
+  const pinned = fake.options!.lookup as (...args: unknown[]) => void;
   pinned(
     'rebound.example',
     {},
@@ -336,7 +336,7 @@ test('DNS rebinding cannot trigger a second lookup and environment proxy or cred
         ];
       },
     })(REMOTE, 20);
-    (fake.options!.lookup as Function)(
+    (fake.options!.lookup as (...args: unknown[]) => void)(
       'files.qq.example',
       {},
       (_error: unknown, address: string) => assert.equal(address, '8.8.8.8'),
@@ -365,7 +365,7 @@ test('pinning captures validated primitives even if a resolver record is mutated
       return fake.request(options, callback);
     },
   })(REMOTE, 20);
-  (fake.options!.lookup as Function)(
+  (fake.options!.lookup as (...args: unknown[]) => void)(
     'ignored',
     {},
     (error: unknown, address: string, family: number) => {

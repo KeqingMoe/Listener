@@ -66,25 +66,25 @@ class Mem implements Memory {
   }
 
   find(): never {
-    throw Error('presentation must not query additional messages');
+    throw new Error('presentation must not query additional messages');
   }
 
   append(): never {
     this.appendCalls++;
-    throw Error('presentation must not persist anything');
+    throw new Error('presentation must not persist anything');
   }
 
   async compact() {
     this.compactCalls++;
-    throw Error('presentation must not summarize');
+    throw new Error('presentation must not summarize');
   }
 
   clear() {
-    throw Error('presentation must not clear memory');
+    throw new Error('presentation must not clear memory');
   }
 
   close() {
-    throw Error('presentation must not close memory');
+    throw new Error('presentation must not close memory');
   }
 }
 
@@ -293,7 +293,7 @@ test('absence, invalid snapshots and throwing lookup never pretend a known zero 
     () => ({ status: 'observed', items: [] }),
     () => ({ status: 'none', observed_at: 1, items: [] }),
     () => {
-      throw Error('cache unavailable');
+      throw new Error('cache unavailable');
     },
   ] as ReactionLookup[]) {
     const source = batch([row('1')]);

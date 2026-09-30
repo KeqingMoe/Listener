@@ -35,7 +35,7 @@ function frozenMemory(source: TimelineEntry[]): Memory {
   const data = structuredClone(source);
   return {
     append() {
-      throw Error('read only');
+      throw new Error('read only');
     },
     recent() {
       return structuredClone(data);
@@ -48,7 +48,7 @@ function frozenMemory(source: TimelineEntry[]): Memory {
     },
     async compact() {},
     clear() {
-      throw Error('read only');
+      throw new Error('read only');
     },
     close() {},
   };
@@ -324,7 +324,7 @@ test('referenced targets still require same-group identity verification', async 
 test('lookup failure is non-mutating and raw private API errors never leak', async () => {
   const f = fixture({
     handler: async () => {
-      throw Error('SECRET_TOKEN private-chat-body');
+      throw new Error('SECRET_TOKEN private-chat-body');
     },
   });
   const result = await f.tools.react(args(), context, f.state);
@@ -410,7 +410,7 @@ test('a thrown dispatched write is unknown and never blindly retried', async () 
       if (action === 'get_msg') {
         return verified();
       }
-      throw Error('SECRET unknown delivery details');
+      throw new Error('SECRET unknown delivery details');
     },
   });
   const result = await f.tools.react(args(), context, f.state);

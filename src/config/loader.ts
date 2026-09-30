@@ -771,8 +771,7 @@ export function loadAppConfig(
 ): AppConfig {
   const configPath = resolve(options.configPath ?? 'config.toml'),
     base = dirname(configPath);
-  let parsed: unknown,
-    source = '';
+  let parsed: unknown, source: string;
   try {
     source = readFileSync(configPath, 'utf8');
     parsed = parseToml(source);

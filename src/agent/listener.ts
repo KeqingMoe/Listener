@@ -870,15 +870,23 @@ export class Listener {
     const generation = this.generation;
     const received = Date.now();
     const arrivedBusy = this.running || !!this.pending;
-    const raw = (event as any).message as any[];
+    // normalizeEvent已确认message是数组，这里只读取文字与at片段。
+    const raw = (event as { message: Array<JsonObject | null> }).message;
+    const data = (s: JsonObject | null): JsonObject | undefined =>
+      s && typeof s.data === 'object' && s.data && !Array.isArray(s.data)
+        ? (s.data as JsonObject)
+        : undefined;
     const commandText = raw
       .filter((s) => s?.type === 'text')
-      .map((s) => s.data?.text ?? '')
+      .map((s) => {
+        const text = data(s)?.text;
+        return typeof text === 'string' ? text : '';
+      })
       .join('')
       .trim();
     const onlyCommandSegments = raw.every(
       (s) =>
-        s?.type === 'text' || (s?.type === 'at' && id(s.data?.qq) === selfId),
+        s?.type === 'text' || (s?.type === 'at' && id(data(s)?.qq) === selfId),
     );
     if (
       onlyCommandSegments &&
@@ -915,7 +923,7 @@ export class Listener {
     }
     let triggered =
       this.config.mentionEnabled !== false &&
-      raw.some((s) => s?.type === 'at' && id(s.data?.qq) === selfId);
+      raw.some((s) => s?.type === 'at' && id(data(s)?.qq) === selfId);
     const mentioned = triggered;
     let unverifiedQuote = false;
     if (
@@ -2343,7 +2351,9 @@ export class Listener {
             : frozen.find(messageId),
         context: () => {
           try {
-            const parsed = JSON.parse(frozen.context()) as any;
+            const parsed = JSON.parse(frozen.context()) as {
+              messages?: unknown;
+            } | null;
             if (parsed && Array.isArray(parsed.messages)) {
               parsed.messages.push(
                 ...[...sentEntries.values()].map((entry) =>

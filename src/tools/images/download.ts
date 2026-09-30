@@ -837,7 +837,6 @@ export function createOriginalImageDownloader(
 export const downloadOriginalImage: OriginalImageDownloader =
   createOriginalImageDownloader();
 export const downloadImage: ImageDownloader = createImageDownloader();
-export default downloadImage;
 
 /** Decode a normalized model image into RGBA pixels for sandbox code (first frame only). */
 export async function imagePixels(

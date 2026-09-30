@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createHash } from 'node:crypto';
 import { type Repository, ResourceLimit } from './repository.ts';
 import { ReviewRepository } from './review-repository.ts';
@@ -26,9 +26,14 @@ export function registerReviewRoutes(
   base: Repository,
   now: () => number,
 ): void {
+  type Req = FastifyRequest<{
+    Params: { id?: string };
+    Querystring: Record<string, unknown>;
+  }>;
   const review = new ReviewRepository(base);
   const run =
-    (fn: (req: any, reply: any) => unknown) => async (req: any, reply: any) => {
+    (fn: (req: Req, reply: FastifyReply) => unknown) =>
+    async (req: Req, reply: FastifyReply) => {
       base.refreshGroups();
       try {
         return fn(req, reply);
@@ -54,7 +59,7 @@ export function registerReviewRoutes(
     }
     return q.groupId;
   };
-  const detail = (req: any) => {
+  const detail = (req: Req) => {
     const q = req.query as Record<string, unknown>;
     if (Object.keys(q).some((k) => k !== 'groupId')) {
       throw new BadQuery();
@@ -140,7 +145,7 @@ export function registerReviewRoutes(
             q.cursor.length > 300 ||
             !/^[A-Za-z0-9_-]+$/.test(q.cursor)
           ) {
-            throw 0;
+            throw new BadQuery();
           }
           const c = JSON.parse(Buffer.from(q.cursor, 'base64url').toString());
           if (
@@ -149,7 +154,7 @@ export function registerReviewRoutes(
             c.offset < 0 ||
             c.offset > 10000
           ) {
-            throw 0;
+            throw new BadQuery();
           }
           offset = c.offset;
         } catch {
@@ -278,7 +283,7 @@ export function registerReviewRoutes(
             q.cursor.length > 300 ||
             !/^[A-Za-z0-9_-]+$/.test(q.cursor)
           ) {
-            throw 0;
+            throw new BadQuery();
           }
           const c = JSON.parse(Buffer.from(q.cursor, 'base64url').toString());
           if (
@@ -286,7 +291,7 @@ export function registerReviewRoutes(
             !Number.isSafeInteger(c.after) ||
             c.after < 1
           ) {
-            throw 0;
+            throw new BadQuery();
           }
           after = c.after;
         } catch {

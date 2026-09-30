@@ -82,7 +82,7 @@ async function until(predicate: () => boolean) {
     }
     await delay(5);
   }
-  throw Error('Test timed out');
+  throw new Error('Test timed out');
 }
 
 function setup(
@@ -133,7 +133,7 @@ function setup(
         }
         return { message_id: '1000' };
       }
-      throw Error(secret);
+      throw new Error(secret);
     },
   };
   const model: Model = {

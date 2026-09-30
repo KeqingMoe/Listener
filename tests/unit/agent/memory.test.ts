@@ -227,7 +227,7 @@ test('reset and close invalidate an awaiting summary; failures keep bounded cont
     if (operation === 'failure') {
       await memory.compact({
         async complete() {
-          throw Error('remote error');
+          throw new Error('remote error');
         },
       });
       assert.equal(memory.recent().length, 60);

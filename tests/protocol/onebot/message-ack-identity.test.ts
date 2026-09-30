@@ -70,7 +70,7 @@ function memory(): Memory {
     },
     context: () => '',
     async compact() {
-      throw Error('unexpected compaction');
+      throw new Error('unexpected compaction');
     },
     clear() {
       rows.length = 0;
@@ -419,7 +419,7 @@ test('wire projection failure preserves strong ACK but consumes its identity', a
   await fixture(async (h) => {
     const original = h.world.append;
     h.world.append = () => {
-      throw Error('injected projection failure');
+      throw new Error('injected projection failure');
     };
     const pending = send(h.listener);
     await until(() => h.writes.length === 1, 'dispatch');
@@ -477,7 +477,7 @@ test('media captures receipt before wire dispatch, accepts self echo, and cannot
           assert.equal(receipt, receipts.at(-1));
           assert.ok(receipt);
           internal(h.listener).claimMessageAck(sent, receipt);
-          throw Error('injected local projection failure');
+          throw new Error('injected local projection failure');
         },
       },
     );

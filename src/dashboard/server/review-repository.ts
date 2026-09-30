@@ -25,6 +25,7 @@ import type {
   ReviewEvent,
 } from '../contracts/review.ts';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SQLite行的列由本模块建表语句保证
 type Row = Record<string, any>;
 type Scope = { requestIds?: string[]; turnIds?: string[]; wakeIds?: string[] };
 type ContentBudget = { remaining: number; truncated: boolean };
@@ -57,6 +58,7 @@ const n = (v: unknown): number | null =>
   typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null;
 const s = (v: unknown): string | null =>
   typeof v === 'string' && v.length ? v : null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- 解析本服务写入的JSON列，结构由写入方保证
 const parse = (v: unknown): any => {
   if (typeof v !== 'string') {
     return v ?? null;

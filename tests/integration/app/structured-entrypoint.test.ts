@@ -307,7 +307,7 @@ test(
             assert.ok(!JSON.stringify(call.params).includes(IGNORED_NAME));
             data = { message_id: String(9001 + sent++) };
           } else {
-            throw Error(`unexpected API action: ${call.action}`);
+            throw new Error(`unexpected API action: ${call.action}`);
           }
           socket.send(
             JSON.stringify({ status: 'ok', retcode: 0, echo: call.echo, data }),

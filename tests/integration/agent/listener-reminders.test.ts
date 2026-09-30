@@ -92,7 +92,7 @@ function setup(
           ? options.send()
           : { message_id: String(100 + sends.length) };
       }
-      throw Error('unexpected RPC ' + action);
+      throw new Error('unexpected RPC ' + action);
     },
   };
   const router = new GroupRouter({
@@ -105,7 +105,7 @@ function setup(
         {
           async complete() {
             modelCalls++;
-            throw Error('reminder must not call model');
+            throw new Error('reminder must not call model');
           },
         },
         memory,
@@ -126,7 +126,7 @@ function setup(
                 findMessage: () => undefined,
                 close() {},
                 append() {
-                  throw Error('projection unavailable');
+                  throw new Error('projection unavailable');
                 },
               } as any,
             }
@@ -297,7 +297,7 @@ for (const mutation of ['cancel', 'update'] as const) {
 test('uncertain native delivery is never replayed, including after store reopen', async () => {
   const s = setup({
     send: async () => {
-      throw Error('network lost');
+      throw new Error('network lost');
     },
   });
   try {

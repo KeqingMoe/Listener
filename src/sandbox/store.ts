@@ -113,7 +113,7 @@ export function validateScope(s: JobScope): void {
       (v) => typeof v === 'string' && /^[1-9]\d{0,31}$/.test(v),
     )
   ) {
-    throw Error('invalid_scope');
+    throw new Error('invalid_scope');
   }
 }
 
@@ -127,7 +127,7 @@ export function validateInput(i: JobInput): void {
     typeof i.code !== 'string' ||
     Buffer.byteLength(i.code) > JOB_BOUNDS.code
   ) {
-    throw Error('invalid_arguments');
+    throw new Error('invalid_arguments');
   }
   const ownsWait = Object.hasOwn(i, 'waitMs');
   if (
@@ -139,7 +139,7 @@ export function validateInput(i: JobInput): void {
         i.waitMs < 1 ||
         i.waitMs > 2147483647
   ) {
-    throw Error('invalid_arguments');
+    throw new Error('invalid_arguments');
   }
 }
 
@@ -154,7 +154,7 @@ function privateFile(path: string) {
         s.uid !== process.getuid?.() ||
         (s.mode & 0o077) !== 0
       ) {
-        throw Error('unsafe_database');
+        throw new Error('unsafe_database');
       }
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
@@ -181,7 +181,7 @@ function privateFile(path: string) {
       s.ino !== p.ino ||
       s.dev !== p.dev
     ) {
-      throw Error('unsafe_database');
+      throw new Error('unsafe_database');
     }
     fchmodSync(fd, 0o600);
   } finally {
@@ -189,6 +189,7 @@ function privateFile(path: string) {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SQLite行的列由本模块建表语句保证
 function decode(r: any): Job | undefined {
   return r
     ? {
@@ -215,11 +216,11 @@ function decode(r: any): Job | undefined {
 
 function readDiagnostic(encoded: unknown): ExecutionDiagnostic {
   if (typeof encoded !== 'string' || Buffer.byteLength(encoded) > 8192) {
-    throw Error('invalid_database');
+    throw new Error('invalid_database');
   }
   const value: unknown = JSON.parse(encoded);
   if (!isExecutionDiagnostic(value)) {
-    throw Error('invalid_database');
+    throw new Error('invalid_database');
   }
   return value;
 }
@@ -235,7 +236,7 @@ export class SandboxJobStore {
   private closed = false;
   constructor(options: { path: string }) {
     if (!options.path || options.path.includes('\0')) {
-      throw Error('invalid_path');
+      throw new Error('invalid_path');
     }
     if (options.path !== ':memory:') {
       privateFile(options.path);
@@ -259,7 +260,7 @@ export class SandboxJobStore {
             ),
           ))
       ) {
-        throw Error('invalid_database');
+        throw new Error('invalid_database');
       }
       this.db.exec(
         `CREATE TABLE IF NOT EXISTS sandbox_identity(singleton INTEGER PRIMARY KEY CHECK(singleton=1),version INTEGER NOT NULL); INSERT OR IGNORE INTO sandbox_identity VALUES(1,1);`,
@@ -269,7 +270,7 @@ export class SandboxJobStore {
           .prepare('SELECT version FROM sandbox_identity WHERE singleton=1')
           .get()?.version !== 1
       ) {
-        throw Error('invalid_database');
+        throw new Error('invalid_database');
       }
       this.db
         .exec(`CREATE TABLE IF NOT EXISTS sandbox_jobs(id TEXT PRIMARY KEY,self_id TEXT NOT NULL,group_id TEXT NOT NULL,description TEXT NOT NULL CHECK(length(CAST(description AS BLOB))<=1024),code_hash TEXT NOT NULL,mode TEXT NOT NULL CHECK(mode IN ('sync','async','auto')),status TEXT NOT NULL CHECK(status IN ('queued','running','completed','failed','cancelled','interrupted','timeout')),created_at INTEGER NOT NULL,started_at INTEGER,finished_at INTEGER,background INTEGER NOT NULL,delivered_at INTEGER,value TEXT CHECK(value IS NULL OR length(CAST(value AS BLOB))<=65536),error TEXT,logs TEXT NOT NULL,diagnostic TEXT CHECK(diagnostic IS NULL OR length(CAST(diagnostic AS BLOB))<=8192));
@@ -383,7 +384,7 @@ export class SandboxJobStore {
       limit < 1 ||
       limit > 100
     ) {
-      throw Error('invalid_arguments');
+      throw new Error('invalid_arguments');
     }
     if (
       !this.db
@@ -463,7 +464,7 @@ export class SandboxJobStore {
     validateScope(s);
     if (q.jobId !== undefined) {
       if (typeof q.jobId !== 'string' || q.jobId.length > 128) {
-        throw Error('invalid_arguments');
+        throw new Error('invalid_arguments');
       }
       return this.get(s, q.jobId);
     }
@@ -477,7 +478,7 @@ export class SandboxJobStore {
       limit > 100 ||
       (q.status !== undefined && !states.includes(q.status))
     ) {
-      throw Error('invalid_arguments');
+      throw new Error('invalid_arguments');
     }
     const filter = q.status
       ? ' AND status=?'
@@ -544,7 +545,7 @@ export class SandboxJobStore {
       !states.includes(result.status) ||
       ['queued', 'running'].includes(result.status)
     ) {
-      throw Error('invalid_result');
+      throw new Error('invalid_result');
     }
     let { status, value, error, diagnostic } = result;
     let logs = result.logs ?? [];
@@ -607,7 +608,7 @@ export class SandboxJobStore {
       !Number.isSafeInteger(cursor) ||
       cursor < 0
     ) {
-      throw Error('invalid_limit');
+      throw new Error('invalid_limit');
     }
     const rows = this.db
       .prepare(

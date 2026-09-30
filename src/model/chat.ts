@@ -124,11 +124,11 @@ function validate(value: unknown): Completion {
     !Array.isArray(value.choices) ||
     value.choices.length !== 1
   ) {
-    throw Error();
+    throw new Error();
   }
   const choice: unknown = value.choices[0];
   if (!object(choice) || !object(choice.message)) {
-    throw Error();
+    throw new Error();
   }
   const message = choice.message;
   if (
@@ -137,21 +137,21 @@ function validate(value: unknown): Completion {
       message.content !== null &&
       typeof message.content !== 'string')
   ) {
-    throw Error();
+    throw new Error();
   }
   if (
     choice.finish_reason !== 'stop' &&
     choice.finish_reason !== 'tool_calls'
   ) {
-    throw Error();
+    throw new Error();
   }
   const calls: unknown =
     message.tool_calls === undefined ? [] : message.tool_calls;
   if (!Array.isArray(calls) || calls.length > 8) {
-    throw Error();
+    throw new Error();
   }
   if ((choice.finish_reason === 'tool_calls') !== calls.length > 0) {
-    throw Error();
+    throw new Error();
   }
   const ids = new Set<string>();
   const validated: ToolCall[] = calls.map((call: unknown) => {
@@ -164,7 +164,7 @@ function validate(value: unknown): Completion {
       call.type !== 'function' ||
       !object(call.function)
     ) {
-      throw Error();
+      throw new Error();
     }
     const fn = call.function;
     // Validate the transport envelope, not tool semantics: unknown/disabled tools
@@ -178,7 +178,7 @@ function validate(value: unknown): Completion {
       typeof fn.arguments !== 'string' ||
       Buffer.byteLength(fn.arguments) > MAX_ARGUMENT_BYTES
     ) {
-      throw Error();
+      throw new Error();
     }
     ids.add(call.id);
     return {
@@ -221,7 +221,7 @@ export class OpenAIModel implements Model {
         !Number.isSafeInteger(options.maxTokens) ||
         options.maxTokens < 1
       ) {
-        throw Error();
+        throw new Error();
       }
       url.pathname = url.pathname.replace(/\/+$/, '') + '/chat/completions';
       this.endpoint = url.toString();
@@ -294,13 +294,12 @@ export class OpenAIModel implements Model {
       { id: string; name: string; arguments: string; argumentBytes: number }
     >();
     let assembledBytes = 0,
-      capturedBytes = 0,
-      captureTruncated = false;
+      capturedBytes = 0;
     const account = (text: string) => {
       assembledBytes += Buffer.byteLength(text);
       if (assembledBytes > MAX_RESPONSE_BYTES) {
         failure = 'response_too_large';
-        throw Error();
+        throw new Error();
       }
     };
     try {
@@ -351,7 +350,7 @@ export class OpenAIModel implements Model {
           ...inspection,
           ...(await readErrorInspection(response)),
         };
-        throw Error();
+        throw new Error();
       }
       stage = 'response_body';
       if (
@@ -362,13 +361,13 @@ export class OpenAIModel implements Model {
           .toLowerCase() !== 'text/event-stream'
       ) {
         failure = 'invalid_response';
-        throw Error();
+        throw new Error();
       }
       const length = response.headers.get('content-length');
       if (length && Number(length) > MAX_WIRE_BYTES) {
         failure = 'response_too_large';
         await response.body.cancel();
-        throw Error();
+        throw new Error();
       }
       failure = 'invalid_response';
       await readSse(
@@ -376,7 +375,7 @@ export class OpenAIModel implements Model {
         (data, at) => {
           if (data === '[DONE]') {
             if (!finishReason) {
-              throw Error();
+              throw new Error();
             }
             streamCompletedAt = at;
             return true;
@@ -386,10 +385,10 @@ export class OpenAIModel implements Model {
             event = JSON.parse(data);
           } catch {
             failure = 'invalid_response';
-            throw Error();
+            throw new Error();
           }
           if (!object(event)) {
-            throw Error();
+            throw new Error();
           }
           const raw = event;
           if (raw.id !== undefined) {
@@ -398,16 +397,16 @@ export class OpenAIModel implements Model {
               raw.id.length > 256 ||
               (responseId !== undefined && responseId !== raw.id)
             ) {
-              throw Error();
+              throw new Error();
             }
             responseId = raw.id;
           }
           if (raw.error != null) {
             Object.assign(diagnostics, providerDiagnostics(raw));
-            throw Error();
+            throw new Error();
           }
           if (!Array.isArray(raw.choices) || raw.choices.length > 1) {
-            throw Error();
+            throw new Error();
           }
           const choices = raw.choices;
           if (raw.usage) {
@@ -417,12 +416,12 @@ export class OpenAIModel implements Model {
           const choice = object(choices[0]) ? choices[0] : undefined;
           if (!choice) {
             if (choices.length) {
-              throw Error();
+              throw new Error();
             }
             return;
           }
           if (choice.index !== 0 || !object(choice.delta)) {
-            throw Error();
+            throw new Error();
           }
           const alreadyFinished = finishReason !== undefined;
           if (
@@ -430,7 +429,7 @@ export class OpenAIModel implements Model {
             choice.finish_reason !== undefined
           ) {
             if (typeof choice.finish_reason !== 'string' || alreadyFinished) {
-              throw Error();
+              throw new Error();
             }
             finishReason = choice.finish_reason;
           }
@@ -441,14 +440,14 @@ export class OpenAIModel implements Model {
             delta.content !== undefined &&
             typeof delta.content !== 'string'
           ) {
-            throw Error();
+            throw new Error();
           }
           if (
             Object.hasOwn(delta, 'tool_calls') &&
             !Array.isArray(delta.tool_calls) &&
             delta.tool_calls !== undefined
           ) {
-            throw Error();
+            throw new Error();
           }
           let effective = false;
           for (const key of [
@@ -474,10 +473,10 @@ export class OpenAIModel implements Model {
               (item.index as number) < 0 ||
               (item.index as number) >= 8
             ) {
-              throw Error();
+              throw new Error();
             }
             if (item.type !== undefined && item.type !== 'function') {
-              throw Error();
+              throw new Error();
             }
             const index = item.index as number;
             let call = streamedCalls.get(index);
@@ -491,31 +490,31 @@ export class OpenAIModel implements Model {
                 !item.id ||
                 (call.id && call.id !== item.id)
               ) {
-                throw Error();
+                throw new Error();
               }
               call.id = item.id;
             }
             if (item.function !== undefined && !object(item.function)) {
-              throw Error();
+              throw new Error();
             }
             if (object(item.function)) {
               for (const key of ['name', 'arguments'] as const) {
                 const value = item.function[key];
                 if (value !== undefined) {
                   if (typeof value !== 'string') {
-                    throw Error();
+                    throw new Error();
                   }
                   if (value) {
                     if (key === 'arguments') {
                       call.argumentBytes += Buffer.byteLength(value);
                       if (call.argumentBytes > MAX_ARGUMENT_BYTES) {
-                        throw Error();
+                        throw new Error();
                       }
                     } else if (
                       Buffer.byteLength(call.name) + Buffer.byteLength(value) >
                       128
                     ) {
-                      throw Error();
+                      throw new Error();
                     }
                     call[key] += value;
                     effective = true;
@@ -525,7 +524,7 @@ export class OpenAIModel implements Model {
             }
           }
           if (alreadyFinished && (effective || tc.length)) {
-            throw Error();
+            throw new Error();
           }
           if (effective && firstOutputAt === undefined) {
             firstOutputAt = at;
@@ -542,9 +541,6 @@ export class OpenAIModel implements Model {
               );
               chunks.push(keep);
               capturedBytes += keep.byteLength;
-              if (keep.byteLength < chunk.byteLength) {
-                captureTruncated = true;
-              }
             }
           },
         },
@@ -556,10 +552,10 @@ export class OpenAIModel implements Model {
       };
       if (finishReason === 'length') {
         failure = 'truncated_response';
-        throw Error();
+        throw new Error();
       }
       if (!finishReason) {
-        throw Error();
+        throw new Error();
       }
       const value = {
         ...(responseId ? { id: responseId } : {}),
@@ -570,7 +566,7 @@ export class OpenAIModel implements Model {
               content: streamedContent || null,
               tool_calls: [...streamedCalls.entries()]
                 .sort((a, b) => a[0] - b[0])
-                .map(([index, call]) => ({
+                .map(([, call]) => ({
                   id: call.id,
                   type: 'function',
                   function: { name: call.name, arguments: call.arguments },
@@ -590,7 +586,7 @@ export class OpenAIModel implements Model {
       const result = validate(value);
       stage = 'post_response';
       if (controller.signal.aborted) {
-        throw Error();
+        throw new Error();
       }
       requestStatus = 'success';
       log('info', 'model.complete', {

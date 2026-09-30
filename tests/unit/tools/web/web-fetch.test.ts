@@ -41,7 +41,7 @@ function network(port: number, answers: Record<string, string[]> = {}) {
       }));
     },
     request: (options: RequestOptions, callback) => {
-      (options.lookup as Function)(
+      (options.lookup as (...args: unknown[]) => void)(
         options.hostname,
         {},
         (_e: unknown, address: string) => pinned.push(address),

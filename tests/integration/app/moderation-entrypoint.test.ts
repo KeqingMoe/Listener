@@ -297,7 +297,7 @@ test(
             sends.push({ group: call.params.group_id, text });
             data = { message_id: String(9000 + sends.length) };
           } else {
-            throw Error(`unexpected fixture API: ${call.action}`);
+            throw new Error(`unexpected fixture API: ${call.action}`);
           }
           socket.send(
             JSON.stringify({ status: 'ok', retcode: 0, echo: call.echo, data }),

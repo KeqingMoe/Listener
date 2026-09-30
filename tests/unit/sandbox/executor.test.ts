@@ -94,7 +94,7 @@ test('diagnostic validator rejects malformed, inherited, accessor and oversized 
     {
       ...good,
       get message() {
-        throw Error('must not execute');
+        throw new Error('must not execute');
       },
     },
   ]) {

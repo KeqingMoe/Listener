@@ -42,7 +42,6 @@ import {
 } from './web/tools.ts';
 import {
   ArtifactTools,
-  ARTIFACT_TOOL_NAMES,
   buildArtifactToolDefinitions,
 } from './artifacts/tools.ts';
 import type { ArtifactStore } from '../artifacts/store.ts';

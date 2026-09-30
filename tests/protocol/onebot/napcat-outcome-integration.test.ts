@@ -65,7 +65,7 @@ function memory(): Memory {
     },
     context: () => '',
     async compact() {
-      throw Error('unexpected legacy compaction');
+      throw new Error('unexpected legacy compaction');
     },
     clear() {
       rows.length = 0;

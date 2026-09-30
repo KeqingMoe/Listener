@@ -289,7 +289,7 @@ export class AttentionEngine {
           m.received <= now,
       );
       for (const [index, c] of plan.spec.any_of.entries()) {
-        let matched = false;
+        let matched: boolean;
         if (c.type === 'next_message') {
           matched = evidence.length > 0;
         } else if (c.type === 'member_message') {

@@ -123,7 +123,7 @@ class Mem implements Memory {
   closed = false;
   append(e: TimelineEntry) {
     if (this.closed) {
-      throw Error('write after close');
+      throw new Error('write after close');
     }
     if (this.find(e.messageId)) {
       return false;
@@ -182,7 +182,7 @@ function setup(
       if (action === 'send_group_msg') {
         return { message_id: String(90000 + calls.length) };
       }
-      throw Error('unexpected API');
+      throw new Error('unexpected API');
     },
   };
   const model: Model = {
@@ -524,7 +524,7 @@ for (const failure of ['model', 'send', 'reset', 'timeout'] as const) {
       api:
         failure === 'send'
           ? async () => {
-              throw Error('mock send failure');
+              throw new Error('mock send failure');
             }
           : undefined,
     });

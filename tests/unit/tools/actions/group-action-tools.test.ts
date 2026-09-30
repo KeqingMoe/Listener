@@ -824,8 +824,7 @@ test('packet IDs do not lose precision and memory changes during reads revoke au
     'invalid_arguments',
   );
   assert.equal(f.calls.length, 0);
-  let live: ReturnType<typeof setup>;
-  live = setup({
+  const live: ReturnType<typeof setup> = setup({
     write: { result: 0 },
     hook: (action) => {
       if (action === 'get_msg') {

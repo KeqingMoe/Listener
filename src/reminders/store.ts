@@ -187,6 +187,7 @@ function row(value: unknown): Reminder | undefined {
   if (!value) {
     return;
   }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- SQLite行的列由本模块建表语句保证
   const r = value as Record<string, any>;
   return {
     id: r.id,

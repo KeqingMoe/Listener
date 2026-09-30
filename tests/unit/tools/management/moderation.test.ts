@@ -399,7 +399,7 @@ test('strict argument allowlist rejects arbitrary actions, fields and malformed 
       Object.defineProperty({ seconds: 2 }, 'user_id', {
         enumerable: true,
         get() {
-          throw Error('must not access');
+          throw new Error('must not access');
         },
       }),
     ],

@@ -62,7 +62,7 @@ const nav = [
   ['/tools', '工具'],
   ['/events', '事件'],
 ];
-const { groupId, range, query } = useFilters();
+const { groupId, range } = useFilters();
 const {
   data: meta,
   error: metaError,

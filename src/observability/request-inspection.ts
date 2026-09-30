@@ -25,10 +25,10 @@ function scrubText(text: string, secrets: readonly string[]): string {
         '$1[REDACTED]',
       )
       .replace(
-        /(\b(?:authorization|proxy[-_]?authorization)["']?[ \t]*[:=][ \t]*)(?:Basic|Bearer|Negotiate)[ \t]+[A-Za-z0-9._~+\/-]+=*/gi,
+        /(\b(?:authorization|proxy[-_]?authorization)["']?[ \t]*[:=][ \t]*)(?:Basic|Bearer|Negotiate)[ \t]+[A-Za-z0-9._~+/-]+=*/gi,
         '$1[REDACTED]',
       )
-      .replace(/\b(Bearer\s+)[A-Za-z0-9._~+\/-]+=*/gi, '$1[REDACTED]')
+      .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/-]+=*/gi, '$1[REDACTED]')
       // Bare 'token'/'secret' in prose are business text, not an auth context.
       .replace(
         /(\b(?:authorization|proxy[-_]?authorization|cookie|set[-_]?cookie|api[-_]?key|password|passwd|secret[-_]?key|client[-_]?secret|access[-_]?token|refresh[-_]?token|confirmation[-_]?code|confirm[-_]?code|authorization[-_]?code|auth[-_]?code)["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;}]+)/gi,

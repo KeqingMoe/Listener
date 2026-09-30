@@ -267,7 +267,7 @@ test('non-JSON Any results and wrong void results stay unknown without invoking 
     enumerable: true,
     get() {
       touched++;
-      throw Error('PRIVATE');
+      throw new Error('PRIVATE');
     },
   });
   const proxy = new Proxy(
@@ -275,7 +275,7 @@ test('non-JSON Any results and wrong void results stay unknown without invoking 
     {
       ownKeys() {
         touched++;
-        throw Error('PRIVATE');
+        throw new Error('PRIVATE');
       },
     },
   );
@@ -284,7 +284,7 @@ test('non-JSON Any results and wrong void results stay unknown without invoking 
     enumerable: true,
     get() {
       touched++;
-      throw Error('PRIVATE');
+      throw new Error('PRIVATE');
     },
   });
   const cycle: Record<string, unknown> = {};
@@ -425,7 +425,7 @@ test('late strong ACKs and normal voice completion remain facts; projections do 
       },
       () => {
         sent++;
-        throw Error('PRIVATE projection');
+        throw new Error('PRIVATE projection');
       },
     );
     const result =

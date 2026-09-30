@@ -102,7 +102,7 @@ function fixtureApi(self = SELF) {
       if (action === 'send_group_msg') {
         return { message_id: String(90000 + calls.length) };
       }
-      throw Error(`unexpected API ${action}`);
+      throw new Error(`unexpected API ${action}`);
     },
   };
   return {

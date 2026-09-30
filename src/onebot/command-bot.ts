@@ -48,12 +48,12 @@ export class Bot {
     private readonly now: () => number = Date.now,
   ) {}
 
-  handle(event: any, selfId: string): Reply | undefined {
-    if (
-      !event ||
-      event.post_type !== 'message' ||
-      id(event.self_id) !== selfId
-    ) {
+  handle(input: unknown, selfId: string): Reply | undefined {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return undefined;
+    }
+    const event = input as Record<string, unknown>;
+    if (event.post_type !== 'message' || id(event.self_id) !== selfId) {
       return undefined;
     }
     const userId = id(event.user_id);

@@ -169,7 +169,7 @@ test(
   { timeout: 3000 },
   async () => {
     let sends = 0;
-    const f = await fixture((ws, p) => {
+    const f = await fixture((ws) => {
       sends++;
       ws.send(JSON.stringify({ echo: 'unknown', status: 'ok', retcode: 0 }));
       ws.send('{invalid');

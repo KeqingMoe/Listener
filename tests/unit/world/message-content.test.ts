@@ -367,7 +367,7 @@ test('malformed objects, custom prototypes and getters cannot provide executable
     data: Object.defineProperty({}, 'id', {
       get() {
         called++;
-        throw Error('secret');
+        throw new Error('secret');
       },
       enumerable: true,
     }),
@@ -380,7 +380,7 @@ test('malformed objects, custom prototypes and getters cannot provide executable
   Object.defineProperty(array, '4', {
     get() {
       called++;
-      throw Error('secret');
+      throw new Error('secret');
     },
     enumerable: true,
   });

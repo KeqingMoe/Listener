@@ -605,7 +605,7 @@ test('all constructors reject invalid group IDs before opening files or calling 
   const dir = mkdtempSync(join(tmpdir(), 'listener-invalid-groups-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const a = api(() => {
-    throw Error('no API allowed');
+    throw new Error('no API allowed');
   });
   for (const group of [
     null,

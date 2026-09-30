@@ -370,7 +370,7 @@ test('original downloader pins public DNS, validates TLS hostname and never tran
   assert.equal(net.options!.servername, 'gchat.qpic.cn');
   assert.equal(net.options!.rejectUnauthorized, true);
   assert.equal(net.options!.agent, false);
-  const lookup = net.options!.lookup as Function;
+  const lookup = net.options!.lookup as (...args: unknown[]) => void;
   lookup(
     'gchat.qpic.cn',
     {},

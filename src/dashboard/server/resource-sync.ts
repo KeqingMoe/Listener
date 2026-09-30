@@ -29,8 +29,8 @@ const escape = (key: string) => key.replace(/~/g, '~0').replace(/\//g, '~1');
 
 /** Bounded structural delta: unchanged body strings are never recopied into patches. */
 function diff(
-  before: any,
-  after: any,
+  before: unknown,
+  after: unknown,
   path = '',
   out: ResourcePatch[] = [],
 ): ResourcePatch[] {
@@ -47,7 +47,7 @@ function diff(
     typeof after === 'object' &&
     Array.isArray(before) === Array.isArray(after)
   ) {
-    if (Array.isArray(before)) {
+    if (Array.isArray(before) && Array.isArray(after)) {
       for (let i = before.length - 1; i >= after.length; i--) {
         out.push({ op: 'remove', path: `${path}/${i}` });
       }
@@ -59,20 +59,22 @@ function diff(
         }
       }
     } else {
-      for (const key of Object.keys(before)) {
-        if (!Object.hasOwn(after, key)) {
+      const from = before as Record<string, unknown>;
+      const to = after as Record<string, unknown>;
+      for (const key of Object.keys(from)) {
+        if (!Object.hasOwn(to, key)) {
           out.push({ op: 'remove', path: `${path}/${escape(key)}` });
         }
       }
-      for (const key of Object.keys(after)) {
-        if (!Object.hasOwn(before, key)) {
+      for (const key of Object.keys(to)) {
+        if (!Object.hasOwn(from, key)) {
           out.push({
             op: 'add',
             path: `${path}/${escape(key)}`,
-            value: after[key],
+            value: to[key],
           });
         } else {
-          diff(before[key], after[key], `${path}/${escape(key)}`, out);
+          diff(from[key], to[key], `${path}/${escape(key)}`, out);
         }
       }
     }

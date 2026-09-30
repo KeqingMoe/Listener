@@ -49,7 +49,7 @@ test('offline never dispatches, preclaim throws remain pending and next tick ret
   let calls = 0;
   const s = setup(async (_, claim) => {
     if (++calls === 1) {
-      throw Error('private provider detail');
+      throw new Error('private provider detail');
     }
     assert.equal(claim(), true);
     return { state: 'sent', messageId: '8' };
@@ -76,7 +76,7 @@ test('postclaim errors are unknown and never replayed', async () => {
   const s = setup(async (_, claim) => {
     calls++;
     assert.equal(claim(), true);
-    throw Error('secret');
+    throw new Error('secret');
   });
   try {
     await s.scheduler.tick();

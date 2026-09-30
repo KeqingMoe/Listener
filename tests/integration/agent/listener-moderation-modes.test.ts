@@ -441,7 +441,7 @@ test('unknown direct delivery is not claimed successful and cannot be dispatched
     {},
     async (action) => {
       if (action === 'set_group_ban') {
-        throw Error('sensitive transport secret');
+        throw new Error('sensitive transport secret');
       }
     },
   );
@@ -486,7 +486,7 @@ test('failed or unknown direct results defer prewritten replies until the model 
       async (action) => {
         if (action === 'set_group_ban') {
           if (failure === 'unknown') {
-            throw Error('transport');
+            throw new Error('transport');
           }
           return { result: 1 };
         }

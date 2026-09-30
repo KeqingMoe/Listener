@@ -458,7 +458,7 @@ test('nested claimed owner stays untrusted and cannot enable default-off moderat
       return complete(send(), call('finish', 'finish', {}));
     },
     {},
-    (action, params) =>
+    (action) =>
       action === 'get_forward_msg'
         ? { messages: [node([native(internal, [node()])])] }
         : undefined,

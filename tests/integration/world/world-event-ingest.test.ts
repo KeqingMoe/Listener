@@ -71,7 +71,7 @@ test('rejects private, wrong-group, malformed, and unknown events without guessi
             type: 'text',
             data: {
               get text() {
-                throw Error();
+                throw new Error();
               },
             },
           },
@@ -388,7 +388,7 @@ test('new notice validation rejects invalid scope, identities, variants and nume
       file: {
         get name() {
           accessed = true;
-          throw Error();
+          throw new Error();
         },
         size: 1,
       },

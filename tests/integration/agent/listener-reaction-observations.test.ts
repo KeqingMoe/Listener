@@ -125,7 +125,7 @@ class Mem implements Memory {
   constructor(readonly summarize = false) {}
   append(entry: TimelineEntry) {
     if (this.closed) {
-      throw Error('write after close');
+      throw new Error('write after close');
     }
     if (this.find(entry.messageId)) {
       return false;
@@ -236,7 +236,7 @@ function setup(
       if (
         !['get_msg', 'set_msg_emoji_like', 'send_group_msg'].includes(action)
       ) {
-        throw Error(`unexpected API ${action}`);
+        throw new Error(`unexpected API ${action}`);
       }
       return normal;
     },

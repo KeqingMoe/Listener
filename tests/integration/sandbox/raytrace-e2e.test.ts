@@ -2,15 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Listener } from '../../../src/agent/listener.ts';
-import { buildToolDefinitions } from '../../../src/agent/tool-definitions.ts';
-import { buildSystemPrompt } from '../../../src/agent/prompts.ts';
 import { toListenerConfig } from '../../../src/config/runtime.ts';
 import {
   TOOL_NAMES,
   TOOL_CAPABILITIES,
   type ResolvedToolPolicies,
-  type ToolName,
-  type ToolPolicy,
 } from '../../../src/config/tool-policy.ts';
 import type {
   AppConfig,
@@ -148,7 +144,7 @@ class Cache implements Memory {
 
   async compact() {
     this.summaryCalls++;
-    throw Error('obsolete_summary');
+    throw new Error('obsolete_summary');
   }
 
   clear() {
@@ -249,7 +245,7 @@ function transport() {
       if (action === 'send_group_msg') {
         return { message_id: String(1000 + calls.length) };
       }
-      throw Error('unexpected API ' + action);
+      throw new Error('unexpected API ' + action);
     },
   };
   return { api, calls };

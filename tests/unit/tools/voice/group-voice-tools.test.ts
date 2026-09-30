@@ -58,7 +58,7 @@ function fixture(
       if (action === 'send_group_ai_record') {
         return options.send ? options.send() : { message_id: 0 };
       }
-      throw Error('unexpected API');
+      throw new Error('unexpected API');
     },
   };
   const tools = new GroupVoiceTools(
@@ -470,7 +470,7 @@ test('send never trusts any fabricated positive ACK and locks exceptions and mal
   }
   const throwing = fixture({
     send: () => {
-      throw Error(SECRET);
+      throw new Error(SECRET);
     },
   });
   const r = await throwing.tools.execute('send_group_ai_voice', sendArgs, ctx);
@@ -523,7 +523,7 @@ test('read exceptions are static and a rejected read does not lock future correc
   const f = fixture({
     voices: () => {
       if (error) {
-        throw Error(SECRET);
+        throw new Error(SECRET);
       }
       return native();
     },

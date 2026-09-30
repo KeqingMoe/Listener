@@ -286,7 +286,7 @@ test('auto detaches after foreground timeout and later result is pending', async
   try {
     const s = new SandboxService({
       store: f.store,
-      executor: (o: any) => {
+      executor: () => {
         let resolve!: any;
         const result = new Promise((r) => (resolve = r));
         const timer = setTimeout(

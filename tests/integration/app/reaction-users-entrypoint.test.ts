@@ -301,7 +301,7 @@ test(
               isFirstPage: pages === 1,
             };
           } else {
-            throw Error(`unexpected action: ${call.action}`);
+            throw new Error(`unexpected action: ${call.action}`);
           }
           socket.send(
             JSON.stringify({ status: 'ok', retcode: 0, echo: call.echo, data }),

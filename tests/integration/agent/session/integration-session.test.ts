@@ -273,7 +273,7 @@ test('live attention metadata survives session rotation and remains absent from 
           reactionWrites++;
           return { result: 0 };
         }
-        throw Error('unexpected API');
+        throw new Error('unexpected API');
       },
     },
     {
@@ -383,8 +383,7 @@ test('late valid send ACK remains a world fact without resuming cancelled execut
     world = new WorldEventStore({ path: ':memory:', groupId: LISTENER_GROUP });
   let rounds = 0,
     writes = 0;
-  let listener: Listener;
-  listener = new Listener(
+  const listener: Listener = new Listener(
     {
       async call(action) {
         assert.equal(action, 'send_group_msg');

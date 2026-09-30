@@ -124,7 +124,7 @@ function fields(
     ) ||
     required.some((k) => !Object.hasOwn(v, k))
   ) {
-    throw Error('invalid_arguments');
+    throw new Error('invalid_arguments');
   }
   return v;
 }
@@ -136,7 +136,7 @@ function text(v: unknown, max: number, nonempty = true): string {
     Buffer.byteLength(v) > max ||
     /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(v)
   ) {
-    throw Error('invalid_arguments');
+    throw new Error('invalid_arguments');
   }
   return v;
 }
@@ -212,11 +212,11 @@ export class SandboxTools {
           !['sync', 'async', 'auto'].includes(a.mode) ||
           Object.getPrototypeOf(a.mode) !== String.prototype
         ) {
-          throw Error('invalid_arguments');
+          throw new Error('invalid_arguments');
         }
         if (a.mode === 'async') {
           if (Object.hasOwn(a, 'wait_ms')) {
-            throw Error('invalid_arguments');
+            throw new Error('invalid_arguments');
           }
           return execution(
             await this.service.execute(
@@ -232,7 +232,7 @@ export class SandboxTools {
           a.wait_ms < 1 ||
           a.wait_ms > 2147483647
         ) {
-          throw Error('invalid_arguments');
+          throw new Error('invalid_arguments');
         }
         return execution(
           await this.service.execute(
@@ -260,7 +260,7 @@ export class SandboxTools {
         }
         if (a.status !== undefined) {
           if (!statuses.includes(a.status as JobStatus)) {
-            throw Error('invalid_arguments');
+            throw new Error('invalid_arguments');
           }
           q.status = a.status as JobStatus;
         }
@@ -270,7 +270,7 @@ export class SandboxTools {
             !Number.isSafeInteger(a.offset) ||
             a.offset < 0
           ) {
-            throw Error('invalid_arguments');
+            throw new Error('invalid_arguments');
           }
           q.offset = a.offset;
         }
@@ -281,7 +281,7 @@ export class SandboxTools {
             a.limit < 1 ||
             a.limit > 100
           ) {
-            throw Error('invalid_arguments');
+            throw new Error('invalid_arguments');
           }
           q.limit = a.limit;
         }
@@ -292,7 +292,7 @@ export class SandboxTools {
             !Number.isSafeInteger(a.calls_offset) ||
             a.calls_offset < 0
           ) {
-            throw Error('invalid_arguments');
+            throw new Error('invalid_arguments');
           }
         }
         const found = queryResult(await this.service.query(s, q));
@@ -327,7 +327,7 @@ export class SandboxTools {
         const a = fields(args, ['job_id'], []);
         return queryResult(await this.service.cancel(s, text(a.job_id, 128)));
       }
-      throw Error('unknown_tool');
+      throw new Error('unknown_tool');
     } catch (error) {
       const code =
         error instanceof Error &&

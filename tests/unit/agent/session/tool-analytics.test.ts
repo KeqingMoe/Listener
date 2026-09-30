@@ -134,7 +134,6 @@ test('analytics aggregates outcomes, durations, exposure and keeps private args 
     });
     s.finishWake('done');
     s.beginWake('instructions', tools, { trigger: 'b' });
-    const wakeB = s.state().wakeId!;
     s.appendAssistant(completion(call('bad'), call('skip', 'finish')));
     assert.equal(s.startTool('bad'), true);
     s.finishTool('bad', {

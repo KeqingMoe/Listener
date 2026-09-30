@@ -15,7 +15,6 @@ import {
   OWNER_ID,
 } from '../../../../src/contracts/identity.ts';
 import { type Api } from '../../../../src/contracts/onebot.ts';
-import { type JsonObject } from '../../../../src/contracts/json.ts';
 import { type Memory } from '../../../../src/contracts/messages.ts';
 import { type TurnContext } from '../../../../src/contracts/tools.ts';
 
@@ -103,7 +102,7 @@ function reactionFixture(write: () => unknown | Promise<unknown>) {
     find: (id) => (id === '7' ? { ...row } : undefined),
     recent: () => [{ ...row }],
     append: () => {
-      throw Error('must not project unobserved effects');
+      throw new Error('must not project unobserved effects');
     },
     context: () => '',
     async compact() {},

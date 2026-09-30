@@ -285,7 +285,7 @@ test('typed context budgets include all escaping, segment names and framing with
       const segments = Array.from({ length: 128 }, (_, i) =>
         i % 2
           ? { type: 'face', id: '271' }
-          : { type: 'text', text: '\u0000\\\"'.repeat(1000) },
+          : { type: 'text', text: '\u0000\\"'.repeat(1000) },
       );
       memory.append(typed(4, segments));
       const original = memory.find('4');
@@ -384,7 +384,7 @@ test('single oversized typed summary source trims segments, not only hidden comp
     memory.append(
       typed(0, [
         { type: 'face', id: '271' },
-        { type: 'text', text: '\u0000\\\"'.repeat(5000) },
+        { type: 'text', text: '\u0000\\"'.repeat(5000) },
       ]),
     );
     for (let i = 1; i < 31; i++) {

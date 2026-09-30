@@ -196,7 +196,7 @@ function fixture(options: {
       if (action === 'send_group_ai_record') {
         return { message_id: 0 };
       }
-      throw Error('Unexpected fixture API ' + action);
+      throw new Error('Unexpected fixture API ' + action);
     },
   };
   const config: ListenerConfig = {
@@ -723,7 +723,7 @@ test('uncertain media result and duplicate remain unknown in persisted tool ledg
     extended: { send_group_forward: 'direct' },
     apiHook: (action) => {
       if (action === 'send_group_forward_msg') {
-        throw Error(SECRET);
+        throw new Error(SECRET);
       }
     },
     respond(messages, round) {

@@ -76,7 +76,7 @@ function setup(
       if (action === 'fetch_emoji_like') {
         return responses[i++];
       }
-      throw Error('unexpected');
+      throw new Error('unexpected');
     },
   };
   const tools = new ReactionUserTools(api, memory, '22'),
@@ -692,7 +692,7 @@ test('strict native success code and required list, errors never leak or retry',
   for (const failure of ['get_msg', 'fetch_emoji_like']) {
     const s = setup([], (action) => {
       if (action === failure) {
-        throw Error('SECRET provider body');
+        throw new Error('SECRET provider body');
       }
     });
     const r = await s.read();

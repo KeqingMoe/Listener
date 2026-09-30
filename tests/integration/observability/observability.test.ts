@@ -364,13 +364,13 @@ test('memory only logs actual compaction, preserves swallowed failures and marks
     try {
       await memory.compact({
         complete: async () => {
-          throw Error('must not run');
+          throw new Error('must not run');
         },
       });
       fill();
       await memory.compact({
         complete: async () => {
-          throw Error(secret);
+          throw new Error(secret);
         },
       });
       const controller = new AbortController();

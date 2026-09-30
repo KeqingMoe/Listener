@@ -57,11 +57,15 @@ export function buildToolDefinitions(
     ),
   );
   const send = tools.find((tool) => tool.function.name === 'send_message')!;
-  const params = send.function.parameters as any;
+  // send_message的segments.items.oneOf按片段类型列出各schema。
+  type SegmentSchema = { properties: { type: { const: string } } };
+  const params = send.function.parameters as {
+    properties: { segments: { items: { oneOf: SegmentSchema[] } } };
+  };
   if (config.tools?.mention === false) {
     params.properties.segments.items.oneOf =
       params.properties.segments.items.oneOf.filter(
-        (schema: any) => schema.properties.type.const !== 'at',
+        (schema) => schema.properties.type.const !== 'at',
       );
     send.function.description =
       '向当前群发送文字和QQ原生表情，可混排或纯表情；提及成员能力已关闭，不允许at片段。表情仅使用目录id，不开放连击或指定动画结果，不另设表情数量配额。' +

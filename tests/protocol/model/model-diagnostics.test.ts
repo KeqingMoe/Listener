@@ -58,7 +58,7 @@ test('diagnostics projects only exact own data fields without executing getters 
   Object.defineProperty(value, 'providerCategory', {
     get() {
       reads++;
-      throw Error();
+      throw new Error();
     },
   });
   value.requestMode = 'fresh';
@@ -74,15 +74,15 @@ test('diagnostics projects only exact own data fields without executing getters 
     {
       getOwnPropertyDescriptor() {
         reads++;
-        throw Error();
+        throw new Error();
       },
       get() {
         reads++;
-        throw Error();
+        throw new Error();
       },
       ownKeys() {
         reads++;
-        throw Error();
+        throw new Error();
       },
     },
   );
@@ -138,7 +138,7 @@ for (const transport of ['chat', 'responses'] as const) {
           timeoutMs,
           onRequest: (r) => {
             records.push(r);
-            throw Error('observer-secret');
+            throw new Error('observer-secret');
           },
         })
       : new ResponsesModel({
@@ -146,7 +146,7 @@ for (const transport of ['chat', 'responses'] as const) {
           timeoutMs,
           onRequest: (r) => {
             records.push(r);
-            throw Error('observer-secret');
+            throw new Error('observer-secret');
           },
         });
   test(`${transport}: HTTP failure diagnostics preserve codes and reject private provider text`, async (t) => {
@@ -310,7 +310,7 @@ for (const transport of ['chat', 'responses'] as const) {
       const records: ModelRequestRecord[] = [];
       t.mock.method(globalThis, 'fetch', async () => {
         if (kind === 'network') {
-          throw Error('secret');
+          throw new Error('secret');
         }
         return kind === 'body'
           ? new Response(null)

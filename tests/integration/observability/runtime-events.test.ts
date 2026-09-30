@@ -39,7 +39,7 @@ test('diagnostic observer sees console-filtered debug metadata, never message co
     ['private-credential'],
   );
   const stopBroken = observeLogs(() => {
-    throw Error('broken sink');
+    throw new Error('broken sink');
   });
   const stopMutating = observeLogs((record) => {
     record.fields.reason = 'mutated';

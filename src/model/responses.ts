@@ -295,7 +295,7 @@ export class ResponsesModel implements Model {
         (options.serverCompactionVerified !== undefined &&
           typeof options.serverCompactionVerified !== 'boolean')
       ) {
-        throw Error();
+        throw new Error();
       }
       u.pathname = u.pathname.replace(/\/+$/, '') + '/responses';
       this.endpoint = u.toString();
@@ -389,7 +389,7 @@ export class ResponsesModel implements Model {
           Buffer.byteLength(JSON.stringify(value)) > 16 * 1024 * 1024 ||
           value.outputHistory.length === 0
         ) {
-          throw Error();
+          throw new Error();
         }
         let previous = -1;
         for (const entry of value.outputHistory) {
@@ -401,7 +401,7 @@ export class ResponsesModel implements Model {
             entry.index <= previous ||
             entry.index >= Number(value.baselineLength)
           ) {
-            throw Error();
+            throw new Error();
           }
           completion({
             id: 'checkpoint',
@@ -415,7 +415,7 @@ export class ResponsesModel implements Model {
           !object(value.outputHistory[0]) ||
           value.outputHistory[0].index !== value.outputHistoryStart
         ) {
-          throw Error();
+          throw new Error();
         }
       } catch {
         historyValid = false;
@@ -531,15 +531,12 @@ export class ResponsesModel implements Model {
     const outputs = new Map(history.map((entry) => [entry.index, entry.items]));
     const expectedIndices = snapshot
       .slice(
-        Number((restored as any)?.outputHistoryStart ?? history[0]?.index ?? 0),
+        Number(restored?.outputHistoryStart ?? history[0]?.index ?? 0),
         baselineLength,
       )
       .map((m, i) =>
         m.role === 'assistant'
-          ? i +
-            Number(
-              (restored as any)?.outputHistoryStart ?? history[0]?.index ?? 0,
-            )
+          ? i + Number(restored?.outputHistoryStart ?? history[0]?.index ?? 0)
           : -1,
       )
       .filter((i) => i >= 0);

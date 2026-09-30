@@ -285,7 +285,7 @@ test('forward reads require current known messages or direct replies and sender/
     () => ({ ...wire(), user_id: '33333' }),
     () => ({ ...wire(), sender: null }),
     () => {
-      throw Error(SECRET);
+      throw new Error(SECRET);
     },
   ]) {
     const f = fixture({ read });
@@ -516,7 +516,7 @@ test('all dispatched exceptions and malformed ACKs are static unknown locks', as
   for (const name of GROUP_MEDIA_TOOL_NAMES) {
     const f = fixture({
       send() {
-        throw Error(SECRET);
+        throw new Error(SECRET);
       },
     });
     const r = await f.tools.execute(name, args(name), ctx);
@@ -636,7 +636,7 @@ test('concurrent explicit interactions serialize and each dispatches after a nor
 test('projection failure preserves ACK without automatic replay; a new explicit call still dispatches', async () => {
   const f = fixture({
     onSent() {
-      throw Error(SECRET);
+      throw new Error(SECRET);
     },
   });
   const r = await f.tools.execute(
@@ -662,8 +662,7 @@ test('projection failure preserves ACK without automatic replay; a new explicit 
 
 test('image scope is rechecked after downloader yields before any dispatch', async () => {
   for (const change of ['clear', 'author', 'reference'] as const) {
-    let f: ReturnType<typeof fixture>;
-    f = fixture({
+    const f: ReturnType<typeof fixture> = fixture({
       download: async () => {
         if (change === 'clear') {
           f.memory.clear();
@@ -687,8 +686,7 @@ test('image scope is rechecked after downloader yields before any dispatch', asy
 });
 
 test('scope is rechecked after verification yields and negative stable IDs remain supported', async () => {
-  let f: ReturnType<typeof fixture>;
-  f = fixture({
+  const f: ReturnType<typeof fixture> = fixture({
     read: () => {
       f.memory.clear();
       return wire();

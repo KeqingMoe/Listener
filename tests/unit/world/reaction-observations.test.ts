@@ -20,7 +20,7 @@ function memory(ids: string[] = ['1'], quoted?: string): Memory {
   const entries = ids.map((id) => entry(id, quoted));
   return {
     append() {
-      throw Error('frozen');
+      throw new Error('frozen');
     },
     recent() {
       return structuredClone(entries);
@@ -440,7 +440,7 @@ test('non-dirty fresh TTL is fifteen seconds, then counts become stale and refre
 test('failed reads have a short cooldown which notice spam cannot reset', async (t) => {
   clock(t);
   const f = fixture(async () => {
-      throw Error('SECRET private upstream error');
+      throw new Error('SECRET private upstream error');
     }),
     m = memory();
   await f.observer.refresh(m, ['1']);

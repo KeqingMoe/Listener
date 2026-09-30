@@ -122,7 +122,7 @@ test('strict arguments reject guessed ids, URLs, paths, extra fields and accesso
     Object.create({ message_id: '42' }),
     {
       get message_id() {
-        throw Error('secret');
+        throw new Error('secret');
       },
     },
   ]) {
@@ -189,7 +189,7 @@ test('inspects only first 128 segments, permits long messages, and describes fir
   f.state.message.message[0] = { type: 'record', data: {} };
   Object.defineProperty(f.state.message.message, 128, {
     get() {
-      throw Error('tail must not be read');
+      throw new Error('tail must not be read');
     },
   });
   assert.equal((await f.run()).status, 'ok');
@@ -273,7 +273,7 @@ test('requires live record even if local marker says voice; ignores malicious me
   f.state.message.message = [{ type: 'record', data: {} }];
   Object.defineProperty(f.state.message.sender, 'nickname', {
     get() {
-      throw Error('secret');
+      throw new Error('secret');
     },
   });
   assert.equal((await f.run()).status, 'ok');
@@ -337,7 +337,7 @@ test('sanitizes upstream failures in all phases and permits retries', async () =
     const f = fixture();
     f.state.hook = (action) => {
       if (action === stage) {
-        throw Error('PRIVATE_SECRET https://secret /tmp/file');
+        throw new Error('PRIVATE_SECRET https://secret /tmp/file');
       }
     };
     assert.deepEqual(await f.run(), {

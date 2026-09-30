@@ -389,7 +389,7 @@ class Cache implements Memory {
   }
 
   async compact() {
-    throw Error('unexpected summary');
+    throw new Error('unexpected summary');
   }
 
   clear() {
@@ -458,7 +458,7 @@ test('default poke dispatches directly but default daily moderation waits for th
       if (['group_poke', 'send_poke', 'set_group_ban'].includes(action)) {
         return null;
       }
-      throw Error('unexpected native call: ' + action);
+      throw new Error('unexpected native call: ' + action);
     },
   };
   let results: JsonObject[] = [];

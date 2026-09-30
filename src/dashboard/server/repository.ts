@@ -53,6 +53,7 @@ export interface Sources {
   inspectionSecrets?: readonly string[];
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SQLite行的列由本模块建表语句保证
 type Row = Record<string, any>;
 
 const num = (v: unknown): number | null =>

@@ -37,7 +37,7 @@ export type ResolvedToolPolicies = {
         ? { maxDownloadMb: number }
         : Name extends 'manage_attention'
           ? { maxPlans: number }
-          : {});
+          : unknown);
 };
 
 export interface ToolCapability {

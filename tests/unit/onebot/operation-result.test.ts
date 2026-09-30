@@ -68,7 +68,7 @@ test('exception bodies and untrusted error-shaped values never reach results', (
   const forged = {
     get code() {
       accesses++;
-      throw Error('PRIVATE');
+      throw new Error('PRIVATE');
     },
   };
   for (const error of [

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer, type Server } from 'node:http';
+import { createServer } from 'node:http';
 import { once } from 'node:events';
 import {
   ResponsesModel,
@@ -280,7 +280,7 @@ test('incomplete output records usage and observer cannot mask truncated respons
     const m = make(f.url, {
       onRequest: (r) => {
         records.push(r);
-        throw Error('observer-secret');
+        throw new Error('observer-secret');
       },
     });
     await assert.rejects(

@@ -137,7 +137,7 @@ function setup(
       if (action === 'delete_msg' || action === 'set_group_ban') {
         return null;
       }
-      throw Error(action);
+      throw new Error(action);
     },
   };
   const model: Model = {
@@ -172,7 +172,7 @@ test('send is single-message strict, finish replaces old terminal tool', async (
     tools = new GroupTools(
       {
         async call() {
-          throw Error('no lookup');
+          throw new Error('no lookup');
         },
       },
       memory,

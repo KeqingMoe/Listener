@@ -30,7 +30,7 @@ test('request observer sees charged truncated usage once and cannot mask model e
       maxTokens: 100,
       onRequest: (r) => {
         records.push(r);
-        throw Error('observer secret');
+        throw new Error('observer secret');
       },
     });
     await assert.rejects(
@@ -69,7 +69,7 @@ test('observer throwing does not alter successful completion', async () => {
         calls++;
         assert.equal(r.status, 'success');
         assert.equal(r.usage.inputTokens, null);
-        throw Error();
+        throw new Error();
       },
     });
     assert.equal((await model.complete([])).content, 'ok');

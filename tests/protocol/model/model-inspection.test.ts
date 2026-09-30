@@ -201,11 +201,11 @@ test('Chat immutable start and finally end capture streaming request and assembl
     onRequestStart: (r) => {
       starts.push(r);
       assert.ok(Object.isFrozen(r));
-      throw Error('observer');
+      throw new Error('observer');
     },
     onRequest: (r) => {
       ends.push(r);
-      throw Error('observer');
+      throw new Error('observer');
     },
   });
   assert.equal(

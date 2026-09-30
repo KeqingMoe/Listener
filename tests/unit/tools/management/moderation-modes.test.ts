@@ -922,7 +922,7 @@ test('verification read failure cannot be reported as an uncertain mutation', as
     const api = new ApiMock();
     api.hook = () => {
       if (api.calls.length === step) {
-        throw Error('SECRET READ FAILURE');
+        throw new Error('SECRET READ FAILURE');
       }
     };
     const result = await new Moderation(api, Date.now, all('direct')).request(

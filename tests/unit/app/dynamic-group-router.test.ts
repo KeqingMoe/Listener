@@ -140,7 +140,7 @@ test('failed and invalid reconnect snapshots fence reminders but preserve ordina
     enabled: () => true,
     listGroups: async () => {
       if (fail) {
-        throw Error('offline');
+        throw new Error('offline');
       }
       return response;
     },
@@ -221,7 +221,7 @@ test('queued reminder claim rechecks membership and sending does not hold struct
     started.resolve();
     await gate.promise;
     assert.equal(claim(), false);
-    throw Error('reminder_unavailable');
+    throw new Error('reminder_unavailable');
   };
   const router = new GroupRouter({
     enabled: () => true,
@@ -543,7 +543,7 @@ test('identity change attempts every close and revokes metadata even if one hand
   let attempts = 0;
   a.handler.stop = async () => {
     attempts++;
-    throw Error('close failed');
+    throw new Error('close failed');
   };
   const router = new GroupRouter({
     enabled: () => true,
@@ -603,7 +603,7 @@ test('a new group policy failure cannot prevent authoritative retirement of an o
     create: async () => s.handler,
     membershipChanged: (ids) => {
       if (ids.includes('2')) {
-        throw Error('path conflict');
+        throw new Error('path conflict');
       }
     },
   });
@@ -626,7 +626,7 @@ test('an exit still closes resources if publishing metadata throws', async () =>
     create: async () => s.handler,
     membershipChanged: () => {
       if (fail) {
-        throw Error('storage');
+        throw new Error('storage');
       }
     },
   });

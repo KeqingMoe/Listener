@@ -186,7 +186,7 @@ test('wake dispatch passes the former 4096 call ceiling', async () => {
 
 test('all tool calls share one budget and the model sees remaining values', async () => {
   const s = setup(
-    (round, messages) =>
+    (round) =>
       round < 7
         ? {
             content: null,

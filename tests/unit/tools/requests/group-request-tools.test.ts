@@ -183,7 +183,7 @@ test('unknown fields invalid primitives zero unsafe limits and raw flags have no
   const f = setup();
   const getter = Object.defineProperty({}, 'limit', {
     get() {
-      throw Error('must not run');
+      throw new Error('must not run');
     },
     enumerable: true,
   });
@@ -264,7 +264,7 @@ test('scope login membership and real administrator role gate all discovery', as
     invites: [req()],
     hook(action) {
       if (action === 'get_group_member_info') {
-        throw Error('Not member PRIVATE');
+        throw new Error('Not member PRIVATE');
       }
     },
   });
@@ -333,9 +333,8 @@ test('fresh pending proof rejects handled missing moved or replaced applicants',
 
 test('role and identity are refreshed after the potentially slow pending query', async () => {
   for (const changed of ['role', 'identity']) {
-    let f: ReturnType<typeof setup>,
-      queries = 0;
-    f = setup({
+    let queries = 0;
+    const f: ReturnType<typeof setup> = setup({
       hook(action) {
         if (action === 'get_group_system_msg' && ++queries === 2) {
           if (changed === 'role') {
@@ -365,7 +364,7 @@ test('native null is submitted including late cancel, while invalid shape and er
         if (action === 'set_group_add_request') {
           dispatched++;
           if (mode === 'error') {
-            throw Error('SECRET URL');
+            throw new Error('SECRET URL');
           }
           if (mode === 'cancel') {
             controller.abort();
@@ -502,9 +501,8 @@ test('cancel or reset during any preflight await discards result without write',
     );
     assert.equal(f.writes.length, 0);
   }
-  let f: ReturnType<typeof setup>,
-    armed = false;
-  f = setup({
+  let armed = false;
+  const f: ReturnType<typeof setup> = setup({
     hook(action) {
       if (armed && action === 'get_group_system_msg') {
         f.tools.reset();

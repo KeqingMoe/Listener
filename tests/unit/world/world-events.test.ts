@@ -18,15 +18,6 @@ const entry = (id: string, time = Date.now() / 1000): TimelineEntry => ({
   time,
   segments: [{ type: 'text', text: `message ${id}` }],
 });
-const messageEvent = (
-  id: string,
-  observedAt = Date.now() / 1000,
-): WorldEventInput => ({
-  type: 'message.created',
-  observedAt,
-  payload: { kind: 'message', message: entry(id, observedAt) },
-  provenance: { source: 'onebot', verified: true },
-});
 const open = (groupId = '123'): [WorldEventStore, string] => {
   const root = dir();
   const path = join(root, 'events.sqlite');

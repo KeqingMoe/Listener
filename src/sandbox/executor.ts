@@ -33,13 +33,13 @@ export function decodeToolValue(
       index >= attachments.length ||
       used.has(index)
     ) {
-      throw Error('invalid_bytes');
+      throw new Error('invalid_bytes');
     }
     used.add(index);
     return Buffer.from(attachments[index]!);
   });
   if (used.size !== attachments.length) {
-    throw Error('invalid_bytes');
+    throw new Error('invalid_bytes');
   }
   return value;
 }
@@ -87,7 +87,7 @@ export function startExecution(options: ExecutionOptions): {
   const tools = options.tools ?? [],
     callTool = options.callTool;
   if (tools.length && !callTool) {
-    throw Error('invalid_request');
+    throw new Error('invalid_request');
   }
   const result = new Promise<ExecutionResult>((resolve) => {
     const finish = (value: ExecutionResult) => {

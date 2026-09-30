@@ -127,7 +127,7 @@ export function normalizeOptions(options: ExecutionOptions): {
       v <= 0 ||
       v > 2147483647
     ) {
-      throw Error('invalid_limits');
+      throw new Error('invalid_limits');
     }
     limits[key] = v;
   }
@@ -135,7 +135,7 @@ export function normalizeOptions(options: ExecutionOptions): {
     typeof options.code !== 'string' ||
     Buffer.byteLength(options.code) > limits.codeBytes
   ) {
-    throw Error('code_too_large');
+    throw new Error('code_too_large');
   }
   return { code: options.code, limits };
 }

@@ -12,7 +12,7 @@ export class RuntimeEventStore {
   private lastCleanup = 0;
   constructor(path: string) {
     if (!path || path === ':memory:' || path.includes('\0')) {
-      throw Error('Invalid runtime event path');
+      throw new Error('Invalid runtime event path');
     }
     const fd = openSync(
       path,
@@ -22,7 +22,7 @@ export class RuntimeEventStore {
     try {
       const stat = fstatSync(fd);
       if (!stat.isFile() || stat.nlink !== 1) {
-        throw Error('Invalid runtime event path');
+        throw new Error('Invalid runtime event path');
       }
       fchmodSync(fd, 0o600);
     } finally {
@@ -46,7 +46,7 @@ export class RuntimeEventStore {
 
   record(record: ObservedLog): void {
     if (this.closed) {
-      throw Error('Runtime event store closed');
+      throw new Error('Runtime event store closed');
     }
     if (
       !Number.isSafeInteger(record.observedAt) ||

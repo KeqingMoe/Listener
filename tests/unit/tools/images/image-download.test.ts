@@ -253,7 +253,7 @@ test('download validates every DNS record, pins address, retains TLS hostname an
     'Accept',
     'Accept-Encoding',
   ]);
-  const pinned = fake.options!.lookup as Function;
+  const pinned = fake.options!.lookup as (...args: unknown[]) => void;
   pinned(
     'ignored.evil',
     {},

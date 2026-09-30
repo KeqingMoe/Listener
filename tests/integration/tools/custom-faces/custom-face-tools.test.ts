@@ -939,8 +939,7 @@ test('withdrawn source cannot authorize normal-hold recovery using only a cached
 });
 
 test('remote withdrawal while candidate bytes are verified retains the normal hold and never annotates', async (t) => {
-  let f!: ReturnType<typeof fixture>;
-  f = fixture({
+  const f: ReturnType<typeof fixture> = fixture({
     rows: [],
     hooks: { add_custom_face: () => null },
     extras: {
@@ -991,7 +990,7 @@ test('matching directory MD5 is insufficient when an existing candidate URL serv
   assert.equal(f.store.get(SELF, 'NATIVE_SECRET_RESOURCE'), undefined);
 });
 
-test('after submitted add a wrong/unreadable candidate image keeps hold and never binds, labels, rolls back or re-adds', async (t) => {
+test('after submitted add a wrong/unreadable candidate image keeps hold and never binds, labels, rolls back or re-adds', async () => {
   for (const missing of [false, true]) {
     const f = fixture({
       rows: [],
@@ -1037,8 +1036,7 @@ test('after submitted add a wrong/unreadable candidate image keeps hold and neve
 });
 
 test('candidate must still be the unique same native identity after actual-byte verification', async (t) => {
-  let f!: ReturnType<typeof fixture>;
-  f = fixture({
+  const f: ReturnType<typeof fixture> = fixture({
     extras: {
       originalDownloader: async (url) => {
         if (url.includes('qq_expression')) {
@@ -1273,7 +1271,7 @@ test('normal delete with absent native row also permits a fresh later add', asyn
   );
 });
 
-test('negative business codes and malicious accessors are uncertain, never followed by additional write stages', async (t) => {
+test('negative business codes and malicious accessors are uncertain, never followed by additional write stages', async () => {
   for (const action of [
     'add_custom_face',
     'delete_custom_face',
