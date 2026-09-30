@@ -618,7 +618,7 @@ export const MANAGE_ATTENTION_TOOL: ToolDefinition = {
   function: {
     name: 'manage_attention',
     description:
-      '暂存本群关注计划操作，本轮正常结束时才提交；失败或取消不提交。create新增独立计划，update必须指定ID且仅替换该计划，cancel仅取消指定ID；不同计划独立共存，计划内any_of任选其一触发并消费该计划。设置计划不算回复或群管理授权，不会发消息。新/更新计划提交后才开始计时、等待新消息；不要复制snapshot中的due_at等只读字段。调用计入本次唤醒统一工具预算，同时存在的计划数量受本群配置限制。',
+      '暂存本群关注计划操作，本轮正常结束时才提交；失败或取消不提交。create新增独立计划，update必须指定ID且仅替换该计划，cancel仅取消指定ID；不同计划独立共存，计划内any_of任选其一触发并消费该计划。设置计划不算回复或群管理授权，不会发消息。新/更新计划提交后才开始计时、等待新消息；不要传入due_at等只读字段。调用计入本次唤醒统一工具预算，同时存在的计划数量受本群配置限制。',
     parameters: {
       type: 'object',
       properties: {

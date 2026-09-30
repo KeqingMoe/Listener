@@ -795,11 +795,7 @@ test('reaction Any submission is not promoted to a confirmed reaction or observe
           .returned,
         0,
       );
-      const state = h.results().state!.reaction_state as JsonObject;
-      const recent = state.recent as JsonObject[];
-      assert.equal(recent.length, 1);
-      assert.equal(recent[0]!.submitted, true);
-      assert.equal(recent[0]!.effect_confirmed, false);
+      assert.equal(Object.hasOwn(h.results().state!, 'reaction_state'), false);
     },
   );
 });

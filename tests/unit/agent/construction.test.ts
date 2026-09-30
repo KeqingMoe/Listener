@@ -423,7 +423,7 @@ test('system prompt uses observation framing and the explicit group without muta
   );
   assert.ok(
     prompt.includes(
-      'get_wake_state 返回的attention_state显示当前计划、最近提交和本次命中原因',
+      '关注唤醒时 wake.trigger.plan_hits 给出本次命中的计划与原因',
     ),
   );
   assert.ok(prompt.includes('\n观察边界：'));

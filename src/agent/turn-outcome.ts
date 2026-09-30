@@ -32,8 +32,7 @@ export function newTurnStats(): TurnStats {
 /** 记一次非重复的表情回应结果；失败码最多保留32个。 */
 export function countReaction(
   stats: TurnStats,
-  errors: string[],
-  result: { status?: unknown; submitted?: unknown; error?: unknown },
+  result: { status?: unknown; submitted?: unknown },
 ): void {
   if (result.status === 'ok') {
     if (result.submitted === true) {
@@ -45,11 +44,6 @@ export function countReaction(
     stats.reactionUnknown++;
   } else {
     stats.reactionFailures++;
-  }
-  if (result.status !== 'ok' && errors.length < 32) {
-    errors.push(
-      typeof result.error === 'string' ? result.error : 'reaction_failed',
-    );
   }
 }
 

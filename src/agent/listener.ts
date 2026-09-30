@@ -109,9 +109,6 @@ export class Listener {
   private attentionTimer?: NodeJS.Timeout;
   private readonly unread = new Map<number, BatchItem>();
   private unreadOmitted = 0;
-  private lastAttentionCommit?: JsonObject;
-  private readonly recentReactions = new Map<string, JsonObject>();
-  private lastReactionTurn?: JsonObject;
   private readonly reactionObservations?: ReactionObservations;
   private arrivalSequence = 0;
   private lastSealedSequence = 0;
@@ -146,7 +143,6 @@ export class Listener {
   private readonly worldMessageSequences = new Map<string, number>();
   private worldWake: JsonObject = {};
   private worldBudget: () => JsonObject = () => ({});
-  private worldState: () => JsonObject = () => ({});
   private lastRandomAt = -Infinity;
   private randomAttempts: number[] = [];
   private readonly config: ProjectedListenerConfig;
@@ -243,60 +239,6 @@ export class Listener {
     return this.sender.sendReminder(reminder, claim);
   }
 
-  private reactionContext(memory: Memory): JsonObject {
-    const cutoff = Date.now() - this.config.retentionDays * 86400000;
-    for (const [key, value] of this.recentReactions) {
-      if (typeof value.at !== 'number' || value.at < cutoff) {
-        this.recentReactions.delete(key);
-      }
-    }
-    const recent = memory.recent();
-    if (this.lastReactionTurn && Number(this.lastReactionTurn.at) < cutoff) {
-      this.lastReactionTurn = undefined;
-    }
-    return {
-      ...(this.lastReactionTurn
-        ? { last_turn: { ...this.lastReactionTurn } }
-        : {}),
-      recent: [...this.recentReactions.values()]
-        .filter(
-          (value) =>
-            typeof value.message_id === 'string' &&
-            (memory.find(value.message_id) ||
-              recent.some((entry) => entry.replyTo === value.message_id)),
-        )
-        .map((value) => ({ ...value })),
-    };
-  }
-
-  private recordReaction(result: JsonObject): void {
-    if (
-      result.duplicate ||
-      !['ok', 'unknown', 'error'].includes(String(result.status)) ||
-      typeof result.message_id !== 'string' ||
-      typeof result.emoji_id !== 'string' ||
-      !['add', 'remove'].includes(String(result.action))
-    ) {
-      return;
-    }
-    const key = `${result.message_id}:${result.emoji_id}`;
-    this.recentReactions.delete(key);
-    this.recentReactions.set(key, {
-      message_id: result.message_id,
-      emoji_id: result.emoji_id,
-      action: result.action,
-      status: result.status,
-      at: Date.now(),
-      ...(result.submitted === true
-        ? { submitted: true, effect_confirmed: false }
-        : {}),
-      ...(typeof result.error === 'string' ? { error: result.error } : {}),
-    });
-    if (this.recentReactions.size > 128) {
-      this.recentReactions.delete(this.recentReactions.keys().next().value!);
-    }
-  }
-
   private clearEphemeralState(): void {
     this.groupFiles.reset();
     this.groupRequests.reset();
@@ -305,9 +247,6 @@ export class Listener {
     this.attention?.clear();
     this.unread.clear();
     this.unreadOmitted = 0;
-    this.lastAttentionCommit = undefined;
-    this.recentReactions.clear();
-    this.lastReactionTurn = undefined;
     this.reactionObservations?.clear();
   }
 
@@ -384,38 +323,6 @@ export class Listener {
     clearTimeout(this.timer);
     this.timer = undefined;
     this.schedule();
-  }
-
-  private attentionContext(
-    batch: ReplyBatch,
-    unreadOmitted: number,
-  ): JsonObject {
-    let plans = this.attention!.snapshot(Date.now());
-    let truncated = false;
-    if (JSON.stringify(plans).length > 12000) {
-      plans = plans.map((plan) => ({
-        plan_id: plan.plan_id,
-        purpose:
-          typeof plan.purpose === 'string'
-            ? plan.purpose.slice(0, 80)
-            : undefined,
-        expires_at: plan.expires_at,
-        remaining_seconds: plan.remaining_seconds,
-        conditions_omitted: true,
-      }));
-      truncated = true;
-    }
-    return {
-      host_time_ms: Date.now(),
-      active_plans: plans,
-      details_truncated: truncated,
-      triggered: batch.attentionHits,
-      omitted_triggers: batch.omittedAttentionHits,
-      unread_omitted: unreadOmitted,
-      ...(this.lastAttentionCommit
-        ? { last_commit: this.lastAttentionCommit }
-        : {}),
-    };
   }
 
   private resetModeration(): void {
@@ -1387,6 +1294,8 @@ export class Listener {
       items: [] as BatchItem[],
       direct: [] as BatchItem[],
       omittedMessages: 0,
+      attentionHits: [],
+      omittedAttentionHits: 0,
       primary: {
         context: {
           groupId: this.groupId,
@@ -1409,7 +1318,7 @@ export class Listener {
         this.attention.evaluate(Date.now(), this.unreadItems().length > 0),
       );
     }
-    // 唤醒开始前封存本批丢弃的未读条数；get_wake_state在唤醒中途读取时仍报告该值。
+    // 唤醒开始前封存本批丢弃的未读条数，随唤醒元数据交给模型。
     const unreadOmitted = this.unreadOmitted;
     for (const item of this.unreadItems()) {
       this.unread.delete(item.sequence);
@@ -1427,7 +1336,6 @@ export class Listener {
     const toolCallsLimit = this.config.maxToolCallsPerWake ?? 96,
       wakeTimeoutMs = this.config.wakeTimeoutMs ?? 240000;
     const stats = newTurnStats();
-    const reactionErrors: string[] = [];
     log('info', 'turn.start', {
       trigger: trigger.trigger ?? batch.kind,
       count: batch.items.length,
@@ -1506,27 +1414,29 @@ export class Listener {
         remaining_ms: Math.max(0, wakeTimeoutMs - (Date.now() - started)),
       });
       const tools = buildToolDefinitions(this.config);
+      // 唤醒原因：关注唤醒附本次命中的计划（批次最多64条，purpose不超过160字）。
+      const wakeTrigger: JsonObject = {
+        type: batch.kind,
+        ...(batch.attentionHits.length
+          ? { plan_hits: structuredClone(batch.attentionHits) as JsonObject[] }
+          : {}),
+        ...(batch.omittedAttentionHits
+          ? { omitted_plan_hits: batch.omittedAttentionHits }
+          : {}),
+        ...(unreadOmitted ? { unread_omitted: unreadOmitted } : {}),
+      };
       this.worldWake = {
         wakeId: batch.turnId,
         startedAt: started / 1000,
         trigger: { type: batch.kind },
       };
       this.worldBudget = wakeBudget;
-      this.worldState = () => ({
-        ...(this.attention && batch instanceof ReplyBatch
-          ? { attention_state: this.attentionContext(batch, unreadOmitted) }
-          : {}),
-        ...(this.config.tools.reactions
-          ? { reaction_state: this.reactionContext(workingMemory) }
-          : {}),
-      });
       this.worldTools ??= new WorldTools({
         store: this.runtime.world,
         groupId: this.groupId,
         selfId: trigger.context.selfId,
         wake: () => this.worldWake,
         currentBudget: () => this.worldBudget(),
-        state: () => this.worldState(),
       });
       session.beginWake(
         buildSystemPrompt({ ...this.config, groupId: this.groupId }),
@@ -1534,7 +1444,7 @@ export class Listener {
         {
           wake_id: batch.turnId,
           group_id: this.groupId,
-          trigger: { type: batch.kind },
+          trigger: wakeTrigger,
           wake_budget: wakeBudget(),
         },
       );
@@ -1924,14 +1834,7 @@ export class Listener {
                   result.emoji_id,
                 );
               }
-              countReaction(stats, reactionErrors, result);
-            }
-            if (
-              generation === this.generation &&
-              this.connected &&
-              !this.stopped
-            ) {
-              this.recordReaction(result);
+              countReaction(stats, result);
             }
             traceResult(result);
             appendToolResult(call, result);
@@ -2155,26 +2058,6 @@ export class Listener {
           log('error', 'session.checkpoint_failed', { reason });
         }
       }
-      if (
-        this.config.tools.reactions &&
-        generation === this.generation &&
-        this.connected &&
-        !this.stopped &&
-        (stats.reactions ||
-          stats.reactionUnknown ||
-          stats.reactionFailures ||
-          stats.reactionSubmitted)
-      ) {
-        this.lastReactionTurn = {
-          at: Date.now(),
-          outcome,
-          confirmed: stats.reactions,
-          submitted: stats.reactionSubmitted,
-          unknown: stats.reactionUnknown,
-          rejected: stats.reactionFailures,
-          errors: reactionErrors,
-        };
-      }
       log(
         stats.reactionUnknown ||
           stats.reactionFailures ||
@@ -2203,10 +2086,6 @@ export class Listener {
             this.arrivalSequence,
           );
           if (committed.status === 'error') {
-            this.lastAttentionCommit = {
-              status: 'error',
-              error: 'commit_failed',
-            };
             log('warn', 'attention.commit_failed', { reason: 'commit_failed' });
           }
           if (
@@ -2214,12 +2093,6 @@ export class Listener {
             (Array.isArray(committed.applied) && committed.applied.length) ||
             (Array.isArray(committed.skipped) && committed.skipped.length)
           ) {
-            this.lastAttentionCommit = {
-              ...committed,
-              ...(attentionRejections.length
-                ? { rejected_operations: attentionRejections }
-                : {}),
-            };
             log('info', 'attention.commit', {
               count: Array.isArray(committed.applied)
                 ? committed.applied.length
@@ -2231,7 +2104,6 @@ export class Listener {
           }
         }
       } catch {
-        this.lastAttentionCommit = { status: 'error', error: 'commit_failed' };
         log('warn', 'attention.commit_failed', { reason: 'operation_failed' });
       }
       this.armAttention();

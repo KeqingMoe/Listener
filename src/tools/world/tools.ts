@@ -29,8 +29,6 @@ interface WorldToolsOptions {
   selfId: string;
   wake?: () => WakeMetadata;
   currentBudget?: () => JsonObject;
-  /** 本群的运行时元数据，仅供get_wake_state查询。 */
-  state?: () => JsonObject;
   /** Unix秒，不是毫秒。 */
   clock?: () => number;
   timezone?: string;
@@ -284,177 +282,6 @@ function event(value: ProjectedWorldEvent): JsonObject {
   };
 }
 
-/** 显式投影元数据：不含消息正文、任意回调键或API payload。 */
-function runtimeState(source: unknown): JsonObject {
-  if (!isDataObject(source)) {
-    return {};
-  }
-  const scalar = (value: unknown): unknown =>
-    typeof value === 'string'
-      ? value.slice(0, 160)
-      : typeof value === 'boolean' ||
-          (typeof value === 'number' && Number.isFinite(value))
-        ? value
-        : undefined;
-  const project = (value: unknown, fields: string[]): JsonObject =>
-    isDataObject(value)
-      ? Object.fromEntries(
-          fields.flatMap((key) => {
-            const v = scalar(value[key]);
-            return v === undefined ? [] : [[key, v]];
-          }),
-        )
-      : {};
-  const list = (
-    value: unknown,
-    limit: number,
-    fn: (item: unknown) => unknown,
-  ) => (Array.isArray(value) ? value.slice(0, limit).map(fn) : []);
-  const result: JsonObject = {};
-  for (const name of ['attention_state', 'reaction_state'] as const) {
-    const raw = source[name];
-    if (!isDataObject(raw)) {
-      continue;
-    }
-    const fields =
-      name === 'attention_state'
-        ? [
-            'host_time_ms',
-            'details_truncated',
-            'omitted_triggers',
-            'unread_omitted',
-          ]
-        : [];
-    const out = project(raw, fields);
-    if (name === 'attention_state') {
-      out.active_plans = list(raw.active_plans, 64, (item) => {
-        const plan = project(item, [
-          'plan_id',
-          'purpose',
-          'expires_at',
-          'expires_in_seconds',
-          'remaining_seconds',
-          'conditions_omitted',
-        ]);
-        if (isDataObject(item) && Array.isArray(item.any_of)) {
-          plan.any_of = list(item.any_of, 8, (c) => {
-            const condition = project(c, [
-              'type',
-              'due_at',
-              'remaining_seconds',
-              'window_seconds',
-              'min_messages',
-              'min_senders',
-            ]);
-            if (isDataObject(c) && Array.isArray(c.user_ids)) {
-              condition.user_ids = c.user_ids.filter(id).slice(0, 16);
-            }
-            if (isDataObject(c) && Array.isArray(c.delay_seconds)) {
-              condition.delay_seconds = c.delay_seconds
-                .filter((n) => typeof n === 'number' && Number.isFinite(n))
-                .slice(0, 2);
-            }
-            return condition;
-          });
-        }
-        return plan;
-      });
-      out.triggered = list(raw.triggered, 64, (item) =>
-        project(item, ['plan_id', 'reason', 'purpose']),
-      );
-      if (isDataObject(raw.last_commit)) {
-        out.last_commit = {
-          ...project(raw.last_commit, ['status', 'error']),
-          ...Object.fromEntries(
-            ['applied', 'skipped', 'rejected_operations'].map((k) => [
-              k,
-              list((raw.last_commit as JsonObject)[k], 64, (item) =>
-                typeof item === 'string'
-                  ? item.slice(0, 160)
-                  : project(item, ['plan_id', 'reason', 'error']),
-              ),
-            ]),
-          ),
-        };
-      }
-    } else {
-      // 反应账本按时间从旧到新，只保留最近的128条。
-      out.recent = list(
-        Array.isArray(raw.recent) ? raw.recent.slice(-128) : raw.recent,
-        128,
-        (item) =>
-          project(item, [
-            'message_id',
-            'emoji_id',
-            'action',
-            'status',
-            'at',
-            'error',
-            'submitted',
-            'effect_confirmed',
-          ]),
-      );
-      if (isDataObject(raw.last_turn)) {
-        out.last_turn = {
-          ...project(raw.last_turn, [
-            'at',
-            'outcome',
-            'confirmed',
-            'submitted',
-            'unknown',
-            'rejected',
-          ]),
-          errors: list(raw.last_turn.errors, 32, (item) =>
-            typeof item === 'string' ? item.slice(0, 160) : 'invalid',
-          ),
-        };
-      }
-    }
-    let omitted = 0;
-    for (const key of name === 'attention_state'
-      ? ['active_plans', 'triggered']
-      : ['recent']) {
-      const original = raw[key],
-        items = out[key];
-      if (Array.isArray(original) && Array.isArray(items)) {
-        omitted += original.length - items.length;
-      }
-    }
-    // 超限时逐条丢弃并明确计数。反应账本按时间从旧到新，丢最旧的以保留最近记录；
-    // 关注计划与命中保留前缀。
-    while (Buffer.byteLength(JSON.stringify(out)) > 10000) {
-      const items = (
-        name === 'attention_state'
-          ? (out.active_plans as unknown[]).length
-            ? out.active_plans
-            : out.triggered
-          : out.recent
-      ) as unknown[];
-      if (!items.length) {
-        result[name] = {
-          details_truncated: true,
-          omitted_items: omitted,
-          state_omitted: true,
-        };
-        break;
-      }
-      if (name === 'reaction_state') {
-        items.shift();
-      } else {
-        items.pop();
-      }
-      omitted++;
-    }
-    if (!result[name]) {
-      result[name] = {
-        ...out,
-        ...(omitted ? { details_truncated: true, omitted_items: omitted } : {}),
-      };
-    }
-  }
-  return result;
-}
-
 /** 本群world存储的读取入口：wake状态、时间、事件与消息分页，以及事件ack。只读取本群范围。 */
 export class WorldTools {
   private readonly groupId: string;
@@ -560,7 +387,6 @@ export class WorldTools {
     return {
       status: 'ok',
       ...wake,
-      ...runtimeState(this.options.state?.()),
       untrusted: true,
       group_id: this.groupId,
       self_id: this.options.selfId,

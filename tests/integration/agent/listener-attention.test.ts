@@ -161,23 +161,6 @@ type Request = {
   tools: ToolDefinition[];
   signal?: AbortSignal;
   index: number;
-  /** 本次唤醒第一轮由fixture附加的get_wake_state结果中的attention_state。 */
-  wakeState: () => any;
-};
-
-// 会话模式下关注状态只能通过get_wake_state读取：每次唤醒的第一轮
-// 在假模型返回的工具调用前附加一次读取，测试再从会话记录中取结果。
-const probeId = (index: number) => `probe_state_${index}`;
-const firstRound = (messages: readonly ChatMessage[]) => {
-  const last = messages.at(-1);
-  if (last?.role !== 'user' || typeof last.content !== 'string') {
-    return false;
-  }
-  try {
-    return 'wake' in JSON.parse(last.content);
-  } catch {
-    return false;
-  }
 };
 
 function setup(
@@ -213,33 +196,9 @@ function setup(
         tools: structuredClone(tools),
         signal,
         index,
-        wakeState: () => {
-          const result = runtime.session
-            .messages()
-            .find(
-              (m) => m.role === 'tool' && m.tool_call_id === probeId(index),
-            );
-          assert.ok(result, `wake state probe ${index} missing`);
-          return JSON.parse(String(result.content)).attention_state;
-        },
       };
       requests.push(r);
-      const result = await (options.respond
-        ? options.respond(r)
-        : complete(silent()));
-      return firstRound(messages) && result.tool_calls.length
-        ? {
-            ...result,
-            tool_calls: [
-              {
-                id: probeId(index),
-                type: 'function' as const,
-                function: { name: 'get_wake_state', arguments: '{}' },
-              },
-              ...result.tool_calls,
-            ],
-          }
-        : result;
+      return options.respond ? options.respond(r) : complete(silent());
     },
   };
   const bot = new Listener(
@@ -268,7 +227,8 @@ function setup(
 
 const triggerKind = (r: Request) =>
   (wakeMeta(r.messages).trigger as { type: string }).type;
-const state = (r: Request) => r.wakeState();
+/** 本次唤醒元数据中的trigger（plan_hits/omitted_plan_hits/unread_omitted）。 */
+const state = (r: Request): any => wakeMeta(r.messages).trigger;
 const plans = (s: ReturnType<typeof setup>): any[] =>
   (s.bot as any).attention?.snapshot(Date.now()) ?? [];
 const idle = (s: ReturnType<typeof setup>) =>
@@ -313,8 +273,8 @@ test('two plans after a send coexist, member A consumes only its plan and member
     await s.receive(event('2', A));
     await settled(s, 2);
     assert.equal(triggerKind(s.requests[1]!), 'attention');
-    assert.equal(state(s.requests[1]!).triggered.length, 1);
-    assert.equal(state(s.requests[1]!).triggered[0].purpose, 'wait A');
+    assert.equal(state(s.requests[1]!).plan_hits.length, 1);
+    assert.equal(state(s.requests[1]!).plan_hits[0].purpose, 'wait A');
     assert.deepEqual(
       plans(s).map((p) => p.purpose),
       ['wait B'],
@@ -324,7 +284,7 @@ test('two plans after a send coexist, member A consumes only its plan and member
     );
     await s.receive(event('3', B));
     await settled(s, 3);
-    assert.equal(state(s.requests[2]!).triggered[0].purpose, 'wait B');
+    assert.equal(state(s.requests[2]!).plan_hits[0].purpose, 'wait B');
     assert.deepEqual(plans(s), []);
   } finally {
     await s.close();
@@ -379,7 +339,7 @@ test('unrelated at preserves old plans and deadlines; explicit update replaces o
     assert.equal(s.requests.length, 3);
     await s.receive(event('5', B));
     await settled(s, 4);
-    assert.equal(state(s.requests[3]!).triggered[0].plan_id, update);
+    assert.equal(state(s.requests[3]!).plan_hits[0].plan_id, update);
   } finally {
     await s.close();
   }
@@ -397,7 +357,7 @@ test('one message matching several independent plans causes one attention batch'
     await settled(s, 1);
     await s.receive(event('2', A));
     await settled(s, 2);
-    assert.equal(state(s.requests[1]!).triggered.length, 2);
+    assert.equal(state(s.requests[1]!).plan_hits.length, 2);
     assert.deepEqual(plans(s), []);
     await delay(15);
     assert.equal(s.requests.length, 2);
@@ -433,7 +393,7 @@ test('activity requires both message and sender thresholds, and retained unread 
     assert.equal(s.requests.length, 1);
     await s.receive(event('5', B));
     await settled(s, 2);
-    assert.equal(state(s.requests[1]!).triggered[0].reason, 'activity');
+    assert.equal(state(s.requests[1]!).plan_hits[0].reason, 'activity');
   } finally {
     await s.close();
   }
@@ -463,7 +423,7 @@ test('timer latches without unread messages, does not spin, and later inspects n
     t.mock.timers.tick(1);
     await flush();
     assert.equal(s.requests.length, 2);
-    assert.equal(state(s.requests[1]!).triggered[0].reason, 'after');
+    assert.equal(state(s.requests[1]!).plan_hits[0].reason, 'after');
     t.mock.timers.tick(10000);
     await flush();
     assert.equal(s.requests.length, 2);
@@ -499,7 +459,7 @@ test('next-message baseline starts after completed sending and ignores bot, fore
     assert.equal(s.requests.length, 1);
     await s.receive(event('6', B));
     await settled(s, 2);
-    assert.equal(state(s.requests[1]!).triggered[0].reason, 'next_message');
+    assert.equal(state(s.requests[1]!).plan_hits[0].reason, 'next_message');
   } finally {
     held.resolve({ message_id: '90000' });
     await s.close();
@@ -638,7 +598,6 @@ for (const terminal of ['send', 'silent'] as const) {
       assert.equal(s.requests.length, 1);
       await s.receive(event('2', OWNER_ID, true));
       await settled(s, 2);
-      assert.equal(state(s.requests[1]!).last_commit, undefined);
       assert.deepEqual(plans(s), []);
     } finally {
       await s.close();
@@ -672,13 +631,21 @@ test('valid trailing attention commits independently of a later invalid operatio
     assert.equal(s.requests.length, 1);
     await s.receive(event('2', OWNER_ID, true));
     await settled(s, 2);
-    const committed = state(s.requests[1]!).last_commit;
-    assert.deepEqual(committed.applied, [id]);
-    assert.deepEqual(committed.rejected_operations, ['invalid_arguments']);
+    // 有效计划独立提交，后续无效操作只在其工具结果中被拒绝。
+    const rejected = s.bot['runtime'].session
+      .messages()
+      .find(
+        (m: ChatMessage) =>
+          m.role === 'tool' && m.tool_call_id === 'call_manage_attention_2',
+      );
+    assert.equal(
+      JSON.parse(String(rejected?.content)).error,
+      'invalid_arguments',
+    );
     assert.equal(plans(s)[0]!.plan_id, id);
     await s.receive(event('3', B));
     await settled(s, 3);
-    assert.equal(state(s.requests[2]!).triggered[0].plan_id, id);
+    assert.equal(state(s.requests[2]!).plan_hits[0].plan_id, id);
     assert.deepEqual(plans(s), []);
   } finally {
     await s.close();
@@ -717,8 +684,7 @@ test('matched old plan during an active update cannot be resurrected; attention 
     assert.deepEqual(plans(s), []);
     hold.resolve(complete(silent()));
     await settled(s, 4);
-    assert.equal(state(s.requests[3]!).triggered[0].plan_id, id);
-    assert.deepEqual(state(s.requests[3]!).last_commit.skipped, [id]);
+    assert.equal(state(s.requests[3]!).plan_hits[0].plan_id, id);
     assert.deepEqual(plans(s), []);
     assert.ok(!JSON.stringify(s.requests[1]!.messages).includes('body-3'));
   } finally {
@@ -897,8 +863,8 @@ test('two groups reject foreign plan IDs and obey the shared admission scheduler
     assert.equal(b.requests.length, 3);
     hold.resolve(complete(silent()));
     await settled(b, 4);
-    assert.equal(state(b.requests[3]!).triggered.length, 1);
-    assert.equal(state(b.requests[3]!).triggered[0].reason, 'member_message');
+    assert.equal(state(b.requests[3]!).plan_hits.length, 1);
+    assert.equal(state(b.requests[3]!).plan_hits[0].reason, 'member_message');
     assert.equal(plans(a)[0]!.plan_id, foreign);
   } finally {
     hold.resolve(complete(silent()));

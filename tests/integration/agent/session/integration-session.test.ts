@@ -251,7 +251,7 @@ test('integrated session starts metadata-only, reads live arrivals, checkpoints 
   }
 });
 
-test('live attention metadata survives session rotation and remains absent from wake input', async () => {
+test('attention plans survive session rotation and report their hit only in the attention wake trigger', async () => {
   // 本场景测试元数据持久化，而不是可选的上游目录：76是离线兜底候选。
   const emojiId = '76';
   let reactionWrites = 0;
@@ -308,10 +308,7 @@ test('live attention metadata survives session rotation and remains absent from 
             call('finish-1', 'finish'),
           );
         }
-        if (rounds === 2) {
-          return completion(call('state', 'get_wake_state'));
-        }
-        return completion(call('finish-2', 'finish'));
+        return completion(call(`finish-${rounds}`, 'finish'));
       },
     },
     { ...memory(), recent: () => world.recentMessages(128) },
@@ -344,39 +341,33 @@ test('live attention metadata survives session rotation and remains absent from 
     const prior = session.state().sessionId;
     session.reset('transcript_resource_boundary');
     assert.notEqual(session.state().sessionId, prior);
+    // 普通唤醒的输入不携带计划细节或消息正文。
     await listener.receive(event('2', 'SECOND_BODY_PRIVATE'), self);
-    await settled(session, () => rounds === 3);
+    await settled(session, () => rounds === 2);
     assert.doesNotMatch(
       JSON.stringify(requests[1]),
       /BODY_PRIVATE|wait for different member|att_[a-f0-9]{16}/,
     );
-    const state = JSON.parse(
-      String(requests[2]!.find((m) => m.tool_call_id === 'state')!.content),
-    );
-    assert.equal(state.attention_state.active_plans.length, 1);
-    assert.equal(
-      state.attention_state.active_plans[0].plan_id,
-      planResult.plan_id,
-    );
-    assert.equal(
-      state.attention_state.active_plans[0].purpose,
-      'wait for different member',
-    );
-    assert.deepEqual(state.attention_state.active_plans[0].any_of, [
-      { type: 'member_message', user_ids: ['99988'] },
-    ]);
     assert.equal(reactionWrites, 1);
-    assert.equal(state.reaction_state.recent.length, 1);
-    assert.equal(state.reaction_state.recent[0].emoji_id, emojiId);
-    assert.equal(state.reaction_state.recent[0].action, 'add');
-    assert.equal(state.reaction_state.recent[0].message_id, '1');
-    assert.equal(state.reaction_state.recent[0].status, 'ok');
-    assert.equal(state.reaction_state.recent[0].submitted, true);
-    assert.equal(state.reaction_state.recent[0].effect_confirmed, false);
-    assert.equal(state.reaction_state.last_turn.confirmed, 0);
-    assert.equal(state.reaction_state.last_turn.submitted, 1);
-    assert.equal(state.group_id, LISTENER_GROUP);
-    assert.doesNotMatch(JSON.stringify(state), /BODY_PRIVATE/);
+    // 会话轮换后计划仍在引擎中；目标成员发言触发关注唤醒，命中信息只出现在trigger里。
+    await listener.receive(
+      { ...event('3', 'THIRD_BODY_PRIVATE', false), user_id: '99988' },
+      self,
+    );
+    await settled(session, () => rounds === 3);
+    const wake = JSON.parse(String(requests[2]!.at(-1)!.content)).wake;
+    assert.equal(wake.group_id, LISTENER_GROUP);
+    assert.deepEqual(wake.trigger, {
+      type: 'attention',
+      plan_hits: [
+        {
+          plan_id: planResult.plan_id,
+          reason: 'member_message',
+          purpose: 'wait for different member',
+        },
+      ],
+    });
+    assert.doesNotMatch(JSON.stringify(requests[2]), /BODY_PRIVATE/);
   } finally {
     await listener.stop();
   }

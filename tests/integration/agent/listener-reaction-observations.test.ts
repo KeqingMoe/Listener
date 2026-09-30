@@ -325,7 +325,7 @@ test('read_message refreshes reactions on demand without prefetch or memory writ
       ['1'],
     );
     const [wake, message] = results(s.requests[1]!);
-    assert.deepEqual(wake.reaction_state.recent, []);
+    assert.equal(Object.hasOwn(wake, 'reaction_state'), false);
     assert.equal(message.message.messageId, '1');
     assert.equal(message.message.reactions.status, 'observed');
     assert.equal(message.message.reactions.items[0].count, 3);
@@ -509,7 +509,7 @@ test('disabled reactions never fetch and do not decorate reads or wake state', a
     assert.equal(s.calls.length, 0);
     assert.equal(s.requests.length, 2);
     const [wake, message] = results(s.requests[1]!);
-    assert.equal(wake.reaction_state, undefined);
+    assert.equal(Object.hasOwn(wake, 'reaction_state'), false);
     assert.equal(message.message.reactions, undefined);
   } finally {
     await s.close();
