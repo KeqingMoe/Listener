@@ -46,7 +46,6 @@ test('all observation/tool combinations are independently expressible without im
         assert.equal(g.tools.get_reaction_users.mode, users);
         assert.equal(g.enabled, false);
         assert.equal(g.reply.random, false);
-        assert.deepEqual([...app.onebot.allowedGroups], []);
       }
     }
   }

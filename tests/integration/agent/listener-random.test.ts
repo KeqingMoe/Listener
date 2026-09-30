@@ -263,8 +263,6 @@ test('self/private/wrong group/wrong self/stale events and commands never draw r
     }
     assert.equal(s.memory.entries.length, 0);
     for (const [i, text] of [
-      '/ping',
-      '/help',
       '/reset',
       '/confirm deadbeef',
       '/unknown',

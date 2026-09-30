@@ -36,7 +36,6 @@ test('manage_attention defaults direct without enabling a group or random partic
   assert.equal(app.defaultsEnabled, false);
   assert.equal(app.resolveGroup('11').enabled, false);
   assert.equal(app.resolveGroup('11').reply.random, false);
-  assert.deepEqual([...app.onebot.allowedGroups], []);
 });
 
 test('attention union replacement resets options, absent policy inherits, and result copies are isolated', (t) => {
@@ -145,5 +144,4 @@ test('attention and random participation are independent unions rather than inhe
     maxPerMinute: 6,
   });
   assert.equal(app.resolveGroup('33').tools.manage_attention.mode, 'off');
-  assert.equal(app.onebot.allowPrivate, false);
 });

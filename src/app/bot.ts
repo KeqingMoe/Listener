@@ -18,7 +18,6 @@ import type {
   ModelRequestStart,
 } from '../observability/model-usage.ts';
 import { ModelSession } from '../agent/session/store.ts';
-import { resolveOwnerId } from '../contracts/identity.ts';
 import { GroupRouter } from './group-router.ts';
 import { GroupRegistry } from '../config/group-registry.ts';
 import { TurnScheduler } from '../agent/scheduler.ts';
@@ -77,14 +76,6 @@ async function main(): Promise<void> {
           : 'local_catalog',
     },
   );
-  const ownerId = resolveOwnerId(app.identity.ownerId);
-  if (
-    config.allowPrivate ||
-    config.adminUsers.size !== 1 ||
-    !config.adminUsers.has(ownerId)
-  ) {
-    throw new Error('Owner configuration mismatch');
-  }
   const client = new OneBotClient(config);
   const scheduler = new TurnScheduler(runtime.maxConcurrentTurns);
   process.umask(0o077);

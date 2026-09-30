@@ -61,8 +61,6 @@ test('complete app/group defaults have no credentials in resolved policy and no 
   assert.equal(c.storage.telemetryPath, join(f.dir, 'data/telemetry.sqlite'));
   assert.equal(c.storage.registryPath, join(f.dir, 'data/group-registry.json'));
   assert.equal(c.identity.ownerId, OWNER_ID);
-  assert.equal(c.onebot.allowPrivate, false);
-  assert.deepEqual([...c.onebot.allowedGroups], []);
   assert.equal(g.reply.random, false);
   assert.equal(g.session.compaction, false);
   assert.equal(g.execution.maxToolCallsPerWake, 96);
@@ -308,7 +306,7 @@ test('owner is canonical global configuration and is required for either admissi
   }
   f.config('[bot]\nowner_id="778899"\n[defaults]\nenabled=true');
   const c = f.load();
-  assert.deepEqual([...c.onebot.adminUsers], ['778899']);
+  assert.equal(c.identity.ownerId, '778899');
   assert.equal(c.resolveGroup('99').enabled, true);
   for (const value of [
     '1',

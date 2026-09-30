@@ -893,10 +893,7 @@ export class Listener {
       (s) =>
         s?.type === 'text' || (s?.type === 'at' && id(data(s)?.qq) === selfId),
     );
-    if (
-      onlyCommandSegments &&
-      /^\/(ping|help|reset|confirm)(?:\s|$)/.test(commandText)
-    ) {
+    if (onlyCommandSegments && /^\/(reset|confirm)(?:\s|$)/.test(commandText)) {
       await withLogContext(
         {
           command_id: newTraceId('c'),
@@ -1371,10 +1368,7 @@ export class Listener {
   }
 
   private async command(text: string, context: TurnContext): Promise<void> {
-    if (
-      /^\/(reset|confirm)(?:\s|$)/.test(text) &&
-      context.actorId !== this.ownerId
-    ) {
+    if (context.actorId !== this.ownerId) {
       log('warn', 'command.denied', { reason: 'owner_required' });
       return;
     }
@@ -1383,28 +1377,13 @@ export class Listener {
       return;
     }
     const started = Date.now();
-    const phase = text.startsWith('/confirm')
-      ? 'confirm'
-      : text.startsWith('/reset')
-        ? 'reset'
-        : text.startsWith('/help')
-          ? 'help'
-          : 'ping';
+    const phase = text.startsWith('/confirm') ? 'confirm' : 'reset';
     log('info', 'command.start', { phase });
     this.commandBusy = true;
     this.commandCooldown = Date.now() + 2000;
     let outcome = 'completed';
     try {
-      if (text === '/ping') {
-        await this.sendText('pong', context);
-      } else if (text === '/help') {
-        await this.sendText(
-          `${this.config.botName ?? 'Listener'}：聊天触发以当前配置为准。/ping 检查在线。本群消息的本地保留策略为${this.config.retentionDays}天；模型按需读取的内容会发送给配置的服务商。主人可用 /reset 重置本群模型会话与运行期状态，保留已存的群聊事件记录；在本群 /confirm 确认待处理操作。不同群的数据与权限隔离。`,
-          context,
-        );
-      } else if (context.actorId !== this.ownerId) {
-        return;
-      } else if (text === '/reset') {
+      if (text === '/reset') {
         this.generation++;
         this.cancelActive('reset');
         clearTimeout(this.timer);

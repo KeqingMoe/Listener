@@ -1017,10 +1017,6 @@ export function loadAppConfig(
   const onebot = {
     url: url(text(one, 'url', 'onebot', 'ws://127.0.0.1:3001'), 'onebot.url'),
     token: secret(tokenEnv, 'onebot.token_env', true),
-    allowedGroups: new Set(enabled.map((group) => group.groupId)),
-    allowedUsers: new Set<string>(),
-    adminUsers: new Set([ownerId]),
-    allowPrivate: false,
     apiTimeoutMs: num(one, 'api_timeout_ms', 'onebot', 10000, 1, 2147483647),
     reconnectBaseMs: num(
       one,
@@ -1039,10 +1035,6 @@ export function loadAppConfig(
       2147483647,
     ),
     heartbeatMs: num(one, 'heartbeat_ms', 'onebot', 30000, 1, 2147483647),
-    rateLimitMs: 2000,
-    dedupTtlMs: 300000,
-    dedupMax: 10000,
-    conversationMax: 10000,
   };
   if (onebot.reconnectBaseMs > onebot.reconnectMaxMs) {
     fail('onebot.reconnect_max_ms', '不得小于重连基础间隔');

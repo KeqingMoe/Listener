@@ -151,7 +151,6 @@ test('default false implements explicit whitelist and default true implements bl
   const f = fixture(t, '[groups."22"]\nenabled=true\n[groups."33"]');
   let c = f.load();
   assert.equal(c.defaultsEnabled, false);
-  assert.deepEqual([...c.onebot.allowedGroups], ['22']);
   assert.equal(c.resolveGroup('22').enabled, true);
   assert.equal(c.resolveGroup('33').enabled, false);
   assert.equal(c.resolveGroup('44').enabled, false);
@@ -163,8 +162,6 @@ test('default false implements explicit whitelist and default true implements bl
   assert.equal(c.resolveGroup('22').enabled, false);
   assert.equal(c.resolveGroup('33').enabled, true);
   assert.equal(c.resolveGroup('44').enabled, true);
-  assert.deepEqual([...c.onebot.allowedGroups], ['33']);
-  assert.equal(c.onebot.allowPrivate, false);
 });
 
 test('dynamic resolution is stateless, identity validated and supports more than former 32 groups', (t) => {
@@ -185,7 +182,6 @@ test('dynamic resolution is stateless, identity validated and supports more than
     );
   }
   assert.equal(c.configuredGroupIds.length, 40);
-  assert.equal(c.onebot.allowedGroups.size, 0);
   assert.equal(existsSync(join(f.dir, 'data')), false);
   for (const value of [
     '0',
@@ -434,7 +430,6 @@ test('dynamic storage validation includes retained unknown groups without expand
     b = c.resolveGroup('33');
   assert.throws(() => assertStoragePaths(c.storage, [a, b]), ConfigError);
   assert.equal(c.configuredGroupIds.length, 0);
-  assert.equal(c.onebot.allowedGroups.size, 0);
   f.config(
     '[defaults]\nenabled=true\n[groups."22".storage]\ndatabase="data/groups/33/listener.sqlite"',
   );

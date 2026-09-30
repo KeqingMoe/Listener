@@ -182,8 +182,8 @@ test(
       start();
       await wait(() => output.includes('onebot.ready'));
       for (const [index, text] of [
-        '/ping',
-        '/help',
+        '/reset',
+        '/confirm ' + '0'.repeat(32),
         '/reset',
         '/confirm ' + '0'.repeat(32),
       ].entries()) {

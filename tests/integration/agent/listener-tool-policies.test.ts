@@ -80,18 +80,10 @@ function fixture(
     onebot: {
       url: 'ws://localhost:1',
       token: 'fixture',
-      allowedGroups: new Set([GROUP]),
-      allowedUsers: new Set(),
-      adminUsers: new Set([OWNER]),
-      allowPrivate: false,
       apiTimeoutMs: 1000,
       reconnectBaseMs: 100,
       reconnectMaxMs: 1000,
       heartbeatMs: 1000,
-      rateLimitMs: 2000,
-      dedupTtlMs: 1000,
-      dedupMax: 100,
-      conversationMax: 100,
     },
     model: {
       transport: { type: 'responses', incremental: true },

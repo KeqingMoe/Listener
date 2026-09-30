@@ -428,12 +428,6 @@ enabled = true
         assert.ok(!all.includes('unlisted-fixture-body'));
         assert.ok(!all.includes('private-fixture-body'));
       }
-      peer.send(JSON.stringify(event(B, '2', '/ping', false)));
-      await wait(() => sends().length === 3, 'group B ping');
-      assert.equal(sends()[2]!.params.group_id, B);
-      assert.deepEqual(sends()[2]!.params.message, [
-        { type: 'text', data: { text: 'pong' } },
-      ]);
       assert.equal(requests.length, 4);
       // A占住唯一的全局许可，同时B进入准入队列。
       holdModel = true;
@@ -454,7 +448,7 @@ enabled = true
       );
       assert.equal(connectionCount, 1);
       assert.equal(requests.length, 5);
-      assert.equal(sends().length, 3);
+      assert.equal(sends().length, 2);
       const paths = [
         [A, join(dir, `data/groups/${A}/listener.sqlite`)],
         [B, join(dir, 'data/groups/22/listener.sqlite')],
@@ -494,14 +488,11 @@ enabled = true
           assert.ok(!text.includes('private-fixture-body'));
           assert.ok(!text.includes('unlisted-fixture-body'));
           assert.ok(entries.some((entry) => entry.messageId === '3'));
-          assert.equal(
-            entries.filter((entry) => entry.bot).length,
-            group === A ? 1 : 2,
-          );
+          assert.equal(entries.filter((entry) => entry.bot).length, 1);
           if (group === A) {
             assert.ok(text.includes('偷笑'));
           } else {
-            assert.ok(text.includes('pong'));
+            assert.ok(text.includes('reply-only-B'));
           }
         } finally {
           db.close();

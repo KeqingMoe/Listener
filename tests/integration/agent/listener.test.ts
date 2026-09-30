@@ -423,13 +423,17 @@ test('AI disabled still only answers commands in the one group', async () => {
     await bot.receive(
       event({
         message_type: 'private',
-        message: [{ type: 'text', data: { text: '/ping' } }],
+        user_id: OWNER_ID,
+        message: [{ type: 'text', data: { text: '/reset' } }],
       }),
       self,
     );
     assert.equal(calls.length, 0);
     await bot.receive(
-      event({ message: [{ type: 'text', data: { text: '/ping' } }] }),
+      event({
+        user_id: OWNER_ID,
+        message: [{ type: 'text', data: { text: '/reset' } }],
+      }),
       self,
     );
     assert.deepEqual(calls, ['send_group_msg']);
