@@ -47,14 +47,14 @@ type JobSummary = {
   description: string;
   mode: 'sync' | 'async' | 'auto';
   status: JobStatus;
-  createdAt: number;
-  startedAt: number | null;
-  finishedAt: number | null;
+  created_at: number;
+  started_at: number | null;
+  finished_at: number | null;
   background: boolean;
-  deliveredAt: number | null;
+  delivered_at: number | null;
 };`;
 const JOB = `/** value 是 completed 时代码返回的字符串。 */
-type Job = JobSummary & { value?: string; error?: string; logs: string[]; diagnostic?: JsDiagnostic; toolCalls?: ToolCallSummary };`;
+type Job = JobSummary & { value?: string; error?: string; logs: string[]; diagnostic?: JsDiagnostic; tool_calls?: ToolCallSummary };`;
 const ARTIFACT_ID = `/** 产物ID，取自 create_artifact、create_image 或 list_artifacts 的结果。 */
 type ArtifactId = string;`;
 const ARTIFACT_INFO = `/** size 为字节数；时间为ISO字符串，expires_at 后自动删除。 */
@@ -180,6 +180,7 @@ function delete_custom_face(_: { face_ref: FaceRef }):
     summary: '修改一张收藏表情的描述。',
     ts: `/**
  * 描述最多2048字节；不传 tags 保留原标签，传入则整体替换。
+ * description_confirmed=true 时返回新 face_ref，旧引用失效。
  */
 function set_custom_face_description(_: { face_ref: FaceRef; description: string; tags?: string[] }):
   | (Submitted & { description_confirmed: false; readback: 'not_confirmed'; local_tags_updated?: false })
@@ -285,7 +286,7 @@ function execute_javascript(
  * 给 job_id 时返回详情；再给 calls_offset 附带代码内工具调用明细（每页100条）。
  */
 function query_javascript_jobs(_: { job_id?: JobId; status?: JobStatus; offset?: number; limit?: number; calls_offset?: number }):
-  | { status: 'ok'; jobs: JobSummary[]; offset: number; hasMore: boolean }
+  | { status: 'ok'; jobs: JobSummary[]; offset: number; has_more: boolean }
   | {
       status: 'ok';
       job: Job;

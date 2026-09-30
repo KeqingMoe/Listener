@@ -300,7 +300,7 @@ async function main(): Promise<void> {
               return jobs.length
                 ? {
                     jobs: jobs.map((j) => ({
-                      job_id: j.job_id,
+                      job_id: j.jobId,
                       status: j.status,
                       description: j.description,
                     })),
@@ -364,11 +364,11 @@ async function main(): Promise<void> {
           try {
             await router.dispatchSandboxResult({
               ...job,
-              jobId: job.job_id,
+              jobId: job.jobId,
               selfId: job.selfId,
               groupId: job.groupId,
             });
-            sandboxService!.ackResult(account, job.groupId, job.job_id);
+            sandboxService!.ackResult(account, job.groupId, job.jobId);
           } catch {
             /* 暂不可用的群不ack，结果保留待下次投递。 */
           }

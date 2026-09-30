@@ -28,7 +28,7 @@ export interface JobInput extends JobScope {
 
 export interface Job extends JobScope {
   toolCalls?: ToolCallSummary;
-  job_id: string;
+  jobId: string;
   description: string;
   mode: JobMode;
   status: JobStatus;
@@ -140,7 +140,7 @@ export function validateInput(i: JobInput): void {
 function decode(r: any): Job | undefined {
   return r
     ? {
-        job_id: r.id,
+        jobId: r.id,
         selfId: r.self_id,
         groupId: r.group_id,
         description: r.description,
@@ -286,7 +286,7 @@ export class SandboxJobStore {
     if (!job) {
       return job;
     }
-    const summary = this.callSummary(job.job_id);
+    const summary = this.callSummary(job.jobId);
     return summary ? { ...job, toolCalls: summary } : job;
   }
 

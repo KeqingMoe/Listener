@@ -7,6 +7,7 @@ import type { ToolDefinition, TurnContext } from '../../contracts/tools.ts';
 import type { SandboxService } from '../../sandbox/service.ts';
 import {
   JOB_BOUNDS,
+  type Job,
   type JobQuery,
   type JobStatus,
 } from '../../sandbox/store.ts';
@@ -155,6 +156,30 @@ function execution(
   };
 }
 
+/** 任务的对外表示：下划线命名，不含归属账号与群。 */
+function project(job: Partial<Job>): JsonObject {
+  return {
+    job_id: job.jobId!,
+    description: job.description!,
+    mode: job.mode!,
+    status: job.status!,
+    created_at: job.createdAt!,
+    started_at: job.startedAt ?? null,
+    finished_at: job.finishedAt ?? null,
+    background: job.background!,
+    delivered_at: job.deliveredAt ?? null,
+    ...(job.value !== undefined ? { value: job.value } : {}),
+    ...(job.error !== undefined ? { error: job.error } : {}),
+    ...(job.logs !== undefined ? { logs: job.logs } : {}),
+    ...(job.diagnostic
+      ? { diagnostic: job.diagnostic as unknown as JsonObject }
+      : {}),
+    ...(job.toolCalls
+      ? { tool_calls: job.toolCalls as unknown as JsonObject }
+      : {}),
+  };
+}
+
 function queryResult(value: unknown): JsonObject {
   if (value === undefined) {
     return { status: 'error', error: 'job_not_found' };
@@ -162,9 +187,19 @@ function queryResult(value: unknown): JsonObject {
   if (!isPlainObject(value)) {
     return { status: 'error', error: 'invalid_service_result' };
   }
-  return Object.hasOwn(value, 'job_id')
-    ? { status: 'ok', job: value as JsonObject }
-    : ({ ...value, status: 'ok' } as JsonObject);
+  if (Object.hasOwn(value, 'jobId')) {
+    return { status: 'ok', job: project(value as Partial<Job>) };
+  }
+  const page = value as { jobs?: unknown; offset?: unknown; hasMore?: unknown };
+  if (!Array.isArray(page.jobs)) {
+    return { status: 'error', error: 'invalid_service_result' };
+  }
+  return {
+    status: 'ok',
+    jobs: page.jobs.map((job) => project(job as Partial<Job>)),
+    offset: page.offset as number,
+    has_more: page.hasMore === true,
+  };
 }
 
 export function buildSandboxTools(): ToolDefinition[] {

@@ -108,7 +108,7 @@ const response = (j: Job): JobResponse =>
   j.status === 'completed'
     ? {
         status: 'completed',
-        job_id: j.job_id,
+        job_id: j.jobId,
         value: j.value!,
         logs: j.logs,
         ...(j.diagnostic ? { diagnostic: j.diagnostic } : {}),
@@ -116,7 +116,7 @@ const response = (j: Job): JobResponse =>
       }
     : {
         status: j.status as 'failed' | 'cancelled' | 'interrupted' | 'timeout',
-        job_id: j.job_id,
+        job_id: j.jobId,
         error: j.error ?? 'execution_failed',
         logs: j.logs,
         ...(j.diagnostic ? { diagnostic: j.diagnostic } : {}),
@@ -195,10 +195,10 @@ export class SandboxService {
         resolve,
         delivery: input.mode === 'async' ? 'background' : 'foreground',
       };
-      this.live.set(job.job_id, item);
-      this.queue.push(job.job_id);
+      this.live.set(job.jobId, item);
+      this.queue.push(job.jobId);
       if (input.mode === 'async') {
-        resolve({ status: 'pending', job_id: job.job_id });
+        resolve({ status: 'pending', job_id: job.jobId });
       } else {
         item.timer = setTimeout(() => {
           if (item.delivery !== 'foreground') {
@@ -259,14 +259,14 @@ export class SandboxService {
       return;
     }
     try {
-      this.options.store.detach(item.job, item.job.job_id);
+      this.options.store.detach(item.job, item.job.jobId);
     } catch {
       this.terminate(item, 'cancelled', 'storage_failed');
       return;
     }
     item.delivery = 'background';
     this.clean(item);
-    item.resolve({ status: 'pending', job_id: item.job.job_id });
+    item.resolve({ status: 'pending', job_id: item.job.jobId });
   }
 
   private finish(
@@ -279,22 +279,22 @@ export class SandboxService {
       diagnostic?: ExecutionDiagnostic;
     },
   ) {
-    if (!this.live.has(item.job.job_id)) {
+    if (!this.live.has(item.job.jobId)) {
       return;
     }
     let job: Job;
     try {
-      job = this.options.store.settle(item.job, item.job.job_id, result)!;
+      job = this.options.store.settle(item.job, item.job.jobId, result)!;
     } catch {
-      console.error('sandbox job persistence failed', item.job.job_id);
+      console.error('sandbox job persistence failed', item.job.jobId);
       this.clean(item);
-      this.live.delete(item.job.job_id);
-      this.queue = this.queue.filter((id) => id !== item.job.job_id);
+      this.live.delete(item.job.jobId);
+      this.queue = this.queue.filter((id) => id !== item.job.jobId);
       item.code = '';
       if (item.delivery === 'foreground') {
         item.resolve({
           status: 'failed',
-          job_id: item.job.job_id,
+          job_id: item.job.jobId,
           error: 'storage_failed',
           logs: [],
         });
@@ -303,8 +303,8 @@ export class SandboxService {
       return;
     }
     this.clean(item);
-    this.live.delete(job.job_id);
-    this.queue = this.queue.filter((id) => id !== job.job_id);
+    this.live.delete(job.jobId);
+    this.queue = this.queue.filter((id) => id !== job.jobId);
     item.code = '';
     if (item.delivery === 'foreground') {
       item.delivery = 'returned';
@@ -437,7 +437,7 @@ export class SandboxService {
       }
     }
     try {
-      this.options.store.recordCall(item.job, item.job.job_id, {
+      this.options.store.recordCall(item.job, item.job.jobId, {
         seq,
         tool: name,
         ...callStatus(result),
@@ -450,7 +450,7 @@ export class SandboxService {
         finishedAt: Date.now(),
       });
     } catch {
-      console.error('sandbox tool call record failed', item.job.job_id);
+      console.error('sandbox tool call record failed', item.job.jobId);
     }
     return result;
   }
@@ -509,7 +509,7 @@ export class SandboxService {
     for (const item of [...this.live.values()]) {
       if (item.delivery === 'foreground') {
         try {
-          this.options.store.detach(item.job, item.job.job_id);
+          this.options.store.detach(item.job, item.job.jobId);
         } catch {
           /* 写库失败时，下次启动会把未完成的任务标记为interrupted */
         }
@@ -517,7 +517,7 @@ export class SandboxService {
         item.delivery = 'background';
         item.resolve({
           status: 'interrupted',
-          job_id: item.job.job_id,
+          job_id: item.job.jobId,
           error: 'service_stopped',
           logs: [],
         });

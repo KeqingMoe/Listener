@@ -73,8 +73,8 @@ test('diagnostics survive foreground, detached completion, query, cancel and reo
     await new Promise((r) => setImmediate(r));
     const j = s.pendingResults(scope.selfId).jobs[0]!;
     assert.deepEqual(j.diagnostic, diagnostic);
-    assert.deepEqual(s.cancel(scope, j.job_id)?.diagnostic, diagnostic);
-    assert.deepEqual(f.store.get(scope, j.job_id)?.diagnostic, diagnostic);
+    assert.deepEqual(s.cancel(scope, j.jobId)?.diagnostic, diagnostic);
+    assert.deepEqual(f.store.get(scope, j.jobId)?.diagnostic, diagnostic);
     const list = f.store.query(scope, { status: 'failed' }) as {
       jobs: unknown[];
     };
@@ -85,7 +85,7 @@ test('diagnostics survive foreground, detached completion, query, cancel and reo
     f.store.close();
     const reopened = new SandboxJobStore({ path: join(f.dir, 'jobs.sqlite') });
     try {
-      assert.deepEqual(reopened.get(scope, j.job_id)?.diagnostic, diagnostic);
+      assert.deepEqual(reopened.get(scope, j.jobId)?.diagnostic, diagnostic);
     } finally {
       reopened.close();
     }
@@ -110,7 +110,7 @@ test('oversized and malformed executor diagnostics are replaced with a static fa
         code: 'bad',
         mode: 'async',
       });
-      const r = f.store.settle(scope, j.job_id, {
+      const r = f.store.settle(scope, j.jobId, {
         status: 'failed',
         error: 'execution_error',
         diagnostic: bad as ExecutionDiagnostic,
@@ -318,7 +318,7 @@ test('auto detaches after foreground timeout and later result is pending', async
     assert.equal(pending.length, 1);
     assert.equal(pending[0]!.value, 'later');
     assert.equal(
-      s.ackResult(scope.selfId, scope.groupId, pending[0]!.job_id),
+      s.ackResult(scope.selfId, scope.groupId, pending[0]!.jobId),
       true,
     );
     await s.stop();
@@ -501,16 +501,16 @@ test('pending cursor survives ack deletion and paginates bounded summaries', () 
         code: 'return "x"',
         mode: 'async',
       });
-      f.store.settle(scope, j.job_id, { status: 'completed', value: 'x' });
+      f.store.settle(scope, j.jobId, { status: 'completed', value: 'x' });
     }
     const first = f.store.pendingResults(scope.selfId, 10, 0);
     assert.equal(first.jobs.length, 10);
     const cursor = first.nextCursor!;
     assert.ok(cursor > 0);
-    assert.equal(f.store.markDelivered(scope, first.jobs[0]!.job_id), true);
+    assert.equal(f.store.markDelivered(scope, first.jobs[0]!.jobId), true);
     const second = f.store.pendingResults(scope.selfId, 10, cursor);
     assert.equal(second.jobs.length, 10);
-    assert.ok(second.jobs.every((j) => j.job_id !== first.jobs[0]!.job_id));
+    assert.ok(second.jobs.every((j) => j.jobId !== first.jobs[0]!.jobId));
     const page = f.store.query(scope, { limit: 100 }) as any;
     assert.ok(JSON.stringify(page).length <= 25 * 1024);
     assert.equal(page.hasMore, true);
@@ -586,10 +586,10 @@ test('restart marks active jobs interrupted without rerun', () => {
       code: 'return "x"',
       mode: 'async',
     });
-    a.start(scope, j.job_id);
+    a.start(scope, j.jobId);
     a.close();
     const b = new SandboxJobStore({ path: join(f.dir, 'restart.sqlite') });
-    assert.equal(b.get(scope, j.job_id)?.status, 'interrupted');
+    assert.equal(b.get(scope, j.jobId)?.status, 'interrupted');
     b.close();
   } finally {
     f.store.close();
