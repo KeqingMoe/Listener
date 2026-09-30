@@ -1,10 +1,11 @@
 import { resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
-import { type JsonObject } from '../../contracts/json.ts';
+import { type JsonObject, isObject } from '../../contracts/json.ts';
 import {
   type ToolDefinition,
   type TurnContext,
 } from '../../contracts/tools.ts';
+import { fail, failureCode } from '../failure.ts';
 
 // 契约依据NapCat v4.18.28源码：
 // https://github.com/NapNeko/NapCatQQ/tree/v4.18.28/packages/napcat-onebot/action/group
@@ -28,8 +29,6 @@ const HONORS = [
 const SOURCE_LIMIT = 100000,
   OUTPUT_LIMIT = 25000,
   ROWS_BUDGET = 22000;
-const object = (v: unknown): v is JsonObject =>
-  !!v && typeof v === 'object' && !Array.isArray(v);
 const own = (v: JsonObject, k: string) => Object.hasOwn(v, k);
 const integer = (v: unknown): v is number =>
   typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
@@ -104,16 +103,6 @@ function putNumber(out: JsonObject, raw: JsonObject, key: string, dest = key) {
   if (integer(raw[key])) {
     out[dest] = raw[key];
   }
-}
-
-class Failure extends Error {
-  constructor(readonly code: string) {
-    super(code);
-  }
-}
-
-function fail(code: string): never {
-  throw new Failure(code);
 }
 
 function check(signal?: AbortSignal) {
@@ -209,7 +198,7 @@ export class GroupObservationTools {
         ? ['limit', 'offset', ...(name === 'get_group_honor' ? ['type'] : [])]
         : [];
       if (
-        !object(value) ||
+        !isObject(value) ||
         ![Object.prototype, null].includes(Object.getPrototypeOf(value)) ||
         Reflect.ownKeys(value).some(
           (k) => typeof k !== 'string' || !allowed.includes(k),
@@ -235,7 +224,7 @@ export class GroupObservationTools {
         fail('invalid_arguments');
       }
       const login = await this.call('get_login_info', {}, signal);
-      if (!object(login) || id(login.user_id) !== context.selfId) {
+      if (!isObject(login) || id(login.user_id) !== context.selfId) {
         fail('identity_mismatch');
       }
       const action = {
@@ -262,7 +251,7 @@ export class GroupObservationTools {
       };
       let result: JsonObject;
       if (name === 'get_group_info') {
-        if (!object(raw) || id(raw.group_id) !== this.groupId) {
+        if (!isObject(raw) || id(raw.group_id) !== this.groupId) {
           fail('group_mismatch');
         }
         const info: JsonObject = { group_id: this.groupId };
@@ -278,12 +267,12 @@ export class GroupObservationTools {
         let rows: unknown = raw;
         const extra: JsonObject = {};
         if (name === 'get_group_honor') {
-          if (!object(raw) || id(raw.group_id) !== this.groupId) {
+          if (!isObject(raw) || id(raw.group_id) !== this.groupId) {
             fail('group_mismatch');
           }
           rows = raw[`${args.type}_list`];
           extra.type = args.type;
-          if (args.type === 'talkative' && object(raw.current_talkative)) {
+          if (args.type === 'talkative' && isObject(raw.current_talkative)) {
             extra.current_talkative = this.honor(raw.current_talkative);
           }
         }
@@ -294,7 +283,7 @@ export class GroupObservationTools {
           fail('resource_limit');
         }
         for (const row of rows) {
-          if (!object(row)) {
+          if (!isObject(row)) {
             fail('invalid_response');
           }
           if (own(row, 'group_id') && id(row.group_id) !== this.groupId) {
@@ -384,9 +373,7 @@ export class GroupObservationTools {
         status: 'error',
         error: signal?.aborted
           ? 'cancelled'
-          : error instanceof Failure
-            ? error.code
-            : 'tool_failed',
+          : failureCode(error, 'tool_failed'),
       };
     }
   }
@@ -437,7 +424,7 @@ export class GroupObservationTools {
     ) {
       out.notice_id = row.notice_id;
     }
-    if (object(row.message)) {
+    if (isObject(row.message)) {
       if (typeof row.message.text === 'string') {
         out.text = bodyText(row.message.text, 4000);
         if ((out.text as string).length < row.message.text.length) {
@@ -473,9 +460,9 @@ export class GroupObservationTools {
         nontext = 0;
       for (const part of row.content) {
         if (
-          object(part) &&
+          isObject(part) &&
           part.type === 'text' &&
-          object(part.data) &&
+          isObject(part.data) &&
           typeof part.data.text === 'string'
         ) {
           const remaining = 4000 - content.length;

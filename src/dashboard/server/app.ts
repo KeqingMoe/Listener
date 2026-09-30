@@ -8,7 +8,6 @@ import {
   summarize,
   type Sources,
 } from './repository.ts';
-import type { Range } from '../contracts/contracts.ts';
 import { registerReviewRoutes } from './review-routes.ts';
 import { ReviewRepository } from './review-repository.ts';
 import { buildRequestTrends } from './request-trends.ts';
@@ -17,6 +16,20 @@ import { registerResourceSync } from './resource-sync.ts';
 import { isIP } from 'node:net';
 import { type AuthStore, sessionToken } from './auth.ts';
 import { authWrites, registerAuthRoutes } from './auth-routes.ts';
+import {
+  DAY,
+  InvalidQuery,
+  MAX_OFFSET,
+  cursorOffset,
+  detailId,
+  encodeCursor,
+  onlyKeys,
+  pageLimit,
+  queryBinding,
+  searchText,
+  timeRange,
+  type Query,
+} from './query.ts';
 
 export interface AppOptions extends Sources {
   /** 运行时必填，缺失时直接拒绝启动。store的生命周期由调用方管理。 */
@@ -25,23 +38,6 @@ export interface AppOptions extends Sources {
   now?: () => number;
   /** 监听地址，用于校验Host头；默认只允许loopback。 */
   listenHost?: string;
-}
-
-const DAY = 86400000;
-class InvalidQuery extends Error {}
-
-function integer(v: unknown, defaultValue: number) {
-  if (v === undefined) {
-    return defaultValue;
-  }
-  if (typeof v !== 'string' || !/^\d{1,16}$/.test(v)) {
-    throw new InvalidQuery();
-  }
-  const n = Number(v);
-  if (!Number.isSafeInteger(n)) {
-    throw new InvalidQuery();
-  }
-  return n;
 }
 
 /** Host头白名单，防御DNS rebinding：只接受loopback、监听地址，或监听全部地址时的IP字面量。 */
@@ -184,19 +180,9 @@ export function buildApp(options: AppOptions) {
   });
   const parse = (value: unknown, extra: string[] = []) => {
     repository.refreshGroups();
-    const q = value as Record<string, unknown>;
-    if (
-      Object.keys(q).some(
-        (k) => !['since', 'until', 'groupId', ...extra].includes(k),
-      )
-    ) {
-      throw new InvalidQuery();
-    }
-    const until = integer(q.until, now()),
-      since = integer(q.since, Math.max(0, until - DAY));
-    if (since > until || until - since > 31 * DAY) {
-      throw new InvalidQuery();
-    }
+    const q = value as Query;
+    onlyKeys(q, ['since', 'until', 'groupId', ...extra]);
+    const range = timeRange(q, now());
     let groupId: string | undefined;
     if (q.groupId !== undefined) {
       if (
@@ -207,7 +193,7 @@ export function buildApp(options: AppOptions) {
       }
       groupId = q.groupId;
     }
-    return { range: { since, until } as Range, groupId, q };
+    return { range, groupId, q };
   };
   app.get('/api/meta', async (req) => {
     repository.refreshGroups();
@@ -296,65 +282,30 @@ export function buildApp(options: AppOptions) {
         'q',
         'outcome',
       ]),
-      limit = integer(q.limit, 30);
-    if (limit < 1 || limit > 100) {
-      throw new InvalidQuery();
-    }
-    if (q.q !== undefined && (typeof q.q !== 'string' || q.q.length > 200)) {
-      throw new InvalidQuery();
-    }
+      limit = pageLimit(q, 30),
+      text = searchText(q);
     if (
       q.outcome !== undefined &&
       (typeof q.outcome !== 'string' || !/^[a-z][a-z_]{0,63}$/.test(q.outcome))
     ) {
       throw new InvalidQuery();
     }
-    // cursor绑定查询条件和当前可见的群集合，任一变化都会使旧cursor失效。
-    const binding = createHash('sha256')
-      .update(
-        JSON.stringify({
-          range,
-          groupId,
-          q: q.q,
-          outcome: q.outcome,
-          groups: repository.groups
-            .filter((g) => !groupId || g.groupId === groupId)
-            .map((g) => g.groupId)
-            .sort(),
-        }),
-      )
-      .digest('hex');
-    let offset = 0;
-    if (q.cursor !== undefined) {
-      if (
-        typeof q.cursor !== 'string' ||
-        q.cursor.length > 300 ||
-        !/^[A-Za-z0-9_-]+$/.test(q.cursor)
-      ) {
-        throw new InvalidQuery();
-      }
-      try {
-        const cursor = JSON.parse(
-          Buffer.from(q.cursor, 'base64url').toString(),
-        );
-        if (
-          cursor.binding !== binding ||
-          !Number.isSafeInteger(cursor.offset) ||
-          cursor.offset < 0 ||
-          cursor.offset > 10000
-        ) {
-          throw new Error();
-        }
-        offset = cursor.offset;
-      } catch {
-        throw new InvalidQuery();
-      }
-    }
+    const binding = queryBinding({
+      range,
+      groupId,
+      q: text,
+      outcome: q.outcome,
+      groups: repository.groups
+        .filter((g) => !groupId || g.groupId === groupId)
+        .map((g) => g.groupId)
+        .sort(),
+    });
+    const offset = cursorOffset(q.cursor, binding);
     const { items, hasMore } = repository.wakes(range, groupId, offset, limit, {
-      q: q.q as string | undefined,
+      q: text,
       outcome: q.outcome as string | undefined,
     });
-    if (hasMore && offset + limit > 10000) {
+    if (hasMore && offset + limit > MAX_OFFSET) {
       throw new ResourceLimit();
     }
     return {
@@ -362,23 +313,18 @@ export function buildApp(options: AppOptions) {
       availability: repository.availability(),
       items: items.map((item) => reviewRepository.wakeSummary(item)),
       nextCursor: hasMore
-        ? Buffer.from(
-            JSON.stringify({ binding, offset: offset + limit }),
-          ).toString('base64url')
+        ? encodeCursor(binding, { offset: offset + limit })
         : null,
     };
   });
   app.get('/api/wakes/:id', async (req, reply) => {
     repository.refreshGroups();
-    const q = req.query as Record<string, unknown>,
-      id = (req.params as { id: string }).id;
+    const q = req.query as Query;
+    onlyKeys(q, ['groupId']);
+    const id = detailId((req.params as { id?: unknown }).id, 128);
     if (
-      Object.keys(q).some((k) => k !== 'groupId') ||
       typeof q.groupId !== 'string' ||
-      !repository.groups.some((g) => g.groupId === q.groupId) ||
-      !id ||
-      id.length > 128 ||
-      /[\x00-\x1f]/.test(id)
+      !repository.groups.some((g) => g.groupId === q.groupId)
     ) {
       throw new InvalidQuery();
     }

@@ -1,5 +1,6 @@
 import { canonicalMessageId } from './identity.ts';
 import type { ForwardReference } from '../contracts/messages.ts';
+import { isObject } from '../contracts/json.ts';
 
 export interface ExtractedForward {
   resourceId?: string;
@@ -8,8 +9,6 @@ export interface ExtractedForward {
   countSource?: 'hint' | 'verified';
 }
 
-const object = (v: unknown): v is Record<string, unknown> =>
-  v !== null && typeof v === 'object' && !Array.isArray(v);
 const resource = (v: unknown): v is string =>
   typeof v === 'string' &&
   v.length > 0 &&
@@ -28,12 +27,12 @@ function json(v: unknown): Record<string, unknown> | undefined {
       return;
     }
   }
-  return object(v) ? v : undefined;
+  return isObject(v) ? v : undefined;
 }
 
 /** 纯提取：识别forward段或multimsg JSON卡片；返回的resourceId仅供即时读取，绝不写入持久化引用。 */
 export function extractForward(segment: unknown): ExtractedForward | undefined {
-  if (!object(segment) || !object(segment.data)) {
+  if (!isObject(segment) || !isObject(segment.data)) {
     return;
   }
   if (segment.type === 'forward') {
@@ -58,8 +57,8 @@ export function extractForward(segment: unknown): ExtractedForward | undefined {
   if (
     !card ||
     card.app !== 'com.tencent.multimsg' ||
-    !object(card.meta) ||
-    !object(card.meta.detail) ||
+    !isObject(card.meta) ||
+    !isObject(card.meta.detail) ||
     !resource(card.meta.detail.resid)
   ) {
     return;
@@ -115,7 +114,7 @@ export function sanitizeForwardReferences(
     seen = new Set<string>();
   for (const value of refs.slice(0, 128)) {
     if (
-      !object(value) ||
+      !isObject(value) ||
       !Number.isInteger(value.index) ||
       (value.index as number) < 0 ||
       (value.index as number) > 127 ||

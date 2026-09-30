@@ -18,8 +18,9 @@ import {
   type ChatMessage,
   type Completion,
 } from '../../contracts/model.ts';
-import { type JsonObject } from '../../contracts/json.ts';
+import { type JsonObject, isObject } from '../../contracts/json.ts';
 import { type ToolDefinition } from '../../contracts/tools.ts';
+import { immediate } from '../../storage/transaction.ts';
 
 interface ModelSessionOptions {
   path: string;
@@ -87,7 +88,7 @@ function fields(
   allowed: string[],
 ): asserts value is JsonObject {
   if (
-    !object(value) ||
+    !isObject(value) ||
     Reflect.ownKeys(value).some(
       (k) => typeof k !== 'string' || !allowed.includes(k),
     )
@@ -134,8 +135,6 @@ const DEFAULT_MAX = 512 * 1024,
   CHECKPOINT_MAX = 256 * 1024,
   IMAGE_MAX = 8 * 1024 * 1024,
   RESULT_RESERVE = 1024;
-const object = (v: unknown): v is JsonObject =>
-  !!v && typeof v === 'object' && !Array.isArray(v);
 
 function encode(value: unknown, max: number): string {
   const text = JSON.stringify(value);
@@ -149,7 +148,7 @@ function canonical(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map(canonical).join(',')}]`;
   }
-  if (object(value)) {
+  if (isObject(value)) {
     return `{${Object.keys(value)
       .sort()
       .map((k) => JSON.stringify(k) + ':' + canonical(value[k]))
@@ -352,15 +351,9 @@ export class ModelSession {
   private transaction<T>(fn: () => T): T {
     this.check();
     const before = structuredClone(this.stateValue);
-    this.db.exec('BEGIN IMMEDIATE');
     try {
-      const result = fn();
-      this.db.exec('COMMIT');
-      return result;
+      return immediate(this.db, fn);
     } catch (error) {
-      try {
-        this.db.exec('ROLLBACK');
-      } catch {}
       this.stateValue = before;
       throw error;
     }
@@ -496,7 +489,7 @@ export class ModelSession {
     if (
       !/^[A-Za-z0-9:_-]{1,256}$/.test(eventId) ||
       !/^\d+$/.test(selfId) ||
-      !object(payload)
+      !isObject(payload)
     ) {
       throw new Error('invalid_external_event');
     }
@@ -598,7 +591,7 @@ export class ModelSession {
     if (
       typeof system !== 'string' ||
       !Array.isArray(tools) ||
-      !object(wakeMeta)
+      !isObject(wakeMeta)
     ) {
       throw new Error('invalid_wake');
     }
@@ -689,7 +682,7 @@ export class ModelSession {
         typeof content === 'string'
           ? content
           : content.map((part) => {
-              if (!object(part)) {
+              if (!isObject(part)) {
                 throw new Error('invalid_session_input');
               }
               if (part.type === 'text' && typeof part.text === 'string') {
@@ -697,7 +690,7 @@ export class ModelSession {
               }
               if (
                 part.type === 'image_url' &&
-                object(part.image_url) &&
+                isObject(part.image_url) &&
                 typeof part.image_url.url === 'string'
               ) {
                 hasImages = true;
@@ -886,7 +879,7 @@ export class ModelSession {
   /** 重复完成不会覆盖第一次持久化的结果。 */
   finishTool(callId: string, result: JsonObject, assistantSeq?: number): void {
     this.check();
-    if (!object(result)) {
+    if (!isObject(result)) {
       throw new Error('invalid_tool_result');
     }
     this.transaction(() => {
@@ -905,7 +898,7 @@ export class ModelSession {
         let valid = false;
         try {
           const args: unknown = JSON.parse(row.arguments);
-          valid = object(args) && Object.keys(args).length === 0;
+          valid = isObject(args) && Object.keys(args).length === 0;
         } catch {}
         if (valid) {
           this.resolvePending('turn_finished');
@@ -984,7 +977,7 @@ export class ModelSession {
 
   setTransportCheckpoint(value: JsonObject | undefined): void {
     this.check();
-    if (value !== undefined && !object(value)) {
+    if (value !== undefined && !isObject(value)) {
       throw new Error('invalid_transport_checkpoint');
     }
     let text: string | null;

@@ -2,7 +2,7 @@ import { canonicalMessageId } from '../../onebot/identity.ts';
 import { randomBytes } from 'node:crypto';
 import { resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
-import { type JsonObject } from '../../contracts/json.ts';
+import { type JsonObject, isObject } from '../../contracts/json.ts';
 import { type Memory, type MessageSegment } from '../../contracts/messages.ts';
 import {
   type ToolDefinition,
@@ -16,11 +16,10 @@ import { type ForwardReference } from '../../contracts/messages.ts';
 import type { ForwardConfig } from '../../config/listener.ts';
 import { log } from '../../observability/logger.ts';
 import { extractMessageContent } from '../../world/message-content.ts';
+import { fail, failureCode } from '../failure.ts';
 
 const ROOT = /^fwd_(-?\d{1,32})_(0|[1-9]\d?|1[01]\d|12[0-7])$/;
 const CHILD = /^fwdn_[a-f0-9]{16}$/;
-const object = (v: unknown): v is JsonObject =>
-  v !== null && typeof v === 'object' && !Array.isArray(v);
 
 function identifier(v: unknown): string | undefined {
   if (typeof v === 'number' && Number.isSafeInteger(v)) {
@@ -31,15 +30,6 @@ function identifier(v: unknown): string | undefined {
   }
 }
 
-class Failure extends Error {
-  constructor(readonly code: string) {
-    super(code);
-  }
-}
-
-const fail = (code: string): never => {
-  throw new Failure(code);
-};
 const check = (signal?: AbortSignal) => {
   if (signal?.aborted) {
     fail('cancelled');
@@ -199,7 +189,7 @@ export class ForwardTools {
   ) {
     this.groupId = resolveGroupId(groupId);
     if (
-      !object(options) ||
+      !isObject(options) ||
       ![Object.prototype, null].includes(Object.getPrototypeOf(options)) ||
       !Object.hasOwn(options, 'enabled') ||
       typeof options.enabled !== 'boolean' ||
@@ -289,7 +279,7 @@ export class ForwardTools {
         return errorResult('invalid_arguments');
       }
       if (
-        !object(args) ||
+        !isObject(args) ||
         Reflect.ownKeys(args).length !== 3 ||
         !['forward_id', 'start', 'limit'].every((k) =>
           Object.hasOwn(args, k),
@@ -351,11 +341,11 @@ export class ForwardTools {
         const snap = snapshot(raw),
           message = snap.value;
         if (
-          !object(message) ||
+          !isObject(message) ||
           message.message_type !== 'group' ||
           identifier(message.group_id) !== this.groupId ||
           canonicalMessageId(message.message_id) !== scope.messageId ||
-          !object(message.sender)
+          !isObject(message.sender)
         ) {
           fail('invalid_origin');
         }
@@ -395,7 +385,7 @@ export class ForwardTools {
           });
           check(signal);
           const snap = snapshot(raw);
-          if (!object(snap.value) || !Array.isArray(snap.value.messages)) {
+          if (!isObject(snap.value) || !Array.isArray(snap.value.messages)) {
             fail('invalid_resource');
           }
           nodes = (snap.value as JsonObject).messages as unknown[];
@@ -465,11 +455,11 @@ export class ForwardTools {
       for (let index = start; index <= Math.min(end, total); index++) {
         const rawNode = cached.nodes[index - 1];
         const node =
-          object(rawNode) && rawNode.type === 'node' && object(rawNode.data)
+          isObject(rawNode) && rawNode.type === 'node' && isObject(rawNode.data)
             ? rawNode.data
             : rawNode;
-        const data = object(node) ? node : {};
-        const sender = object(data.sender) ? data.sender : {};
+        const data = isObject(node) ? node : {};
+        const sender = isObject(data.sender) ? data.sender : {};
         const userId = identifier(sender.user_id ?? data.user_id ?? data.uin);
         const row: JsonObject = {
           index,
@@ -590,9 +580,9 @@ export class ForwardTools {
               });
             }
           } else if (
-            object(segment) &&
+            isObject(segment) &&
             segment.type === 'text' &&
-            object(segment.data) &&
+            isObject(segment.data) &&
             typeof segment.data.text === 'string'
           ) {
             const room = 12000 - textChars,
@@ -604,13 +594,13 @@ export class ForwardTools {
               omitted += wire.length - si - 1;
               break;
             }
-          } else if (object(segment) && segment.type === 'image') {
+          } else if (isObject(segment) && segment.type === 'image') {
             content.push({
               type: 'image',
               content_status: 'not_viewed',
               reason: 'forward_images_unsupported',
             });
-          } else if (object(segment) && segment.type === 'reply') {
+          } else if (isObject(segment) && segment.type === 'reply') {
             content.push({ type: 'unsupported', kind: 'forward_reply' });
           } else {
             const extracted = extractMessageContent('0', [segment]);
@@ -748,9 +738,7 @@ export class ForwardTools {
       return errorResult(
         signal?.aborted
           ? 'cancelled'
-          : error instanceof Failure
-            ? error.code
-            : 'forward_unavailable',
+          : failureCode(error, 'forward_unavailable'),
       );
     } finally {
       if (locked) {

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
-import { type JsonObject } from '../../contracts/json.ts';
+import { type JsonObject, isObject } from '../../contracts/json.ts';
 import {
   type ToolDefinition,
   type TurnContext,
@@ -11,6 +11,7 @@ import {
   writeFailure,
   afterDispatch,
 } from '../../onebot/operation-result.ts';
+import { fail, failureCode } from '../failure.ts';
 
 export const GROUP_VOICE_TOOL_NAMES = [
   'get_group_ai_voices',
@@ -29,8 +30,6 @@ const MAX_ROWS = 10000,
   MAX_OUTPUT = 24 * 1024,
   MAX_TEXT = 8192,
   MAX_OPERATIONS = 4096;
-const record = (v: unknown): v is JsonObject =>
-  v !== null && typeof v === 'object' && !Array.isArray(v);
 const id = (v: unknown): string | undefined => {
   if (typeof v === 'number' && Number.isSafeInteger(v)) {
     v = String(v);
@@ -56,12 +55,6 @@ function label(value: string): string {
   )
     .slice(0, 160)
     .join('');
-}
-
-class Failure extends Error {}
-
-function fail(code: string): never {
-  throw new Failure(code);
 }
 
 function check(signal?: AbortSignal): void {
@@ -157,7 +150,7 @@ export class GroupVoiceTools {
         ? ['limit', 'offset']
         : ['character_id', 'text'];
     if (
-      !record(value) ||
+      !isObject(value) ||
       ![Object.prototype, null].includes(Object.getPrototypeOf(value)) ||
       Reflect.ownKeys(value).some(
         (k) => typeof k !== 'string' || !keys.includes(k),
@@ -212,7 +205,7 @@ export class GroupVoiceTools {
 
   private async verify(ctx: TurnContext, signal?: AbortSignal): Promise<void> {
     const login = await this.read('get_login_info', {}, signal);
-    if (!record(login) || id(login.user_id) !== ctx.selfId) {
+    if (!isObject(login) || id(login.user_id) !== ctx.selfId) {
       fail('identity_mismatch');
     }
     const member = await this.read(
@@ -221,7 +214,7 @@ export class GroupVoiceTools {
       signal,
     );
     if (
-      !record(member) ||
+      !isObject(member) ||
       id(member.group_id) !== this.groupId ||
       id(member.user_id) !== ctx.selfId ||
       !['member', 'admin', 'owner'].includes(member.role as string)
@@ -245,7 +238,7 @@ export class GroupVoiceTools {
     const voices: Voice[] = [];
     for (const category of raw) {
       if (
-        !record(category) ||
+        !isObject(category) ||
         typeof category.type !== 'string' ||
         !Array.isArray(category.characters)
       ) {
@@ -259,7 +252,7 @@ export class GroupVoiceTools {
       }
       for (const voice of category.characters) {
         if (
-          !record(voice) ||
+          !isObject(voice) ||
           !characterId(voice.character_id) ||
           typeof voice.character_name !== 'string' ||
           typeof voice.preview_url !== 'string'
@@ -393,9 +386,7 @@ export class GroupVoiceTools {
         status: 'error',
         error: signal?.aborted
           ? 'cancelled'
-          : error instanceof Failure
-            ? error.message
-            : 'verification_failed',
+          : failureCode(error, 'verification_failed'),
       });
     }
   }
@@ -421,7 +412,7 @@ export class GroupVoiceTools {
         character: args.character_id,
         text: args.text,
       });
-      if (!record(response) || response.message_id !== 0) {
+      if (!isObject(response) || response.message_id !== 0) {
         return afterDispatch(unknown(), !!signal?.aborted);
       }
       // GetAiVoice正常完成，但handler把message_id硬编码为0。
@@ -442,9 +433,7 @@ export class GroupVoiceTools {
         status: 'error',
         error: signal?.aborted
           ? 'cancelled'
-          : error instanceof Failure
-            ? error.message
-            : 'verification_failed',
+          : failureCode(error, 'verification_failed'),
       };
     }
   }

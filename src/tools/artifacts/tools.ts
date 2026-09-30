@@ -1,6 +1,6 @@
 import sharp from 'sharp';
 import type { ToolDefinition, TurnContext } from '../../contracts/tools.ts';
-import type { JsonObject } from '../../contracts/json.ts';
+import { type JsonObject, hasExactFields } from '../../contracts/json.ts';
 import {
   ARTIFACT_LIMITS,
   ArtifactError,
@@ -136,26 +136,7 @@ function fields(
   required: readonly string[],
   optional: readonly string[],
 ): Record<string, unknown> {
-  if (
-    !args ||
-    typeof args !== 'object' ||
-    Array.isArray(args) ||
-    ![Object.prototype, null].includes(Object.getPrototypeOf(args))
-  ) {
-    invalid();
-  }
-  const record = args as Record<string, unknown>;
-  for (const key of Object.keys(record)) {
-    if (!required.includes(key) && !optional.includes(key)) {
-      invalid();
-    }
-  }
-  for (const key of required) {
-    if (!Object.hasOwn(record, key)) {
-      invalid();
-    }
-  }
-  return record;
+  return hasExactFields(args, required, optional) ? args : invalid();
 }
 
 /** 字节字段：沙箱代码传入Uint8Array，直接调用时传入整数数组。 */

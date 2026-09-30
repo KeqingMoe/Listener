@@ -29,6 +29,7 @@ import {
   type ModelRequestDiagnostics,
 } from '../observability/model-diagnostics.ts';
 import { readSse, SseError } from './sse.ts';
+import { isObject } from '../contracts/json.ts';
 
 export type ModelErrorCode =
   | 'cancelled'
@@ -115,19 +116,17 @@ export interface OpenAIModelOptions {
 const MAX_RESPONSE_BYTES = 256 * 1024;
 const MAX_WIRE_BYTES = 16 * 1024 * 1024;
 const MAX_ARGUMENT_BYTES = 16 * 1024;
-const object = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 function validate(value: unknown): Completion {
   if (
-    !object(value) ||
+    !isObject(value) ||
     !Array.isArray(value.choices) ||
     value.choices.length !== 1
   ) {
     throw new Error();
   }
   const choice: unknown = value.choices[0];
-  if (!object(choice) || !object(choice.message)) {
+  if (!isObject(choice) || !isObject(choice.message)) {
     throw new Error();
   }
   const message = choice.message;
@@ -156,13 +155,13 @@ function validate(value: unknown): Completion {
   const ids = new Set<string>();
   const validated: ToolCall[] = calls.map((call: unknown) => {
     if (
-      !object(call) ||
+      !isObject(call) ||
       typeof call.id !== 'string' ||
       !call.id ||
       call.id.length > 256 ||
       ids.has(call.id) ||
       call.type !== 'function' ||
-      !object(call.function)
+      !isObject(call.function)
     ) {
       throw new Error();
     }
@@ -386,7 +385,7 @@ export class OpenAIModel implements Model {
             failure = 'invalid_response';
             throw new Error();
           }
-          if (!object(event)) {
+          if (!isObject(event)) {
             throw new Error();
           }
           const raw = event;
@@ -412,14 +411,14 @@ export class OpenAIModel implements Model {
             rawUsage = raw.usage;
             requestUsage = parseChatUsage(raw.usage);
           }
-          const choice = object(choices[0]) ? choices[0] : undefined;
+          const choice = isObject(choices[0]) ? choices[0] : undefined;
           if (!choice) {
             if (choices.length) {
               throw new Error();
             }
             return;
           }
-          if (choice.index !== 0 || !object(choice.delta)) {
+          if (choice.index !== 0 || !isObject(choice.delta)) {
             throw new Error();
           }
           const alreadyFinished = finishReason !== undefined;
@@ -432,7 +431,7 @@ export class OpenAIModel implements Model {
             }
             finishReason = choice.finish_reason;
           }
-          const delta = object(choice.delta) ? choice.delta : {};
+          const delta = isObject(choice.delta) ? choice.delta : {};
           if (
             Object.hasOwn(delta, 'content') &&
             delta.content !== null &&
@@ -467,7 +466,7 @@ export class OpenAIModel implements Model {
           const tc = Array.isArray(delta.tool_calls) ? delta.tool_calls : [];
           for (const item of tc) {
             if (
-              !object(item) ||
+              !isObject(item) ||
               !Number.isSafeInteger(item.index) ||
               (item.index as number) < 0 ||
               (item.index as number) >= 8
@@ -493,10 +492,10 @@ export class OpenAIModel implements Model {
               }
               call.id = item.id;
             }
-            if (item.function !== undefined && !object(item.function)) {
+            if (item.function !== undefined && !isObject(item.function)) {
               throw new Error();
             }
-            if (object(item.function)) {
+            if (isObject(item.function)) {
               for (const key of ['name', 'arguments'] as const) {
                 const value = item.function[key];
                 if (value !== undefined) {

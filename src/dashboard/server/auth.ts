@@ -7,6 +7,7 @@ import {
   timingSafeEqual,
 } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+import { immediate } from '../../storage/transaction.ts';
 
 export const SESSION_COOKIE = 'dashboard_session';
 const TTL = 7 * 86400000;
@@ -162,32 +163,27 @@ export class AuthStore {
       this.db.exec(
         'PRAGMA journal_mode=DELETE; PRAGMA busy_timeout=3000; PRAGMA trusted_schema=OFF; CREATE TABLE IF NOT EXISTS environment_credential(id INTEGER PRIMARY KEY CHECK(id=1), password_hash TEXT NOT NULL); CREATE TABLE IF NOT EXISTS sessions(digest TEXT PRIMARY KEY, expires INTEGER NOT NULL);',
       );
-      this.db.exec('BEGIN IMMEDIATE');
-      try {
+      this.passwordHash = immediate(this.db, () => {
         // 旧的account表中的凭据一律不使用，直接删除。
         this.db.exec('DROP TABLE IF EXISTS account');
         const previous = this.credential();
-        if (validPassword(options.password)) {
-          this.passwordHash =
-            previous && verify(options.password, previous)
-              ? previous
-              : hash(options.password);
-        }
-        if (!this.passwordHash || this.passwordHash !== previous) {
+        const passwordHash = validPassword(options.password)
+          ? previous && verify(options.password, previous)
+            ? previous
+            : hash(options.password)
+          : undefined;
+        if (!passwordHash || passwordHash !== previous) {
           this.db.exec(
             'DELETE FROM sessions; DELETE FROM environment_credential',
           );
-          if (this.passwordHash) {
+          if (passwordHash) {
             this.db
               .prepare('INSERT INTO environment_credential VALUES(1,?)')
-              .run(this.passwordHash);
+              .run(passwordHash);
           }
         }
-        this.db.exec('COMMIT');
-      } catch (error) {
-        this.db.exec('ROLLBACK');
-        throw error;
-      }
+        return passwordHash;
+      });
     } catch (error) {
       this.db.close();
       throw error;
@@ -260,13 +256,11 @@ export class AuthStore {
       return { status: 'invalid' };
     }
     // 与其他进程启动时的凭据变更串行化，避免用已失效的密码签发会话。
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
+    return immediate(this.db, () => {
       if (
         this.credential() !== this.passwordHash ||
         !verify(password, this.passwordHash!)
       ) {
-        this.db.exec('ROLLBACK');
         return { status: 'invalid' };
       }
       const token = randomBytes(32).toString('base64url');
@@ -277,12 +271,8 @@ export class AuthStore {
       this.db
         .prepare('INSERT INTO sessions VALUES(?,?)')
         .run(this.digest(token), this.now() + TTL);
-      this.db.exec('COMMIT');
       return { status: 'ok', token };
-    } catch (error) {
-      this.db.exec('ROLLBACK');
-      throw error;
-    }
+    });
   }
 
   authenticated(token: string | undefined): boolean {

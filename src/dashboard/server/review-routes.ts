@@ -1,25 +1,21 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { createHash } from 'node:crypto';
 import { type Repository, ResourceLimit } from './repository.ts';
 import { ReviewRepository } from './review-repository.ts';
 import { EVENT_CATEGORIES } from '../contracts/review.ts';
-
-const DAY = 86400000;
-class BadQuery extends Error {}
-
-const integer = (v: unknown, fallback: number) => {
-  if (v === undefined) {
-    return fallback;
-  }
-  if (
-    typeof v !== 'string' ||
-    !/^\d{1,16}$/.test(v) ||
-    !Number.isSafeInteger(Number(v))
-  ) {
-    throw new BadQuery();
-  }
-  return Number(v);
-};
+import {
+  InvalidQuery,
+  MAX_OFFSET,
+  cursorAfter,
+  cursorOffset,
+  detailId,
+  encodeCursor,
+  onlyKeys,
+  pageLimit,
+  queryBinding,
+  searchText,
+  timeRange,
+  type Query,
+} from './query.ts';
 
 /** 注册review相关路由。每个请求开始前都会重新刷新群授权。 */
 export function registerReviewRoutes(
@@ -36,19 +32,9 @@ export function registerReviewRoutes(
     (fn: (req: Req, reply: FastifyReply) => unknown) =>
     async (req: Req, reply: FastifyReply) => {
       base.refreshGroups();
-      try {
-        return fn(req, reply);
-      } catch (e) {
-        if (e instanceof BadQuery) {
-          return reply.code(400).send({
-            error: 'invalid_query',
-            message: 'Invalid query parameters',
-          });
-        }
-        throw e;
-      }
+      return fn(req, reply);
     };
-  const group = (q: Record<string, unknown>, required = false) => {
+  const group = (q: Query, required = false) => {
     if (q.groupId === undefined && !required) {
       return undefined;
     }
@@ -56,58 +42,32 @@ export function registerReviewRoutes(
       typeof q.groupId !== 'string' ||
       !base.groups.some((g) => g.groupId === q.groupId)
     ) {
-      throw new BadQuery();
+      throw new InvalidQuery();
     }
     return q.groupId;
   };
   const detail = (req: Req) => {
-    const q = req.query as Record<string, unknown>;
-    if (Object.keys(q).some((k) => k !== 'groupId')) {
-      throw new BadQuery();
-    }
-    const id = req.params.id;
-    if (
-      typeof id !== 'string' ||
-      !id ||
-      id.length > 256 ||
-      /[\x00-\x1f]/.test(id)
-    ) {
-      throw new BadQuery();
-    }
-    return { groupId: group(q, true)!, id };
+    const q = req.query as Query;
+    onlyKeys(q, ['groupId']);
+    return { groupId: group(q, true)!, id: detailId(req.params.id, 256) };
   };
   app.get(
     '/api/requests',
     run((req) => {
-      const q = req.query as Record<string, unknown>;
-      if (
-        Object.keys(q).some(
-          (k) =>
-            ![
-              'since',
-              'until',
-              'groupId',
-              'limit',
-              'cursor',
-              'outcome',
-              'q',
-            ].includes(k),
-        )
-      ) {
-        throw new BadQuery();
-      }
-      const until = integer(q.until, now()),
-        since = integer(q.since, Math.max(0, until - DAY)),
-        limit = integer(q.limit, 30),
-        groupId = group(q);
-      if (
-        since > until ||
-        until - since > 31 * DAY ||
-        limit < 1 ||
-        limit > 100
-      ) {
-        throw new BadQuery();
-      }
+      const q = req.query as Query;
+      onlyKeys(q, [
+        'since',
+        'until',
+        'groupId',
+        'limit',
+        'cursor',
+        'outcome',
+        'q',
+      ]);
+      const range = timeRange(q, now()),
+        limit = pageLimit(q, 30),
+        groupId = group(q),
+        text = searchText(q);
       if (
         q.outcome !== undefined &&
         (typeof q.outcome !== 'string' ||
@@ -121,49 +81,17 @@ export function registerReviewRoutes(
             'interrupted',
           ].includes(q.outcome))
       ) {
-        throw new BadQuery();
+        throw new InvalidQuery();
       }
-      if (q.q !== undefined && (typeof q.q !== 'string' || q.q.length > 200)) {
-        throw new BadQuery();
-      }
-      // cursor绑定范围、过滤条件和当前可见的群集合，任一变化都会使旧cursor失效。
-      const range = { since, until },
-        binding = createHash('sha256')
-          .update(
-            JSON.stringify({
-              range,
-              groupId,
-              groups: base.groups.map((g) => g.groupId).sort(),
-              outcome: q.outcome,
-              q: q.q,
-            }),
-          )
-          .digest('hex');
-      let offset = 0;
-      if (q.cursor !== undefined) {
-        try {
-          if (
-            typeof q.cursor !== 'string' ||
-            q.cursor.length > 300 ||
-            !/^[A-Za-z0-9_-]+$/.test(q.cursor)
-          ) {
-            throw new BadQuery();
-          }
-          const c = JSON.parse(Buffer.from(q.cursor, 'base64url').toString());
-          if (
-            c.binding !== binding ||
-            !Number.isSafeInteger(c.offset) ||
-            c.offset < 0 ||
-            c.offset > 10000
-          ) {
-            throw new BadQuery();
-          }
-          offset = c.offset;
-        } catch {
-          throw new BadQuery();
-        }
-      }
-      const search = typeof q.q === 'string' ? q.q.toLowerCase() : '';
+      const binding = queryBinding({
+        range,
+        groupId,
+        groups: base.groups.map((g) => g.groupId).sort(),
+        outcome: q.outcome,
+        q: text,
+      });
+      const offset = cursorOffset(q.cursor, binding);
+      const search = text?.toLowerCase() ?? '';
       const all = review
         .requests(range, groupId)
         .filter(
@@ -182,16 +110,14 @@ export function registerReviewRoutes(
               ].some((v) => v?.toLowerCase().includes(search))),
         );
       const hasMore = all.length > offset + limit;
-      if (hasMore && offset + limit > 10000) {
+      if (hasMore && offset + limit > MAX_OFFSET) {
         throw new ResourceLimit();
       }
       return {
         range,
         items: all.slice(offset, offset + limit),
         nextCursor: hasMore
-          ? Buffer.from(
-              JSON.stringify({ binding, offset: offset + limit }),
-            ).toString('base64url')
+          ? encodeCursor(binding, { offset: offset + limit })
           : null,
       };
     }),
@@ -226,86 +152,41 @@ export function registerReviewRoutes(
   app.get(
     '/api/events',
     run((req) => {
-      const q = req.query as Record<string, unknown>;
-      if (
-        Object.keys(q).some(
-          (k) =>
-            ![
-              'since',
-              'until',
-              'groupId',
-              'limit',
-              'cursor',
-              'category',
-              'q',
-            ].includes(k),
-        )
-      ) {
-        throw new BadQuery();
-      }
-      const until = integer(q.until, now()),
-        since = integer(q.since, Math.max(0, until - DAY)),
-        limit = integer(q.limit, 50),
-        groupId = group(q);
-      if (
-        since > until ||
-        until - since > 31 * DAY ||
-        limit < 1 ||
-        limit > 100
-      ) {
-        throw new BadQuery();
-      }
+      const q = req.query as Query;
+      onlyKeys(q, [
+        'since',
+        'until',
+        'groupId',
+        'limit',
+        'cursor',
+        'category',
+        'q',
+      ]);
+      const range = timeRange(q, now()),
+        limit = pageLimit(q, 50),
+        groupId = group(q),
+        text = searchText(q);
       if (
         q.category !== undefined &&
         (typeof q.category !== 'string' ||
           !(EVENT_CATEGORIES as readonly string[]).includes(q.category))
       ) {
-        throw new BadQuery();
+        throw new InvalidQuery();
       }
-      if (q.q !== undefined && (typeof q.q !== 'string' || q.q.length > 200)) {
-        throw new BadQuery();
-      }
-      const range = { since, until },
-        binding = createHash('sha256')
-          .update(
-            JSON.stringify({
-              range,
-              groupId,
-              groups: base.groups.map((g) => g.groupId).sort(),
-              category: q.category,
-              q: q.q,
-            }),
-          )
-          .digest('hex');
+      const binding = queryBinding({
+        range,
+        groupId,
+        groups: base.groups.map((g) => g.groupId).sort(),
+        category: q.category,
+        q: text,
+      });
       // 事件按sequence倒序做keyset分页，cursor记录上一页最后一条的sequence。
-      let after = Number.MAX_SAFE_INTEGER;
-      if (q.cursor !== undefined) {
-        try {
-          if (
-            typeof q.cursor !== 'string' ||
-            q.cursor.length > 300 ||
-            !/^[A-Za-z0-9_-]+$/.test(q.cursor)
-          ) {
-            throw new BadQuery();
-          }
-          const c = JSON.parse(Buffer.from(q.cursor, 'base64url').toString());
-          if (
-            c.binding !== binding ||
-            !Number.isSafeInteger(c.after) ||
-            c.after < 1
-          ) {
-            throw new BadQuery();
-          }
-          after = c.after;
-        } catch {
-          throw new BadQuery();
-        }
-      }
+      const after = cursorAfter(q.cursor, binding) ?? Number.MAX_SAFE_INTEGER;
       const { items, hasMore } = review.events(
         range,
         groupId,
         q.category as string | undefined,
-        q.q as string | undefined,
+        text,
         after,
         limit,
       );
@@ -313,9 +194,7 @@ export function registerReviewRoutes(
         range,
         items,
         nextCursor: hasMore
-          ? Buffer.from(
-              JSON.stringify({ binding, after: items.at(-1)!.sequence }),
-            ).toString('base64url')
+          ? encodeCursor(binding, { after: items.at(-1)!.sequence })
           : null,
       };
     }),
@@ -324,7 +203,7 @@ export function registerReviewRoutes(
     '/api/health',
     run((req) => {
       if (Object.keys(req.query).length) {
-        throw new BadQuery();
+        throw new InvalidQuery();
       }
       return review.health(now());
     }),

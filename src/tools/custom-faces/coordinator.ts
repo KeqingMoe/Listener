@@ -8,6 +8,7 @@ import {
   openSync,
 } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
+import { immediate } from '../../storage/transaction.ts';
 
 const KIND = 'qqbot.custom-face-operations';
 const TABLES = ['custom_face_operation_identity', 'custom_face_operations'];
@@ -143,19 +144,15 @@ export class CustomFaceCoordinator {
         'PRAGMA trusted_schema=OFF; PRAGMA busy_timeout=2000; PRAGMA synchronous=FULL;',
       );
       if (!existing) {
-        db.exec('BEGIN IMMEDIATE');
-        try {
-          db.exec(
+        const open = db;
+        immediate(open, () => {
+          open.exec(
             "CREATE TABLE custom_face_operation_identity(singleton INTEGER PRIMARY KEY CHECK(singleton=1),kind TEXT NOT NULL,version INTEGER NOT NULL); CREATE TABLE custom_face_operations(id TEXT PRIMARY KEY,account TEXT NOT NULL,targets TEXT NOT NULL,phase TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('pending','unknown','hold','done')));",
           );
-          db.prepare(
-            'INSERT INTO custom_face_operation_identity VALUES(1,?,1)',
-          ).run(KIND);
-          db.exec('COMMIT');
-        } catch (e) {
-          db.exec('ROLLBACK');
-          throw e;
-        }
+          open
+            .prepare('INSERT INTO custom_face_operation_identity VALUES(1,?,1)')
+            .run(KIND);
+        });
       }
       inspect(db);
       db.exec(
@@ -312,8 +309,7 @@ export class CustomFaceCoordinator {
     ) {
       fail('invalid_recovery_scope');
     }
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
+    immediate(this.db, () => {
       const current = this.recoverableAddHolds(account, proofs);
       if (
         current.length !== ids.length ||
@@ -329,11 +325,7 @@ export class CustomFaceCoordinator {
           fail('previous_operation_unresolved');
         }
       }
-      this.db.exec('COMMIT');
-    } catch (e) {
-      this.db.exec('ROLLBACK');
-      throw e;
-    }
+    });
   }
 
   /** 在调用原生API之前同步提交记录。 */
@@ -346,8 +338,7 @@ export class CustomFaceCoordinator {
     if (!['add', 'description', 'delete', 'send'].includes(phase)) {
       fail('invalid_operation_phase');
     }
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
+    return immediate(this.db, () => {
       this.assertAllowed(account, targets);
       // 多阶段的add/description操作中保留各phase的回执。
       // 只淘汰有限数量的已完成旧记录，不确定的记录永不淘汰。
@@ -369,12 +360,8 @@ export class CustomFaceCoordinator {
       this.db
         .prepare("INSERT INTO custom_face_operations VALUES(?,?,?,?,'pending')")
         .run(id, account, JSON.stringify([...new Set(targets)]), phase);
-      this.db.exec('COMMIT');
       return id;
-    } catch (e) {
-      this.db.exec('ROLLBACK');
-      throw e;
-    }
+    });
   }
 
   /** hold会保留正常提交的记录，直到有了安全的绑定或本地投影。 */

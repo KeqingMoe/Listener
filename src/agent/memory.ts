@@ -11,6 +11,7 @@ import {
   sanitizeMessageContent,
 } from '../world/message-content.ts';
 import { preparePrivateDatabase } from '../storage/private-file.ts';
+import { immediate } from '../storage/transaction.ts';
 
 export interface SQLiteMemoryOptions {
   path: string;
@@ -222,13 +223,11 @@ export class SQLiteMemory implements Memory {
         safe.content_truncated = true;
       }
     }
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
+    return immediate(this.db, () => {
       const inserted = this.db
         .prepare('INSERT OR IGNORE INTO listener_seen VALUES (?, ?)')
         .run(safe.messageId, safe.time);
       if (Number(inserted.changes) === 0) {
-        this.db.exec('COMMIT');
         return false;
       }
       this.db
@@ -237,12 +236,8 @@ export class SQLiteMemory implements Memory {
         )
         .run(safe.messageId, safe.time, JSON.stringify(safe));
       this.housekeep();
-      this.db.exec('COMMIT');
       return true;
-    } catch (error) {
-      this.db.exec('ROLLBACK');
-      throw error;
-    }
+    });
   }
 
   recent(): TimelineEntry[] {
@@ -437,8 +432,7 @@ export class SQLiteMemory implements Memory {
           0,
           Math.max(16, Math.floor((this.options.maxContextChars - 128) / 12)),
         );
-      this.db.exec('BEGIN IMMEDIATE');
-      try {
+      immediate(this.db, () => {
         this.db
           .prepare('INSERT OR REPLACE INTO listener_summary VALUES (1, ?, ?)')
           .run(text, oldest);
@@ -447,11 +441,7 @@ export class SQLiteMemory implements Memory {
           .prepare('DELETE FROM listener_messages WHERE seq <= ?')
           .run(lastSeq);
         this.housekeep();
-        this.db.exec('COMMIT');
-      } catch (error) {
-        this.db.exec('ROLLBACK');
-        throw error;
-      }
+      });
       const after = this.rows();
       log('info', 'memory.compact_complete', {
         ...metrics(),

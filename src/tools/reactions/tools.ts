@@ -2,7 +2,7 @@ import { canonicalMessageId } from '../../onebot/identity.ts';
 import { resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
 import { type Memory, type TimelineEntry } from '../../contracts/messages.ts';
-import { type JsonObject } from '../../contracts/json.ts';
+import { type JsonObject, isDataObject } from '../../contracts/json.ts';
 import { type TurnContext } from '../../contracts/tools.ts';
 import {
   isKnownReactionId,
@@ -44,24 +44,6 @@ interface TurnState {
 
 const MAX_PAIR_RESOURCES = 4096; // 内存上限；调用次数由wake runner统计。
 const error = (code: string): JsonObject => ({ status: 'error', error: code });
-
-function record(value: unknown): value is Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return false;
-  }
-  try {
-    return (
-      [Object.prototype, null].includes(Object.getPrototypeOf(value)) &&
-      Reflect.ownKeys(value).every(
-        (key) =>
-          typeof key === 'string' &&
-          Object.hasOwn(Object.getOwnPropertyDescriptor(value, key)!, 'value'),
-      )
-    );
-  } catch {
-    return false;
-  }
-}
 
 function messageId(value: unknown): value is string {
   return typeof value === 'string' && canonicalMessageId(value) === value;
@@ -127,7 +109,7 @@ function jsonResponse(
       }
       return true;
     }
-    if (!record(value)) {
+    if (!isDataObject(value)) {
       return false;
     }
     return Object.values(Object.getOwnPropertyDescriptors(value)).every(
@@ -174,7 +156,7 @@ export class ReactionTools {
       return error('invalid_turn');
     }
     if (
-      !record(args) ||
+      !isDataObject(args) ||
       Object.keys(args).length !== 3 ||
       !['message_id', 'emoji_id', 'action'].every((key) =>
         Object.hasOwn(args, key),
@@ -202,7 +184,9 @@ export class ReactionTools {
       local = this.memory.find(id);
       if (
         local &&
-        (!record(local) || local.messageId !== id || !identity(local.userId))
+        (!isDataObject(local) ||
+          local.messageId !== id ||
+          !identity(local.userId))
       ) {
         return error('verification_failed');
       }
@@ -278,11 +262,11 @@ export class ReactionTools {
       return remember(error('cancelled'));
     }
     if (
-      !record(remote) ||
+      !isDataObject(remote) ||
       remote.message_type !== 'group' ||
       identity(remote.group_id) !== this.groupId ||
       canonicalMessageId(remote.message_id) !== id ||
-      !record(remote.sender)
+      !isDataObject(remote.sender)
     ) {
       return remember(error('verification_failed'));
     }
@@ -322,7 +306,7 @@ export class ReactionTools {
       return unknown();
     }
     if (
-      record(result) &&
+      isDataObject(result) &&
       Object.hasOwn(result, 'result') &&
       (result.result === false ||
         (typeof result.result === 'number' &&

@@ -3,18 +3,17 @@ import { parse } from 'smol-toml';
 import type { AppConfig } from './app.ts';
 import { TOOL_NAMES } from './tool-policy.ts';
 import { ConfigError, matchesConfigSource } from './loader.ts';
+import { isObject } from '../contracts/json.ts';
 
 type RecordValue = Record<string, unknown>;
 type Origin = 'program_default' | 'defaults' | 'group';
 
-const object = (value: unknown): value is RecordValue =>
-  !!value && typeof value === 'object' && !Array.isArray(value);
 const snake = (key: string): string =>
   key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 
 function lookup(value: unknown, path: string): unknown {
   for (const key of path.split('.')) {
-    if (!object(value) || !Object.hasOwn(value, key)) {
+    if (!isObject(value) || !Object.hasOwn(value, key)) {
       return undefined;
     }
     value = value[key];
@@ -38,7 +37,7 @@ export function inspectGroupConfig(
   const document = parse(source) as RecordValue;
   const defaults = document.defaults;
   const groups = document.groups;
-  const group = object(groups) ? groups[groupId] : undefined;
+  const group = isObject(groups) ? groups[groupId] : undefined;
   const unions = ['reply.random', ...TOOL_NAMES.map((name) => `tools.${name}`)];
   function origin(path: string): Origin {
     const union = unions.find(
@@ -80,7 +79,7 @@ export function inspectGroupConfig(
     if (Array.isArray(value)) {
       return value.map(publicValue);
     }
-    if (!object(value)) {
+    if (!isObject(value)) {
       return value;
     }
     return Object.fromEntries(
@@ -118,7 +117,7 @@ export function inspectGroupConfig(
     if (path) {
       sources[path] = origin(path);
     }
-    if (object(value)) {
+    if (isObject(value)) {
       for (const [key, entry] of Object.entries(value)) {
         collect(entry, path ? `${path}.${key}` : key);
       }

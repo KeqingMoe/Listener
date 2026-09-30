@@ -6,11 +6,12 @@ import { log } from '../../observability/logger.ts';
 import type { ModerationPolicy } from '../../config/listener.ts';
 import { resolveGroupId, resolveOwnerId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
-import { type JsonObject } from '../../contracts/json.ts';
+import { type JsonObject, isDataObject } from '../../contracts/json.ts';
 import {
   type ToolDefinition,
   type TurnContext,
 } from '../../contracts/tools.ts';
+import { ToolFailure, failureCode } from '../failure.ts';
 
 type Mode = 'off' | 'confirm' | 'direct';
 
@@ -120,24 +121,6 @@ type Pending = { context: TurnContext; expires: number } & (
   | { kind: 'external'; external: ExternalModerationProposal }
 );
 
-function record(value: unknown): value is JsonObject {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return false;
-  }
-  try {
-    return (
-      [Object.prototype, null].includes(Object.getPrototypeOf(value)) &&
-      Reflect.ownKeys(value).every(
-        (key) =>
-          typeof key === 'string' &&
-          Object.hasOwn(Object.getOwnPropertyDescriptor(value, key)!, 'value'),
-      )
-    );
-  } catch {
-    return false;
-  }
-}
-
 function id(value: unknown): string | undefined {
   if (typeof value === 'number') {
     return Number.isSafeInteger(value) && value > 0 ? String(value) : undefined;
@@ -150,14 +133,8 @@ function id(value: unknown): string | undefined {
     : undefined;
 }
 
-class Denied extends Error {
-  constructor(readonly code: string) {
-    super(code);
-  }
-}
-
 const deny = (code = 'verification_failed'): never => {
-  throw new Denied(code);
+  throw new ToolFailure(code);
 };
 
 function policy(
@@ -172,7 +149,7 @@ function policy(
     maxMuteSeconds: MAX_MUTE_SECONDS,
   };
   if (
-    !record(options) ||
+    !isDataObject(options) ||
     Reflect.ownKeys(options).some(
       (key) => typeof key !== 'string' || !Object.hasOwn(defaults, key),
     )
@@ -256,7 +233,7 @@ export class Moderation {
 
   private scope(context: TurnContext): TurnContext {
     if (
-      !record(context) ||
+      !isDataObject(context) ||
       context.groupId !== this.groupId ||
       typeof context.actorId !== 'string' ||
       id(context.actorId) !== context.actorId ||
@@ -277,7 +254,7 @@ export class Moderation {
   }
 
   private parse(name: string, args: unknown): Action {
-    if (!Object.hasOwn(policyKey, name) || !record(args)) {
+    if (!Object.hasOwn(policyKey, name) || !isDataObject(args)) {
       return deny('invalid_arguments');
     }
     const expected =
@@ -357,7 +334,7 @@ export class Moderation {
     expected: string,
   ): 'member' | 'admin' | 'owner' {
     if (
-      !record(value) ||
+      !isDataObject(value) ||
       id(value.group_id) !== this.groupId ||
       id(value.user_id) !== expected ||
       !['member', 'admin', 'owner'].includes(value.role as string)
@@ -385,7 +362,7 @@ export class Moderation {
       }
     }
     const login = await this.read('get_login_info', {}, signal, expires);
-    if (!record(login) || id(login.user_id) !== context.selfId) {
+    if (!isDataObject(login) || id(login.user_id) !== context.selfId) {
       return deny('identity_mismatch');
     }
     const botRole = this.member(
@@ -406,11 +383,11 @@ export class Moderation {
         expires,
       );
       if (
-        !record(message) ||
+        !isDataObject(message) ||
         message.message_type !== 'group' ||
         id(message.group_id) !== this.groupId ||
         canonicalMessageId(message.message_id) !== action.message_id ||
-        !record(message.sender)
+        !isDataObject(message.sender)
       ) {
         return deny();
       }
@@ -477,7 +454,7 @@ export class Moderation {
   private resultError(error: unknown): JsonObject {
     return {
       status: 'error',
-      error: error instanceof Denied ? error.code : 'moderation_failed',
+      error: failureCode(error, 'moderation_failed'),
     };
   }
 
@@ -641,7 +618,7 @@ export class Moderation {
       this.check(signal);
       fixed = this.scope(context);
       if (
-        !record(input) ||
+        !isDataObject(input) ||
         Reflect.ownKeys(input).length !== 3 ||
         typeof input.name !== 'string' ||
         !/^[a-z][a-z0-9_]{0,63}$/.test(input.name) ||
@@ -710,7 +687,7 @@ export class Moderation {
       );
       // await之后不检查取消：已确认的迟到写入仍是事实。
       if (
-        !record(result) ||
+        !isDataObject(result) ||
         !['ok', 'executed', 'unknown', 'error'].includes(
           result.status as string,
         )

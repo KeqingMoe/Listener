@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
-import { type JsonObject } from '../../contracts/json.ts';
+import { type JsonObject, isDataObject } from '../../contracts/json.ts';
 import {
   type ToolDefinition,
   type TurnContext,
@@ -11,6 +11,7 @@ import {
   submittedResult,
   writeFailure,
 } from '../../onebot/operation-result.ts';
+import { ToolFailure, fail, failureCode } from '../failure.ts';
 
 // 基于NapCat v4.18.28的契约：
 // packages/napcat-onebot/action/system/GetSystemMsg.ts：join_requests为type 7，
@@ -44,24 +45,6 @@ interface Pending {
   raw: JsonObject;
 }
 
-function record(value: unknown): value is JsonObject {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return false;
-  }
-  try {
-    return (
-      [Object.prototype, null].includes(Object.getPrototypeOf(value)) &&
-      Reflect.ownKeys(value).every(
-        (k) =>
-          typeof k === 'string' &&
-          Object.hasOwn(Object.getOwnPropertyDescriptor(value, k)!, 'value'),
-      )
-    );
-  } catch {
-    return false;
-  }
-}
-
 function id(value: unknown): string | undefined {
   if (typeof value === 'number') {
     return Number.isSafeInteger(value) && value > 0 ? String(value) : undefined;
@@ -80,16 +63,6 @@ function flag(value: unknown): string | undefined {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
     ? String(value)
     : undefined;
-}
-
-class Denied extends Error {
-  constructor(readonly code: string) {
-    super(code);
-  }
-}
-
-function fail(code: string): never {
-  throw new Denied(code);
 }
 
 function text(value: unknown): string | undefined {
@@ -193,7 +166,7 @@ export class GroupRequestTools {
     if (!NAMES.has(name) || !this.enabled.has(name)) {
       fail('tool_disabled');
     }
-    if (!record(context) || context.groupId !== this.groupId) {
+    if (!isDataObject(context) || context.groupId !== this.groupId) {
       fail('forbidden_group');
     }
     if (
@@ -285,7 +258,7 @@ export class GroupRequestTools {
         ? ['limit', 'offset']
         : ['request_handle', 'approve', 'reason'];
     if (
-      !record(value) ||
+      !isDataObject(value) ||
       Object.keys(value).some((k) => !allowed.includes(k))
     ) {
       fail('invalid_arguments');
@@ -336,10 +309,9 @@ export class GroupRequestTools {
       status: 'error',
       error: signal?.aborted
         ? 'cancelled'
-        : error instanceof Denied
-          ? error.code
-          : 'verification_failed',
-      ...(error instanceof Denied && error.code === 'request_already_submitted'
+        : failureCode(error, 'verification_failed'),
+      ...(error instanceof ToolFailure &&
+      error.code === 'request_already_submitted'
         ? { previous_submitted: true, dispatched: false }
         : {}),
     };
@@ -369,7 +341,7 @@ export class GroupRequestTools {
     signal?: AbortSignal,
   ): Promise<void> {
     const login = await this.read('get_login_info', {}, generation, signal);
-    if (!record(login) || id(login.user_id) !== self) {
+    if (!isDataObject(login) || id(login.user_id) !== self) {
       fail('identity_mismatch');
     }
     const member = await this.read(
@@ -379,7 +351,7 @@ export class GroupRequestTools {
       signal,
     );
     if (
-      !record(member) ||
+      !isDataObject(member) ||
       id(member.group_id) !== this.groupId ||
       id(member.user_id) !== self
     ) {
@@ -408,7 +380,7 @@ export class GroupRequestTools {
       signal,
     );
     if (
-      !record(raw) ||
+      !isDataObject(raw) ||
       !Array.isArray(raw.join_requests) ||
       !Array.isArray(raw.invited_requests)
     ) {
@@ -426,7 +398,7 @@ export class GroupRequestTools {
     const seen = new Map<string, number>(),
       blocked = new Set<string>();
     for (const row of raw.join_requests) {
-      if (record(row)) {
+      if (isDataObject(row)) {
         const f = flag(row.request_id);
         if (f) {
           seen.set(f, (seen.get(f) ?? 0) + 1);
@@ -434,7 +406,7 @@ export class GroupRequestTools {
       }
     }
     for (const row of [...invitations, ...alias]) {
-      if (record(row)) {
+      if (isDataObject(row)) {
         const f = flag(row.request_id);
         if (f) {
           blocked.add(f);
@@ -444,7 +416,7 @@ export class GroupRequestTools {
     const result: Pending[] = [];
     for (const row of raw.join_requests) {
       if (
-        !record(row) ||
+        !isDataObject(row) ||
         id(row.group_id) !== this.groupId ||
         row.checked !== false
       ) {
@@ -563,7 +535,10 @@ export class GroupRequestTools {
         item.request_handle_expires_at =
           this.handles.get(token)!.expires / 1000;
       } catch (error) {
-        if (!(error instanceof Denied) || error.code !== 'handle_capacity') {
+        if (
+          !(error instanceof ToolFailure) ||
+          error.code !== 'handle_capacity'
+        ) {
           throw error;
         }
         reason = 'handle_capacity';

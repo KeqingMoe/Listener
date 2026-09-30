@@ -1,4 +1,4 @@
-import type { JsonObject } from '../contracts/json.ts';
+import { type JsonObject, isObject } from '../contracts/json.ts';
 import type { Memory } from '../contracts/messages.ts';
 
 /** 把reaction观测结果作为只读标注附加到模型可见的消息投影上，受字符预算限制，不改动原始记录。 */
@@ -11,10 +11,6 @@ const ADDED_LIMIT = 6000,
   ITEM_LIMIT = 8;
 const statuses = new Set(['observed', 'stale', 'partial', 'empty_snapshot']);
 
-function object(value: unknown): value is JsonObject {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
 function encoded(value: unknown): string | undefined {
   try {
     return JSON.stringify(value);
@@ -24,7 +20,7 @@ function encoded(value: unknown): string | undefined {
 }
 
 function id(message: unknown): string | undefined {
-  return object(message) &&
+  return isObject(message) &&
     typeof message.messageId === 'string' &&
     message.messageId.length > 0
     ? message.messageId
@@ -43,7 +39,7 @@ function boundedText(value: unknown, max: number): string | undefined {
 /** 只投影观测字段：这些计数不代表bot自己参与过reaction。 */
 function snapshot(value: unknown): JsonObject | undefined {
   if (
-    !object(value) ||
+    !isObject(value) ||
     typeof value.status !== 'string' ||
     !statuses.has(value.status) ||
     typeof value.observed_at !== 'number' ||
@@ -56,7 +52,7 @@ function snapshot(value: unknown): JsonObject | undefined {
   const items: JsonObject[] = [];
   for (const entry of value.items.slice(0, ITEM_LIMIT)) {
     if (
-      !object(entry) ||
+      !isObject(entry) ||
       typeof entry.emoji_id !== 'string' ||
       !/^\d{1,32}$/.test(entry.emoji_id) ||
       typeof entry.count !== 'number' ||
@@ -126,7 +122,7 @@ function observation(
   lookup: ReactionLookup,
 ): JsonObject | undefined {
   const messageId = id(message);
-  if (!messageId || !object(message) || Object.hasOwn(message, 'reactions')) {
+  if (!messageId || !isObject(message) || Object.hasOwn(message, 'reactions')) {
     return undefined;
   }
   try {
@@ -146,7 +142,7 @@ function candidates(
     index: number;
   }> = [];
   messages.forEach((message, index) => {
-    if (!object(message)) {
+    if (!isObject(message)) {
       return;
     }
     const info = observation(message, lookup);
@@ -195,7 +191,7 @@ export function annotateReactionBatch(
 ): JsonObject {
   const copy = structuredClone(payload);
   if (
-    object(copy.current_batch) &&
+    isObject(copy.current_batch) &&
     Array.isArray(copy.current_batch.messages)
   ) {
     decorate(copy, copy.current_batch.messages, lookup, BATCH_LIMIT);
@@ -217,7 +213,7 @@ export function annotateReactionContext(
   }
   const messages = Array.isArray(parsed)
     ? parsed
-    : object(parsed) && Array.isArray(parsed.messages)
+    : isObject(parsed) && Array.isArray(parsed.messages)
       ? parsed.messages
       : undefined;
   if (messages) {
@@ -255,7 +251,7 @@ export function annotateReactionReadResult(
   lookup: ReactionLookup,
 ): JsonObject {
   const copy = structuredClone(result);
-  if (copy.status !== 'ok' || !object(copy.message)) {
+  if (copy.status !== 'ok' || !isObject(copy.message)) {
     return copy;
   }
   const info = observation(copy.message, lookup);

@@ -1,7 +1,11 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
-import { type JsonObject } from '../../contracts/json.ts';
+import {
+  type JsonObject,
+  isObject,
+  hasExactFields,
+} from '../../contracts/json.ts';
 import {
   type ToolDefinition,
   type TurnContext,
@@ -13,6 +17,7 @@ import {
   writeFailure,
 } from '../../onebot/operation-result.ts';
 import type { Artifact, ArtifactStore } from '../../artifacts/store.ts';
+import { fail, ToolFailure } from '../failure.ts';
 
 export const GROUP_FILE_TOOL_NAMES = [
   'get_group_file_space',
@@ -128,13 +133,6 @@ export function buildGroupFileTools(
     .map((t) => structuredClone(t));
 }
 
-const object = (v: unknown): v is JsonObject =>
-  !!v && typeof v === 'object' && !Array.isArray(v);
-
-function fail(code: string = 'invalid_arguments'): never {
-  throw new Error(code);
-}
-
 const id = (v: unknown): string | undefined =>
   typeof v === 'string' && /^[1-9]\d{0,31}$/.test(v)
     ? v
@@ -156,23 +154,8 @@ function fields(
   allowed: string[],
   required: string[] = [],
 ): asserts v is JsonObject {
-  if (
-    !object(v) ||
-    ![Object.prototype, null].includes(Object.getPrototypeOf(v))
-  ) {
-    fail();
-  }
-  const descriptors = Object.getOwnPropertyDescriptors(v);
-  if (
-    Reflect.ownKeys(descriptors).some(
-      (key) =>
-        typeof key !== 'string' ||
-        !allowed.includes(key) ||
-        !Object.hasOwn(descriptors[key]!, 'value'),
-    ) ||
-    required.some((key) => !Object.hasOwn(descriptors, key))
-  ) {
-    fail();
+  if (!hasExactFields(v, required, allowed)) {
+    fail('invalid_arguments');
   }
 }
 
@@ -188,7 +171,7 @@ function filename(v: unknown): string {
     v.startsWith('.') ||
     v.endsWith('.')
   ) {
-    fail();
+    fail('invalid_arguments');
   }
   return v;
 }
@@ -233,6 +216,37 @@ interface MutationPlan {
 interface TargetLock {
   state: 'pending' | 'submitted' | 'unknown' | 'deleted';
   parentKey: string;
+}
+
+/** 可以原样返回给模型的静态错误码；其余异常信息一律换成调用方给定的回退码，避免泄露内部细节。 */
+const FILE_TOOL_ERRORS: ReadonlySet<string> = new Set([
+  'invalid_arguments',
+  'forbidden_group',
+  'tool_disabled',
+  'cancelled',
+  'invalid_handle',
+  'resource_limit',
+  'verification_failed',
+  'api_unavailable',
+  'insufficient_permission',
+  'resource_not_verified',
+  'artifacts_unavailable',
+  'artifact_not_found',
+  'invalid_file_name',
+  'target_result_unknown',
+  'target_already_submitted',
+  'target_busy',
+  'target_deleted',
+  'unsupported_file_type',
+  'unknown_file_size',
+  'unsafe_url',
+  'invalid_text',
+  'download_failed',
+  'file_url_unavailable',
+]);
+
+function publicCode(code: string, fallback: string): string {
+  return FILE_TOOL_ERRORS.has(code) ? code : fallback;
 }
 
 export class GroupFileTools {
@@ -361,7 +375,7 @@ export class GroupFileTools {
     signal?: AbortSignal,
   ): Promise<string> {
     const login = await this.read('get_login_info', {}, generation, signal);
-    if (!object(login) || id(login.user_id) !== ctx.selfId) {
+    if (!isObject(login) || id(login.user_id) !== ctx.selfId) {
       fail('verification_failed');
     }
     const member = await this.read(
@@ -371,7 +385,7 @@ export class GroupFileTools {
       signal,
     );
     if (
-      !object(member) ||
+      !isObject(member) ||
       id(member.group_id) !== this.groupId ||
       id(member.user_id) !== ctx.selfId ||
       !['owner', 'admin', 'member'].includes(String(member.role))
@@ -383,7 +397,7 @@ export class GroupFileTools {
 
   private rows(raw: unknown): Listed[] {
     if (
-      !object(raw) ||
+      !isObject(raw) ||
       (Object.hasOwn(raw, 'group_id') && id(raw.group_id) !== this.groupId) ||
       !Array.isArray(raw.files) ||
       !Array.isArray(raw.folders)
@@ -398,7 +412,7 @@ export class GroupFileTools {
       ...raw.folders.map((value) => ({ value, kind: 'folder' as const })),
       ...raw.files.map((value) => ({ value, kind: 'file' as const })),
     ].map(({ value, kind }) => {
-      if (!object(value) || id(value.group_id) !== this.groupId) {
+      if (!isObject(value) || id(value.group_id) !== this.groupId) {
         fail('verification_failed');
       }
       const rawId = kind === 'file' ? value.file_id : value.folder_id;
@@ -564,7 +578,7 @@ export class GroupFileTools {
       signal,
     );
     if (
-      !object(response) ||
+      !isObject(response) ||
       (Object.hasOwn(response, 'group_id') &&
         id(response.group_id) !== this.groupId)
     ) {
@@ -583,7 +597,7 @@ export class GroupFileTools {
       content = await this.downloader(response.url, maxBytes, signal);
     } catch (error) {
       this.check(generation, signal);
-      const code = error instanceof Error ? error.message : '';
+      const code = error instanceof ToolFailure ? error.code : '';
       fail(
         ['resource_limit', 'unsafe_url', 'invalid_text', 'cancelled'].includes(
           code,
@@ -641,7 +655,7 @@ export class GroupFileTools {
       status: 'error',
       error: 'operation_rejected',
     });
-    if (!object(value)) {
+    if (!isObject(value)) {
       return unknown();
     }
     if (name === 'upload_group_file') {
@@ -689,7 +703,7 @@ export class GroupFileTools {
     }
     const report = value.transGroupFileResult;
     if (
-      !object(report) ||
+      !isObject(report) ||
       !Array.isArray(report.successFileIdList) ||
       !Array.isArray(report.failFileIdList)
     ) {
@@ -1052,7 +1066,7 @@ export class GroupFileTools {
         args.limit === 0 ||
         (args.offset !== undefined && finite(args.offset) === undefined)
       ) {
-        fail();
+        fail('invalid_arguments');
       }
       if (args.folder_handle !== undefined) {
         this.resource(args.folder_handle, 'folder');
@@ -1064,7 +1078,7 @@ export class GroupFileTools {
         args.max_bytes === 0 ||
         (args.max_bytes as number) > TEXT_BYTES
       ) {
-        fail();
+        fail('invalid_arguments');
       }
       this.resource(args.file_handle, 'file');
     } else if (name === 'upload_group_file') {
@@ -1073,7 +1087,7 @@ export class GroupFileTools {
         typeof args.artifact_id !== 'string' ||
         !/^art_[a-f0-9]{24}$/.test(args.artifact_id)
       ) {
-        fail();
+        fail('invalid_arguments');
       }
       if (args.folder_handle !== undefined) {
         this.resource(args.folder_handle, 'folder');
@@ -1158,26 +1172,8 @@ export class GroupFileTools {
       }
       return JSON.stringify(details);
     } catch (error) {
-      const code = error instanceof Error ? error.message : '';
-      fail(
-        [
-          'invalid_arguments',
-          'forbidden_group',
-          'tool_disabled',
-          'cancelled',
-          'invalid_handle',
-          'resource_limit',
-          'verification_failed',
-          'api_unavailable',
-          'insufficient_permission',
-          'resource_not_verified',
-          'artifacts_unavailable',
-          'artifact_not_found',
-          'invalid_file_name',
-        ].includes(code)
-          ? code
-          : 'verification_failed',
-      );
+      const code = error instanceof ToolFailure ? error.code : '';
+      fail(publicCode(code, 'verification_failed'));
     }
   }
 
@@ -1213,27 +1209,10 @@ export class GroupFileTools {
           generation,
           signal,
         ).catch((error) => {
-          const code = error instanceof Error ? error.message : '';
+          const code = error instanceof ToolFailure ? error.code : '';
           return {
             status: 'error',
-            error: [
-              'cancelled',
-              'api_unavailable',
-              'verification_failed',
-              'invalid_handle',
-              'insufficient_permission',
-              'resource_limit',
-              'resource_not_verified',
-              'target_result_unknown',
-              'target_already_submitted',
-              'target_busy',
-              'target_deleted',
-              'artifacts_unavailable',
-              'artifact_not_found',
-              'invalid_file_name',
-            ].includes(code)
-              ? code
-              : 'tool_failed',
+            error: publicCode(code, 'tool_failed'),
             ...(code === 'target_already_submitted'
               ? { previous_submitted: true, dispatched: false }
               : {}),
@@ -1256,7 +1235,7 @@ export class GroupFileTools {
         signal,
       );
       if (
-        !object(raw) ||
+        !isObject(raw) ||
         (Object.hasOwn(raw, 'group_id') && id(raw.group_id) !== this.groupId) ||
         ['file_count', 'limit_count', 'used_space', 'total_space'].some(
           (key) => finite(raw[key]) === undefined,
@@ -1276,36 +1255,10 @@ export class GroupFileTools {
         note: 'provider_may_return_fallback_capacity_and_zero_usage',
       };
     } catch (error) {
-      const code = error instanceof Error ? error.message : '';
+      const code = error instanceof ToolFailure ? error.code : '';
       return {
         status: 'error',
-        error: [
-          'invalid_arguments',
-          'artifacts_unavailable',
-          'artifact_not_found',
-          'invalid_file_name',
-          'forbidden_group',
-          'tool_disabled',
-          'cancelled',
-          'invalid_handle',
-          'resource_limit',
-          'verification_failed',
-          'api_unavailable',
-          'insufficient_permission',
-          'unsupported_file_type',
-          'unknown_file_size',
-          'unsafe_url',
-          'invalid_text',
-          'download_failed',
-          'file_url_unavailable',
-          'resource_not_verified',
-          'target_result_unknown',
-          'target_already_submitted',
-          'target_busy',
-          'target_deleted',
-        ].includes(code)
-          ? code
-          : 'tool_failed',
+        error: publicCode(code, 'tool_failed'),
         ...(code === 'target_already_submitted'
           ? { previous_submitted: true, dispatched: false }
           : {}),

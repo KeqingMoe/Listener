@@ -26,7 +26,7 @@ import {
 } from '../contracts/model.ts';
 import { type Memory, type TimelineEntry } from '../contracts/messages.ts';
 import { type TurnContext, type ToolDefinition } from '../contracts/tools.ts';
-import { type JsonObject } from '../contracts/json.ts';
+import { type JsonObject, isObject } from '../contracts/json.ts';
 import {
   Moderation,
   MODERATION_TOOLS,
@@ -147,10 +147,6 @@ export interface ListenerRuntime {
   session?: ModelSession;
   modelRequestId?: () => string | undefined;
   customFaces?: CustomFaceRuntime;
-}
-
-function object(value: unknown): value is JsonObject {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
 function keys(value: JsonObject, allowed: string[]): boolean {
@@ -289,7 +285,7 @@ export function normalizeEvent(
 ): TimelineEntry | undefined {
   const expectedGroup = resolveGroupId(groupId);
   if (
-    !object(event) ||
+    !isObject(event) ||
     event.post_type !== 'message' ||
     event.message_type !== 'group' ||
     id(event.group_id) !== expectedGroup ||
@@ -313,14 +309,18 @@ export function normalizeEvent(
   let replyTo: string | undefined;
   // 先扫描完整片段数组取引用：后续内容截断不能抹掉位于数组靠后位置的真实引用来源。
   for (const segment of event.message) {
-    if (object(segment) && segment.type === 'reply' && object(segment.data)) {
+    if (
+      isObject(segment) &&
+      segment.type === 'reply' &&
+      isObject(segment.data)
+    ) {
       replyTo = canonicalMessageId(segment.data.id);
     }
   }
   const images = imageReferences(msgId, event.message);
   const forwards = forwardReferences(msgId, event.message);
   for (const [index, segment] of event.message.entries()) {
-    if (!object(segment) || !object(segment.data)) {
+    if (!isObject(segment) || !isObject(segment.data)) {
       continue;
     }
     if (segment.type === 'text' && typeof segment.data.text === 'string') {
@@ -346,7 +346,7 @@ export function normalizeEvent(
       break;
     }
   }
-  const sender = object(event.sender) ? event.sender : {};
+  const sender = isObject(event.sender) ? event.sender : {};
   const nickname =
     typeof sender.card === 'string' && sender.card
       ? sender.card
@@ -762,7 +762,7 @@ export class Listener {
       ...(isExecutionDiagnostic(result.diagnostic)
         ? { diagnostic: { ...result.diagnostic } }
         : {}),
-      ...(object(result.toolCalls)
+      ...(isObject(result.toolCalls)
         ? { tool_calls: structuredClone(result.toolCalls) }
         : {}),
       finished_at:
@@ -814,7 +814,7 @@ export class Listener {
         }
       }
     }
-    if (object(event) && event.post_type === 'notice') {
+    if (isObject(event) && event.post_type === 'notice') {
       if (this.memory) {
         this.reactionObservations?.notice(event, this.memory);
       }
@@ -926,11 +926,11 @@ export class Listener {
             message_id: entry.replyTo,
           });
           if (
-            object(ref) &&
+            isObject(ref) &&
             id(ref.group_id) === this.groupId &&
             ref.message_type === 'group' &&
             canonicalMessageId(ref.message_id) === entry.replyTo &&
-            object(ref.sender) &&
+            isObject(ref.sender) &&
             id(ref.sender.user_id)
           ) {
             triggered = id(ref.sender.user_id) === selfId;
@@ -1503,7 +1503,7 @@ export class Listener {
       }
       const login = await this.api.call('get_login_info', {});
       if (
-        !object(login) ||
+        !isObject(login) ||
         id(login.user_id) !== reminder.selfId ||
         this.stopped ||
         !this.connected
@@ -1596,7 +1596,7 @@ export class Listener {
       });
       throw error;
     }
-    const msgId = object(result)
+    const msgId = isObject(result)
       ? canonicalMessageId(result.message_id)
       : undefined;
     log('info', 'send.complete', {
@@ -1868,7 +1868,7 @@ export class Listener {
       }
       if (moderation) {
         const recallId =
-          object(args) && typeof args.message_id === 'string'
+          isObject(args) && typeof args.message_id === 'string'
             ? args.message_id
             : undefined;
         const result = await this.moderation.request(
@@ -2632,7 +2632,7 @@ export class Listener {
           }
           try {
             const args: unknown = JSON.parse(call.function.arguments);
-            return object(args) && keys(args, []);
+            return isObject(args) && keys(args, []);
           } catch {
             return false;
           }
@@ -2708,7 +2708,7 @@ export class Listener {
           }
           if (
             call.function.name === 'finish' &&
-            object(args) &&
+            isObject(args) &&
             keys(args, []) &&
             !viewingImages &&
             !readingForward &&
@@ -2818,7 +2818,7 @@ export class Listener {
                 const canonical = (value: unknown): unknown =>
                   Array.isArray(value)
                     ? value.map(canonical)
-                    : object(value)
+                    : isObject(value)
                       ? Object.fromEntries(
                           Object.keys(value)
                             .sort()
@@ -2951,7 +2951,7 @@ export class Listener {
             }
             if (
               call.function.name === 'execute_javascript' &&
-              object(result.tool_calls) &&
+              isObject(result.tool_calls) &&
               Array.isArray(result.tool_calls.abnormal) &&
               result.tool_calls.abnormal.length
             ) {
@@ -3220,7 +3220,7 @@ export class Listener {
               call.function.name === 'read_message' &&
               observations &&
               result.status === 'ok' &&
-              object(result.message) &&
+              isObject(result.message) &&
               typeof result.message.messageId === 'string'
             ) {
               await observations.refresh(
@@ -3241,7 +3241,7 @@ export class Listener {
               call.function.name +
               ':' +
               JSON.stringify(
-                object(args)
+                isObject(args)
                   ? Object.fromEntries(
                       Object.keys(args)
                         .sort()
@@ -3251,7 +3251,7 @@ export class Listener {
               );
             const cached = managementResults.get(key);
             const recallId =
-              object(args) && typeof args.message_id === 'string'
+              isObject(args) && typeof args.message_id === 'string'
                 ? args.message_id
                 : undefined;
             if (!managementTools.has(call.function.name)) {
@@ -3259,7 +3259,7 @@ export class Listener {
             } else if (cached) {
               result = { ...cached, duplicate: true };
             } else if (
-              object(args) &&
+              isObject(args) &&
               typeof args.user_id === 'string' &&
               managementUnknownTargets.has(
                 `${call.function.name === 'set_member_card' ? 'card' : 'mute'}:${args.user_id}`,
@@ -3290,7 +3290,7 @@ export class Listener {
                   : undefined,
               );
               const targetKey =
-                object(args) && typeof args.user_id === 'string'
+                isObject(args) && typeof args.user_id === 'string'
                   ? `${call.function.name === 'set_member_card' ? 'card' : 'mute'}:${args.user_id}`
                   : undefined;
               if (targetKey) {

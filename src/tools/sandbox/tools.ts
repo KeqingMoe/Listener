@@ -1,4 +1,8 @@
-import type { JsonObject } from '../../contracts/json.ts';
+import {
+  type JsonObject,
+  isPlainObject,
+  hasExactFields,
+} from '../../contracts/json.ts';
 import type { ToolDefinition, TurnContext } from '../../contracts/tools.ts';
 import type { SandboxService } from '../../sandbox/service.ts';
 import {
@@ -99,31 +103,12 @@ const definitions: ToolDefinition[] = [
   },
 ];
 
-function object(v: unknown): v is Record<string, unknown> {
-  return (
-    !!v &&
-    typeof v === 'object' &&
-    !Array.isArray(v) &&
-    (Object.getPrototypeOf(v) === Object.prototype ||
-      Object.getPrototypeOf(v) === null)
-  );
-}
-
 function fields(
   v: unknown,
   required: string[],
   optional: string[],
 ): Record<string, unknown> {
-  if (
-    !object(v) ||
-    Reflect.ownKeys(v).some(
-      (k) =>
-        typeof k !== 'string' ||
-        ![...required, ...optional].includes(k) ||
-        !Object.hasOwn(Object.getOwnPropertyDescriptor(v, k)!, 'value'),
-    ) ||
-    required.some((k) => !Object.hasOwn(v, k))
-  ) {
+  if (!hasExactFields(v, required, optional)) {
     throw new Error('invalid_arguments');
   }
   return v;
@@ -174,7 +159,7 @@ function queryResult(value: unknown): JsonObject {
   if (value === undefined) {
     return { status: 'error', error: 'job_not_found' };
   }
-  if (!object(value)) {
+  if (!isPlainObject(value)) {
     return { status: 'error', error: 'invalid_service_result' };
   }
   return Object.hasOwn(value, 'job_id')

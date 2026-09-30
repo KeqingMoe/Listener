@@ -1,11 +1,9 @@
 import { canonicalMessageId } from './identity.ts';
 import type { ImageReference } from '../contracts/messages.ts';
-import type { JsonObject } from '../contracts/json.ts';
+import { isObject } from '../contracts/json.ts';
 
 const ID_PATTERN = '^img_(-?\\d{1,32})_(0|[1-9]\\d?|1[01]\\d|12[0-7])$';
 const imageId = new RegExp(ID_PATTERN);
-const object = (v: unknown): v is JsonObject =>
-  v !== null && typeof v === 'object' && !Array.isArray(v);
 
 function parseId(
   value: unknown,
@@ -43,7 +41,7 @@ export function imageReferences(
   const refs: ImageReference[] = [];
   for (let index = 0; index < Math.min(segments.length, 128); index++) {
     const segment: unknown = segments[index];
-    if (object(segment) && segment.type === 'image') {
+    if (isObject(segment) && segment.type === 'image') {
       refs.push({ id: `img_${messageId}_${index}`, index });
     }
   }
@@ -54,4 +52,4 @@ export function imageMarker(ref: ImageReference): string {
   return parseId(ref.id) ? `[图片 id=${ref.id}：未分析]` : '[图片：未分析]';
 }
 
-export { ID_PATTERN, parseId, identifier, object };
+export { ID_PATTERN, parseId, identifier };

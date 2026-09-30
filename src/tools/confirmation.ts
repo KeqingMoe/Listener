@@ -1,6 +1,7 @@
-import type { JsonObject } from '../contracts/json.ts';
+import { type JsonObject, isPlainObject } from '../contracts/json.ts';
 import type { ToolDefinition } from '../contracts/tools.ts';
 import { types } from 'node:util';
+import { fail } from './failure.ts';
 
 const MAX_DEPTH = 8,
   MAX_NODES = 4096,
@@ -45,19 +46,6 @@ const titles: Record<string, string> = {
   set_custom_face_description: '修改收藏表情描述（账号共享）',
 };
 
-function fail(code: string): never {
-  throw new Error(code);
-}
-
-function record(value: unknown): value is JsonObject {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    [Object.prototype, null].includes(Object.getPrototypeOf(value))
-  );
-}
-
 /** 快照纯JSON数据，不调用getter、toJSON，也不读取继承属性。 */
 function snapshot(input: unknown, code: string): unknown {
   let nodes = 0,
@@ -91,7 +79,7 @@ function snapshot(input: unknown, code: string): unknown {
     ) {
       fail(code);
     }
-    if (!Array.isArray(value) && !record(value)) {
+    if (!Array.isArray(value) && !isPlainObject(value)) {
       fail(code);
     }
     if (
@@ -171,7 +159,7 @@ function canonical(value: unknown): string {
   if (Array.isArray(value)) {
     return '[' + value.map(canonical).join(',') + ']';
   }
-  if (record(value)) {
+  if (isPlainObject(value)) {
     return (
       '{' +
       Object.keys(value)
@@ -190,7 +178,7 @@ function inspectSchema(
 ): asserts schema is JsonObject {
   if (
     depth > MAX_DEPTH ||
-    !record(schema) ||
+    !isPlainObject(schema) ||
     typeof schema.type !== 'string' ||
     !Object.hasOwn(keywords, schema.type)
   ) {
@@ -256,7 +244,10 @@ function inspectSchema(
     }
   }
   if (schema.type === 'object') {
-    if (!record(schema.properties) || schema.additionalProperties !== false) {
+    if (
+      !isPlainObject(schema.properties) ||
+      schema.additionalProperties !== false
+    ) {
       fail('invalid_confirmation_schema');
     }
     if (
@@ -290,7 +281,7 @@ function validate(value: unknown, schema: JsonObject): void {
   const bad = () => fail('invalid_arguments');
   switch (schema.type) {
     case 'object': {
-      if (!record(value)) {
+      if (!isPlainObject(value)) {
         bad();
       }
       const object = value as JsonObject,
@@ -410,9 +401,9 @@ export function prepareExtendedConfirmation(
     }
     const def = snapshot(definition, 'invalid_confirmation_schema');
     if (
-      !record(def) ||
+      !isPlainObject(def) ||
       def.type !== 'function' ||
-      !record(def.function) ||
+      !isPlainObject(def.function) ||
       def.function.name !== name
     ) {
       fail('invalid_confirmation_schema');
@@ -424,7 +415,7 @@ export function prepareExtendedConfirmation(
     }
     const safe = snapshot(args, 'invalid_arguments');
     validate(safe, schema);
-    if (!record(safe)) {
+    if (!isPlainObject(safe)) {
       fail('invalid_arguments');
     }
     if (

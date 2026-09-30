@@ -4,7 +4,7 @@ import type {
   MessageSegment,
   TimelineEntry,
 } from '../contracts/messages.ts';
-import type { JsonObject } from '../contracts/json.ts';
+import { type JsonObject, isDataObject } from '../contracts/json.ts';
 import type { ForwardReference } from '../contracts/messages.ts';
 import { FACE_CATALOG } from '../onebot/catalog/faces.ts';
 
@@ -21,24 +21,6 @@ const MAX_SEGMENTS = 128,
   MAX_LEGACY_TEXT = 16384,
   MAX_LEGACY_CONTENT = 100000;
 const faces = new Map(FACE_CATALOG.map((face) => [face.id, face.name]));
-
-function object(value: unknown): value is JsonObject {
-  try {
-    return (
-      !!value &&
-      typeof value === 'object' &&
-      !Array.isArray(value) &&
-      [Object.prototype, null].includes(Object.getPrototypeOf(value)) &&
-      Reflect.ownKeys(value).every(
-        (key) =>
-          typeof key === 'string' &&
-          Object.hasOwn(Object.getOwnPropertyDescriptor(value, key)!, 'value'),
-      )
-    );
-  } catch {
-    return false;
-  }
-}
 
 function array(value: unknown): value is unknown[] {
   try {
@@ -116,7 +98,7 @@ function safeRefs(
     ) {
       const ref = item(values, i);
       if (
-        !object(ref) ||
+        !isDataObject(ref) ||
         !Number.isInteger(ref.index) ||
         (ref.index as number) < 0 ||
         (ref.index as number) >= MAX_SEGMENTS ||
@@ -180,11 +162,11 @@ function part(
   wire: boolean,
   refs: ReturnType<typeof safeRefs>,
 ): { segment: MessageSegment; lost: boolean } {
-  if (!object(value)) {
+  if (!isDataObject(value)) {
     return { segment: { type: 'unsupported', kind: 'unknown' }, lost: true };
   }
   const type = kind(value.type),
-    data = wire ? (object(value.data) ? value.data : undefined) : value;
+    data = wire ? (isDataObject(value.data) ? value.data : undefined) : value;
   const bad = () => ({
     segment: { type: 'unsupported' as const, kind: type },
     lost: true,
@@ -409,7 +391,7 @@ export function projectMessage(
   entry: TimelineEntry,
   limit = Infinity,
 ): JsonObject {
-  const source: JsonObject = object(entry)
+  const source: JsonObject = isDataObject(entry)
     ? (entry as unknown as JsonObject)
     : {};
   const projected: JsonObject = {};
@@ -506,7 +488,7 @@ export function projectMessageContext(source: string): string {
   }
   const messages = array(root)
     ? root
-    : object(root) && array(root.messages)
+    : isDataObject(root) && array(root.messages)
       ? root.messages
       : undefined;
   if (!messages) {
@@ -514,7 +496,7 @@ export function projectMessageContext(source: string): string {
   }
   let changed = false;
   const projected = messages.map((value) => {
-    if (!object(value) || typeof value.messageId !== 'string') {
+    if (!isDataObject(value) || typeof value.messageId !== 'string') {
       return value;
     }
     changed = true;

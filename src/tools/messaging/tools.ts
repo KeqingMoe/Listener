@@ -2,7 +2,7 @@ import { canonicalMessageId } from '../../onebot/identity.ts';
 import { resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
 import { type Memory, type TimelineEntry } from '../../contracts/messages.ts';
-import { type JsonObject } from '../../contracts/json.ts';
+import { type JsonObject, isObject } from '../../contracts/json.ts';
 import {
   type ToolDefinition,
   type TurnContext,
@@ -20,6 +20,7 @@ import {
   extractMessageContent,
   projectMessage,
 } from '../../world/message-content.ts';
+import { fail, ToolFailure } from '../failure.ts';
 
 export interface GroupToolsOptions {
   members?: boolean;
@@ -115,17 +116,9 @@ export const SEND_MESSAGE_TOOL = tool(
   ]),
 );
 
-function object(v: unknown): v is JsonObject {
-  return !!v && typeof v === 'object' && !Array.isArray(v);
-}
-
-function fail(code = 'invalid_arguments'): never {
-  throw new Error(code);
-}
-
 function fields(v: unknown, allowed: string[]): asserts v is JsonObject {
-  if (!object(v) || Object.keys(v).some((k) => !allowed.includes(k))) {
-    fail();
+  if (!isObject(v) || Object.keys(v).some((k) => !allowed.includes(k))) {
+    fail('invalid_arguments');
   }
 }
 
@@ -134,7 +127,7 @@ function identifier(v: unknown, remote = false): string {
     v = String(v);
   }
   if (typeof v !== 'string' || v !== v.trim() || !/^[1-9]\d{0,31}$/.test(v)) {
-    fail();
+    fail('invalid_arguments');
   }
   return v;
 }
@@ -142,7 +135,7 @@ function identifier(v: unknown, remote = false): string {
 /** 模型参数中的消息ID必须是规范形式的字符串。 */
 function messageArgument(v: unknown): string {
   if (typeof v !== 'string' || canonicalMessageId(v) !== v) {
-    fail();
+    fail('invalid_arguments');
   }
   return v;
 }
@@ -161,7 +154,7 @@ function integer(
     return fallback;
   }
   if (typeof v !== 'number' || !Number.isInteger(v) || v < min || v > max) {
-    fail();
+    fail('invalid_arguments');
   }
   return v;
 }
@@ -171,7 +164,7 @@ function member(
   expectedGroup: string,
   expected?: string,
 ): JsonObject {
-  if (!object(v) || identifier(v.group_id, true) !== expectedGroup) {
+  if (!isObject(v) || identifier(v.group_id, true) !== expectedGroup) {
     fail('verification_failed');
   }
   const userId = identifier(v.user_id, true);
@@ -203,7 +196,7 @@ export class GroupTools {
     options: GroupToolsOptions,
   ) {
     if (
-      !object(options) ||
+      !isObject(options) ||
       ![Object.prototype, null].includes(Object.getPrototypeOf(options)) ||
       Reflect.ownKeys(options).some(
         (key) =>
@@ -267,11 +260,11 @@ export class GroupTools {
   private async remoteMessage(messageId: string): Promise<JsonObject> {
     const raw = await this.call('get_msg', { message_id: messageId });
     if (
-      !object(raw) ||
+      !isObject(raw) ||
       raw.message_type !== 'group' ||
       identifier(raw.group_id, true) !== this.groupId ||
       canonicalMessageId(raw.message_id) !== messageId ||
-      !object(raw.sender)
+      !isObject(raw.sender)
     ) {
       fail('verification_failed');
     }
@@ -285,7 +278,7 @@ export class GroupTools {
     const images = imageReferences(messageId, raw.message);
     const forwards = forwardReferences(messageId, raw.message);
     for (const segment of raw.message) {
-      if (!object(segment) || !object(segment.data)) {
+      if (!isObject(segment) || !isObject(segment.data)) {
         fail('verification_failed');
       }
     }
@@ -339,7 +332,7 @@ export class GroupTools {
           args.search !== undefined &&
           (typeof args.search !== 'string' || args.search.length > 100)
         ) {
-          fail();
+          fail('invalid_arguments');
         }
         const search =
           (args.search as string | undefined)?.trim().toLowerCase() ?? '';
@@ -348,7 +341,7 @@ export class GroupTools {
           !Number.isSafeInteger(args.limit) ||
           args.limit < 1
         ) {
-          fail();
+          fail('invalid_arguments');
         }
         const offset = integer(args.offset, 0, 0, Number.MAX_SAFE_INTEGER),
           limit = args.limit;
@@ -431,7 +424,7 @@ export class GroupTools {
       }
       return { status: 'error', error: 'unknown_tool' };
     } catch (error) {
-      const code = error instanceof Error ? error.message : '';
+      const code = error instanceof ToolFailure ? error.code : '';
       return {
         status: 'error',
         error: [
@@ -455,14 +448,14 @@ export class GroupTools {
     this.scope(context);
     fields(args, ['segments', 'reply_to']);
     if (!Array.isArray(args.segments) || args.segments.length < 1) {
-      fail();
+      fail('invalid_arguments');
     }
     let visible = false;
     const targets = new Set<string>();
     const segments: PreparedMessage['segments'] = args.segments.map(
       (segment) => {
-        if (!object(segment)) {
-          fail();
+        if (!isObject(segment)) {
+          fail('invalid_arguments');
         }
         if (segment.type === 'text') {
           fields(segment, ['type', 'text']);
@@ -470,7 +463,7 @@ export class GroupTools {
             typeof segment.text !== 'string' ||
             /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(segment.text)
           ) {
-            fail();
+            fail('invalid_arguments');
           }
           visible ||= !!segment.text.trim();
           return { type: 'text' as const, data: { text: segment.text } };
@@ -482,13 +475,13 @@ export class GroupTools {
             (Object.hasOwn(segment, 'name') &&
               (typeof segment.name !== 'string' || segment.name.length > 80))
           ) {
-            fail();
+            fail('invalid_arguments');
           }
           visible = true;
           return { type: 'face' as const, data: { id: segment.id } };
         }
         if (segment.type !== 'at') {
-          fail();
+          fail('invalid_arguments');
         }
         if (!this.options.mention) {
           fail('tool_disabled');
@@ -496,7 +489,7 @@ export class GroupTools {
         fields(segment, ['type', 'user_id']);
         const target = identifier(segment.user_id);
         if (target === context.selfId) {
-          fail();
+          fail('invalid_arguments');
         }
         targets.add(target);
         visible = true;
@@ -504,7 +497,7 @@ export class GroupTools {
       },
     );
     if (!visible) {
-      fail();
+      fail('invalid_arguments');
     }
     const replyTo = Object.hasOwn(args, 'reply_to')
       ? messageArgument(args.reply_to)

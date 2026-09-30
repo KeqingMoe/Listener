@@ -42,6 +42,7 @@ function fixture(t: TestContext) {
   });
   writeFileSync(join(root, 'package.json'), JSON.stringify({ type: 'module' }));
   for (const name of [
+    'contracts/json',
     'onebot/catalog/schema',
     'onebot/catalog/faces',
     'onebot/catalog/reactions',

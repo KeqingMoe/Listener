@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import type { JsonObject } from '../contracts/json.ts';
+import { type JsonObject, isDataObject } from '../contracts/json.ts';
 import type { ToolDefinition } from '../contracts/tools.ts';
 
 export interface AttentionConfig {
@@ -69,20 +69,6 @@ const canonicalId = (v: unknown): v is string =>
 const planId = (v: unknown): v is string =>
   typeof v === 'string' && v.length === 20 && /^att_[a-f0-9]{16}$/.test(v);
 
-function record(v: unknown): v is Record<string, unknown> {
-  return (
-    !!v &&
-    typeof v === 'object' &&
-    !Array.isArray(v) &&
-    [Object.prototype, null].includes(Object.getPrototypeOf(v)) &&
-    Reflect.ownKeys(v).every(
-      (k) =>
-        typeof k === 'string' &&
-        Object.hasOwn(Object.getOwnPropertyDescriptor(v, k)!, 'value'),
-    )
-  );
-}
-
 function fields(
   v: Record<string, unknown>,
   required: string[],
@@ -144,7 +130,7 @@ function parseSpec(
   }
   const conditions: Condition[] = [];
   for (const c of args.any_of) {
-    if (!record(c)) {
+    if (!isDataObject(c)) {
       return;
     }
     if (c.type === 'next_message' && fields(c, ['type'])) {
@@ -227,7 +213,7 @@ export class AttentionEngine {
     private readonly random: () => number = Math.random,
   ) {
     if (
-      !record(config) ||
+      !isDataObject(config) ||
       !fields(config, ['enabled'], ['maxPlans']) ||
       typeof config.enabled !== 'boolean' ||
       (Object.hasOwn(config, 'maxPlans') && !integer(config.maxPlans, 1, 32)) ||
@@ -244,7 +230,7 @@ export class AttentionEngine {
   observe(message: Observation): void {
     if (
       !this.config.enabled ||
-      !record(message) ||
+      !isDataObject(message) ||
       !fields(message, ['sequence', 'received', 'userId']) ||
       !integer(message.sequence, 0, Number.MAX_SAFE_INTEGER) ||
       !integer(message.received, 0, Number.MAX_SAFE_INTEGER - 86400_000) ||
@@ -386,7 +372,7 @@ export class AttentionEngine {
       return error('invalid_transaction');
     }
     if (
-      !record(args) ||
+      !isDataObject(args) ||
       typeof args.operation !== 'string' ||
       !['create', 'update', 'cancel'].includes(args.operation)
     ) {

@@ -1,7 +1,11 @@
 import { canonicalMessageId } from '../../onebot/identity.ts';
 import type { Api } from '../../contracts/onebot.ts';
 import type { Memory } from '../../contracts/messages.ts';
-import type { JsonObject } from '../../contracts/json.ts';
+import {
+  type JsonObject,
+  isObject,
+  hasExactFields,
+} from '../../contracts/json.ts';
 import type { ToolDefinition, TurnContext } from '../../contracts/tools.ts';
 import {
   type ReminderStore,
@@ -9,6 +13,7 @@ import {
   type Reminder,
   type ReminderState,
 } from '../../reminders/store.ts';
+import { fail, failureCode } from '../failure.ts';
 
 export const REMINDER_TOOL_NAMES = [
   'create_reminder',
@@ -132,37 +137,12 @@ export function buildReminderTools(
     .map((tool) => structuredClone(tool));
 }
 
-class Failure extends Error {}
-
-function fail(code: string): never {
-  throw new Failure(code);
-}
-
-function object(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
 function fields(
   value: unknown,
   required: string[],
   optional: string[] = [],
 ): asserts value is Record<string, unknown> {
-  if (
-    !object(value) ||
-    ![Object.prototype, null].includes(Object.getPrototypeOf(value))
-  ) {
-    fail('invalid_arguments');
-  }
-  for (const key of Reflect.ownKeys(value)) {
-    if (
-      typeof key !== 'string' ||
-      ![...required, ...optional].includes(key) ||
-      !Object.hasOwn(Object.getOwnPropertyDescriptor(value, key)!, 'value')
-    ) {
-      fail('invalid_arguments');
-    }
-  }
-  if (required.some((key) => !Object.hasOwn(value, key))) {
+  if (!hasExactFields(value, required, optional)) {
     fail('invalid_arguments');
   }
 }
@@ -460,7 +440,7 @@ export class GroupReminderTools {
         }
       }
       const login = await this.call('get_login_info', {}, signal);
-      if (!object(login) || identity(login.user_id) !== selfId) {
+      if (!isObject(login) || identity(login.user_id) !== selfId) {
         fail('identity_mismatch');
       }
       if (name === 'create_reminder') {
@@ -470,11 +450,11 @@ export class GroupReminderTools {
           signal,
         );
         if (
-          !object(remote) ||
+          !isObject(remote) ||
           remote.message_type !== 'group' ||
           identity(remote.group_id) !== this.groupId ||
           canonicalMessageId(remote.message_id) !== sourceId ||
-          !object(remote.sender) ||
+          !isObject(remote.sender) ||
           identity(remote.sender.user_id) !== sourceAuthor ||
           (Object.hasOwn(remote, 'user_id') &&
             identity(remote.user_id) !== sourceAuthor) ||
@@ -599,7 +579,7 @@ export class GroupReminderTools {
     } catch (error) {
       return {
         status: 'error',
-        error: error instanceof Failure ? error.message : 'reminder_failed',
+        error: failureCode(error, 'reminder_failed'),
       };
     }
   }

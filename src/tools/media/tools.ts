@@ -2,7 +2,7 @@ import { canonicalMessageId } from '../../onebot/identity.ts';
 import { createHash } from 'node:crypto';
 import { resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
-import { type JsonObject } from '../../contracts/json.ts';
+import { type JsonObject, isObject } from '../../contracts/json.ts';
 import { type Memory, type TimelineEntry } from '../../contracts/messages.ts';
 import {
   type ToolDefinition,
@@ -20,6 +20,7 @@ import {
   DuplicateMessageAckError,
   UnverifiedMessageAckError,
 } from '../../onebot/operation-result.ts';
+import { fail, failureCode } from '../failure.ts';
 
 export const GROUP_MEDIA_TOOL_NAMES = [
   'send_group_image',
@@ -47,20 +48,12 @@ export interface GroupMediaOptions {
 const INPUT_BYTES = 24 * 1024,
   MAX_REFS = 128,
   MAX_OPERATIONS = 4096;
-const object = (v: unknown): v is JsonObject =>
-  v !== null && typeof v === 'object' && !Array.isArray(v);
 const userId = (v: unknown): string | undefined => {
   if (typeof v === 'number' && Number.isSafeInteger(v)) {
     v = String(v);
   }
   return typeof v === 'string' && /^[1-9]\d{0,31}$/.test(v) ? v : undefined;
 };
-
-class ReadFailure extends Error {}
-
-function fail(code: string): never {
-  throw new ReadFailure(code);
-}
 
 const definition = (
   name: Name,
@@ -201,11 +194,11 @@ export class GroupMediaTools {
     }
     this.check(signal);
     if (
-      !object(raw) ||
+      !isObject(raw) ||
       raw.message_type !== 'group' ||
       userId(raw.group_id) !== this.groupId ||
       canonicalMessageId(raw.message_id) !== id ||
-      !object(raw.sender)
+      !isObject(raw.sender)
     ) {
       fail('forbidden_reference');
     }
@@ -227,14 +220,14 @@ export class GroupMediaTools {
   private args(name: Name, value: unknown): JsonObject {
     const field =
       name === 'send_group_image'
-        ? object(value) && Object.hasOwn(value, 'artifact_id')
+        ? isObject(value) && Object.hasOwn(value, 'artifact_id')
           ? 'artifact_id'
           : 'image_id'
         : name === 'forward_message'
           ? 'message_id'
           : 'message_ids';
     if (
-      !object(value) ||
+      !isObject(value) ||
       ![Object.prototype, null].includes(Object.getPrototypeOf(value)) ||
       Reflect.ownKeys(value).length !== 1 ||
       !Object.hasOwn(value, field)
@@ -307,8 +300,7 @@ export class GroupMediaTools {
     } catch (error) {
       return this.response({
         status: 'error',
-        error:
-          error instanceof ReadFailure ? error.message : 'invalid_arguments',
+        error: failureCode(error, 'invalid_arguments'),
       });
     }
     const key = createHash('sha256')
@@ -354,7 +346,7 @@ export class GroupMediaTools {
         fail('identity_unavailable');
       }
       this.check(signal);
-      if (!object(login) || userId(login.user_id) !== ctx.selfId) {
+      if (!isObject(login) || userId(login.user_id) !== ctx.selfId) {
         fail('identity_unverified');
       }
       let action: string, params: JsonObject;
@@ -493,7 +485,7 @@ export class GroupMediaTools {
           !!signal?.aborted,
         );
       }
-      const id = object(ack) ? canonicalMessageId(ack.message_id) : undefined;
+      const id = isObject(ack) ? canonicalMessageId(ack.message_id) : undefined;
       if (!id) {
         return unknown();
       }
@@ -555,9 +547,7 @@ export class GroupMediaTools {
         status: 'error',
         error: signal?.aborted
           ? 'cancelled'
-          : error instanceof ReadFailure
-            ? error.message
-            : 'verification_failed',
+          : failureCode(error, 'verification_failed'),
       };
     }
   }

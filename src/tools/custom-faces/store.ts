@@ -14,6 +14,7 @@ import {
 } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { types } from 'node:util';
+import { immediate } from '../../storage/transaction.ts';
 
 /** 只存元数据；传输URL、文件路径、图片字节和密钥都不放这里。 */
 export interface CustomFaceInput {
@@ -402,9 +403,9 @@ export class CustomFaceStore {
         'PRAGMA trusted_schema=OFF; PRAGMA busy_timeout=2000; PRAGMA foreign_keys=ON;',
       );
       if (existingSecret === undefined) {
-        database.exec('BEGIN IMMEDIATE');
-        try {
-          database.exec(`
+        const open = database;
+        immediate(open, () => {
+          open.exec(`
             CREATE TABLE custom_face_identity(singleton INTEGER PRIMARY KEY CHECK(singleton=1),kind TEXT NOT NULL,version INTEGER NOT NULL,secret TEXT NOT NULL);
             CREATE TABLE custom_faces(
               account_id TEXT NOT NULL,res_id TEXT NOT NULL,resource_id TEXT NOT NULL UNIQUE,
@@ -415,14 +416,10 @@ export class CustomFaceStore {
             CREATE TABLE custom_face_snapshots(snapshot_id TEXT PRIMARY KEY,account_id TEXT NOT NULL,group_id TEXT NOT NULL,query TEXT NOT NULL,members TEXT NOT NULL,created_at INTEGER NOT NULL);
             CREATE INDEX custom_faces_account ON custom_faces(account_id,retired);
           `);
-          database
+          open
             .prepare('INSERT INTO custom_face_identity VALUES(1,?,?,?)')
             .run(IDENTITY, VERSION, randomBytes(32).toString('hex'));
-          database.exec('COMMIT');
-        } catch (error) {
-          database.exec('ROLLBACK');
-          throw error;
-        }
+        });
       }
       this.secret = inspectIdentity(database);
       this.db = database;
@@ -447,15 +444,7 @@ export class CustomFaceStore {
 
   private transaction<T>(work: () => T): T {
     this.check();
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
-      const result = work();
-      this.db.exec('COMMIT');
-      return result;
-    } catch (error) {
-      this.db.exec('ROLLBACK');
-      throw error;
-    }
+    return immediate(this.db, work);
   }
 
   private row(accountId: string, resId: string): Stored | undefined {

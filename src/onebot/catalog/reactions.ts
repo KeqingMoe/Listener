@@ -5,6 +5,7 @@ import {
   extractFaceCatalog,
 } from './schema.ts';
 import type { ToolDefinition } from '../../contracts/tools.ts';
+import { isDataObject } from '../../contracts/json.ts';
 
 export interface ReactionEntry {
   readonly id: string;
@@ -20,24 +21,6 @@ const defaultPath = new URL(
 const invalid = (): never => {
   throw new Error('Invalid QQ reaction catalog');
 };
-
-function record(value: unknown): value is Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return false;
-  }
-  try {
-    return (
-      [Object.prototype, null].includes(Object.getPrototypeOf(value)) &&
-      Reflect.ownKeys(value).every(
-        (key) =>
-          typeof key === 'string' &&
-          Object.hasOwn(Object.getOwnPropertyDescriptor(value, key)!, 'value'),
-      )
-    );
-  } catch {
-    return false;
-  }
-}
 
 function array(value: unknown): value is unknown[] {
   if (!Array.isArray(value) || value.length > 1024) {
@@ -93,13 +76,13 @@ function unicodeId(value: unknown): value is string {
 
 /** 提取最小候选集合（sysface数字表情加Unicode emoji），不代表QQ接受其中每个回应。 */
 export function extractReactionCatalog(raw: unknown): readonly ReactionEntry[] {
-  if (!record(raw) || !array(raw.sysface) || !array(raw.emoji)) {
+  if (!isDataObject(raw) || !array(raw.sysface) || !array(raw.emoji)) {
     return invalid();
   }
   if (
     !raw.sysface.every(
       (entry) =>
-        record(entry) &&
+        isDataObject(entry) &&
         typeof entry.QSid === 'string' &&
         entry.QSid.trim() === entry.QSid &&
         /^(0|[1-9][0-9]{0,2})$/.test(entry.QSid),
@@ -130,7 +113,7 @@ export function extractReactionCatalog(raw: unknown): readonly ReactionEntry[] {
   }
   for (const entry of raw.emoji) {
     if (
-      !record(entry) ||
+      !isDataObject(entry) ||
       !unicodeId(entry.QCid) ||
       !text(entry.QSid, 32) ||
       typeof entry.QDes !== 'string'

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { types } from 'node:util';
 import { resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
-import { type JsonObject } from '../../contracts/json.ts';
+import { type JsonObject, isDataObject } from '../../contracts/json.ts';
 import { type Memory } from '../../contracts/messages.ts';
 import {
   type ToolDefinition,
@@ -14,6 +14,7 @@ import {
   writeFailure,
   afterDispatch,
 } from '../../onebot/operation-result.ts';
+import { ToolFailure, fail, failureCode } from '../failure.ts';
 
 /** NapCat v4.18.28的set_group_leave忽略is_dismiss，因此不提供解散群的工具。 */
 export const GROUP_ACTION_TOOL_NAMES = [
@@ -83,24 +84,6 @@ const descriptions: Record<Name, string> = {
 };
 const names = new Set<string>(GROUP_ACTION_TOOL_NAMES);
 
-function record(value: unknown): value is JsonObject {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return false;
-  }
-  try {
-    return (
-      [Object.prototype, null].includes(Object.getPrototypeOf(value)) &&
-      Reflect.ownKeys(value).every(
-        (key) =>
-          typeof key === 'string' &&
-          Object.hasOwn(Object.getOwnPropertyDescriptor(value, key)!, 'value'),
-      )
-    );
-  } catch {
-    return false;
-  }
-}
-
 function id(value: unknown): string | undefined {
   if (typeof value === 'number') {
     return Number.isSafeInteger(value) && value > 0 ? String(value) : undefined;
@@ -121,16 +104,6 @@ function plainText(
     Buffer.byteLength(value, 'utf8') <= bytes &&
     !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\p{Cs}]/u.test(value)
   );
-}
-
-class Denied extends Error {
-  constructor(readonly code: string) {
-    super(code);
-  }
-}
-
-function fail(code: string): never {
-  throw new Denied(code);
 }
 
 const check = (signal?: AbortSignal) => {
@@ -256,7 +229,7 @@ export class GroupActionTools {
       }
       const action = name as Name,
         value = this.parse(action, args);
-      if (!record(ctx) || ctx.groupId !== this.groupId) {
+      if (!isDataObject(ctx) || ctx.groupId !== this.groupId) {
         fail('forbidden_group');
       }
       if (
@@ -278,7 +251,7 @@ export class GroupActionTools {
       await this.verify(action, value, context, signal);
       check(signal);
     } catch (error) {
-      if (error instanceof Denied) {
+      if (error instanceof ToolFailure) {
         throw error;
       }
       fail('verification_failed');
@@ -300,7 +273,7 @@ export class GroupActionTools {
       }
       action = name as Name;
       value = this.parse(action, args);
-      if (!record(ctx) || ctx.groupId !== this.groupId) {
+      if (!isDataObject(ctx) || ctx.groupId !== this.groupId) {
         fail('forbidden_group');
       }
       if (
@@ -341,14 +314,14 @@ export class GroupActionTools {
   private error(error: unknown): JsonObject {
     return {
       status: 'error',
-      error: error instanceof Denied ? error.code : 'verification_failed',
+      error: failureCode(error, 'verification_failed'),
     };
   }
 
   private parse(name: Name, args: unknown): JsonObject {
     const required = Object.keys(fields[name]);
     if (
-      !record(args) ||
+      !isDataObject(args) ||
       Reflect.ownKeys(args).length !== required.length ||
       required.some((key) => !Object.hasOwn(args, key))
     ) {
@@ -428,7 +401,7 @@ export class GroupActionTools {
 
   private member(value: unknown, user: string): Role {
     if (
-      !record(value) ||
+      !isDataObject(value) ||
       id(value.group_id) !== this.groupId ||
       id(value.user_id) !== user ||
       !['member', 'admin', 'owner'].includes(value.role as string)
@@ -472,7 +445,7 @@ export class GroupActionTools {
         ? this.visible(args.message_id as string)
         : undefined;
     const login = await this.read('get_login_info', {}, signal);
-    if (!record(login) || id(login.user_id) !== ctx.selfId) {
+    if (!isDataObject(login) || id(login.user_id) !== ctx.selfId) {
       fail('identity_mismatch');
     }
     const bot = this.member(
@@ -525,11 +498,11 @@ export class GroupActionTools {
         signal,
       );
       if (
-        !record(message) ||
+        !isDataObject(message) ||
         message.message_type !== 'group' ||
         id(message.group_id) !== this.groupId ||
         canonicalMessageId(message.message_id) !== args.message_id ||
-        !record(message.sender)
+        !isDataObject(message.sender)
       ) {
         fail('verification_failed');
       }
@@ -557,7 +530,7 @@ export class GroupActionTools {
         notices.length > 10000 ||
         !notices.every(
           (item) =>
-            record(item) &&
+            isDataObject(item) &&
             typeof item.notice_id === 'string' &&
             (!('group_id' in item) || id(item.group_id) === this.groupId),
         )

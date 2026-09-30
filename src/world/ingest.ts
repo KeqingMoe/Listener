@@ -9,17 +9,9 @@ import type {
   WorldEventInput,
   WorldEventStore,
 } from './events.ts';
+import { isPlainObject } from '../contracts/json.ts';
 
 const now = () => Date.now() / 1000;
-
-function object(value: unknown): value is Record<string, unknown> {
-  return (
-    !!value &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
-}
 
 /** 在读取任何字段之前先拒绝访问器、循环引用和非JSON值，并限制节点数、深度与大小。原始事件包绝不持久化。 */
 function boundedJson(value: unknown): boolean {
@@ -36,7 +28,11 @@ function boundedJson(value: unknown): boolean {
     ) {
       return true;
     }
-    if (!v || typeof v !== 'object' || (!Array.isArray(v) && !object(v))) {
+    if (
+      !v ||
+      typeof v !== 'object' ||
+      (!Array.isArray(v) && !isPlainObject(v))
+    ) {
       return false;
     }
     return Reflect.ownKeys(v).every((key) => {
@@ -140,7 +136,7 @@ function normalizeMessage(
   ) {
     return;
   }
-  const sender = object(event.sender) ? event.sender : {};
+  const sender = isPlainObject(event.sender) ? event.sender : {};
   if (sender.user_id !== undefined && id(sender.user_id) !== userId) {
     return;
   }
@@ -213,7 +209,7 @@ export function normalizeOneBotEvent(
 ): WorldEventInput | undefined {
   if (
     !boundedJson(event) ||
-    !object(event) ||
+    !isPlainObject(event) ||
     !id(selfId) ||
     !timestamp(observedAt) ||
     !['onebot', 'tool', 'migration'].includes(source)
@@ -389,7 +385,7 @@ export function normalizeOneBotEvent(
   if (event.notice_type === 'group_upload') {
     const uploader = id(event.user_id),
       file = event.file;
-    if (!uploader || !object(file) || !natural(file.size)) {
+    if (!uploader || !isPlainObject(file) || !natural(file.size)) {
       return;
     }
     const name = metadataName(file.name);

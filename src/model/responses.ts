@@ -29,9 +29,8 @@ import {
 } from '../observability/model-diagnostics.ts';
 import { MODEL_USER_AGENT } from '../config/version.ts';
 import { readSse, SseError } from './sse.ts';
+import { isObject } from '../contracts/json.ts';
 
-const object = (v: unknown): v is Record<string, unknown> =>
-  !!v && typeof v === 'object' && !Array.isArray(v);
 const MAX_BYTES = 2 * 1024 * 1024,
   MAX_WIRE_BYTES = 32 * 1024 * 1024,
   MAX_ARGS = 16 * 1024;
@@ -140,7 +139,7 @@ function completion(raw: Record<string, unknown>): Completion {
     ids = new Set<string>(),
     texts: string[] = [];
   for (const item of raw.output) {
-    if (!object(item) || typeof item.type !== 'string') {
+    if (!isObject(item) || typeof item.type !== 'string') {
       throw new ModelError('invalid_response');
     }
     if (item.type === 'function_call') {
@@ -164,7 +163,7 @@ function completion(raw: Record<string, unknown>): Completion {
         throw new ModelError('invalid_response');
       }
       for (const p of item.content) {
-        if (!object(p)) {
+        if (!isObject(p)) {
           throw new ModelError('invalid_response');
         }
         if (p.type === 'output_text' && typeof p.text === 'string') {
@@ -238,8 +237,8 @@ async function readBody(
 }
 
 const expired = (raw: unknown): boolean =>
-  object(raw) &&
-  object(raw.error) &&
+  isObject(raw) &&
+  isObject(raw.error) &&
   typeof raw.error.code === 'string' &&
   [
     'previous_response_not_found',
@@ -340,7 +339,7 @@ export class ResponsesModel implements Model {
     const digest = (v: unknown): v is string =>
       typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
     const valid =
-      object(value) &&
+      isObject(value) &&
       [Object.prototype, null].includes(Object.getPrototypeOf(value)) &&
       Reflect.ownKeys(value).every(
         (k) =>
@@ -384,7 +383,7 @@ export class ResponsesModel implements Model {
         let previous = -1;
         for (const entry of value.outputHistory) {
           if (
-            !object(entry) ||
+            !isObject(entry) ||
             Object.keys(entry).some((k) => k !== 'index' && k !== 'items') ||
             typeof entry.index !== 'number' ||
             !Number.isSafeInteger(entry.index) ||
@@ -402,7 +401,7 @@ export class ResponsesModel implements Model {
         }
         if (
           previous !== Number(value.baselineLength) - 1 ||
-          !object(value.outputHistory[0]) ||
+          !isObject(value.outputHistory[0]) ||
           value.outputHistory[0].index !== value.outputHistoryStart
         ) {
           throw new Error();
@@ -698,7 +697,7 @@ export class ResponsesModel implements Model {
           response.body,
           (data, at) => {
             const event: unknown = JSON.parse(data);
-            if (!object(event) || typeof event.type !== 'string') {
+            if (!isObject(event) || typeof event.type !== 'string') {
               throw new ModelError('invalid_response');
             }
             if (
@@ -739,7 +738,7 @@ export class ResponsesModel implements Model {
             }
             if (
               event.type === 'response.output_item.added' &&
-              object(event.item) &&
+              isObject(event.item) &&
               event.item.type === 'function_call'
             ) {
               if (
@@ -764,7 +763,7 @@ export class ResponsesModel implements Model {
             ) {
               if (
                 raw !== undefined ||
-                !object(event.response) ||
+                !isObject(event.response) ||
                 event.response.status !== event.type.slice('response.'.length)
               ) {
                 throw new ModelError('invalid_response');
@@ -804,7 +803,7 @@ export class ResponsesModel implements Model {
       }
       capture(responseJson, false);
       stage = 'response_validate';
-      if (!object(raw)) {
+      if (!isObject(raw)) {
         throw new ModelError('invalid_response');
       }
       usage = parseResponsesUsage(raw.usage);
@@ -824,7 +823,7 @@ export class ResponsesModel implements Model {
       /* 用最终快照校验流式过程中收到的delta，以最终快照为准。 */
       for (const delta of deltas.values()) {
         const item = (raw.output as unknown[])[delta.index];
-        if (!object(item)) {
+        if (!isObject(item)) {
           throw new ModelError('invalid_response');
         }
         if (delta.type === 'response.reasoning_text.delta') {
@@ -836,7 +835,7 @@ export class ResponsesModel implements Model {
         const expected =
           delta.type === 'response.function_call_arguments.delta'
             ? item.arguments
-            : object(part)
+            : isObject(part)
               ? delta.type === 'response.refusal.delta'
                 ? part.refusal
                 : part.text
@@ -848,7 +847,7 @@ export class ResponsesModel implements Model {
       for (const [index, added] of addedCalls) {
         const item = (raw.output as unknown[])[index];
         if (
-          !object(item) ||
+          !isObject(item) ||
           item.type !== 'function_call' ||
           item.id !== added.id ||
           item.call_id !== added.call_id ||

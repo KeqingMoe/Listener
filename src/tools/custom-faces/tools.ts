@@ -37,6 +37,7 @@ import {
   DuplicateMessageAckError,
   UnverifiedMessageAckError,
 } from '../../onebot/operation-result.ts';
+import { ToolFailure, fail, failureCode } from '../failure.ts';
 
 export const CUSTOM_FACE_TOOL_NAMES = [
   'list_custom_faces',
@@ -70,12 +71,6 @@ export interface CustomFaceOptions extends Pick<
   imageState?: ImageTurnState;
   maxDownloadMb?: number;
   onVisualContent?: (parts: ChatContentPart[]) => void;
-}
-
-class FaceFailure extends Error {}
-
-function fail(code: string): never {
-  throw new FaceFailure(code);
 }
 
 function object(value: unknown): value is JsonObject {
@@ -817,7 +812,7 @@ export class CustomFaceTools {
         const own = Object.getOwnPropertyDescriptor(e, 'message')?.value;
         if (typeof own === 'string') {
           if (
-            e instanceof FaceFailure ||
+            e instanceof ToolFailure ||
             e instanceof CustomFaceCoordinationError ||
             SAFE_STORAGE_ERRORS.has(own)
           ) {
@@ -1471,7 +1466,7 @@ export class CustomFaceTools {
     } catch (e) {
       desc = {
         status: 'error',
-        error: e instanceof FaceFailure ? e.message : 'description_unavailable',
+        error: failureCode(e, 'description_unavailable'),
         dispatched: false,
       };
     }

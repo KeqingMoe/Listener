@@ -9,11 +9,12 @@ import {
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { resolveGroupId } from '../contracts/identity.ts';
-import { type JsonObject } from '../contracts/json.ts';
+import { type JsonObject, isPlainObject } from '../contracts/json.ts';
 import {
   type MessageSegment,
   type TimelineEntry,
 } from '../contracts/messages.ts';
+import { immediate } from '../storage/transaction.ts';
 
 export const WORLD_EVENT_TYPES = [
   'message.created',
@@ -212,11 +213,6 @@ const text = (value: unknown, max = MAX_ID): value is string =>
   value.length > 0 &&
   value.length <= max &&
   !/[\u0000-\u001f\u007f]/.test(value);
-const object = (value: unknown): value is JsonObject =>
-  !!value &&
-  typeof value === 'object' &&
-  !Array.isArray(value) &&
-  Object.getPrototypeOf(value) === Object.prototype;
 const safeJson = (value: unknown, max = MAX_EVENT_BYTES): string => {
   let nodes = 0;
   const check = (v: unknown, depth: number): void => {
@@ -231,7 +227,11 @@ const safeJson = (value: unknown, max = MAX_EVENT_BYTES): string => {
     ) {
       return;
     }
-    if (!v || typeof v !== 'object' || (!Array.isArray(v) && !object(v))) {
+    if (
+      !v ||
+      typeof v !== 'object' ||
+      (!Array.isArray(v) && !isPlainObject(v))
+    ) {
       throw new Error('Invalid event payload');
     }
     for (const key of Reflect.ownKeys(v)) {
@@ -263,7 +263,7 @@ const metadataName = (value: unknown): value is string =>
   text(value, 256) && !/(?:https?:\/\/|file:\/\/|data:)/i.test(value);
 
 function validSegment(value: unknown): value is MessageSegment {
-  if (!object(value) || typeof value.type !== 'string') {
+  if (!isPlainObject(value) || typeof value.type !== 'string') {
     return false;
   }
   if (value.type === 'text') {
@@ -299,7 +299,7 @@ function validSegment(value: unknown): value is MessageSegment {
 
 function validateMessage(value: unknown): value is TimelineEntry {
   if (
-    !object(value) ||
+    !isPlainObject(value) ||
     !text(value.messageId) ||
     !text(value.userId) ||
     typeof value.nickname !== 'string' ||
@@ -331,7 +331,7 @@ function validatePayload(
   type: WorldEventType,
   payload: unknown,
 ): payload is WorldEventPayload {
-  if (!object(payload) || typeof payload.kind !== 'string') {
+  if (!isPlainObject(payload) || typeof payload.kind !== 'string') {
     return false;
   }
   if (type === 'message.created') {
@@ -568,8 +568,7 @@ export class WorldEventStore {
     if (!finiteTime(now)) {
       throw new Error('Invalid prune time');
     }
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
+    return immediate(this.db, () => {
       this.db
         .prepare(
           'DELETE FROM world_messages WHERE sequence IN (SELECT sequence FROM world_events WHERE observed_at < ?)',
@@ -578,23 +577,19 @@ export class WorldEventStore {
       const result = this.db
         .prepare('DELETE FROM world_events WHERE observed_at < ?')
         .run(this.cutoff(now));
-      this.db.exec('COMMIT');
       return Number(result.changes);
-    } catch (error) {
-      this.db.exec('ROLLBACK');
-      throw error;
-    }
+    });
   }
 
   append(input: WorldEventInput): WorldEvent {
     this.ensureOpen();
     safeJson(input);
     if (
-      !object(input) ||
+      !isPlainObject(input) ||
       (input.groupId !== undefined && input.groupId !== this.groupId) ||
       !allowedTypes.has(input.type) ||
       !validatePayload(input.type, input.payload) ||
-      !object(input.provenance) ||
+      !isPlainObject(input.provenance) ||
       Object.keys(input.provenance).some(
         (key) => !['source', 'verified'].includes(key),
       ) ||
@@ -609,7 +604,7 @@ export class WorldEventStore {
       (input.occurredAt !== undefined && !finiteTime(input.occurredAt)) ||
       (input.actorId !== undefined && !text(input.actorId)) ||
       (input.subject !== undefined &&
-        (!object(input.subject) ||
+        (!isPlainObject(input.subject) ||
           !text(input.subject.kind, 64) ||
           !text(input.subject.id)))
     ) {
@@ -797,7 +792,7 @@ export class WorldEventStore {
     highWater: number,
   ): { sql: string; params: (string | number)[] } {
     if (
-      !object(input) ||
+      !isPlainObject(input) ||
       !Number.isSafeInteger(input.limit) ||
       input.limit <= 0
     ) {
@@ -907,7 +902,7 @@ export class WorldEventStore {
 
   readMessages(input: ReadEventsInput, maxBytes = 24_000): MessagePage {
     if (
-      !object(input) ||
+      !isPlainObject(input) ||
       (input.types !== undefined &&
         (input.types.length !== 1 || input.types[0] !== 'message.created'))
     ) {

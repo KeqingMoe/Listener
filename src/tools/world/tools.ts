@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { resolveGroupId } from '../../contracts/identity.ts';
-import { type JsonObject } from '../../contracts/json.ts';
+import { type JsonObject, isDataObject } from '../../contracts/json.ts';
 import {
   type ToolDefinition,
   type TurnContext,
@@ -14,6 +14,7 @@ import {
   type ReadEventsInput,
   type WorldEventType,
 } from '../../world/events.ts';
+import { fail, ToolFailure } from '../failure.ts';
 
 interface WakeMetadata {
   wakeId?: string;
@@ -64,28 +65,6 @@ const CONSUMER = 'ai',
   TTL_SECONDS = 86400,
   MAX_BYTES = 24_000;
 
-function fail(code: string): never {
-  throw new Error(code);
-}
-
-function object(value: unknown): value is JsonObject {
-  try {
-    return (
-      !!value &&
-      typeof value === 'object' &&
-      !Array.isArray(value) &&
-      [Object.prototype, null].includes(Object.getPrototypeOf(value)) &&
-      Reflect.ownKeys(value).every(
-        (k) =>
-          typeof k === 'string' &&
-          Object.hasOwn(Object.getOwnPropertyDescriptor(value, k)!, 'value'),
-      )
-    );
-  } catch {
-    return false;
-  }
-}
-
 const own = (value: JsonObject, key: string) => Object.hasOwn(value, key);
 const time = (value: unknown): value is number =>
   typeof value === 'number' &&
@@ -103,7 +82,7 @@ const safeString = (value: unknown): value is string =>
 
 function args(value: unknown, fields: string[]): JsonObject {
   if (
-    !object(value) ||
+    !isDataObject(value) ||
     Reflect.ownKeys(value).some(
       (k) => typeof k !== 'string' || !fields.includes(k),
     )
@@ -307,7 +286,7 @@ function event(value: ProjectedWorldEvent): JsonObject {
 
 /** 显式投影元数据：不含消息正文、任意回调键或API payload。 */
 function runtimeState(source: unknown): JsonObject {
-  if (!object(source)) {
+  if (!isDataObject(source)) {
     return {};
   }
   const scalar = (value: unknown): unknown =>
@@ -318,7 +297,7 @@ function runtimeState(source: unknown): JsonObject {
         ? value
         : undefined;
   const project = (value: unknown, fields: string[]): JsonObject =>
-    object(value)
+    isDataObject(value)
       ? Object.fromEntries(
           fields.flatMap((key) => {
             const v = scalar(value[key]);
@@ -334,7 +313,7 @@ function runtimeState(source: unknown): JsonObject {
   const result: JsonObject = {};
   for (const name of ['attention_state', 'reaction_state'] as const) {
     const raw = source[name];
-    if (!object(raw)) {
+    if (!isDataObject(raw)) {
       continue;
     }
     const fields =
@@ -357,7 +336,7 @@ function runtimeState(source: unknown): JsonObject {
           'remaining_seconds',
           'conditions_omitted',
         ]);
-        if (object(item) && Array.isArray(item.any_of)) {
+        if (isDataObject(item) && Array.isArray(item.any_of)) {
           plan.any_of = list(item.any_of, 8, (c) => {
             const condition = project(c, [
               'type',
@@ -367,10 +346,10 @@ function runtimeState(source: unknown): JsonObject {
               'min_messages',
               'min_senders',
             ]);
-            if (object(c) && Array.isArray(c.user_ids)) {
+            if (isDataObject(c) && Array.isArray(c.user_ids)) {
               condition.user_ids = c.user_ids.filter(id).slice(0, 16);
             }
-            if (object(c) && Array.isArray(c.delay_seconds)) {
+            if (isDataObject(c) && Array.isArray(c.delay_seconds)) {
               condition.delay_seconds = c.delay_seconds
                 .filter((n) => typeof n === 'number' && Number.isFinite(n))
                 .slice(0, 2);
@@ -383,7 +362,7 @@ function runtimeState(source: unknown): JsonObject {
       out.triggered = list(raw.triggered, 64, (item) =>
         project(item, ['plan_id', 'reason', 'purpose']),
       );
-      if (object(raw.last_commit)) {
+      if (isDataObject(raw.last_commit)) {
         out.last_commit = {
           ...project(raw.last_commit, ['status', 'error']),
           ...Object.fromEntries(
@@ -411,7 +390,7 @@ function runtimeState(source: unknown): JsonObject {
           'effect_confirmed',
         ]),
       );
-      if (object(raw.last_turn)) {
+      if (isDataObject(raw.last_turn)) {
         out.last_turn = {
           ...project(raw.last_turn, [
             'at',
@@ -542,7 +521,7 @@ export class WorldTools {
     }
     if (safeString(source.trigger)) {
       wake.trigger = source.trigger;
-    } else if (object(source.trigger)) {
+    } else if (isDataObject(source.trigger)) {
       wake.trigger = Object.fromEntries(
         ['type', 'reason', 'event_id', 'message_id', 'actor_id']
           .filter((k) =>
@@ -552,7 +531,7 @@ export class WorldTools {
       );
     }
     const budget = this.options.currentBudget?.();
-    const safeBudget = object(budget)
+    const safeBudget = isDataObject(budget)
       ? Object.fromEntries(
           [
             'max_tool_calls',
@@ -786,7 +765,7 @@ export class WorldTools {
       }
       return { status: 'error', error: 'unknown_tool' };
     } catch (error) {
-      const code = error instanceof Error ? error.message : '';
+      const code = error instanceof ToolFailure ? error.code : '';
       if (code === 'cursor_with_filters') {
         return {
           status: 'error',

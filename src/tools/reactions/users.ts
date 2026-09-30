@@ -2,7 +2,7 @@ import { canonicalMessageId } from '../../onebot/identity.ts';
 import { randomBytes } from 'node:crypto';
 import { resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
-import { type JsonObject } from '../../contracts/json.ts';
+import { type JsonObject, isDataObject } from '../../contracts/json.ts';
 import { type Memory } from '../../contracts/messages.ts';
 import {
   type ToolDefinition,
@@ -99,24 +99,6 @@ const fail = (reason: string): JsonObject => ({
   error: reason,
   reason,
 });
-
-function object(value: unknown): value is JsonObject {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return false;
-  }
-  try {
-    return (
-      [Object.prototype, null].includes(Object.getPrototypeOf(value)) &&
-      Reflect.ownKeys(value).every(
-        (key) =>
-          typeof key === 'string' &&
-          Object.hasOwn(Object.getOwnPropertyDescriptor(value, key)!, 'value'),
-      )
-    );
-  } catch {
-    return false;
-  }
-}
 
 function short(value: unknown): value is string {
   return typeof value === 'string' && canonicalMessageId(value) === value;
@@ -234,7 +216,7 @@ export class ReactionUserTools {
       return fail('invalid_turn');
     }
     if (
-      !object(args) ||
+      !isDataObject(args) ||
       Object.keys(args).some(
         (k) =>
           ![
@@ -282,7 +264,7 @@ export class ReactionUserTools {
       const local = this.memory.find(query.message_id);
       if (local !== undefined) {
         if (
-          !object(local) ||
+          !isDataObject(local) ||
           local.messageId !== query.message_id ||
           typeof local.userId !== 'string' ||
           identity(local.userId) !== local.userId
@@ -295,7 +277,7 @@ export class ReactionUserTools {
           .recent()
           .some(
             (e) =>
-              object(e) &&
+              isDataObject(e) &&
               short(e.messageId) &&
               identity(e.userId) &&
               e.replyTo === query.message_id,
@@ -388,11 +370,11 @@ export class ReactionUserTools {
       return fail('query_invalidated');
     }
     if (
-      !object(raw) ||
+      !isDataObject(raw) ||
       raw.message_type !== 'group' ||
       identity(raw.group_id) !== this.groupId ||
       canonicalMessageId(raw.message_id) !== query.message_id ||
-      !object(raw.sender)
+      !isDataObject(raw.sender)
     ) {
       return save(failure('verification_failed'));
     }
@@ -427,7 +409,7 @@ export class ReactionUserTools {
       return fail('query_invalidated');
     }
     if (
-      !object(raw) ||
+      !isDataObject(raw) ||
       raw.result !== 0 ||
       !Array.isArray(raw.emojiLikesList)
     ) {
@@ -446,7 +428,7 @@ export class ReactionUserTools {
     for (let i = 0; i < Math.min(list.length, count); i++) {
       const d = Object.getOwnPropertyDescriptor(list, String(i));
       const row = d && Object.hasOwn(d, 'value') ? d.value : undefined;
-      const user = object(row) ? identity(row.tinyId) : undefined;
+      const user = isDataObject(row) ? identity(row.tinyId) : undefined;
       if (!user || chain.seen.has(user)) {
         omitted++;
         continue;

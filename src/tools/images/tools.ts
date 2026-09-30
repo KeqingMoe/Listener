@@ -22,8 +22,8 @@ import {
   ID_PATTERN,
   parseId,
   identifier,
-  object,
 } from '../../onebot/image-references.ts';
+import { isObject } from '../../contracts/json.ts';
 
 function downloadFailure(error: unknown): string {
   // 分类错误时不调用注入的transport所抛异常上的getter。
@@ -111,7 +111,7 @@ export class ImageTools {
   ) {
     this.groupId = resolveGroupId(groupId);
     if (
-      !object(options) ||
+      !isObject(options) ||
       ![Object.prototype, null].includes(Object.getPrototypeOf(options)) ||
       Reflect.ownKeys(options).some(
         (key) =>
@@ -171,7 +171,7 @@ export class ImageTools {
       return failure('invalid_arguments');
     }
     if (
-      !object(args) ||
+      !isObject(args) ||
       Reflect.ownKeys(args).length !== 1 ||
       !Object.hasOwn(args, 'image_ids') ||
       !Array.isArray(args.image_ids) ||
@@ -288,11 +288,11 @@ export class ImageTools {
         }
         active.phase = 'validation';
         if (
-          !object(raw) ||
+          !isObject(raw) ||
           raw.message_type !== 'group' ||
           identifier(raw.group_id) !== this.groupId ||
           canonicalMessageId(raw.message_id) !== messageId ||
-          !object(raw.sender)
+          !isObject(raw.sender)
         ) {
           throw new Error();
         }
@@ -310,9 +310,9 @@ export class ImageTools {
         }
         const segment: unknown = raw.message[index];
         if (
-          !object(segment) ||
+          !isObject(segment) ||
           segment.type !== 'image' ||
-          !object(segment.data) ||
+          !isObject(segment.data) ||
           typeof segment.data.url !== 'string'
         ) {
           throw new Error();

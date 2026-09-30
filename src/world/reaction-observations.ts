@@ -1,7 +1,7 @@
 import { canonicalMessageId } from '../onebot/identity.ts';
 import { resolveGroupId } from '../contracts/identity.ts';
 import { type Api } from '../contracts/onebot.ts';
-import { type JsonObject } from '../contracts/json.ts';
+import { type JsonObject, isDataObject } from '../contracts/json.ts';
 import { type Memory } from '../contracts/messages.ts';
 import {
   getReactionCatalog,
@@ -39,24 +39,6 @@ interface Proof {
   sender?: string;
 }
 
-function object(value: unknown): value is JsonObject {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return false;
-  }
-  try {
-    return (
-      [Object.prototype, null].includes(Object.getPrototypeOf(value)) &&
-      Reflect.ownKeys(value).every(
-        (key) =>
-          typeof key === 'string' &&
-          Object.hasOwn(Object.getOwnPropertyDescriptor(value, key)!, 'value'),
-      )
-    );
-  } catch {
-    return false;
-  }
-}
-
 function unsigned(value: unknown): string | undefined {
   const id = canonicalMessageId(value);
   return id !== undefined && !id.startsWith('-') ? id : undefined;
@@ -83,7 +65,7 @@ function proof(
     const local = memory.find(id);
     if (local !== undefined) {
       if (
-        !object(local) ||
+        !isDataObject(local) ||
         local.messageId !== id ||
         typeof local.userId !== 'string' ||
         identity(local.userId) !== local.userId
@@ -99,7 +81,7 @@ function proof(
             .recent()
             .some(
               (entry) =>
-                object(entry) &&
+                isDataObject(entry) &&
                 canonicalMessageId(entry.messageId) === entry.messageId &&
                 identity(entry.userId) &&
                 entry.replyTo === id,
@@ -120,11 +102,11 @@ function verified(
   origin: Proof,
 ): raw is JsonObject {
   if (
-    !object(raw) ||
+    !isDataObject(raw) ||
     raw.message_type !== 'group' ||
     identity(raw.group_id) !== groupId ||
     canonicalMessageId(raw.message_id) !== id ||
-    !object(raw.sender)
+    !isDataObject(raw.sender)
   ) {
     return false;
   }
@@ -262,7 +244,7 @@ export class ReactionObservations {
 
   notice(event: unknown, memory: Memory): boolean {
     if (
-      !object(event) ||
+      !isDataObject(event) ||
       event.post_type !== 'notice' ||
       event.notice_type !== 'group_msg_emoji_like' ||
       identity(event.group_id) !== this.groupId
@@ -339,7 +321,7 @@ export class ReactionObservations {
       if (
         !descriptor ||
         !Object.hasOwn(descriptor, 'value') ||
-        !object(descriptor.value)
+        !isDataObject(descriptor.value)
       ) {
         continue;
       }
@@ -527,7 +509,7 @@ export class ReactionObservations {
       try {
         for (const entry of memory.recent()) {
           if (
-            !object(entry) ||
+            !isDataObject(entry) ||
             typeof entry.messageId !== 'string' ||
             canonicalMessageId(entry.messageId) !== entry.messageId ||
             !identity(entry.userId)
