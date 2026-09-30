@@ -9,11 +9,11 @@ import {
   createImageDownloader,
   createSendImageDownloader,
   hasSupportedImageSignature,
-  isPublicAddress,
   prepareImage,
   validateImageUrl,
   type ImageDownloadDependencies,
 } from '../../../../src/tools/images/download.ts';
+import { isPublicAddress } from '../../../../src/tools/network.ts';
 
 const URL = 'https://gchat.qpic.cn/image?token=SECRET';
 const png = () =>

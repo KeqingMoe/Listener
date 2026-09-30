@@ -12,47 +12,14 @@ import {
 } from 'node:fs/promises';
 import { join } from 'node:path';
 import pino from 'pino';
-import { EXTENDED_TOOL_NAMES } from '../config/extended-tools.ts';
-
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-
-export interface LoggingConfig {
-  level: LogLevel;
-  console: boolean;
-  file: boolean;
-  directory: string;
-  retentionDays: number;
-  maxFileMb: number;
-  maxTotalMb: number;
-}
+import { ALL_TOOL_NAMES } from '../contracts/tool-names.ts';
+import type { LoggingConfig, LogLevel } from '../config/app.ts';
 
 const levels: LogLevel[] = ['debug', 'info', 'warn', 'error'];
 const domains =
   /^(app|onebot|message|trigger|turn|model|tool|image|forward|memory|moderation|command|send|logging|attention|session)\.[a-z][a-z0-9_]{0,39}$/;
 const owned = /^listener-(\d{4}-\d{2}-\d{2})-T\d{9}-[a-f0-9]{24}\.jsonl$/;
-const tools = new Set([
-  ...EXTENDED_TOOL_NAMES,
-  'send_message',
-  'finish',
-  'get_group_members',
-  'get_member_info',
-  'read_message',
-  'view_images',
-  'read_forward',
-  'mute_member',
-  'unmute_member',
-  'recall_message',
-  'set_member_card',
-  'manage_attention',
-  'react_message',
-  'get_reaction_users',
-  'get_wake_state',
-  'get_time',
-  'read_events',
-  'read_messages',
-  'ack_events',
-  'invalid',
-]);
+const tools = ALL_TOOL_NAMES;
 const actions = new Set([
   ...tools,
   'get_login_info',

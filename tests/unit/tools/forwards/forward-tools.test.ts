@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {
   ForwardTools,
   READ_FORWARD_TOOL,
-  type ForwardConfig,
 } from '../../../../src/tools/forwards/tools.ts';
+import type { ForwardConfig } from '../../../../src/config/listener.ts';
 import {
   extractForward,
   forwardMarker,

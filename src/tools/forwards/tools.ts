@@ -13,12 +13,9 @@ import {
   type ExtractedForward,
 } from '../../onebot/forward-references.ts';
 import { type ForwardReference } from '../../contracts/messages.ts';
+import type { ForwardConfig } from '../../config/listener.ts';
 import { log } from '../../observability/logger.ts';
 import { extractMessageContent } from '../../world/message-content.ts';
-
-export interface ForwardConfig {
-  enabled: boolean;
-}
 
 const ROOT = /^fwd_(-?\d{1,32})_(0|[1-9]\d?|1[01]\d|12[0-7])$/;
 const CHILD = /^fwdn_[a-f0-9]{16}$/;

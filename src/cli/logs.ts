@@ -4,11 +4,8 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { loadAppConfig } from '../config/loader.ts';
-import {
-  formatLogLine,
-  managedLogFilename,
-  type LogLevel,
-} from '../observability/logger.ts';
+import type { LogLevel } from '../config/app.ts';
+import { formatLogLine, managedLogFilename } from '../observability/logger.ts';
 
 const levels: Record<LogLevel, number> = {
   debug: 10,

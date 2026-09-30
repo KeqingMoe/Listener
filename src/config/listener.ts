@@ -1,11 +1,14 @@
 import type { WebSearchProviderConfig } from './app.ts';
 import type { ResolvedToolPolicies } from './tool-policy.ts';
-import type { ForwardConfig } from '../tools/forwards/tools.ts';
 import type { ExtendedToolsConfig } from './extended-tools.ts';
 
 export interface ImagesConfig {
   enabled: boolean;
   maxDownloadMb: number;
+}
+
+export interface ForwardConfig {
+  enabled: boolean;
 }
 
 export type ModerationMode = 'off' | 'confirm' | 'direct';

@@ -9,7 +9,7 @@ import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
 import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib';
 import type { Transform } from 'node:stream';
-import { isPublicAddress } from '../images/download.ts';
+import { isPublicAddress } from '../network.ts';
 
 export const FETCH_LIMITS = {
   urlChars: 2048,

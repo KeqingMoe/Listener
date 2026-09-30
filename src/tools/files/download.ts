@@ -6,7 +6,7 @@ import {
 } from 'node:http';
 import { request as httpsRequest, type RequestOptions } from 'node:https';
 import { isIP } from 'node:net';
-import { isPublicAddress } from '../images/download.ts';
+import { isPublicAddress } from '../network.ts';
 
 export type GroupTextDownloader = (
   url: string,

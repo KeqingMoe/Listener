@@ -16,10 +16,11 @@ import { parse as parseDotenv } from 'dotenv';
 import type {
   AppConfig,
   ResolvedGroupConfig,
+  LoggingConfig,
+  LogLevel,
   ModelTransport,
   WebSearchProviderConfig,
 } from './app.ts';
-import type { LoggingConfig, LogLevel } from '../observability/logger.ts';
 import { OWNER_ID } from '../contracts/identity.ts';
 import {
   TOOL_NAMES,

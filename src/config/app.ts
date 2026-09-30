@@ -1,5 +1,4 @@
 import type { Config } from './onebot.ts';
-import type { LoggingConfig } from '../observability/logger.ts';
 import type { ResolvedToolPolicies } from './tool-policy.ts';
 
 /** 带标签的联合类型，新增provider只需加分支，无需重新解释已有字段。 */
@@ -62,4 +61,16 @@ export interface AppConfig {
   defaultsEnabled: boolean;
   configuredGroupIds: readonly string[];
   resolveGroup(id: string): ResolvedGroupConfig;
+}
+
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+export interface LoggingConfig {
+  level: LogLevel;
+  console: boolean;
+  file: boolean;
+  directory: string;
+  retentionDays: number;
+  maxFileMb: number;
+  maxTotalMb: number;
 }
