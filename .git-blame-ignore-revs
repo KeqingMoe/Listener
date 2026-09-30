@@ -1,0 +1,5 @@
+# git blame 跳过以下纯排版提交
+# 本地启用：git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style: 按Prettier与ESLint自动修复统一排版
+e158a4cc13369b990df1c7671c0f82ca70f1feec
