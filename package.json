@@ -4,8 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "npm run check:boundaries && tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json",
     "check:boundaries": "node scripts/check-boundaries.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json && vue-tsc --noEmit -p src/dashboard/web/tsconfig.json",
+    "check": "npm run format:check && npm run lint && npm run check:boundaries && npm run typecheck && npm run test:all",
     "test": "node scripts/test.mjs core",
     "test:all": "node scripts/test.mjs all",
     "start": "node dist/app/bot.js",
@@ -37,16 +42,25 @@
     "ws": "^8.18.3"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "@playwright/test": "^1.63.0",
+    "@stylistic/eslint-plugin": "5.10.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.0.0",
     "@types/turndown": "5.0.6",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-vue": "^6.0.9",
+    "eslint": "10.11.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-vue": "10.11.1",
+    "globals": "17.12.0",
+    "prettier": "3.9.9",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
+    "typescript-eslint": "8.71.0",
     "vite": "^8.3.1",
+    "vue-eslint-parser": "10.4.1",
     "vue-tsc": "^3.3.11"
   }
 }

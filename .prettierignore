@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-dashboard/
+coverage/
+data/
+prompts/
+package-lock.json
+*.md
+artifacts/

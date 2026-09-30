@@ -125,7 +125,8 @@ npm run dashboard:start
 
 ```sh
 npm ci
-npm run check:boundaries
+npm run check               # 格式、lint、依赖边界、类型检查与全部Node用例
+npm run format              # 按Prettier统一排版
 npm test                    # 核心回归
 npm run dashboard:test      # 面板接口与计算
 npm run test:all            # 上述两组全部Node用例

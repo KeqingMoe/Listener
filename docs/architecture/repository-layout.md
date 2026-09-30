@@ -23,7 +23,7 @@
 
 ## 构建
 
-`npm run build` 先检查依赖关系，再将Node源码从 `src` 编译到 `dist`，不包含前端。`npm run dashboard:build` 还会检查并构建Vue页面。Vite输出到 `dist/dashboard/web`，只清理该子目录。
+`npm run build` 将Node源码从 `src` 编译到 `dist`，不包含前端；相对导入写 `.ts`，编译时改写为 `.js`。`npm run dashboard:build` 还会检查并构建Vue页面。Vite输出到 `dist/dashboard/web`，只清理该子目录。
 
 | 入口 | 编译文件 |
 | --- | --- |
@@ -40,3 +40,9 @@
 `scripts/test.mjs` 递归发现 `*.test.ts`，排除夹具、支持代码和浏览器目录。`npm test` 运行核心用例，`npm run dashboard:test` 运行Dashboard用例，`npm run test:all` 运行两组Node用例。浏览器测试使用 `npm run dashboard:test:browser`。
 
 `scripts/check-boundaries.mjs` 检查TS与Vue脚本的依赖方向、相对导入和运行时环，区分类型导入与运行时导入。单独运行命令为 `npm run check:boundaries`。
+
+## 代码风格
+
+Prettier负责排版：行宽80、两空格缩进、单引号、分号、尾随逗号。ESLint负责代码规范与Prettier不管的空行：import块之后、多行的顶层函数/类/interface/type/enum/测试前后，以及多行类成员之间必须空一行，函数内部不强制；`if`与循环必须带花括号、使用 `===`、`import type`、`throw new Error(...)`、具名导出，源码禁止 `any`。标识符用英文；注释、文档、提示词与面向用户的文字用中文。
+
+`npm run check` 依次运行格式检查、lint、依赖边界、类型检查与全部Node用例，合入前必须通过；`npm run build` 只编译，不做这些检查。
