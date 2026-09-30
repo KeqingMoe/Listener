@@ -156,3 +156,35 @@ test('CLI supports explicit group inspection, ordinary checking, and rejects mal
   }
   assert.equal(existsSync(join(directory, 'data')), false);
 });
+
+test('inspection reports the selected model name and its origin without provider details', (t) => {
+  const { app } = fixture(
+    t,
+    `
+[models.main]
+[models.other]
+api_key_env = "OPENAI_API_KEY"
+base_url = "https://PRIVATE-PROVIDER.example/v1"
+model = "PRIVATE_MODEL_ID"
+[bot]
+owner_id = "100000001"
+[defaults]
+model = "main"
+[groups."22"]
+enabled = true
+model = "other"
+[groups."33"]
+enabled = true
+`,
+  );
+  const selected = inspectGroupConfig(app, '22') as any,
+    inherited = inspectGroupConfig(app, '33') as any;
+  assert.equal(selected.values.model, 'other');
+  assert.equal(selected.sources.model, 'group');
+  assert.equal(inherited.values.model, 'main');
+  assert.equal(inherited.sources.model, 'defaults');
+  assert.doesNotMatch(
+    JSON.stringify(selected),
+    /PRIVATE-PROVIDER|PRIVATE_MODEL_ID|PRIVATE_MODEL_KEY/,
+  );
+});

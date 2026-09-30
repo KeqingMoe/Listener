@@ -102,6 +102,8 @@ export function inspectGroupConfig(
   }
   const values: RecordValue = {
     enabled: policy.enabled,
+    // 只输出所选模型名，不含地址或凭据；只定义一个模型时来源为program_default。
+    model: policy.model,
     persona: policy.personaPath,
     reply: publicValue(policy.reply),
     session: publicValue(policy.session),
