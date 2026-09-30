@@ -24,6 +24,45 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  configureLogging,
+  observeLogs,
+} from '../../../src/observability/logger.ts';
+import { sessionRuntime } from '../../support/listener-fixture.ts';
+
+// 会话模式不再注入批次载荷；批次组成从每轮turn.start日志的计数观察。
+const logDirectory = mkdtempSync(join(tmpdir(), 'multigroup-log-'));
+const logger = configureLogging({
+  level: 'info',
+  console: false,
+  file: false,
+  directory: logDirectory,
+  retentionDays: 7,
+  maxFileMb: 1,
+  maxTotalMb: 2,
+});
+process.once('exit', () =>
+  rmSync(logDirectory, { recursive: true, force: true }),
+);
+
+test.after(() => logger.close());
+type TurnLog = { count: number; direct: number };
+let turnLogs = new Map<string, TurnLog[]>();
+observeLogs((record) => {
+  if (record.event !== 'turn.start') {
+    return;
+  }
+  const group = String(record.fields.group_id);
+  const list = turnLogs.get(group) ?? [];
+  list.push({
+    count: Number(record.fields.count),
+    direct: Number(record.fields.direct_count),
+  });
+  turnLogs.set(group, list);
+});
 
 const SELF = '99999';
 const A = '22',
@@ -197,6 +236,7 @@ function setup(
   } = {},
 ) {
   const ids = options.groups ?? [A, B];
+  turnLogs = new Map();
   const scheduler = new TurnScheduler(options.concurrency ?? 2);
   const memories = new Map(ids.map((id) => [id, new TestMemory()]));
   const listeners = new Map<string, Listener>();
@@ -259,6 +299,9 @@ function setup(
         () => 0.5,
         undefined,
         scheduler,
+        sessionRuntime(
+          { ...config, ...options.settings?.[id], groupId: id }.groupId,
+        ).runtime,
       ),
     );
   }
@@ -297,14 +340,13 @@ async function until(check: () => boolean) {
   assert.fail('multigroup condition timed out');
 }
 
-const payload = (request: Request) =>
-  JSON.parse(
-    request.messages.find((m) => m.role === 'user')!.content as string,
-  );
-const roster = (request: Request) =>
-  payload(request).trusted_direct_requests.map(
-    (r: { message_id: string }) => r.message_id,
-  );
+/** 请求所在那一轮的批次计数；这些用例每轮恰有一次模型请求。 */
+const batchOf = (request: Request): TurnLog => {
+  const log = turnLogs.get(request.group)?.[request.index];
+  assert.ok(log, `missing turn.start for ${request.group}#${request.index}`);
+  return log;
+};
+const roster = (request: Request) => batchOf(request).direct;
 const sends = (s: ReturnType<typeof setup>) =>
   s.calls.filter((call) => call.action === 'send_group_msg');
 const messageText = (call: { params: Record<string, unknown> }) =>
@@ -314,7 +356,13 @@ const messageText = (call: { params: Record<string, unknown> }) =>
     .join('');
 
 test('same message IDs are independent and routing ignores private, unknown and disconnected traffic', async () => {
-  const s = setup({ connected: false });
+  const s = setup({
+    connected: false,
+    complete: (r) =>
+      r.index === 0
+        ? tool('read_messages', { limit: 10 })
+        : reply(`reply-${r.group}`, '1'),
+  });
   try {
     await s.router.receive(event(A, '1'), SELF);
     assert.equal(s.memories.get(A)!.entries.length, 0);
@@ -324,12 +372,13 @@ test('same message IDs are independent and routing ignores private, unknown and 
     await s.router.receive(event(A, '1', true, 'only-in-A'), SELF);
     await s.router.receive(event(B, '1', true, 'only-in-B'), SELF);
     await until(() => sends(s).length === 2 && s.scheduler.activeCount === 0);
-    assert.equal(s.requests.length, 2);
+    assert.equal(s.requests.length, 4);
     assert.deepEqual(
       new Set(sends(s).map((c) => c.params.group_id)),
       new Set([A, B]),
     );
-    for (const request of s.requests) {
+    // 读取结果只含本群消息，同号消息互不串群。
+    for (const request of s.requests.filter((r) => r.index === 1)) {
       const encoded = JSON.stringify(request.messages);
       assert.ok(
         encoded.includes(request.group === A ? 'only-in-A' : 'only-in-B'),
@@ -349,7 +398,7 @@ test('same message IDs are independent and routing ignores private, unknown and 
     await s.router.receive(event(A, '1'), SELF);
     await s.router.receive(event(B, '1'), SELF);
     await delay(25);
-    assert.equal(s.requests.length, 2);
+    assert.equal(s.requests.length, 4);
   } finally {
     await s.close();
   }
@@ -405,11 +454,11 @@ test('each group keeps its own persona, schemas and pending batch', async () => 
     await until(() => s.requests.length === 4 && s.scheduler.activeCount === 0);
     assert.deepEqual(
       roster(s.requests.find((r) => r.group === A && r.index === 1)!),
-      ['2', '3'],
+      2,
     );
     assert.deepEqual(
       roster(s.requests.find((r) => r.group === B && r.index === 1)!),
-      ['2'],
+      1,
     );
   } finally {
     a.resolve(silent());
@@ -469,7 +518,7 @@ test('concurrency one seals a waiting group only after admission, merging every 
     a.resolve(silent());
     await until(() => s.requests.length === 2 && s.scheduler.activeCount === 0);
     assert.equal(s.requests[1]!.group, B);
-    assert.deepEqual(roster(s.requests[1]!), ['1', '2', '3']);
+    assert.equal(roster(s.requests[1]!), 3);
     assert.equal(s.maxActiveModels, 1);
   } finally {
     a.resolve(silent());
@@ -501,7 +550,7 @@ test('a busy group cannot jump ahead of other groups already waiting for the glo
       s.requests.map((r) => r.group),
       [A, B, C, A],
     );
-    assert.deepEqual(roster(s.requests[3]!), ['2']);
+    assert.equal(roster(s.requests[3]!), 1);
   } finally {
     first.resolve(silent());
     await s.close();
@@ -721,7 +770,7 @@ test('elapsed queued window starts immediately after grant, without another full
     await flush();
     await flush();
     assert.equal(s.requests.length, 2);
-    assert.deepEqual(roster(s.requests[1]!), ['1', '2']);
+    assert.equal(roster(s.requests[1]!), 2);
   } finally {
     first.resolve(silent());
     await flush();
@@ -762,13 +811,8 @@ test('first at during queued random batch gets its remaining window and releases
     t.mock.timers.tick(1);
     await flush();
     assert.equal(s.requests.length, 2);
-    assert.deepEqual(roster(s.requests[1]!), ['2']);
-    assert.deepEqual(
-      payload(s.requests[1]!).current_batch.messages.map(
-        (m: TimelineEntry) => m.messageId,
-      ),
-      ['1', '2'],
-    );
+    // 随机消息1与直呼消息2合并为一轮，其中只有2是直呼。
+    assert.deepEqual(batchOf(s.requests[1]!), { count: 2, direct: 1 });
   } finally {
     first.resolve(silent());
     await flush();

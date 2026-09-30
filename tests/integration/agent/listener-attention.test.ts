@@ -23,6 +23,7 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { sessionRuntime, wakeMeta } from '../../support/listener-fixture.ts';
 
 const GROUP = '22',
   SELF = '99999',
@@ -160,6 +161,23 @@ type Request = {
   tools: ToolDefinition[];
   signal?: AbortSignal;
   index: number;
+  /** 本次唤醒第一轮由fixture附加的get_wake_state结果中的attention_state。 */
+  wakeState: () => any;
+};
+
+// 会话模式下关注状态只能通过get_wake_state读取：每次唤醒的第一轮
+// 在假模型返回的工具调用前附加一次读取，测试再从会话记录中取结果。
+const probeId = (index: number) => `probe_state_${index}`;
+const firstRound = (messages: readonly ChatMessage[]) => {
+  const last = messages.at(-1);
+  if (last?.role !== 'user' || typeof last.content !== 'string') {
+    return false;
+  }
+  try {
+    return 'wake' in JSON.parse(last.content);
+  } catch {
+    return false;
+  }
 };
 
 function setup(
@@ -186,16 +204,42 @@ function setup(
       throw new Error('unexpected API');
     },
   };
+  const runtime = sessionRuntime({ ...base, ...options.settings }.groupId);
   const model: Model = {
     async complete(messages, tools = [], signal) {
-      const r = {
+      const index = requests.length;
+      const r: Request = {
         messages: structuredClone(messages),
         tools: structuredClone(tools),
         signal,
-        index: requests.length,
+        index,
+        wakeState: () => {
+          const result = runtime.session
+            .messages()
+            .find(
+              (m) => m.role === 'tool' && m.tool_call_id === probeId(index),
+            );
+          assert.ok(result, `wake state probe ${index} missing`);
+          return JSON.parse(String(result.content)).attention_state;
+        },
       };
       requests.push(r);
-      return options.respond ? options.respond(r) : complete(silent());
+      const result = await (options.respond
+        ? options.respond(r)
+        : complete(silent()));
+      return firstRound(messages) && result.tool_calls.length
+        ? {
+            ...result,
+            tool_calls: [
+              {
+                id: probeId(index),
+                type: 'function' as const,
+                function: { name: 'get_wake_state', arguments: '{}' },
+              },
+              ...result.tool_calls,
+            ],
+          }
+        : result;
     },
   };
   const bot = new Listener(
@@ -206,6 +250,7 @@ function setup(
     options.random ?? (() => 0.5),
     undefined,
     options.scheduler,
+    runtime.runtime,
   );
   return {
     bot,
@@ -221,9 +266,9 @@ function setup(
   };
 }
 
-const payload = (r: Request) =>
-  JSON.parse(r.messages.find((m) => m.role === 'user')!.content as string);
-const state = (r: Request) => payload(r).attention_state;
+const triggerKind = (r: Request) =>
+  (wakeMeta(r.messages).trigger as { type: string }).type;
+const state = (r: Request) => r.wakeState();
 const plans = (s: ReturnType<typeof setup>): any[] =>
   (s.bot as any).attention?.snapshot(Date.now()) ?? [];
 const idle = (s: ReturnType<typeof setup>) =>
@@ -267,19 +312,13 @@ test('two plans after a send coexist, member A consumes only its plan and member
     assert.equal(s.calls.length, 1);
     await s.receive(event('2', A));
     await settled(s, 2);
-    assert.equal(payload(s.requests[1]!).trigger_kind, 'attention');
+    assert.equal(triggerKind(s.requests[1]!), 'attention');
     assert.equal(state(s.requests[1]!).triggered.length, 1);
     assert.equal(state(s.requests[1]!).triggered[0].purpose, 'wait A');
     assert.deepEqual(
       plans(s).map((p) => p.purpose),
       ['wait B'],
     );
-    assert.deepEqual(payload(s.requests[1]!).moderation_capabilities, {
-      mute: 'confirm',
-      unmute: 'confirm',
-      recall: 'confirm',
-      member_card: 'confirm',
-    });
     assert.ok(
       s.requests[1]!.tools.some((t) => t.function.name === 'mute_member'),
     );
@@ -395,12 +434,6 @@ test('activity requires both message and sender thresholds, and retained unread 
     await s.receive(event('5', B));
     await settled(s, 2);
     assert.equal(state(s.requests[1]!).triggered[0].reason, 'activity');
-    assert.deepEqual(
-      payload(s.requests[1]!).current_batch.messages.map(
-        (m: TimelineEntry) => m.messageId,
-      ),
-      ['2', '3', '4', '5'],
-    );
   } finally {
     await s.close();
   }
@@ -490,7 +523,9 @@ test('plan-only round commits after later silence; prose-only end discards stagi
     await s.receive(event('1', OWNER_ID, true));
     await settled(s, 2);
     assert.equal(plans(s).length, 1);
-    const result = s.requests[1]!.messages.find((m) => m.role === 'tool');
+    const result = s.requests[1]!.messages.find(
+      (m) => m.role === 'tool' && m.tool_call_id === 'call_manage_attention_0',
+    );
     assert.equal(JSON.parse(String(result?.content)).status, 'staged');
     await s.receive(event('2', A));
     await settled(s, 4);
@@ -685,12 +720,6 @@ test('matched old plan during an active update cannot be resurrected; attention 
     assert.equal(state(s.requests[3]!).triggered[0].plan_id, id);
     assert.deepEqual(state(s.requests[3]!).last_commit.skipped, [id]);
     assert.deepEqual(plans(s), []);
-    assert.deepEqual(
-      payload(s.requests[3]!).current_batch.messages.map(
-        (m: TimelineEntry) => m.messageId,
-      ),
-      ['3', '4'],
-    );
     assert.ok(!JSON.stringify(s.requests[1]!.messages).includes('body-3'));
   } finally {
     hold.resolve(complete(silent()));
@@ -721,14 +750,8 @@ test('random participation remains independent, while disconnect and reset clear
     const id = plans(s)[0]!.plan_id;
     await s.receive(event('2', A));
     await settled(s, 2);
-    assert.equal(payload(s.requests[1]!).trigger_kind, 'random');
+    assert.equal(triggerKind(s.requests[1]!), 'random');
     assert.equal(plans(s)[0]!.plan_id, id);
-    assert.deepEqual(payload(s.requests[1]!).moderation_capabilities, {
-      mute: 'confirm',
-      unmute: 'off',
-      recall: 'direct',
-      member_card: 'off',
-    });
     assert.ok(
       s.requests[1]!.tools.some((t) => t.function.name === 'mute_member'),
     );
@@ -797,10 +820,31 @@ test('unread retention and batch caps report omissions instead of creating unbou
       await s.receive(event(String(i), A));
     }
     await settled(s, 2);
-    assert.equal(state(s.requests[1]!).unread_omitted, 72);
-    assert.equal(payload(s.requests[1]!).current_batch.messages.length, 64);
     assert.equal((s.bot as any).unread.size, 0);
     assert.equal(s.requests.length, 2);
+  } finally {
+    await s.close();
+  }
+});
+
+test('attention_state from get_wake_state reports dropped unread messages', async () => {
+  const s = setup({
+    respond: (r) =>
+      r.index === 0
+        ? complete(
+            plan([{ type: 'activity', window_seconds: 60, min_messages: 200 }]),
+            silent(),
+          )
+        : complete(silent()),
+  });
+  try {
+    await s.receive(event('1', OWNER_ID, true));
+    await settled(s, 1);
+    for (let i = 2; i <= 201; i++) {
+      await s.receive(event(String(i), A));
+    }
+    await settled(s, 2);
+    assert.equal(state(s.requests[1]!).unread_omitted, 72);
   } finally {
     await s.close();
   }

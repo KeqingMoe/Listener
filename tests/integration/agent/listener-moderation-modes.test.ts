@@ -21,6 +21,7 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { sessionRuntime } from '../../support/listener-fixture.ts';
 
 const self = '999',
   actor = '123',
@@ -113,6 +114,7 @@ function setup(
 ) {
   const memory = new Mem(),
     requests: ChatMessage[][] = [],
+    toolNames: string[][] = [],
     calls: { action: string; params: any }[] = [];
   const api: Api = {
     async call(action, params) {
@@ -152,8 +154,9 @@ function setup(
     },
   };
   const model: Model = {
-    async complete(messages) {
+    async complete(messages, tools) {
       requests.push(structuredClone(messages));
+      toolNames.push(tools?.map((t) => t.function.name) ?? []);
       return respond(requests.length - 1, messages);
     },
   };
@@ -162,12 +165,24 @@ function setup(
     ...(modes ? policy(modes) : {}),
     ...overrides,
   };
-  const bot = new Listener(api, model, memory, cfg, () => 0);
+  const runtime = sessionRuntime(cfg.groupId).runtime;
+  const bot = new Listener(
+    api,
+    model,
+    memory,
+    cfg,
+    () => 0,
+    undefined,
+    undefined,
+    runtime,
+  );
   return {
     bot,
     memory,
     requests,
+    toolNames,
     calls,
+    world: runtime.world,
     receive: (value = event()) => bot.receive(value, self),
   };
 }
@@ -209,15 +224,11 @@ test('nonowner direct management executes autonomously, deduplicates, and report
   try {
     await s.receive();
     await settled(s, 2);
-    const payload = JSON.parse(String(s.requests[0]![1]!.content));
-    assert.equal(payload.trusted_actor_id, actor);
-    assert.equal(payload.trusted_moderation_allowed, undefined);
-    assert.deepEqual(payload.moderation_capabilities, {
-      mute: 'direct',
-      unmute: 'direct',
-      recall: 'off',
-      member_card: 'off',
-    });
+    // 会话模式下各项群管模式体现为本轮提供的工具集合。
+    assert.ok(s.toolNames[0]!.includes('mute_member'));
+    assert.ok(s.toolNames[0]!.includes('unmute_member'));
+    assert.ok(!s.toolNames[0]!.includes('recall_message'));
+    assert.ok(!s.toolNames[0]!.includes('set_member_card'));
     assert.equal(results(s.requests[1]!)[0].status, 'executed');
     assert.deepEqual(
       s.calls.filter((c) => c.action === 'set_group_ban').map((c) => c.params),
@@ -367,15 +378,18 @@ test('ordinary-member bot can recall its own verified historical message through
       }
     },
   );
-  s.memory.append({
+  const own = {
     messageId: '900',
     userId: self,
     nickname: 'bot',
     bot: true,
     time: Math.floor(Date.now() / 1000),
     text: 'own message',
-    segments: [{ type: 'text', text: 'own message' }],
-  });
+    segments: [{ type: 'text' as const, text: 'own message' }],
+  };
+  s.memory.append(own);
+  // 会话模式下消息核验读取本群world。
+  s.world.appendMessage(own, { source: 'onebot' });
   try {
     await s.receive();
     await settled(s, 2);

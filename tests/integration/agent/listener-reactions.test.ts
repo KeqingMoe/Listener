@@ -17,12 +17,14 @@ import {
   type Memory,
   type TimelineEntry,
 } from '../../../src/contracts/messages.ts';
+import { type JsonObject } from '../../../src/contracts/json.ts';
 import { type ToolDefinition } from '../../../src/contracts/tools.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
 import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { sessionRuntime, wakeMeta } from '../../support/listener-fixture.ts';
 
 const GROUP = '22',
   SELF = '99999',
@@ -187,6 +189,12 @@ function setup(
     calls: { action: string; params: Record<string, unknown> }[] = [],
     wire = new Map<string, Wire>();
   const cfg = { ...base, ...options.settings };
+  const runtime = sessionRuntime(cfg.groupId);
+  // 会话模式下工具按world核验消息；预置消息同时写入world和本地记忆。
+  const seed = (entry: TimelineEntry) => {
+    memory.append(entry);
+    runtime.world.appendMessage(entry, { source: 'onebot' });
+  };
   const api: Api = {
     async call(action, params = {}) {
       calls.push({ action, params });
@@ -259,6 +267,7 @@ function setup(
     }),
     undefined,
     {
+      ...runtime.runtime,
       pacer: new SideEffectPacer({
         now: () => virtual,
         sleep: async (ms) => {
@@ -270,6 +279,8 @@ function setup(
   return {
     bot,
     memory,
+    runtime,
+    seed,
     requests,
     calls,
     wire,
@@ -283,9 +294,25 @@ function setup(
   };
 }
 
-const payload = (r: Request) =>
-  JSON.parse(r.messages.find((m) => m.role === 'user')!.content as string);
-const state = (r: Request) => payload(r).reaction_state;
+/** 本次请求是否刚开始新唤醒（最后一条是唤醒输入而非工具结果）。 */
+const wakeStart = (r: Request) => r.messages.at(-1)?.role === 'user';
+/** 新唤醒先调用get_wake_state读取reaction_state，读到后finish。 */
+const inspect = (r: Request) =>
+  wakeStart(r) ? complete(call('get_wake_state')) : complete(silent());
+/** 会话中最近一次get_wake_state返回的结果。 */
+const wakeState = (s: ReturnType<typeof setup>): any => {
+  const found = s.runtime.session
+    .messages()
+    .filter((m) => m.role === 'tool')
+    .map((m) => JSON.parse(String(m.content)))
+    .filter((r) => 'unread_count' in r)
+    .at(-1);
+  assert.ok(found, 'get_wake_state result not found');
+  return found;
+};
+const state = (s: ReturnType<typeof setup>) => wakeState(s).reaction_state;
+const trigger = (r: Request) =>
+  (wakeMeta(r.messages).trigger as { type?: unknown }).type;
 const plans = (s: ReturnType<typeof setup>): any[] =>
   (s.bot as any).attention?.snapshot(Date.now()) ?? [];
 const idle = (s: ReturnType<typeof setup>) =>
@@ -307,6 +334,14 @@ async function until(check: () => boolean) {
 
 const settled = async (s: ReturnType<typeof setup>, count: number) =>
   until(() => s.requests.length >= count && idle(s));
+
+/** 投递一条消息并等待由它触发的唤醒结束。 */
+async function wakeWith(s: ReturnType<typeof setup>, e: Wire) {
+  const before = s.requests.length;
+  await s.receive(e);
+  await until(() => s.requests.length > before && idle(s));
+}
+
 const results = (r: Request) =>
   r.messages
     .filter((m) => m.role === 'tool')
@@ -316,18 +351,21 @@ test('one batch may react to several people and several emoji without creating f
   const s = setup({
     respond: (r) =>
       r.index === 0
-        ? complete(react('1'), react('2', '128077'), silent())
-        : complete(silent()),
+        ? complete(call('read_messages', { limit: 10 }))
+        : r.index === 1
+          ? complete(react('1'), react('2', '128077'), silent())
+          : inspect(r),
   });
   try {
     await s.receive(event('1', A));
     await s.receive(event('2', B));
-    await settled(s, 1);
-    assert.equal(s.requests.length, 1);
+    await settled(s, 2);
+    assert.equal(s.requests.length, 2);
+    // 一次唤醒处理同一批两条消息：模型通过read_messages看到两位群友。
     assert.deepEqual(
-      payload(s.requests[0]!).current_batch.messages.map(
-        (e: TimelineEntry) => e.messageId,
-      ),
+      results(s.requests[1]!)
+        .at(-1)
+        .messages.map((m: JsonObject) => m.messageId),
       ['1', '2'],
     );
     assert.deepEqual(
@@ -340,14 +378,13 @@ test('one batch may react to several people and several emoji without creating f
     assert.equal(s.memory.rows.length, 2);
     assert.ok(s.memory.rows.every((e) => !e.bot));
     assert.ok(!s.memory.context().includes('emoji_id'));
-    await s.receive(event('3'));
-    await settled(s, 2);
-    assert.equal(state(s.requests[1]!).last_turn.outcome, 'reaction_submitted');
-    assert.equal(state(s.requests[1]!).last_turn.confirmed, 0);
-    assert.equal(state(s.requests[1]!).last_turn.submitted, 2);
-    assert.equal(state(s.requests[1]!).recent.length, 2);
+    await wakeWith(s, event('3'));
+    assert.equal(state(s).last_turn.outcome, 'reaction_submitted');
+    assert.equal(state(s).last_turn.confirmed, 0);
+    assert.equal(state(s).last_turn.submitted, 2);
+    assert.equal(state(s).recent.length, 2);
     assert.ok(
-      state(s.requests[1]!).recent.every(
+      state(s).recent.every(
         (r: any) =>
           r.status === 'ok' &&
           r.submitted === true &&
@@ -403,7 +440,7 @@ for (const order of ['before', 'after'] as const) {
 test('finish after reactions and attention commits the plan on normal completion', async () => {
   const s = setup({
     respond: (r) =>
-      r.index === 0 ? complete(react(), next(), silent()) : complete(silent()),
+      r.index === 0 ? complete(react(), next(), silent()) : inspect(r),
   });
   try {
     await s.receive(event('1'));
@@ -411,10 +448,9 @@ test('finish after reactions and attention commits the plan on normal completion
     assert.equal(mutations(s).length, 1);
     assert.equal(sends(s).length, 0);
     assert.equal(plans(s).length, 1);
-    await s.receive(event('2', B, false));
-    await settled(s, 2);
-    assert.equal(payload(s.requests[1]!).trigger_kind, 'attention');
-    assert.equal(state(s.requests[1]!).last_turn.outcome, 'reaction_submitted');
+    await wakeWith(s, event('2', B, false));
+    assert.equal(trigger(s.requests[1]!), 'attention');
+    assert.equal(state(s).last_turn.outcome, 'reaction_submitted');
     assert.deepEqual(plans(s), []);
   } finally {
     await s.close();
@@ -447,7 +483,7 @@ for (const unknown of [false, true]) {
               react(),
               ...(unknown ? [react('1', '76', 'remove')] : []),
             )
-          : complete(silent()),
+          : inspect(r),
       api: (action) => {
         if (unknown && action === 'set_msg_emoji_like') {
           throw new Error('transport uncertain');
@@ -458,7 +494,8 @@ for (const unknown of [false, true]) {
       await s.receive(event('1'));
       await settled(s, 2);
       assert.equal(mutations(s).length, 1);
-      assert.equal(s.calls.filter((c) => c.action === 'get_msg').length, 2); // 一次观察，加一次修改后的重新验证。
+      // 会话模式不再在唤醒开始时刷新反应观察，只剩修改前的一次核验。
+      assert.equal(s.calls.filter((c) => c.action === 'get_msg').length, 1);
       const returned = results(s.requests[1]!);
       assert.equal(returned[0].status, unknown ? 'unknown' : 'ok');
       assert.equal(returned[1].duplicate, true);
@@ -466,11 +503,10 @@ for (const unknown of [false, true]) {
         assert.equal(returned[2].duplicate, true);
         assert.equal(returned[2].requested_action, 'remove');
       }
-      await s.receive(event('2'));
-      await settled(s, 3);
-      assert.equal(state(s.requests[2]!).last_turn.confirmed, 0);
-      assert.equal(state(s.requests[2]!).last_turn.submitted, unknown ? 0 : 1);
-      assert.equal(state(s.requests[2]!).last_turn.unknown, unknown ? 1 : 0);
+      await wakeWith(s, event('2'));
+      assert.equal(state(s).last_turn.confirmed, 0);
+      assert.equal(state(s).last_turn.submitted, unknown ? 0 : 1);
+      assert.equal(state(s).last_turn.unknown, unknown ? 1 : 0);
     } finally {
       await s.close();
     }
@@ -482,7 +518,7 @@ test('add remove add are three intentional operations on one pair', async () => 
     respond: (r) =>
       r.index === 0
         ? complete(react(), react('1', '76', 'remove'), react(), silent())
-        : complete(silent()),
+        : inspect(r),
   });
   try {
     await s.receive(event('1'));
@@ -491,44 +527,36 @@ test('add remove add are three intentional operations on one pair', async () => 
       mutations(s).map((c) => c.params.set),
       [true, false, true],
     );
-    await s.receive(event('2'));
-    await settled(s, 2);
-    assert.equal(state(s.requests[1]!).recent.length, 1);
-    assert.equal(state(s.requests[1]!).recent[0].action, 'add');
-    assert.equal(state(s.requests[1]!).last_turn.confirmed, 0);
-    assert.equal(state(s.requests[1]!).last_turn.submitted, 3);
-    assert.equal(state(s.requests[1]!).recent[0].submitted, true);
-    assert.equal(state(s.requests[1]!).recent[0].effect_confirmed, false);
+    await wakeWith(s, event('2'));
+    assert.equal(state(s).recent.length, 1);
+    assert.equal(state(s).recent[0].action, 'add');
+    assert.equal(state(s).last_turn.confirmed, 0);
+    assert.equal(state(s).last_turn.submitted, 3);
+    assert.equal(state(s).recent[0].submitted, true);
+    assert.equal(state(s).recent[0].effect_confirmed, false);
   } finally {
     await s.close();
   }
 });
 
-test('frozen reaction scope excludes messages arriving during the active model call', async () => {
+test('messages arriving during the active model call are verified against the live world', async () => {
   const held = gate<Completion>();
   const s = setup({
-    respond: (r) => (r.index === 0 ? held.promise : complete(silent())),
+    respond: (r) => (r.index === 0 ? held.promise : inspect(r)),
   });
   try {
     await s.receive(event('1'));
     await until(() => s.requests.length === 1);
     await s.receive(event('2', B, false));
+    // 会话模式的工具按调用时刻的本群world核验，新到达的消息同样可以反应。
     held.resolve(complete(react('2'), react('1'), silent()));
     await settled(s, 1);
     assert.deepEqual(
       mutations(s).map((c) => c.params.message_id),
-      ['1'],
+      ['2', '1'],
     );
-    assert.ok(
-      !s.calls.some(
-        (c) => c.action === 'get_msg' && c.params.message_id === '2',
-      ),
-    );
-    await s.receive(event('3'));
-    await settled(s, 2);
-    assert.ok(
-      state(s.requests[1]!).last_turn.errors.includes('message_not_in_context'),
-    );
+    await wakeWith(s, event('3'));
+    assert.equal(state(s).last_turn.submitted, 2);
   } finally {
     held.resolve(complete(silent()));
     await s.close();
@@ -549,14 +577,7 @@ test('pure attention wake may react and retains explicitly configured confirmati
     await settled(s, 1);
     await s.receive(event('2', OWNER_ID, false));
     await settled(s, 2);
-    assert.equal(payload(s.requests[1]!).trigger_kind, 'attention');
-    assert.equal(payload(s.requests[1]!).trusted_moderation_allowed, undefined);
-    assert.deepEqual(payload(s.requests[1]!).moderation_capabilities, {
-      mute: 'confirm',
-      unmute: 'confirm',
-      recall: 'confirm',
-      member_card: 'confirm',
-    });
+    assert.equal(trigger(s.requests[1]!), 'attention');
     assert.ok(
       s.requests[1]!.tools.some((t) => t.function.name === 'react_message'),
     );
@@ -630,11 +651,11 @@ test('reset during get_msg verification prevents any reaction dispatch', async (
     respond: (r) =>
       r.index === 0 ? complete(react(), next(), silent()) : complete(silent()),
     api: (action) =>
-      action === 'get_msg' && ++gets === 2 ? held.promise : undefined,
+      action === 'get_msg' && ++gets === 1 ? held.promise : undefined,
   });
   try {
     await s.receive(event('1'));
-    await until(() => gets === 2);
+    await until(() => gets === 1);
     await s.receive(event('2', OWNER_ID, false, '/reset'));
     held.resolve({
       message_type: 'group',
@@ -689,7 +710,10 @@ test('disabled reactions remove the schema and reject fabricated tool calls', as
       },
       observeReactions: false,
     },
-    respond: (r) => (r.index === 0 ? complete(react()) : complete(silent())),
+    respond: (r) =>
+      r.index === 0
+        ? complete(react(), call('get_wake_state'))
+        : complete(silent()),
   });
   try {
     await s.receive(event('1'));
@@ -701,7 +725,7 @@ test('disabled reactions remove the schema and reject fabricated tool calls', as
     );
     assert.equal(results(s.requests[1]!)[0].error, 'tool_disabled');
     assert.equal(s.calls.length, 0);
-    assert.equal(payload(s.requests[0]!).reaction_state, undefined);
+    assert.equal(wakeState(s).reaction_state, undefined);
   } finally {
     await s.close();
   }
@@ -727,7 +751,7 @@ test('remote foreign group and unsafe long message IDs never reach the mutation 
     await s.receive(event('1'));
     await settled(s, 2);
     assert.equal(mutations(s).length, 0);
-    assert.equal(s.calls.filter((c) => c.action === 'get_msg').length, 2);
+    assert.equal(s.calls.filter((c) => c.action === 'get_msg').length, 1);
     assert.deepEqual(
       results(s.requests[1]!).map((r) => r.error),
       ['invalid_arguments', 'verification_failed'],
@@ -834,19 +858,16 @@ test('finish blocks trailing reactions, sends, reads and moderation without reco
             call('get_member_info', { user_id: A }),
             call('mute_member', { user_id: A, seconds: 60 }),
           )
-        : complete(silent()),
+        : inspect(r),
   });
   try {
     await s.receive(event('1', OWNER_ID));
     await settled(s, 1);
-    assert.deepEqual(
-      s.calls.map((c) => [c.action, c.params.message_id]),
-      [['get_msg', '1']],
-    );
-    await s.receive(event('2', OWNER_ID));
-    await settled(s, 2);
-    assert.equal(state(s.requests[1]!).last_turn, undefined);
-    assert.deepEqual(state(s.requests[1]!).recent, []);
+    // finish之后的调用一律不执行，也没有唤醒开始时的观察刷新。
+    assert.deepEqual(s.calls, []);
+    await wakeWith(s, event('2', OWNER_ID));
+    assert.equal(state(s).last_turn, undefined);
+    assert.deepEqual(state(s).recent, []);
     assert.equal(mutations(s).length, 0);
     assert.equal(sends(s).length, 0);
   } finally {
@@ -856,8 +877,7 @@ test('finish blocks trailing reactions, sends, reads and moderation without reco
 
 test('native business rejection is not counted as a successful reaction', async () => {
   const s = setup({
-    respond: (r) =>
-      r.index === 0 ? complete(react(), silent()) : complete(silent()),
+    respond: (r) => (r.index === 0 ? complete(react(), silent()) : inspect(r)),
     api: (action) =>
       action === 'set_msg_emoji_like'
         ? { result: 1, errMsg: 'fixture rejected' }
@@ -866,9 +886,8 @@ test('native business rejection is not counted as a successful reaction', async 
   try {
     await s.receive(event('1'));
     await settled(s, 1);
-    await s.receive(event('2'));
-    await settled(s, 2);
-    const current = state(s.requests[1]!);
+    await wakeWith(s, event('2'));
+    const current = state(s);
     assert.equal(current.last_turn.confirmed, 0);
     assert.equal(current.last_turn.rejected, 1);
     assert.equal(current.last_turn.outcome, 'reaction_failed');
@@ -907,20 +926,19 @@ for (const lifecycle of ['reset', 'disconnect', 'stop'] as const) {
 test('ledger is independent per group and hides records whose messages are no longer visible', async () => {
   const a = setup({
       respond: (r) =>
-        r.index === 0 ? complete(react(), silent()) : complete(silent()),
+        r.index === 0 ? complete(react(), silent()) : inspect(r),
     }),
-    b = setup({ settings: { groupId: '33' } });
+    b = setup({ settings: { groupId: '33' }, respond: inspect });
   try {
     await a.receive(event('1'));
     await settled(a, 1);
-    await b.receive(event('1', A, true, 'other', '33'));
-    await settled(b, 1);
-    assert.deepEqual(state(b.requests[0]!).recent, []);
-    assert.equal(state(b.requests[0]!).last_turn, undefined);
-    a.memory.rows = [];
-    await a.receive(event('2'));
-    await settled(a, 2);
-    assert.deepEqual(state(a.requests[1]!).recent, []);
+    await wakeWith(b, event('1', A, true, 'other', '33'));
+    assert.deepEqual(state(b).recent, []);
+    assert.equal(state(b).last_turn, undefined);
+    // 会话模式按本群world判断可见性：消息被world清理后不再展示对应记录。
+    a.runtime.world.prune(Date.now() / 1000 + 31 * 86400);
+    await wakeWith(a, event('2'));
+    assert.deepEqual(state(a).recent, []);
   } finally {
     await a.close();
     await b.close();
@@ -930,17 +948,15 @@ test('ledger is independent per group and hides records whose messages are no lo
 test('ledger and last turn reports expire according to group retention', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
   const s = setup({
-    respond: (r) =>
-      r.index === 0 ? complete(react(), silent()) : complete(silent()),
+    respond: (r) => (r.index === 0 ? complete(react(), silent()) : inspect(r)),
   });
   try {
     await s.receive(event('1'));
     await settled(s, 1);
     t.mock.timers.tick(8 * 86400000);
-    await s.receive(event('2'));
-    await settled(s, 2);
-    assert.deepEqual(state(s.requests[1]!).recent, []);
-    assert.equal(state(s.requests[1]!).last_turn, undefined);
+    await wakeWith(s, event('2'));
+    assert.deepEqual(state(s).recent, []);
+    assert.equal(state(s).last_turn, undefined);
     assert.ok(s.memory.find('1'));
   } finally {
     await s.close();
@@ -958,11 +974,11 @@ test('reaction ledger is bounded to128 entries across many normally completed ba
             ),
             silent(),
           )
-        : complete(silent()),
+        : inspect(r),
   });
   try {
     for (let i = 0; i < 150; i++) {
-      s.memory.append({
+      s.seed({
         messageId: String(1000 + i),
         userId: A,
         nickname: 'fixture',
@@ -976,12 +992,12 @@ test('reaction ledger is bounded to128 entries across many normally completed ba
     }
     assert.equal(mutations(s).length, 150);
     assert.equal((s.bot as any).recentReactions.size, 128);
-    await s.receive(event('6'));
-    await settled(s, 6);
-    const recent = state(s.requests[5]!).recent;
-    assert.equal(recent.length, 128);
-    assert.equal(recent[0].message_id, '1022');
-    assert.equal(recent[127].message_id, '1149');
+    await wakeWith(s, event('6'));
+    // get_wake_state的输出上限为10KB：保留账本最早的前缀，并明确计数省略的条目。
+    const current = state(s);
+    assert.equal(current.details_truncated, true);
+    assert.equal(current.recent.length + current.omitted_items, 128);
+    assert.equal(current.recent[0].message_id, '1022');
     assert.equal(s.memory.rows.filter((e) => e.bot).length, 0);
   } finally {
     await s.close();

@@ -15,6 +15,7 @@ import { type Model, type Completion } from '../../../src/contracts/model.ts';
 import { type JsonObject } from '../../../src/contracts/json.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
 import { toolPermissions } from '../../support/tool-permissions.ts';
+import { sessionRuntime } from '../../support/listener-fixture.ts';
 
 const OWNER_A = '778899',
   OWNER_B = '889900',
@@ -160,10 +161,24 @@ test('Listener instances use independent local owners for prompt identity, reset
         };
       },
     };
-    const bot = new Listener(transport.api, model, memory, {
-      ...config,
-      ownerId,
-    });
+    const bot = new Listener(
+      transport.api,
+      model,
+      memory,
+      {
+        ...config,
+        ownerId,
+      },
+      undefined,
+      undefined,
+      undefined,
+      sessionRuntime(
+        {
+          ...config,
+          ownerId,
+        }.groupId,
+      ).runtime,
+    );
     return {
       ...transport,
       memory,

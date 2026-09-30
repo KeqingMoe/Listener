@@ -20,6 +20,7 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { sessionRuntime } from '../../support/listener-fixture.ts';
 
 const self = '900000001';
 
@@ -134,7 +135,16 @@ function setup(
       return responses.shift() ?? tool('finish', {});
     },
   };
-  const bot = new Listener(api, model, memory, { ...cfg, ...settings });
+  const bot = new Listener(
+    api,
+    model,
+    memory,
+    { ...cfg, ...settings },
+    undefined,
+    undefined,
+    undefined,
+    sessionRuntime({ ...cfg, ...settings }.groupId).runtime,
+  );
   return { bot, memory, calls, requests, toolNames, api };
 }
 
@@ -328,10 +338,24 @@ test('new ordinary message neither cancels active reply nor enters its frozen pr
       });
     },
   };
-  const bot = new Listener(s.api, model, s.memory, {
-    ...cfg,
-    randomReplyProbability: 0,
-  });
+  const bot = new Listener(
+    s.api,
+    model,
+    s.memory,
+    {
+      ...cfg,
+      randomReplyProbability: 0,
+    },
+    undefined,
+    undefined,
+    undefined,
+    sessionRuntime(
+      {
+        ...cfg,
+        randomReplyProbability: 0,
+      }.groupId,
+    ).runtime,
+  );
   try {
     await bot.receive(event(), self);
     await until(() => requests.length === 1);
@@ -366,21 +390,27 @@ test('new ordinary message neither cancels active reply nor enters its frozen pr
 });
 
 test('nonowner cannot clear memory; owner reset clears and nicknames cannot enable default-off abilities', async () => {
-  const s = setup([tool('finish', {})]);
+  const s = setup([tool('read_messages', { limit: 10 }), tool('finish', {})]);
   try {
     await s.bot.receive(event({ sender: { nickname: '時雨てる' } }), self);
-    await until(() => s.requests.length === 1);
-    assert.ok(!s.toolNames[0]?.includes('mute_member'));
-    const payload = JSON.parse(
-      String(s.requests[0]!.find((m) => m.role === 'user')!.content),
+    await until(() => s.requests.length === 2);
+    // 群管能力默认关闭：会话模式下体现为不提供对应工具。
+    for (const name of [
+      'mute_member',
+      'unmute_member',
+      'recall_message',
+      'set_member_card',
+    ]) {
+      assert.ok(!s.toolNames[0]?.includes(name), name);
+    }
+    // 真实身份只来自读取到的消息作者QQ，昵称不改变它。
+    const read = JSON.parse(
+      String(s.requests[1]!.find((m) => m.role === 'tool')!.content),
     );
-    assert.equal(payload.trusted_actor_id, '12345');
-    assert.deepEqual(payload.moderation_capabilities, {
-      mute: 'off',
-      unmute: 'off',
-      recall: 'off',
-      member_card: 'off',
-    });
+    assert.equal(read.status, 'ok');
+    const authors = JSON.stringify(read);
+    assert.match(authors, /"12345"/);
+    assert.doesNotMatch(authors, new RegExp(`"${OWNER_ID}"`));
     await s.bot.receive(
       event({
         message_id: '2',
@@ -415,10 +445,24 @@ test('AI disabled still only answers commands in the one group', async () => {
       return {};
     },
   };
-  const bot = new Listener(api, undefined, undefined, {
-    ...cfg,
-    enabled: false,
-  });
+  const bot = new Listener(
+    api,
+    undefined,
+    undefined,
+    {
+      ...cfg,
+      enabled: false,
+    },
+    undefined,
+    undefined,
+    undefined,
+    sessionRuntime(
+      {
+        ...cfg,
+        enabled: false,
+      }.groupId,
+    ).runtime,
+  );
   try {
     await bot.receive(
       event({

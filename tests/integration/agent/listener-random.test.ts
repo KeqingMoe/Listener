@@ -18,6 +18,7 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { sessionRuntime, wakeMeta } from '../../support/listener-fixture.ts';
 
 const self = '900000001';
 const cfg: ListenerConfig = {
@@ -168,6 +169,9 @@ function setup(
       draws++;
       return options.random?.() ?? 0.5;
     },
+    undefined,
+    undefined,
+    sessionRuntime({ ...cfg, ...options.config }.groupId).runtime,
   );
   return {
     bot,
@@ -181,12 +185,24 @@ function setup(
   };
 }
 
-function request(s: ReturnType<typeof setup>, index = 0) {
-  const content = s.requests[index]!.messages.find(
-    (m) => m.role === 'user',
-  )!.content;
-  assert.ok(typeof content === 'string');
-  return JSON.parse(content);
+/** 第index次模型请求所属唤醒的触发类型（会话模式只注入wake元数据）。 */
+function trigger(s: ReturnType<typeof setup>, index = 0): unknown {
+  return (wakeMeta(s.requests[index]!.messages).trigger as { type?: unknown })
+    ?.type;
+}
+
+/** 请求中最后一条工具结果。 */
+function lastToolResult(messages: readonly ChatMessage[]) {
+  const result = messages.findLast((m) => m.role === 'tool');
+  assert.ok(result && typeof result.content === 'string');
+  return JSON.parse(result.content);
+}
+
+/** 第一轮读取本群消息，第二轮结束；供断言模型实际能读到的消息。 */
+function readThenFinish(): Model['complete'] {
+  let rounds = 0;
+  return async () =>
+    ++rounds === 1 ? tool('read_messages', { limit: 100 }) : tool('finish');
 }
 
 async function until(check: () => boolean) {
@@ -223,7 +239,7 @@ test('ordinary probability zero/one and strict rng < probability boundary', asyn
         `probability=${probability}, rng=${rng}`,
       );
       if (expected) {
-        assert.equal(request(s).trigger_kind, 'random');
+        assert.equal(trigger(s), 'random');
       }
     } finally {
       await s.bot.stop();
@@ -300,15 +316,8 @@ test('direct at bypasses zero probability and random cooldown/cap with real dire
       const before = s.requests.length;
       await s.bot.receive(event('2', true, { user_id: OWNER_ID }), self);
       await until(() => s.requests.length === before + 1);
-      assert.equal(request(s, before).trigger_kind, 'direct');
-      assert.equal(request(s, before).trusted_actor_id, OWNER_ID);
+      assert.equal(trigger(s, before), 'direct');
       assert.ok(!s.requests[before]!.tools.includes('mute_member'));
-      assert.deepEqual(request(s, before).moderation_capabilities, {
-        mute: 'off',
-        unmute: 'off',
-        recall: 'off',
-        member_card: 'off',
-      });
     } finally {
       await s.bot.stop();
     }
@@ -327,15 +336,13 @@ test('owner random turn cannot enable default-off moderation and rejects invente
     await s.bot.receive(event('1', false, { user_id: OWNER_ID }), self);
     await until(() => s.requests.length === 2);
     await settled();
-    assert.equal(request(s).trigger_kind, 'random');
+    assert.equal(trigger(s), 'random');
     for (const turn of s.requests) {
       for (const name of ['mute_member', 'recall_message', 'set_member_card']) {
         assert.ok(!turn.tools.includes(name));
       }
     }
-    const result = s.requests[1]!.messages.find((m) => m.role === 'tool');
-    assert.ok(typeof result!.content === 'string');
-    assert.equal(JSON.parse(result!.content).status, 'error');
+    assert.equal(lastToolResult(s.requests[1]!.messages).status, 'error');
     assert.deepEqual(s.calls, []);
   } finally {
     await s.bot.stop();
@@ -371,10 +378,8 @@ test('nonowner random turn may autonomously propose configured moderation but on
     );
     await settled();
     assert.equal(s.requests.length, 2);
-    assert.equal(request(s).trigger_kind, 'random');
-    assert.equal(request(s).current_request.userId, '55555');
+    assert.equal(trigger(s), 'random');
     assert.ok(s.requests[0]!.tools.includes('mute_member'));
-    assert.equal(request(s).moderation_capabilities.mute, 'confirm');
     assert.ok(!s.calls.some((c) => c.action === 'set_group_ban'));
     const notification = s.calls.find((c) => c.action === 'send_group_msg')!,
       code = /\/confirm ([a-f0-9]{32})/.exec(
@@ -407,33 +412,29 @@ test('pending direct cannot be replaced by ordinary random candidate', async () 
     await until(() => s.requests.length === 1);
     await settled();
     assert.equal(s.requests.length, 1);
-    assert.equal(request(s).trigger_kind, 'direct');
-    assert.equal(request(s).current_request.messageId, '1');
+    assert.equal(trigger(s), 'direct');
   } finally {
     await s.bot.stop();
   }
 });
 
 test('pending random upgrades to direct and retains every caller in arrival order', async () => {
-  const s = setup();
+  const s = setup({ complete: readThenFinish() });
   try {
     await s.bot.receive(event('1'), self);
     await s.bot.receive(event('2', true), self);
     await s.bot.receive(event('3', true), self);
     assert.equal(s.requests.length, 0, 'receive must defer model work');
-    await until(() => s.requests.length === 1);
+    await until(() => s.requests.length === 2);
     await settled();
-    assert.equal(s.requests.length, 1);
-    assert.equal(request(s).trigger_kind, 'direct');
-    assert.equal(request(s).current_request, undefined);
+    assert.equal(s.requests.length, 2, 'one wake: read then finish');
+    assert.equal(trigger(s), 'direct');
     assert.deepEqual(
-      request(s).current_batch.messages.map((m: TimelineEntry) => m.messageId),
+      lastToolResult(s.requests[1]!.messages).messages.map(
+        (m: TimelineEntry) => m.messageId,
+      ),
       ['1', '2', '3'],
     );
-    assert.deepEqual(request(s).trusted_direct_requests, [
-      { message_id: '2', user_id: '12345', trigger: 'mention' },
-      { message_id: '3', user_id: '12345', trigger: 'mention' },
-    ]);
   } finally {
     await s.bot.stop();
   }
@@ -458,10 +459,7 @@ test('new direct requests preserve running random reply and form one next batch'
     await settled();
     assert.equal(s.requests.length, 1);
     assert.equal(s.requests[0]!.signal!.aborted, false);
-    assert.deepEqual(
-      request(s).current_batch.messages.map((m: TimelineEntry) => m.messageId),
-      ['1'],
-    );
+    assert.equal(trigger(s), 'random');
     release(
       sendAndFinish({
         segments: [{ type: 'text', text: 'finish original random reply' }],
@@ -474,19 +472,7 @@ test('new direct requests preserve running random reply and form one next batch'
       1,
     );
     assert.equal(s.requests.length, 2);
-    assert.equal(request(s, 1).trigger_kind, 'direct');
-    assert.deepEqual(
-      request(s, 1).trusted_direct_requests.map(
-        (r: { message_id: string }) => r.message_id,
-      ),
-      ['2', '3'],
-    );
-    assert.deepEqual(
-      request(s, 1).current_batch.messages.map(
-        (m: TimelineEntry) => m.messageId,
-      ),
-      ['2', '3'],
-    );
+    assert.equal(trigger(s, 1), 'direct');
   } finally {
     release?.(tool('finish'));
     await s.bot.stop();
@@ -525,9 +511,7 @@ test('ordinary messages collected while busy receive one random decision at turn
         'one participation draw plus one delay draw only when selected',
       );
       if (probability) {
-        assert.equal(request(s, 1).trigger_kind, 'random');
-        assert.equal(request(s, 1).current_batch.messages.length, 50);
-        assert.deepEqual(request(s, 1).trusted_direct_requests, []);
+        assert.equal(trigger(s, 1), 'random');
       }
     } finally {
       release?.(tool('finish'));
@@ -572,8 +556,7 @@ test('stale async reply lookup cannot admit random after a newer direct turn fin
     await settled();
     assert.equal(s.requests.length, 1);
     assert.equal(s.draws, draws);
-    assert.equal(request(s).trigger_kind, 'direct');
-    assert.equal(request(s).current_request.messageId, '2');
+    assert.equal(trigger(s), 'direct');
   } finally {
     release?.({});
     await pending;

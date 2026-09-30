@@ -26,6 +26,7 @@ import type { Api } from '../../../src/contracts/onebot.ts';
 import type { Memory, TimelineEntry } from '../../../src/contracts/messages.ts';
 import type { Model, ChatMessage } from '../../../src/contracts/model.ts';
 import type { JsonObject } from '../../../src/contracts/json.ts';
+import { sessionRuntime } from '../../support/listener-fixture.ts';
 
 const GROUP = '334455',
   OWNER = '778899',
@@ -681,7 +682,16 @@ test('resolved confirm policies share TTL and require the configured owner once 
       return { content: null, tool_calls: [tool('finish', {})] };
     },
   };
-  const bot = new Listener(rpc.api, model, memory, config);
+  const bot = new Listener(
+    rpc.api,
+    model,
+    memory,
+    config,
+    undefined,
+    undefined,
+    undefined,
+    sessionRuntime(config.groupId).runtime,
+  );
   try {
     await bot.receive(incoming(), SELF);
     await until(() => captured.length === 2);

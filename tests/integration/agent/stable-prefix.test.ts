@@ -18,6 +18,7 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { sessionRuntime, wakeMeta } from '../../support/listener-fixture.ts';
 
 const self = '900000001';
 const config: ListenerConfig = {
@@ -110,7 +111,16 @@ test('system prompt stays byte-stable and budget metadata moves to the initial p
         : call('b', 'finish');
     },
   };
-  const bot = new Listener(api, model, new Mem(), config, () => 0);
+  const bot = new Listener(
+    api,
+    model,
+    new Mem(),
+    config,
+    () => 0,
+    undefined,
+    undefined,
+    sessionRuntime(config.groupId).runtime,
+  );
   try {
     await bot.receive(event, self);
     await wait(bot, requests);
@@ -119,9 +129,8 @@ test('system prompt stays byte-stable and budget metadata moves to the initial p
     assert.equal(toolSchemas[0], toolSchemas[1]);
     assert.equal(requests[1]!.filter((m) => m.role === 'user').length, 1);
     assert.equal(requests[0]![0]!.content, requests[1]![0]!.content);
-    const firstUser = JSON.parse(
-      String(requests[0]!.find((m) => m.role === 'user')!.content),
-    );
+    // 会话模式下预算随唤醒元数据注入。
+    const firstUser = wakeMeta(requests[0]!) as any;
     const tool = JSON.parse(
       String(requests[1]!.find((m) => m.role === 'tool')!.content),
     );

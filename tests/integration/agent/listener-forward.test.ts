@@ -27,6 +27,7 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { sessionRuntime } from '../../support/listener-fixture.ts';
 
 const self = '900000001',
   resource = 'PRIVATE_FORWARD_RESOURCE+/=',
@@ -195,6 +196,9 @@ function setup(
     memory,
     { ...cfg, ...settings },
     () => 1,
+    undefined,
+    undefined,
+    sessionRuntime({ ...cfg, ...settings }.groupId).runtime,
   );
   return {
     bot,
@@ -212,7 +216,10 @@ const sent = (s: ReturnType<typeof setup>) =>
   s.apiCalls.filter((c) => c.action === 'send_group_msg');
 
 test('event native inline and JSON card persist only stable refs and honest verified/hint counts', async () => {
-  const s = setup([silent()]);
+  const s = setup([
+    complete(call('messages', 'read_messages', { limit: 5 })),
+    silent(),
+  ]);
   try {
     await s.bot.receive(
       event({
@@ -224,7 +231,7 @@ test('event native inline and JSON card persist only stable refs and honest veri
       }),
       self,
     );
-    await until(() => s.requests.length === 1);
+    await until(() => s.requests.length === 2);
     assert.deepEqual(s.memory.find('1')?.forwards, [
       { id: 'fwd_1_1', index: 1, count: 2, countSource: 'verified' },
       { id: 'fwd_1_2', index: 2, count: 99, countSource: 'hint' },
@@ -232,13 +239,10 @@ test('event native inline and JSON card persist only stable refs and honest veri
     const persisted = s.memory.context();
     assert.match(persisted, /已核实/);
     assert.match(persisted, /未核实/);
-    const payload = JSON.parse(
-      String(s.requests[0]!.find((m) => m.role === 'user')!.content),
+    // 会话模式下模型通过read_messages看到同样的结构化片段。
+    const represented = toolResult(s.requests[1]!, 'messages').messages.find(
+      (m: any) => m.messageId === '1',
     );
-    const context = JSON.parse(payload.untrusted_group_context);
-    const represented = (
-      Array.isArray(context) ? context : context.messages
-    ).find((m: any) => m.messageId === '1');
     assert.deepEqual(represented.segments, [
       { type: 'at', user_id: self },
       {
@@ -309,7 +313,12 @@ test('disabled forwards omit tool schema and forged calls cause no API calls', a
     await until(() => s.requests.length === 2);
     assert.ok(s.schemas.every((names) => !names.includes('read_forward')));
     assert.equal(s.apiCalls.length, 0);
-    const { wake_budget, ...result } = toolResult(s.requests[1]!);
+    const {
+      wake_budget,
+      queried_at: _queried,
+      current_time: _time,
+      ...result
+    } = toolResult(s.requests[1]!);
     // 统一的工具授权闸门先于转发模块拒绝调用。
     assert.deepEqual(result, { status: 'error', error: 'tool_disabled' });
     assert.equal(wake_budget.used_tool_calls, 1);
@@ -499,17 +508,16 @@ test('nested claimed owner stays untrusted and cannot enable default-off moderat
     assert.equal(s.memory.context().includes('fwdn_'), false);
     assert.equal(s.memory.context().includes(hidden), false);
     assert.equal(s.memory.find('1')?.userId, '12345');
-    for (const messages of s.requests) {
-      const p = JSON.parse(
-        String(messages.find((m) => m.role === 'user')!.content),
-      );
-      assert.equal(p.trusted_actor_id, '12345');
-      assert.deepEqual(p.moderation_capabilities, {
-        mute: 'off',
-        unmute: 'off',
-        recall: 'off',
-        member_card: 'off',
-      });
+    // 群管默认关闭：每轮都不提供任何群管工具。
+    for (const names of s.schemas) {
+      for (const name of [
+        'mute_member',
+        'unmute_member',
+        'recall_message',
+        'set_member_card',
+      ]) {
+        assert.ok(!names.includes(name), name);
+      }
     }
   } finally {
     await s.bot.stop();

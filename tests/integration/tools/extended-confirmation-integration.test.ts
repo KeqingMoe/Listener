@@ -21,6 +21,7 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { sessionRuntime } from '../../support/listener-fixture.ts';
 
 const GROUP = '123456',
   SELF = '999',
@@ -197,7 +198,16 @@ function setup(
     confirmationTtlSeconds: 60,
     ...overrides,
   };
-  const bot = new Listener(api, model, memory, config, () => 0);
+  const bot = new Listener(
+    api,
+    model,
+    memory,
+    config,
+    () => 0,
+    undefined,
+    undefined,
+    sessionRuntime(config.groupId).runtime,
+  );
   return {
     bot,
     calls,

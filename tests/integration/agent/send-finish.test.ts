@@ -22,6 +22,7 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { sessionRuntime } from '../../support/listener-fixture.ts';
 
 const self = '999',
   actor = '123';
@@ -146,7 +147,16 @@ function setup(
       return respond(requests.length - 1, messages);
     },
   };
-  const bot = new Listener(api, model, memory, { ...cfg, ...overrides });
+  const bot = new Listener(
+    api,
+    model,
+    memory,
+    { ...cfg, ...overrides },
+    undefined,
+    undefined,
+    undefined,
+    sessionRuntime({ ...cfg, ...overrides }.groupId).runtime,
+  );
   return { bot, memory, requests, calls };
 }
 

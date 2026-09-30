@@ -16,6 +16,7 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { sessionRuntime } from '../../support/listener-fixture.ts';
 
 const self = '999',
   actor = '123';
@@ -126,6 +127,10 @@ async function run(maxToolCallsPerWake: number) {
     }),
     new Mem(),
     config,
+    undefined,
+    undefined,
+    undefined,
+    sessionRuntime(config.groupId).runtime,
   );
   try {
     await bot.receive(incoming, self);

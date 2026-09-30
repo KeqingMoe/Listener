@@ -19,6 +19,14 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { sessionRuntime, wakeMeta } from '../../support/listener-fixture.ts';
+
+/** 请求所属唤醒的触发类型；会话模式只注入wake元数据。 */
+const triggerOf = (messages: readonly ChatMessage[]) =>
+  (wakeMeta(messages).trigger as { type?: unknown }).type;
+/** 这些请求分属的唤醒数。 */
+const wakeCount = (requests: readonly ChatMessage[][]) =>
+  new Set(requests.map((messages) => wakeMeta(messages).wake_id)).size;
 
 const self = '900000001';
 const target = '123456';
@@ -181,7 +189,16 @@ function setup(
       return complete(messages);
     },
   };
-  const bot = new Listener(api, model, memory, settings);
+  const bot = new Listener(
+    api,
+    model,
+    memory,
+    settings,
+    undefined,
+    undefined,
+    undefined,
+    sessionRuntime(settings.groupId).runtime,
+  );
   const notifications = () =>
     calls
       .filter((call) => call.action === 'send_group_msg')
@@ -304,24 +321,9 @@ test('late reference lookup before sealing merges callers in arrival order witho
     await old;
     await until(() => s.requests.length > 0);
     await delay(30);
+    // 两位呼唤者合入同一次唤醒。
     assert.equal(s.requests.length, 1);
-    const prompt = JSON.parse(text(s.requests[0]![1]!));
-    assert.equal(prompt.current_request, undefined);
-    assert.equal(prompt.trusted_actor_id, null);
-    assert.deepEqual(prompt.moderation_capabilities, {
-      mute: 'confirm',
-      unmute: 'confirm',
-      recall: 'confirm',
-      member_card: 'confirm',
-    });
-    assert.deepEqual(prompt.trusted_direct_requests, [
-      { message_id: '1', user_id: OWNER_ID, trigger: 'quote' },
-      { message_id: '2', user_id: target, trigger: 'mention' },
-    ]);
-    assert.deepEqual(
-      prompt.current_batch.messages.map((m: TimelineEntry) => m.messageId),
-      ['1', '2'],
-    );
+    assert.equal(triggerOf(s.requests[0]!), 'direct');
     assert.ok(s.tools[0]!.includes('mute_member'));
   } finally {
     lookup.resolve(null);
@@ -348,7 +350,6 @@ test('verified late quote after sealing remains excluded from first snapshot and
     await s.bot.receive(event('2', 'immediate caller', target), self);
     await until(() => s.requests.length === 1);
     await delay(20);
-    assert.ok(!text(s.requests[0]![1]!).includes('LATE_QUOTE_SECRET'));
     lookup.resolve({
       group_id: LISTENER_GROUP,
       message_type: 'group',
@@ -358,15 +359,10 @@ test('verified late quote after sealing remains excluded from first snapshot and
     await receive;
     await until(() => s.requests.length === 2);
     await delay(30);
+    // 迟到的引用呼唤单独成为下一次唤醒，且只运行一次。
     assert.equal(s.requests.length, 2);
-    assert.equal(
-      JSON.parse(text(s.requests[1]![1]!)).current_request.messageId,
-      '1',
-    );
-    assert.deepEqual(
-      JSON.parse(text(s.requests[1]![1]!)).trusted_direct_requests,
-      [{ message_id: '1', user_id: OWNER_ID, trigger: 'quote' }],
-    );
+    assert.equal(wakeCount(s.requests), 2);
+    assert.equal(triggerOf(s.requests[1]!), 'direct');
     assert.ok(s.tools[1]!.includes('mute_member'));
   } finally {
     lookup.resolve(null);
@@ -424,10 +420,10 @@ test('disconnect with a queued debounce timer permits fresh moderation after rec
     s.bot.setConnected(true);
     await s.bot.receive(event('2', 'fresh after reconnect', OWNER_ID), self);
     await until(() => s.codes().length === 1);
-    assert.equal(
-      JSON.parse(text(s.requests[0]![1]!)).current_request.messageId,
-      '2',
-    );
+    await delay(30);
+    // 断线前排队的批次被丢弃：只有重连后的请求形成一次唤醒。
+    assert.equal(wakeCount(s.requests), 1);
+    assert.equal(s.codes().length, 1);
     await s.bot.receive(command('3', `/confirm ${s.codes()[0]!}`), self);
     assert.equal(
       s.calls.filter((call) => call.action === 'set_group_ban').length,
@@ -473,7 +469,6 @@ test('mixed explicit callers can request configured moderation without owner-onl
     await until(() => s.codes().length === 1);
     assert.ok(s.tools.every((names) => names.includes('mute_member')));
     assert.equal(s.calls.filter((c) => c.action === 'set_group_ban').length, 0);
-    assert.equal(JSON.parse(text(s.requests[0]![1]!)).trusted_actor_id, null);
     await s.bot.receive(
       event('3', `/confirm ${s.codes()[0]!}`, target, {
         message: [
@@ -485,12 +480,7 @@ test('mixed explicit callers can request configured moderation without owner-onl
     assert.equal(s.calls.filter((c) => c.action === 'set_group_ban').length, 0);
     await s.bot.receive(command('4', `/confirm ${s.codes()[0]!}`), self);
     assert.equal(s.calls.filter((c) => c.action === 'set_group_ban').length, 1);
-    assert.deepEqual(
-      JSON.parse(text(s.requests[0]![1]!)).trusted_direct_requests.map(
-        (r: { user_id: string }) => r.user_id,
-      ),
-      [OWNER_ID, target],
-    );
+    assert.equal(wakeCount(s.requests), 1);
   } finally {
     await s.bot.stop();
   }

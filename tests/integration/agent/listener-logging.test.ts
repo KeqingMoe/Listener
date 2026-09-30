@@ -23,6 +23,7 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { sessionRuntime } from '../../support/listener-fixture.ts';
 
 const secret = 'NEVER_LOG_CHAT_BODY_OR_ARGUMENTS';
 const self = '999';
@@ -141,7 +142,16 @@ function setup(
       return respond(++requests, signal);
     },
   };
-  const bot = new Listener(api, model, memory, { ...cfg, ...options });
+  const bot = new Listener(
+    api,
+    model,
+    memory,
+    { ...cfg, ...options },
+    undefined,
+    undefined,
+    undefined,
+    sessionRuntime({ ...cfg, ...options }.groupId).runtime,
+  );
   return {
     bot,
     entries,

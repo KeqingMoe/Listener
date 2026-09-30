@@ -24,6 +24,7 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { sessionRuntime } from '../../support/listener-fixture.ts';
 
 const GROUP = '22',
   SELF = '99999',
@@ -70,13 +71,6 @@ function event(id: string, direct = true, body = `body-${id}`, user = A) {
   };
 }
 
-const row = (messageId: string): TimelineEntry => ({
-  messageId,
-  userId: A,
-  nickname: 'fixture',
-  time: Math.floor(Date.now() / 1000),
-  text: `body-${messageId}`,
-});
 const notice = (id: string, group = GROUP) => ({
   post_type: 'notice',
   notice_type: 'group_msg_emoji_like',
@@ -98,6 +92,7 @@ const silent = () => call('finish');
 const read = (id: string) => call('read_message', { message_id: id });
 const react = (id = '1') =>
   call('react_message', { message_id: id, emoji_id: '76', action: 'add' });
+const state = () => call('get_wake_state');
 const next = () =>
   call('manage_attention', {
     operation: 'create',
@@ -252,7 +247,16 @@ function setup(
       return options.respond ? options.respond(request) : complete(silent());
     },
   };
-  const bot = new Listener(api, model, memory, cfg, () => 0.5),
+  const bot = new Listener(
+      api,
+      model,
+      memory,
+      cfg,
+      () => 0.5,
+      undefined,
+      undefined,
+      sessionRuntime(cfg.groupId).runtime,
+    ),
     router = new GroupRouter([[cfg.groupId!, bot]]);
   router.setConnected(true);
   return {
@@ -274,9 +278,6 @@ function setup(
   };
 }
 
-const payload = (r: Request) =>
-  JSON.parse(r.messages.find((m) => m.role === 'user')!.content as string);
-const context = (r: Request) => JSON.parse(payload(r).untrusted_group_context);
 const snapshot = (s: ReturnType<typeof setup>, id: string) =>
   (s.bot as any).reactionObservations?.get(id);
 const gets = (s: ReturnType<typeof setup>) =>
@@ -285,6 +286,8 @@ const results = (r: Request) =>
   r.messages
     .filter((m) => m.role === 'tool')
     .map((m) => JSON.parse(String(m.content)));
+const system = (r: Request) =>
+  String(r.messages.find((m) => m.role === 'system')?.content);
 const idle = (s: ReturnType<typeof setup>) =>
   !(s.bot as any).running && !(s.bot as any).admission;
 
@@ -301,130 +304,60 @@ async function until(predicate: () => boolean) {
 const settled = async (s: ReturnType<typeof setup>, count: number) =>
   until(() => s.requests.length >= count && idle(s));
 
-test('automatic first-turn and history observations are inline without model read requests or memory writes', async () => {
-  const s = setup();
+// 会话模式没有唤醒前的自动预取：反应快照只在模型read_message时按需刷新并附在结果上。
+test('read_message refreshes reactions on demand without prefetch or memory writes', async () => {
+  let callsBeforeModel: number | undefined;
+  const s = setup({
+    respond: (r) => {
+      if (r.index === 0) {
+        callsBeforeModel = s.calls.length;
+        return complete(state(), read('1'));
+      }
+      return complete(silent());
+    },
+  });
   try {
-    s.memory.append(row('8'));
-    s.counts.set('8', 7);
     await s.receive(event('1'));
-    await settled(s, 1);
+    await settled(s, 2);
+    assert.equal(callsBeforeModel, 0);
     assert.deepEqual(
-      new Set(gets(s).map((c) => c.params.message_id)),
-      new Set(['1', '8']),
+      gets(s).map((c) => c.params.message_id),
+      ['1'],
     );
-    assert.equal(s.calls.length, 2);
-    const first = payload(s.requests[0]!),
-      history = context(s.requests[0]!);
-    assert.equal(first.current_batch.messages[0].reactions.items[0].count, 3);
-    assert.equal(first.current_request.reactions.items[0].count, 3);
-    assert.equal(
-      history.messages.find((m: any) => m.messageId === '8').reactions.items[0]
-        .count,
-      7,
-    );
-    assert.deepEqual(history.summary, {
-      untrusted: true,
-      text: 'original summary body',
-    });
-    assert.ok(
-      history.messages.every(
-        (m: any) =>
-          m.reactions.status === 'observed' &&
-          !Object.hasOwn(m.reactions, 'contains_bot'),
-      ),
-    );
-    assert.deepEqual(first.reaction_state.recent, []);
-    assert.equal(s.memory.rows.length, 2);
+    const [wake, message] = results(s.requests[1]!);
+    assert.deepEqual(wake.reaction_state.recent, []);
+    assert.equal(message.message.messageId, '1');
+    assert.equal(message.message.reactions.status, 'observed');
+    assert.equal(message.message.reactions.items[0].count, 3);
+    assert.ok(!Object.hasOwn(message.message.reactions, 'contains_bot'));
+    assert.equal(s.memory.rows.length, 1);
     assert.ok(s.memory.rows.every((m) => !Object.hasOwn(m, 'reactions')));
-    assert.equal(s.requests.length, 1);
   } finally {
     await s.close();
   }
 });
 
-test('recent own replies and explicit reaction targets survive a busy batch prefetch budget', async () => {
+test('quoted reaction targets are read on demand and empty snapshots stay distinct', async () => {
   const s = setup({
-    settings: { debounceMs: 30, delayMaxMs: 30 },
+    respond: (r) =>
+      r.index === 0 ? complete(read('50'), read('42')) : complete(silent()),
     api: (action, params, normal) =>
       action === 'get_msg' && String(params.message_id) === '50'
         ? { ...normal, emoji_likes_list: [] }
         : undefined,
   });
   try {
-    s.memory.append({ ...row('8'), userId: SELF, bot: true });
-    s.memory.append({ ...row('9'), userId: SELF, bot: true });
-    for (let i = 10; i < 40; i++) {
-      s.memory.append(row(String(i)));
-    }
-    s.counts.set('8', 5);
-    s.counts.set('9', 7);
     s.counts.set('42', 4);
     const ask = event('50', true, '能看到我给你点的reaction吗');
     ask.message.push({ type: 'reply', data: { id: '42' } } as any);
     await s.receive(ask);
-    for (let i = 51; i < 62; i++) {
-      await s.receive(event(String(i), false));
-    }
-    await settled(s, 1);
-    assert.equal(gets(s).length, 8);
-    const ids = gets(s).map((c) => c.params.message_id);
-    for (const id of ['50', '42', '8', '9']) {
-      assert.ok(ids.includes(id));
-    }
-    const history = context(s.requests[0]!);
-    assert.equal(
-      history.messages.find((m: any) => m.messageId === '8').reactions.items[0]
-        .count,
-      5,
-    );
-    assert.equal(
-      history.messages.find((m: any) => m.messageId === '9').reactions.items[0]
-        .count,
-      7,
-    );
-    assert.equal(
-      payload(s.requests[0]!).current_request.reactions.status,
-      'empty_snapshot',
-    );
-    const system = String(s.requests[0]!.messages[0]!.content);
-    assert.match(system, /bot:true/);
-    assert.match(system, /不是用户当前提问那条/);
-  } finally {
-    await s.close();
-  }
-});
-
-test('automatic observation prefetch is bounded to eight messages with two concurrent RPCs', async () => {
-  let active = 0,
-    peak = 0;
-  const s = setup({
-    api: async (action) => {
-      if (action !== 'get_msg') {
-        return;
-      }
-      active++;
-      peak = Math.max(peak, active);
-      await delay(2);
-      active--;
-    },
-  });
-  try {
-    for (let i = 1; i <= 20; i++) {
-      s.memory.append(row(String(i)));
-    }
-    await s.receive(event('21'));
-    await settled(s, 1);
-    assert.equal(gets(s).length, 8);
-    assert.equal(peak, 2);
-    assert.equal(active, 0);
-    assert.ok(gets(s).some((c) => c.params.message_id === '21'));
-    const messages = context(s.requests[0]!).messages;
-    assert.equal(messages.length, 21);
-    assert.equal(messages.filter((m: any) => m.reactions).length, 8);
-    assert.equal(
-      payload(s.requests[0]!).current_batch.messages[0].reactions.status,
-      'observed',
-    );
+    await settled(s, 2);
+    const [own, quoted] = results(s.requests[1]!);
+    assert.equal(own.message.reactions.status, 'empty_snapshot');
+    assert.equal(quoted.message.messageId, '42');
+    assert.equal(quoted.message.reactions.items[0].count, 4);
+    assert.match(system(s.requests[0]!), /bot:true/);
+    assert.match(system(s.requests[0]!), /不是用户当前提问那条/);
   } finally {
     await s.close();
   }
@@ -456,7 +389,7 @@ test('read_message returns cached local and verified remote quote annotations, b
     assert.ok(!returned[2].reactions);
     assert.deepEqual(
       gets(s).map((c) => c.params.message_id),
-      ['1', '42', '42'],
+      ['1', '42'],
     );
     assert.equal(s.memory.rows.length, 1);
     assert.equal(s.memory.find('42'), undefined);
@@ -469,7 +402,11 @@ test('read_message returns cached local and verified remote quote annotations, b
 test('specific notices routed to a group only mark known snapshots dirty without RPC, history, attention or wake', async () => {
   const s = setup({
     respond: (r) =>
-      r.index === 0 ? complete(next(), silent()) : complete(silent()),
+      r.index === 0
+        ? complete(read('1'), next(), silent())
+        : r.index === 1
+          ? complete(read('1'))
+          : complete(silent()),
   });
   try {
     await s.receive(event('1'));
@@ -477,6 +414,7 @@ test('specific notices routed to a group only mark known snapshots dirty without
     const apiCount = s.calls.length,
       sequence = (s.bot as any).arrivalSequence,
       plans = (s.bot as any).attention.snapshot(Date.now());
+    assert.equal(snapshot(s, '1').status, 'observed');
     await s.router.receive(notice('1', '33'), SELF);
     assert.equal(snapshot(s, '1').status, 'observed');
     await s.router.receive(notice('999'), SELF);
@@ -493,18 +431,14 @@ test('specific notices routed to a group only mark known snapshots dirty without
     assert.equal(snapshot(s, '1').items[0].count, 3);
     s.counts.set('1', 7);
     await s.receive(event('2'));
-    await settled(s, 2);
-    const history = context(s.requests[1]!);
-    assert.equal(
-      history.messages.find((m: any) => m.messageId === '1').reactions.items[0]
-        .count,
-      7,
+    await settled(s, 3);
+    const reread = results(s.requests[2]!).at(-1);
+    assert.equal(reread.message.messageId, '1');
+    assert.equal(reread.message.reactions.items[0].count, 7);
+    assert.equal(reread.message.reactions.status, 'observed');
+    assert.ok(
+      !s.requests.some((r) => JSON.stringify(r.messages).includes('999999')),
     );
-    assert.equal(
-      history.messages.find((m: any) => m.messageId === '1').reactions.status,
-      'observed',
-    );
-    assert.ok(!JSON.stringify(history).includes('999999'));
     assert.equal(s.memory.rows.length, 2);
   } finally {
     await s.close();
@@ -516,9 +450,12 @@ test('native writes make old counters stale without optimistic increments and a 
   const s = setup({
     respond: (r) => {
       if (r.index === 0) {
-        return complete(react());
+        return complete(read('1'));
       }
       if (r.index === 1) {
+        return complete(react());
+      }
+      if (r.index === 2) {
         beforeRead = snapshot(s, '1');
         return complete(read('1'));
       }
@@ -532,11 +469,11 @@ test('native writes make old counters stale without optimistic increments and a 
   });
   try {
     await s.receive(event('1'));
-    await settled(s, 3);
+    await settled(s, 4);
     assert.equal(beforeRead.status, 'stale');
     assert.equal(beforeRead.items[0].count, 3);
     assert.ok(!Object.hasOwn(beforeRead, 'contains_bot'));
-    const returned = results(s.requests[2]!).find((r) => r.message);
+    const returned = results(s.requests[3]!).at(-1);
     assert.equal(returned.message.reactions.status, 'observed');
     assert.equal(returned.message.reactions.items[0].count, 7);
     assert.equal(snapshot(s, '1').items[0].count, 7);
@@ -551,7 +488,7 @@ test('native writes make old counters stale without optimistic increments and a 
   }
 });
 
-test('disabled reactions never prefetch and do not decorate any model context', async () => {
+test('disabled reactions never fetch and do not decorate reads or wake state', async () => {
   const s = setup({
     settings: {
       toolPermissions: {
@@ -561,20 +498,19 @@ test('disabled reactions never prefetch and do not decorate any model context', 
       },
       observeReactions: false,
     },
+    respond: (r) =>
+      r.index === 0 ? complete(state(), read('1')) : complete(silent()),
   });
   try {
     await s.receive(event('1'));
-    await settled(s, 1);
+    await settled(s, 2);
     await s.router.receive(notice('1'), SELF);
     await delay(10);
     assert.equal(s.calls.length, 0);
-    assert.equal(s.requests.length, 1);
-    assert.equal(
-      payload(s.requests[0]!).current_batch.messages[0].reactions,
-      undefined,
-    );
-    assert.ok(context(s.requests[0]!).messages.every((m: any) => !m.reactions));
-    assert.equal(payload(s.requests[0]!).reaction_state, undefined);
+    assert.equal(s.requests.length, 2);
+    const [wake, message] = results(s.requests[1]!);
+    assert.equal(wake.reaction_state, undefined);
+    assert.equal(message.message.reactions, undefined);
   } finally {
     await s.close();
   }
@@ -583,6 +519,7 @@ test('disabled reactions never prefetch and do not decorate any model context', 
 test('observation preserves the original cache without invoking an extra summary model', async () => {
   const s = setup({
     summarize: true,
+    respond: (r) => (r.index === 0 ? complete(read('1')) : complete(silent())),
     api: (action) => {
       if (action === 'get_msg') {
         assert.equal(s.summaries.length, 0);
@@ -591,9 +528,9 @@ test('observation preserves the original cache without invoking an extra summary
   });
   try {
     await s.receive(event('1'));
-    await settled(s, 1);
+    await settled(s, 2);
     assert.equal(s.summaries.length, 0);
-    assert.equal(s.requests.length, 1);
+    assert.ok(results(s.requests[1]!)[0].message.reactions);
     const summarySource = JSON.parse(s.memory.context());
     assert.deepEqual(summarySource.summary, {
       untrusted: true,
@@ -602,7 +539,6 @@ test('observation preserves the original cache without invoking an extra summary
     assert.ok(
       summarySource.messages.every((m: any) => !Object.hasOwn(m, 'reactions')),
     );
-    assert.ok(payload(s.requests[0]!).current_batch.messages[0].reactions);
     assert.deepEqual(s.memory.compactInputs, []);
     assert.ok(s.memory.rawContexts.every((raw) => !raw.includes('emoji_id')));
     assert.equal(s.memory.rows.length, 1);
@@ -612,8 +548,10 @@ test('observation preserves the original cache without invoking an extra summary
 });
 
 for (const invalid of ['group', 'sender', 'private'] as const) {
-  test(`automatic observation refuses ${invalid} provenance mismatch`, async () => {
+  test(`reaction refresh refuses ${invalid} provenance mismatch`, async () => {
     const s = setup({
+      respond: (r) =>
+        r.index === 0 ? complete(read('1')) : complete(silent()),
       api: (action, _params, normal) =>
         action === 'get_msg'
           ? {
@@ -628,13 +566,9 @@ for (const invalid of ['group', 'sender', 'private'] as const) {
     });
     try {
       await s.receive(event('1'));
-      await settled(s, 1);
+      await settled(s, 2);
       assert.equal(snapshot(s, '1'), undefined);
-      assert.equal(
-        payload(s.requests[0]!).current_batch.messages[0].reactions,
-        undefined,
-      );
-      assert.equal(context(s.requests[0]!).messages[0].reactions, undefined);
+      assert.equal(results(s.requests[1]!)[0].message.reactions, undefined);
       assert.equal(s.calls.length, 1);
     } finally {
       await s.close();
@@ -642,10 +576,11 @@ for (const invalid of ['group', 'sender', 'private'] as const) {
   });
 }
 
-test('reset aborts automatic prefetch and a late response cannot restore cleared observations', async () => {
+test('reset aborts an on-demand refresh and a late response cannot restore cleared observations', async () => {
   const held = gate<unknown>();
   let remote: JsonObject | undefined;
   const s = setup({
+    respond: (r) => (r.index === 0 ? complete(read('1')) : complete(silent())),
     api: (action, params, normal) => {
       if (action === 'get_msg' && params.message_id === '1') {
         remote = normal;
@@ -658,19 +593,15 @@ test('reset aborts automatic prefetch and a late response cannot restore cleared
     await until(() => gets(s).length === 1);
     await s.receive(event('9', false, '/reset', OWNER_ID));
     await until(() => idle(s));
-    assert.equal(s.requests.length, 0);
+    assert.equal(s.requests.length, 1);
     assert.equal(snapshot(s, '1'), undefined);
     held.resolve(remote);
     await flush();
     await flush();
     assert.equal(snapshot(s, '1'), undefined);
-    assert.equal(s.requests.length, 0);
+    assert.equal(s.requests.length, 1);
     await s.receive(event('2'));
-    await settled(s, 1);
-    assert.equal(
-      payload(s.requests[0]!).current_batch.messages[0].messageId,
-      '2',
-    );
+    await settled(s, 2);
     assert.equal(snapshot(s, '1'), undefined);
   } finally {
     held.resolve(remote);
@@ -678,11 +609,12 @@ test('reset aborts automatic prefetch and a late response cannot restore cleared
   }
 });
 
-test('prefetch time budget releases the model and ignores late RPC results', async (t) => {
+test('refresh time budget releases the model and ignores late RPC results', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'], now: Date.now() });
   const held = gate<unknown>();
   let remote: JsonObject | undefined;
   const s = setup({
+    respond: (r) => (r.index === 0 ? complete(read('1')) : complete(silent())),
     api: (action, _params, normal) => {
       if (action === 'get_msg') {
         remote = normal;
@@ -692,98 +624,27 @@ test('prefetch time budget releases the model and ignores late RPC results', asy
   });
   try {
     await s.receive(event('1'));
-    t.mock.timers.tick(3);
-    await flush();
-    await flush();
+    for (let i = 0; i < 20 && !gets(s).length; i++) {
+      t.mock.timers.tick(3);
+      await flush();
+      await flush();
+    }
     assert.equal(gets(s).length, 1);
-    assert.equal(s.requests.length, 0);
-    t.mock.timers.tick(1501);
-    await flush();
-    await flush();
     assert.equal(s.requests.length, 1);
-    assert.ok(idle(s));
-    assert.equal(
-      payload(s.requests[0]!).current_batch.messages[0].reactions,
-      undefined,
-    );
+    t.mock.timers.tick(1501);
+    for (let i = 0; i < 20 && s.requests.length < 2; i++) {
+      await flush();
+    }
+    assert.equal(s.requests.length, 2);
+    assert.equal(results(s.requests[1]!)[0].message.reactions, undefined);
     held.resolve(remote);
     await flush();
     await flush();
     assert.equal(snapshot(s, '1'), undefined);
-    assert.equal(s.requests.length, 1);
   } finally {
     held.resolve(remote);
     await flush();
     await s.close();
     t.mock.timers.reset();
-  }
-});
-
-test('messages arriving while automatic lookup waits stay outside its frozen scope until the next turn', async () => {
-  const held = gate<unknown>();
-  let remote: JsonObject | undefined;
-  const s = setup({
-    api: (action, params, normal) => {
-      if (action === 'get_msg' && params.message_id === '1') {
-        remote = normal;
-        return held.promise;
-      }
-    },
-  });
-  try {
-    await s.receive(event('1'));
-    await until(() => gets(s).length === 1);
-    await s.receive(event('2', false));
-    held.resolve(remote);
-    await settled(s, 1);
-    assert.deepEqual(
-      gets(s).map((c) => c.params.message_id),
-      ['1'],
-    );
-    assert.deepEqual(
-      payload(s.requests[0]!).current_batch.messages.map(
-        (m: any) => m.messageId,
-      ),
-      ['1'],
-    );
-    assert.deepEqual(
-      context(s.requests[0]!).messages.map((m: any) => m.messageId),
-      ['1'],
-    );
-    assert.equal(snapshot(s, '2'), undefined);
-    await s.receive(event('3'));
-    await settled(s, 2);
-    assert.ok(gets(s).some((c) => c.params.message_id === '2'));
-    assert.ok(
-      context(s.requests[1]!).messages.find((m: any) => m.messageId === '2')
-        .reactions,
-    );
-  } finally {
-    held.resolve(remote);
-    await s.close();
-  }
-});
-
-test('near-full real reply batches retain every bounded body and provenance instead of overflowing for counters', async () => {
-  const s = setup({ settings: { debounceMs: 30, delayMaxMs: 30 } });
-  try {
-    for (let i = 1; i <= 8; i++) {
-      await s.receive(event(String(i), true, `${i}:` + '正文'.repeat(3000)));
-    }
-    const original = (s.bot as any).pending.payload();
-    assert.ok(JSON.stringify(original).length > 23900);
-    await settled(s, 1);
-    const root = payload(s.requests[0]!),
-      projected = Object.fromEntries(
-        Object.keys(original).map((key) => [key, root[key]]),
-      );
-    assert.ok(JSON.stringify(projected).length <= 24000);
-    for (const message of (projected.current_batch as any).messages) {
-      delete message.reactions;
-    }
-    assert.deepEqual(projected, original);
-    assert.equal(s.memory.rows.length, 8);
-  } finally {
-    await s.close();
   }
 });

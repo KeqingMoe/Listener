@@ -22,6 +22,7 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { sessionRuntime } from '../../support/listener-fixture.ts';
 
 const group = '123456',
   self = '999',
@@ -324,16 +325,20 @@ test('view_images inside the sandbox returns RGBA pixels instead of model-visibl
     },
   };
   const mem = memory();
-  mem.append({
+  const entry = {
     messageId: '77',
     userId: '7',
     nickname: 'A',
     time: 1,
     text: '[图片]',
     images: [{ id: 'img_77_0', index: 0 }] as never,
-  });
+  };
+  mem.append(entry);
   const cfg = config({ view_images: 'direct' });
   cfg.toolPermissions.view_images.maxDownloadMb = 1;
+  const runtime = sessionRuntime(cfg.groupId).runtime;
+  // 会话模式下图片来源从本群world核验。
+  runtime.world.appendMessage(entry, { source: 'onebot' });
   const bot = new Listener(
     api,
     undefined,
@@ -347,7 +352,7 @@ test('view_images inside the sandbox returns RGBA pixels instead of model-visibl
       firstFrameOnly: false,
     }),
     undefined,
-    { pacer: virtualPacer().pacer },
+    { ...runtime, pacer: virtualPacer().pacer },
   );
   bot.setConnected(true);
   try {

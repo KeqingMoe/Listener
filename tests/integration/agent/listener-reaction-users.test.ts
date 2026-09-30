@@ -20,6 +20,7 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { sessionRuntime } from '../../support/listener-fixture.ts';
 
 const GROUP = '22',
   SELF = '99999',
@@ -190,7 +191,13 @@ function setup(
     memory = new Mem(),
     requests: Request[] = [],
     calls: Array<{ action: string; params: JsonObject; round: number }> = [];
-  memory.append(row('8'));
+  const runtime = sessionRuntime(cfg.groupId);
+  // 会话模式下读取工具查询world；预置消息同时写入world和本地记忆。
+  const seed = (entry: TimelineEntry) => {
+    memory.append(entry);
+    runtime.world.appendMessage(entry, { source: 'onebot' });
+  };
+  seed(row('8'));
   const api: Api = {
     async call(action, params = {}) {
       calls.push({ action, params, round: requests.length });
@@ -246,10 +253,21 @@ function setup(
       return options.respond ? options.respond(request) : complete(silent());
     },
   };
-  const bot = new Listener(api, model, memory, cfg, () => 0.5);
+  const bot = new Listener(
+    api,
+    model,
+    memory,
+    cfg,
+    () => 0.5,
+    undefined,
+    undefined,
+    runtime.runtime,
+  );
   return {
     bot,
     memory,
+    seed,
+    runtime,
     requests,
     calls,
     receive: (e: ReturnType<typeof event>) => bot.receive(e, SELF),
@@ -635,7 +653,7 @@ test('shared wake budget allows all nine independent actor reads without a per-t
   });
   try {
     for (let i = 20; i < 29; i++) {
-      s.memory.append(row(String(i)));
+      s.seed(row(String(i)));
     }
     await s.receive(event('1'));
     await settled(s, 2);
@@ -761,7 +779,7 @@ test('foreign group proof never reaches the actor-list API', async () => {
   }
 });
 
-test('messages arriving while the model thinks never widen the frozen user-query scope', async () => {
+test('messages arriving while the model thinks are only visible through a fresh read, not injected', async () => {
   const held = gate<Completion>();
   const s = setup({
     respond: (r) => (r.index === 0 ? held.promise : complete(silent())),
@@ -770,13 +788,17 @@ test('messages arriving while the model thinks never widen the frozen user-query
     await s.receive(event('1'));
     await until(() => s.requests.length === 1);
     await s.receive(event('2', B, false));
+    // 会话模式的读取工具查询调用时刻的本群world：新消息可被查询，但不会自动插入上下文。
     held.resolve(complete(query({ message_id: '2' })));
     await settled(s, 2);
-    assert.equal(fetches(s).length, 0);
-    assert.notEqual(latest(s.requests[1]!).status, 'ok');
+    assert.equal(latest(s.requests[1]!).status, 'ok');
+    assert.equal(fetches(s).length, 1);
     assert.ok(
-      !s.calls.some(
-        (c) => c.action === 'get_msg' && c.params.message_id === '2',
+      !s.requests[1]!.messages.some(
+        (m) =>
+          m.role === 'user' &&
+          typeof m.content === 'string' &&
+          m.content.includes('谁给你上一条点了赞'),
       ),
     );
   } finally {
@@ -953,21 +975,16 @@ test('untrusted user-list nicknames cannot enable an off capability or replace r
       assert.ok(
         request.tools.some((t) => t.function.name === 'recall_message'),
       );
-      const p = JSON.parse(
-        String(request.messages.find((m) => m.role === 'user')!.content),
-      );
-      assert.equal(p.trusted_moderation_allowed, undefined);
-      assert.deepEqual(p.moderation_capabilities, {
-        mute: 'off',
-        unmute: 'off',
-        recall: 'confirm',
-        member_card: 'confirm',
-      });
-      assert.deepEqual(
-        p.trusted_direct_requests.map((r: any) => r.user_id),
-        [OWNER_ID, B],
-      );
     }
+    // 伪造的mute调用被拒绝，昵称中的指令不改变能力。
+    const toolResults = s.runtime.session
+      .messages()
+      .filter((m) => m.role === 'tool')
+      .map((m) => JSON.parse(String(m.content)));
+    // 顺序：reaction查询、mute、finish。
+    assert.equal(toolResults.length, 3);
+    assert.equal(toolResults[1].status, 'error');
+    assert.equal(toolResults[1].error, 'tool_disabled');
     assert.equal(sends(s).length, 0);
     assert.ok(
       !s.calls.some((c) =>

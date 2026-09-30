@@ -20,6 +20,7 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { sessionRuntime } from '../../support/listener-fixture.ts';
 
 const self = '900000001';
 const transportUrl = 'https://example.invalid/image?private-key=secret';
@@ -168,6 +169,8 @@ function setup(
         ? downloader(...args)
         : { dataUrl: bytes, width: 1, height: 1, firstFrameOnly: false };
     },
+    undefined,
+    sessionRuntime({ ...cfg, ...settings }.groupId).runtime,
   );
   return {
     bot,

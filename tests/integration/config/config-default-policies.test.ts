@@ -18,6 +18,7 @@ import type { Api } from '../../../src/contracts/onebot.ts';
 import type { JsonObject } from '../../../src/contracts/json.ts';
 import type { Memory, TimelineEntry } from '../../../src/contracts/messages.ts';
 import type { Model } from '../../../src/contracts/model.ts';
+import { sessionRuntime } from '../../support/listener-fixture.ts';
 
 const GROUP = '123456789',
   OWNER = '100000001',
@@ -483,6 +484,11 @@ test('default poke dispatches directly but default daily moderation waits for th
     model,
     new Cache(),
     toListenerConfig(app, app.resolveGroup(GROUP)),
+    undefined,
+    undefined,
+    undefined,
+    sessionRuntime(toListenerConfig(app, app.resolveGroup(GROUP)).groupId)
+      .runtime,
   );
   try {
     await bot.receive(incoming('1', MEMBER, 'fixture request', true), SELF);

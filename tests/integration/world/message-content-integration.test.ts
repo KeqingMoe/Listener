@@ -21,6 +21,7 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { sessionRuntime } from '../../support/listener-fixture.ts';
 
 const self = '99999',
   actor = '123';
@@ -285,20 +286,39 @@ test('model sees typed received and own historical faces without duplicated flat
       return { message_id: '900' };
     },
   };
+  // 每次唤醒先读取最新消息，再按轮次发送或结束。
+  const script = [
+    completion('read_messages', { limit: 5, direction: 'backward' }),
+    completion('send_message', {
+      segments: [
+        { type: 'face', id: '0', name: '微笑' },
+        { type: 'text', text: literal },
+      ],
+    }),
+    completion('finish', {}),
+    completion('read_messages', { limit: 5, direction: 'backward' }),
+    completion('finish', {}),
+  ];
   const model: Model = {
     async complete(messages) {
       requests.push(structuredClone(messages));
-      return requests.length === 1
-        ? completion('send_message', {
-            segments: [
-              { type: 'face', id: '0', name: '微笑' },
-              { type: 'text', text: literal },
-            ],
-          })
-        : completion('finish', {});
+      return script[requests.length - 1] ?? completion('finish', {});
     },
   };
-  const bot = new Listener(api, model, memory, cfg);
+  const readResult = (messages: ChatMessage[]) =>
+    JSON.parse(
+      String(messages.filter((m) => m.role === 'tool').at(-1)!.content),
+    );
+  const bot = new Listener(
+    api,
+    model,
+    memory,
+    cfg,
+    undefined,
+    undefined,
+    undefined,
+    sessionRuntime(cfg.groupId).runtime,
+  );
   try {
     await bot.receive(
       event('1', [
@@ -314,23 +334,22 @@ test('model sees typed received and own historical faces without duplicated flat
       { type: 'face', data: { id: '0' } },
       text(literal),
     ]);
-    const payload = JSON.parse(String(requests[0]![1]!.content));
-    assert.equal(payload.current_request.text, undefined);
+    const first = readResult(requests[1]!).messages.find(
+      (r: any) => r.messageId === '1',
+    );
+    assert.equal(first.text, undefined);
     assert.ok(
-      payload.current_request.segments.some(
-        (s: any) => s.type === 'face' && s.id === '271',
-      ),
+      first.segments.some((s: any) => s.type === 'face' && s.id === '271'),
     );
     await bot.receive(
       event('2', [{ type: 'at', data: { qq: self } }, text('继续')]),
       self,
     );
     await settled(bot);
-    assert.equal(requests.length, 3);
-    const next = JSON.parse(String(requests[2]![1]!.content)),
-      history = JSON.parse(next.untrusted_group_context);
-    assert.equal(history.summary.text, 'old summary remains unchanged');
-    const own = history.messages.find((r: any) => r.messageId === '900');
+    assert.equal(requests.length, 5);
+    const own = readResult(requests[4]!).messages.find(
+      (r: any) => r.messageId === '900',
+    );
     assert.equal(own.text, undefined);
     assert.equal(own.bot, true);
     assert.ok(own.segments.some((s: any) => s.type === 'face' && s.id === '0'));

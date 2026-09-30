@@ -21,6 +21,7 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { sessionRuntime, wakeMeta } from '../../support/listener-fixture.ts';
 
 const self = '900000001';
 const config: ListenerConfig = {
@@ -166,6 +167,9 @@ function setup(
       draws++;
       return options.random?.() ?? 0.5;
     },
+    undefined,
+    undefined,
+    sessionRuntime({ ...config, ...options.config }.groupId).runtime,
   );
   return {
     bot,
@@ -178,17 +182,20 @@ function setup(
   };
 }
 
-function payload(s: ReturnType<typeof setup>, index = 0): any {
-  return JSON.parse(
-    s.requests[index]!.messages.find((m) => m.role === 'user')!
-      .content as string,
-  );
+/** 第index次模型请求所属唤醒的触发类型；会话模式只注入wake元数据。 */
+function trigger(s: ReturnType<typeof setup>, index = 0): unknown {
+  return (wakeMeta(s.requests[index]!.messages).trigger as { type?: unknown })
+    .type;
 }
 
-function roster(s: ReturnType<typeof setup>, index = 0): string[] {
-  return payload(s, index).trusted_direct_requests.map(
-    (r: any) => r.message_id,
-  );
+/** 第index次模型请求所属的唤醒ID。 */
+function wakeId(s: ReturnType<typeof setup>, index = 0): unknown {
+  return wakeMeta(s.requests[index]!.messages).wake_id;
+}
+
+/** 所有模型请求分属的唤醒数。 */
+function wakes(s: ReturnType<typeof setup>): number {
+  return new Set(s.requests.map((_, i) => wakeId(s, i))).size;
 }
 
 function result(s: ReturnType<typeof setup>, index: number): any {
@@ -227,12 +234,7 @@ test('fixed first-caller window retains every mention and ordinary supplement', 
       1,
       'second caller must not restart the first 100ms window',
     );
-    assert.deepEqual(roster(s), ['1', '2']);
-    assert.deepEqual(
-      payload(s).current_batch.messages.map((m: any) => m.messageId),
-      ['1', '2', '3'],
-    );
-    assert.equal(payload(s).current_request, undefined);
+    assert.equal(trigger(s), 'direct');
     t.mock.timers.tick(120);
     await flush();
     assert.equal(s.requests.length, 1);
@@ -273,9 +275,7 @@ for (const selected of [false, true]) {
       );
       assert.equal(s.requests.length, selected ? 2 : 1);
       if (selected) {
-        assert.equal(payload(s, 1).trigger_kind, 'random');
-        assert.equal(payload(s, 1).current_batch.messages.length, 64);
-        assert.equal(payload(s, 1).current_batch.omitted_messages, 36);
+        assert.equal(trigger(s, 1), 'random');
       }
       for (let i = 2; i < 102; i++) {
         await s.bot.receive(event(String(i), false), self);
@@ -313,11 +313,8 @@ test('random cooldown consumes a busy ordinary batch without probability redraw'
     assert.equal(s.requests.length, 1);
     await s.bot.receive(event('30'), self);
     await until(() => s.requests.length === 2);
-    assert.deepEqual(roster(s, 1), ['30']);
-    assert.deepEqual(
-      payload(s, 1).current_batch.messages.map((m: any) => m.messageId),
-      ['30'],
-    );
+    assert.equal(trigger(s, 1), 'direct');
+    assert.equal(wakes(s), 2);
   } finally {
     active.resolve(silent());
     await s.bot.stop();
@@ -352,8 +349,9 @@ test('active model is not interrupted and elapsed pending deadline does not rest
       2,
       'already elapsed deadline should run immediately, not after 160ms',
     );
-    assert.deepEqual(roster(s), ['1']);
-    assert.deepEqual(roster(s, 1), ['2', '3']);
+    // 2和3合为活动唤醒之后的一次唤醒。
+    assert.equal(wakes(s), 2);
+    assert.equal(trigger(s, 1), 'direct');
     t.mock.timers.tick(180);
     await flush();
     assert.equal(s.requests.length, 2);
@@ -405,7 +403,8 @@ test('new caller during first send does not cancel later single-message calls be
           (c.params.message as any[]).find((m) => m.type === 'text').data.text,
       );
     assert.deepEqual(text, ['first', 'second']);
-    assert.deepEqual(roster(s, 1), ['2', '3']);
+    assert.equal(wakes(s), 2);
+    assert.equal(trigger(s, 1), 'direct');
     await delay(40);
     assert.equal(s.requests.length, 2);
   } finally {
@@ -415,7 +414,7 @@ test('new caller during first send does not cancel later single-message calls be
 });
 
 for (const phase of ['model', 'tool'] as const) {
-  test(`arrivals during ${phase} stay outside sealed prompt and read_message scope`, async () => {
+  test(`arrivals during ${phase} are live-readable yet form the next wake instead of joining the active one`, async () => {
     const held = gate<void>();
     let rounds = 0;
     let toolStarted = false;
@@ -451,20 +450,14 @@ for (const phase of ['model', 'tool'] as const) {
       held.resolve();
       const finalRound = phase === 'tool' ? 2 : 1;
       await until(() => s.requests.length >= finalRound + 2);
-      assert.deepEqual(roster(s), ['1']);
-      const context = JSON.parse(payload(s).untrusted_group_context);
-      assert.equal(
-        context.messages.some((m: any) => m.messageId === '2'),
-        false,
-      );
-      assert.equal(result(s, finalRound).error, 'message_not_in_context');
-      assert.deepEqual(roster(s, finalRound + 1), ['2']);
-      assert.equal(
-        JSON.parse(
-          payload(s, finalRound + 1).untrusted_group_context,
-        ).messages.some((m: any) => m.messageId === '2'),
-        true,
-      );
+      // 会话模式读取实时world：活动唤醒内可读到新消息，但不自动注入。
+      assert.equal(result(s, finalRound).status, 'ok');
+      assert.equal(result(s, finalRound).message.messageId, '2');
+      assert.equal(wakeId(s, finalRound), wakeId(s));
+      // 新呼唤不并入活动唤醒，而是单独触发下一次唤醒。
+      assert.notEqual(wakeId(s, finalRound + 1), wakeId(s));
+      assert.equal(trigger(s, finalRound + 1), 'direct');
+      assert.equal(wakes(s), 2);
       assert.equal(
         s.calls.some((c) => c.action === 'get_msg'),
         false,
@@ -492,16 +485,7 @@ for (const overflow of [false, true]) {
       }
       await s.bot.receive(event('100'), self);
       await until(() => s.requests.length === 2);
-      assert.deepEqual(payload(s).moderation_capabilities, {
-        mute: 'off',
-        unmute: 'off',
-        recall: 'off',
-        member_card: 'off',
-      });
-      if (overflow) {
-        assert.equal(roster(s).length, 64);
-        assert.equal(payload(s).current_batch.omitted_direct, 1);
-      }
+      assert.equal(wakes(s), 1);
       for (const request of s.requests) {
         for (const name of [
           'mute_member',
@@ -566,23 +550,8 @@ test('lookup-capacity skipped quote stays unverified after both active lookups r
     t.mock.timers.tick(100);
     await flush();
     assert.equal(s.requests.length, 2);
-    assert.deepEqual(
-      roster(s),
-      ['1'],
-      'verified nonbot quotes are ordinary, not mixed direct authority',
-    );
-    assert.equal(payload(s).current_batch.unverified_references, true);
-    assert.deepEqual(payload(s).moderation_capabilities, {
-      mute: 'off',
-      unmute: 'off',
-      recall: 'off',
-      member_card: 'off',
-    });
-    assert.equal(payload(s).trusted_actor_id, OWNER_ID);
-    assert.deepEqual(
-      payload(s).current_batch.messages.map((m: any) => m.messageId),
-      ['1', '2', '3', '4'],
-    );
+    assert.equal(wakes(s), 1);
+    assert.equal(trigger(s), 'direct');
     for (const request of s.requests) {
       for (const name of ['mute_member', 'recall_message', 'set_member_card']) {
         assert.equal(request.tools.includes(name), false);
@@ -627,20 +596,7 @@ test('failed quote omitted by 64 pinned owner requests preserves metadata and of
     t.mock.timers.tick(100);
     await flush();
     assert.equal(s.requests.length, 2);
-    assert.equal(roster(s).length, 64);
-    assert.equal(
-      payload(s).current_batch.messages.some((m: any) => m.messageId === '100'),
-      false,
-    );
-    assert.equal(payload(s).current_batch.omitted_messages, 1);
-    assert.equal(payload(s).current_batch.omitted_direct, 0);
-    assert.equal(payload(s).current_batch.unverified_references, true);
-    assert.deepEqual(payload(s).moderation_capabilities, {
-      mute: 'off',
-      unmute: 'off',
-      recall: 'off',
-      member_card: 'off',
-    });
+    assert.equal(wakes(s), 1);
     for (const request of s.requests) {
       for (const name of ['mute_member', 'recall_message', 'set_member_card']) {
         assert.equal(request.tools.includes(name), false);
@@ -693,7 +649,7 @@ test('queued caller and its quote reference remain resolvable after raw history 
     assert.equal(s.memory.find('2'), undefined);
     active.resolve(silent());
     await until(() => s.requests.length === 4);
-    assert.deepEqual(roster(s, 1), ['2']);
+    assert.equal(trigger(s, 1), 'direct');
     assert.equal(result(s, 2).message.messageId, '2');
     assert.equal(result(s, 3).message.messageId, '777');
     assert.deepEqual(
@@ -722,13 +678,6 @@ test('late verified quote is excluded from active context and deferred as its ow
     await until(() => s.calls.length === 1);
     await s.bot.receive(event('2'), self);
     await until(() => s.requests.length === 1);
-    assert.deepEqual(roster(s), ['2']);
-    assert.equal(
-      JSON.parse(payload(s).untrusted_group_context).messages.some(
-        (m: any) => m.messageId === '1',
-      ),
-      false,
-    );
     lookup.resolve({
       message_type: 'group',
       group_id: LISTENER_GROUP,
@@ -740,9 +689,9 @@ test('late verified quote is excluded from active context and deferred as its ow
     assert.equal(s.requests[0]!.signal!.aborted, false);
     active.resolve(silent());
     await until(() => s.requests.length === 2);
-    assert.deepEqual(roster(s, 1), ['1']);
-    assert.equal(payload(s, 1).trusted_actor_id, '54321');
-    assert.equal(payload(s).trusted_actor_id, '12345');
+    // 迟到核验的引用呼唤不并入活动唤醒，而是单独成为下一次唤醒。
+    assert.equal(wakes(s), 2);
+    assert.equal(trigger(s, 1), 'direct');
   } finally {
     lookup.resolve({});
     active.resolve(silent());
@@ -783,11 +732,9 @@ for (const boundary of ['reset', 'disconnect'] as const) {
       assert.equal(s.requests.length, 0);
       await s.bot.receive(event('4'), self);
       await until(() => s.requests.length === 1);
-      assert.deepEqual(roster(s), ['4']);
-      assert.deepEqual(
-        payload(s).current_batch.messages.map((m: any) => m.messageId),
-        ['4'],
-      );
+      await delay(30);
+      assert.equal(s.requests.length, 1);
+      assert.equal(trigger(s), 'direct');
     } finally {
       lookup.resolve({});
       await pending;

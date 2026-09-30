@@ -15,6 +15,7 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { sessionRuntime } from '../../support/listener-fixture.ts';
 
 const group = '123456789',
   self = '900000001',
@@ -121,19 +122,30 @@ function setup(
         () => 1,
         undefined,
         undefined,
-        options.projectionFailure
-          ? {
-              world: {
-                groupId: group,
-                getState: () => ({ latestSequence: 0 }),
-                findMessage: () => undefined,
-                close() {},
-                append() {
-                  throw new Error('projection unavailable');
-                },
-              } as any,
-            }
-          : {},
+        {
+          ...sessionRuntime(
+            {
+              ...config,
+              toolPermissions: toolPermissions({
+                ...MEMBER_TOOLS,
+                create_reminder: options.off ? 'off' : 'direct',
+              }),
+            }.groupId,
+          ).runtime,
+          ...(options.projectionFailure
+            ? {
+                world: {
+                  groupId: group,
+                  getState: () => ({ latestSequence: 0 }),
+                  findMessage: () => undefined,
+                  close() {},
+                  append() {
+                    throw new Error('projection unavailable');
+                  },
+                } as any,
+              }
+            : {}),
+        },
       );
       const receive = bot.receive.bind(bot);
       bot.receive = async (...args) => {

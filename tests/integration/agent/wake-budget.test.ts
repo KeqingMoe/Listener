@@ -18,6 +18,27 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { ModelSession } from '../../../src/agent/session/store.ts';
+import { WorldEventStore } from '../../../src/world/events.ts';
+import { sessionRuntime, wakeMeta } from '../../support/listener-fixture.ts';
+
+/** 每个工具调用为结果预留1KiB；数千调用的单次回复需要放宽会话记录上限。 */
+function largeSessionRuntime(groupId: string) {
+  const dir = mkdtempSync(join(tmpdir(), 'wake-budget-session-'));
+  process.once('exit', () => rmSync(dir, { recursive: true, force: true }));
+  return {
+    session: new ModelSession({
+      model: 'main',
+      path: join(dir, 'session.sqlite'),
+      groupId,
+      maxTranscriptBytes: 16 * 1024 * 1024,
+    }),
+    world: new WorldEventStore({ path: join(dir, 'world.sqlite'), groupId }),
+  };
+}
 
 const self = '900000001';
 const cfg: ListenerConfig = {
@@ -86,6 +107,7 @@ function setup(
     messages: ChatMessage[],
   ) => Completion | Promise<Completion>,
   overrides: Partial<ListenerConfig> = {},
+  runtime = sessionRuntime({ ...cfg, ...overrides }.groupId).runtime,
 ) {
   const requests: ChatMessage[][] = [];
   const calls: string[] = [];
@@ -111,6 +133,9 @@ function setup(
     memory,
     { ...cfg, ...overrides },
     () => 0,
+    undefined,
+    undefined,
+    runtime,
   );
   return { bot, requests, calls };
 }
@@ -141,20 +166,51 @@ test('constructor rejects unsafe unified wake budgets', () => {
     ]) {
       assert.throws(
         () =>
-          new Listener({ call: async () => null }, undefined, undefined, {
-            ...cfg,
-            [key]: value,
-          } as any),
+          new Listener(
+            { call: async () => null },
+            undefined,
+            undefined,
+            {
+              ...cfg,
+              [key]: value,
+            } as any,
+            undefined,
+            undefined,
+            undefined,
+            sessionRuntime(
+              (
+                {
+                  ...cfg,
+                  [key]: value,
+                } as any
+              ).groupId,
+            ).runtime,
+          ),
       );
     }
   }
   assert.doesNotThrow(
     () =>
-      new Listener({ call: async () => null }, undefined, undefined, {
-        ...cfg,
-        maxToolCallsPerWake: 1,
-        wakeTimeoutMs: 1000,
-      }),
+      new Listener(
+        { call: async () => null },
+        undefined,
+        undefined,
+        {
+          ...cfg,
+          maxToolCallsPerWake: 1,
+          wakeTimeoutMs: 1000,
+        },
+        undefined,
+        undefined,
+        undefined,
+        sessionRuntime(
+          {
+            ...cfg,
+            maxToolCallsPerWake: 1,
+            wakeTimeoutMs: 1000,
+          }.groupId,
+        ).runtime,
+      ),
   );
 });
 
@@ -170,6 +226,7 @@ test('wake dispatch passes the former 4096 call ceiling', async () => {
           }
         : { content: null, tool_calls: [call('finish')] },
     { maxToolCallsPerWake: 4098 },
+    largeSessionRuntime(cfg.groupId!),
   );
   try {
     await s.bot.receive(event(), self);
@@ -208,12 +265,13 @@ test('all tool calls share one budget and the model sees remaining values', asyn
       );
     }
     assert.equal(s.requests.at(-1)!.filter((m) => m.role === 'user').length, 1);
-    const budgets = s.requests.map(
-      (m) =>
-        JSON.parse(
-          String((m.filter((x) => x.role === 'tool').at(-1) ?? m[1])!.content),
-        ).wake_budget,
-    );
+    // 首轮预算来自唤醒元数据，之后来自最近一次工具结果。
+    const budgets = s.requests.map((m) => {
+      const last = m.filter((x) => x.role === 'tool').at(-1);
+      return last
+        ? JSON.parse(String(last.content)).wake_budget
+        : wakeMeta(m).wake_budget;
+    });
     assert.equal(budgets[0].used_tool_calls, 0);
     assert.equal(budgets.at(-1)!.remaining_tool_calls, 1);
   } finally {

@@ -16,6 +16,7 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { sessionRuntime } from '../../support/listener-fixture.ts';
 
 const self = '900000001',
   actor = '12345';
@@ -165,6 +166,17 @@ function setup(
       }),
     },
     () => 1,
+    undefined,
+    undefined,
+    sessionRuntime(
+      {
+        ...cfg,
+        toolPermissions: toolPermissions({
+          ...MEMBER_TOOLS,
+          transcribe_voice: options.off ? 'off' : 'direct',
+        }),
+      }.groupId,
+    ).runtime,
   );
   return { bot, memory, requests, schemas, calls };
 }

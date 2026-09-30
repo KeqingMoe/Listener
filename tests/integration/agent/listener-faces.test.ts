@@ -24,6 +24,7 @@ import {
   MEMBER_TOOLS,
   toolPermissions,
 } from '../../support/tool-permissions.ts';
+import { sessionRuntime } from '../../support/listener-fixture.ts';
 
 const self = '900000001';
 const config: ListenerConfig = {
@@ -115,7 +116,16 @@ function setup(reply: unknown) {
         : completion('finish', {});
     },
   };
-  const bot = new Listener(api, model, memory, config);
+  const bot = new Listener(
+    api,
+    model,
+    memory,
+    config,
+    undefined,
+    undefined,
+    undefined,
+    sessionRuntime(config.groupId).runtime,
+  );
   return { bot, memory, calls, requests };
 }
 
@@ -264,7 +274,7 @@ test('face-only model reply sends native OneBot face and persists semantic marke
       { type: 'face', data: { id: '375' } },
     ]);
     assert.equal(s.memory.entries.find((e) => e.bot)!.text, faceMarker('375'));
-    assert.match(JSON.stringify(s.requests[0]), /偷笑/);
+    // 唤醒不注入消息正文；原始raw字段也不能进入模型请求。
     assert.ok(!JSON.stringify(s.requests).includes('SECRET_RAW'));
   } finally {
     await s.bot.stop();
