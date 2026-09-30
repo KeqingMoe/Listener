@@ -83,7 +83,7 @@ function memory(): Memory {
   };
 }
 
-type Internals = {
+type SenderInternals = {
   captureSendReceipt(): SendReceiptSnapshot;
   claimMessageAck(entry: TimelineEntry, receipt: SendReceiptSnapshot): void;
   dispatchMessage(
@@ -96,10 +96,27 @@ type Internals = {
       local_projection_failed?: boolean;
     }
   >;
+};
+
+type Internals = SenderInternals & {
   command(text: string, context: TurnContext): Promise<void>;
 };
 
-const internal = (listener: Listener) => listener as unknown as Internals;
+// 发送相关方法在GroupSender上，命令仍在Listener上。
+const internal = (listener: Listener): Internals => {
+  const raw = listener as unknown as {
+    sender: SenderInternals;
+    command: Internals['command'];
+  };
+  return {
+    captureSendReceipt: () => raw.sender.captureSendReceipt(),
+    claimMessageAck: (entry, receipt) =>
+      raw.sender.claimMessageAck(entry, receipt),
+    dispatchMessage: (part, context, signal) =>
+      raw.sender.dispatchMessage(part, context, signal),
+    command: (text, context) => raw.command.call(listener, text, context),
+  };
+};
 const send = (listener: Listener) =>
   internal(listener).dispatchMessage(
     { text: 'sent', segments: [{ type: 'text', data: { text: 'sent' } }] },

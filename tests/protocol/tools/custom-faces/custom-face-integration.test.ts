@@ -8,10 +8,8 @@ import { createServer } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { setTimeout as delay } from 'node:timers/promises';
 import sharp from 'sharp';
-import {
-  Listener,
-  type CustomFaceRuntime,
-} from '../../../../src/agent/listener.ts';
+import { Listener } from '../../../../src/agent/listener.ts';
+import type { CustomFaceRuntime } from '../../../../src/agent/runtime-types.ts';
 import { ModelSession } from '../../../../src/agent/session/store.ts';
 import { ResponsesModel } from '../../../../src/model/responses.ts';
 import { SQLiteMemory } from '../../../../src/agent/memory.ts';

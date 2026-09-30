@@ -17,7 +17,7 @@ import { createExtendedTools } from '../tools/extended.ts';
 import type { GroupFileTools } from '../tools/files/tools.ts';
 import type { GroupRequestTools } from '../tools/requests/tools.ts';
 import type { SendReceiptSnapshot } from '../tools/media/tools.ts';
-import type { CustomFaceRuntime, ListenerRuntime } from './listener.ts';
+import type { CustomFaceRuntime, ListenerRuntime } from './runtime-types.ts';
 
 /** 构建一轮工具集所需的Listener状态；函数形式的字段在调用时读取最新值。 */
 export interface TurnToolkitDeps {
