@@ -143,6 +143,7 @@ test('terminal cancellation cause reaches both started and not-started tool inte
 });
 
 const config: ListenerConfig = {
+  groupId: LISTENER_GROUP,
   enabled: true,
   baseUrl: 'https://example.test',
   apiKey: 'fixture',

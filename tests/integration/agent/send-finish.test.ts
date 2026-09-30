@@ -22,6 +22,8 @@ import type { ListenerConfig } from '../../../src/config/listener.ts';
 const self = '999',
   actor = '123';
 const cfg: ListenerConfig = {
+  groupId: LISTENER_GROUP,
+  ownerId: OWNER_ID,
   enabled: true,
   baseUrl: 'https://example.invalid/v1',
   apiKey: 'test',
@@ -176,6 +178,7 @@ test('send is single-message strict, finish replaces old terminal tool', async (
         },
       },
       memory,
+      { groupId: LISTENER_GROUP },
     );
   const ctx = {
     groupId: LISTENER_GROUP,
@@ -523,7 +526,13 @@ test('cancelPending invalidates only the specified confirmation code', async () 
       return null;
     },
   };
-  const m = new Moderation(api, Date.now, { mute: 'confirm' }),
+  const m = new Moderation(
+      api,
+      Date.now,
+      { mute: 'confirm' },
+      LISTENER_GROUP,
+      OWNER_ID,
+    ),
     ctx = {
       groupId: LISTENER_GROUP,
       selfId: self,

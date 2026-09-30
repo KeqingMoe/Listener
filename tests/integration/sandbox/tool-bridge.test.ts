@@ -13,11 +13,13 @@ import { WorldEventStore } from '../../../src/world/events.ts';
 import type { Memory, TimelineEntry } from '../../../src/contracts/messages.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
 import type { JsonObject } from '../../../src/contracts/json.ts';
+import { OWNER_ID } from '../../../src/contracts/identity.ts';
 
 const group = '123456',
   self = '999',
   actor = '42';
 const config = (extended: Record<string, string> = {}): ListenerConfig => ({
+  ownerId: OWNER_ID,
   groupId: group,
   enabled: true,
   baseUrl: 'https://example.invalid',

@@ -17,11 +17,7 @@ import {
 } from '../config/runtime.ts';
 import { TOOL_NAMES } from '../config/tool-policy.ts';
 import { canonicalMessageId, id } from '../onebot/identity.ts';
-import {
-  LISTENER_GROUP,
-  resolveGroupId,
-  resolveOwnerId,
-} from '../contracts/identity.ts';
+import { resolveGroupId, resolveOwnerId } from '../contracts/identity.ts';
 import { type Api } from '../contracts/onebot.ts';
 import {
   type Model,
@@ -286,7 +282,7 @@ function logToolResult(
 export function normalizeEvent(
   event: unknown,
   selfId: string,
-  groupId: string = LISTENER_GROUP,
+  groupId: string,
 ): TimelineEntry | undefined {
   const expectedGroup = resolveGroupId(groupId);
   if (

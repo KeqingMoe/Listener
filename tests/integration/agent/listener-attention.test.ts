@@ -25,6 +25,7 @@ const GROUP = '22',
   A = '111',
   B = '222';
 const base: ListenerConfig = {
+  ownerId: OWNER_ID,
   groupId: GROUP,
   enabled: true,
   baseUrl: 'https://example.invalid/v1',

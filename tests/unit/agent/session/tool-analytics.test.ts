@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { ModelSession } from '../../../../src/agent/session/store.ts';
 import type { Completion } from '../../../../src/contracts/model.ts';
 import type { ToolDefinition } from '../../../../src/contracts/tools.ts';
+import { LISTENER_GROUP } from '../../../../src/contracts/identity.ts';
 
 const tools: ToolDefinition[] = [
   {
@@ -47,7 +48,7 @@ function clean(x: { dir: string }) {
 test('weighted durations, unknown and cached results are classified without claiming native RPCs', (t) => {
   let now = 100;
   t.mock.method(Date, 'now', () => now);
-  const s = new ModelSession({ path: ':memory:' });
+  const s = new ModelSession({ groupId: LISTENER_GROUP, path: ':memory:' });
   s.beginWake('i', tools);
   const wake = s.state().wakeId!;
   s.appendAssistant(
@@ -129,7 +130,7 @@ test('analytics aggregates outcomes, durations, exposure and keeps private args 
 test('analytics filters validate scope, inclusive time and limits', () => {
   const x = make();
   try {
-    const s = new ModelSession({ path: x.path });
+    const s = new ModelSession({ groupId: LISTENER_GROUP, path: x.path });
     s.beginWake('i', tools);
     s.appendAssistant(completion(call('a')));
     assert.throws(() => s.summarizeTools({ since: -1, until: 2 }), /window/);

@@ -8,7 +8,10 @@ import { Listener } from '../../../../src/agent/listener.ts';
 import { ModelSession } from '../../../../src/agent/session/store.ts';
 import { WorldEventStore } from '../../../../src/world/events.ts';
 import { ResponseStateExpiredError } from '../../../../src/model/responses.ts';
-import { LISTENER_GROUP } from '../../../../src/contracts/identity.ts';
+import {
+  LISTENER_GROUP,
+  OWNER_ID,
+} from '../../../../src/contracts/identity.ts';
 import {
   type ChatMessage,
   type Completion,
@@ -22,6 +25,8 @@ import type { ListenerConfig } from '../../../../src/config/listener.ts';
 
 const self = '900000001';
 const config: ListenerConfig = {
+  groupId: LISTENER_GROUP,
+  ownerId: OWNER_ID,
   enabled: true,
   baseUrl: 'https://example.com/v1',
   apiKey: 'test',

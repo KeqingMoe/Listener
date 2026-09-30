@@ -29,7 +29,12 @@ const entry = (n: number, text = 'hello'): TimelineEntry => ({
   time: Math.floor(Date.now() / 1000),
 });
 const make = (maxContextChars = 14000) =>
-  new SQLiteMemory({ path: ':memory:', maxContextChars, retentionDays: 7 });
+  new SQLiteMemory({
+    groupId: LISTENER_GROUP,
+    path: ':memory:',
+    maxContextChars,
+    retentionDays: 7,
+  });
 const populate = (memory: SQLiteMemory, count = 60) => {
   for (let i = 0; i < count; i++) {
     assert.equal(memory.append(entry(i, 'x'.repeat(200))), true);
@@ -78,6 +83,7 @@ test('memory database refuses symlinked or hard-linked paths before writing', ()
     assert.throws(
       () =>
         new SQLiteMemory({
+          groupId: LISTENER_GROUP,
           path: symlink,
           maxContextChars: 8000,
           retentionDays: 7,
@@ -91,6 +97,7 @@ test('memory database refuses symlinked or hard-linked paths before writing', ()
     assert.throws(
       () =>
         new SQLiteMemory({
+          groupId: LISTENER_GROUP,
           path: hardlink,
           maxContextChars: 8000,
           retentionDays: 7,
@@ -107,6 +114,7 @@ test('image references survive persistence without transport URLs, bytes or unkn
   const dir = mkdtempSync(join(tmpdir(), 'listener-images-memory-'));
   const path = join(dir, 'memory.sqlite');
   let memory = new SQLiteMemory({
+    groupId: LISTENER_GROUP,
     path,
     maxContextChars: 8000,
     retentionDays: 7,
@@ -129,6 +137,7 @@ test('image references survive persistence without transport URLs, bytes or unkn
     assert.ok(!memory.context().includes('base64'));
     memory.close();
     memory = new SQLiteMemory({
+      groupId: LISTENER_GROUP,
       path,
       maxContextChars: 8000,
       retentionDays: 7,
@@ -155,6 +164,7 @@ test('five image references remain usable after SQLite reopen and context projec
     content_status: 'not_viewed' as const,
   }));
   let memory = new SQLiteMemory({
+    groupId: LISTENER_GROUP,
     path,
     maxContextChars: 8000,
     retentionDays: 7,
@@ -163,6 +173,7 @@ test('five image references remain usable after SQLite reopen and context projec
     memory.append({ ...entry(10), images, segments });
     memory.close();
     memory = new SQLiteMemory({
+      groupId: LISTENER_GROUP,
       path,
       maxContextChars: 8000,
       retentionDays: 7,
@@ -330,6 +341,7 @@ test('private persistent database survives reopen and rejects another group iden
   const path = join(directory, 'memory.sqlite');
   try {
     let memory = new SQLiteMemory({
+      groupId: LISTENER_GROUP,
       path,
       maxContextChars: 8000,
       retentionDays: 7,
@@ -338,6 +350,7 @@ test('private persistent database survives reopen and rejects another group iden
     memory.close();
     assert.equal(statSync(path).mode & 0o777, 0o600);
     memory = new SQLiteMemory({
+      groupId: LISTENER_GROUP,
       path,
       maxContextChars: 8000,
       retentionDays: 7,
@@ -351,6 +364,7 @@ test('private persistent database survives reopen and rejects another group iden
       INSERT INTO listener_seen SELECT CAST(n AS TEXT), ? FROM ids`,
     ).run(Date.now() / 1000);
     memory = new SQLiteMemory({
+      groupId: LISTENER_GROUP,
       path,
       maxContextChars: 8000,
       retentionDays: 7,
@@ -369,7 +383,13 @@ test('private persistent database survives reopen and rejects another group iden
     db.prepare('UPDATE listener_identity SET group_id=?').run('other');
     db.close();
     assert.throws(
-      () => new SQLiteMemory({ path, maxContextChars: 8000, retentionDays: 7 }),
+      () =>
+        new SQLiteMemory({
+          groupId: LISTENER_GROUP,
+          path,
+          maxContextChars: 8000,
+          retentionDays: 7,
+        }),
       /group mismatch/,
     );
   } finally {

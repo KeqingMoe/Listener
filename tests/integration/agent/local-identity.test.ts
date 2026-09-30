@@ -21,6 +21,7 @@ const OWNER_A = '778899',
   SELF = '990011',
   TARGET = '123456';
 const config: ListenerConfig = {
+  ownerId: OWNER_ID,
   enabled: true,
   groupId: GROUP,
   baseUrl: 'https://example.invalid/v1',
@@ -372,5 +373,8 @@ test('ReplyBatch owner classification is per instance including omitted direct c
   assert.equal(b.hasNonOwnerDirect, false);
   b.add(item(1, OWNER_A), 0);
   assert.equal(b.hasNonOwnerDirect, true);
-  assert.equal(new ReplyBatch(item(0, OWNER_ID), 0).hasNonOwnerDirect, false);
+  assert.equal(
+    new ReplyBatch(item(0, OWNER_ID), 0, false, OWNER_ID).hasNonOwnerDirect,
+    false,
+  );
 });

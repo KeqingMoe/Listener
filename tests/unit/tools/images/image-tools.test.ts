@@ -83,10 +83,16 @@ function setup(
     clear() {},
     close() {},
   };
-  const tools = new ImageTools(api, memory, policy, async (...args) => {
-    downloads.push(args);
-    return download ? download(...args) : image;
-  });
+  const tools = new ImageTools(
+    api,
+    memory,
+    policy,
+    async (...args) => {
+      downloads.push(args);
+      return download ? download(...args) : image;
+    },
+    LISTENER_GROUP,
+  );
   return {
     tools,
     calls,

@@ -26,7 +26,7 @@ export interface GroupToolsOptions {
   getGroupMembers?: boolean;
   getMemberInfo?: boolean;
   mention?: boolean;
-  groupId?: string;
+  groupId: string;
 }
 
 export interface PreparedMessage {
@@ -200,7 +200,7 @@ export class GroupTools {
   constructor(
     private api: Api,
     private memory: Memory,
-    options: GroupToolsOptions = {},
+    options: GroupToolsOptions,
   ) {
     if (
       !object(options) ||

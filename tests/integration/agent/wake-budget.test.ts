@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Listener } from '../../../src/agent/listener.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
-import { LISTENER_GROUP } from '../../../src/contracts/identity.ts';
+import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.ts';
 import { type Api } from '../../../src/contracts/onebot.ts';
 import {
   type ChatMessage,
@@ -17,6 +17,8 @@ import {
 
 const self = '900000001';
 const cfg: ListenerConfig = {
+  groupId: LISTENER_GROUP,
+  ownerId: OWNER_ID,
   enabled: true,
   baseUrl: 'https://example.invalid',
   apiKey: 'x',

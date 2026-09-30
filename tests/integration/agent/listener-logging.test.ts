@@ -23,6 +23,8 @@ import type { ListenerConfig } from '../../../src/config/listener.ts';
 const secret = 'NEVER_LOG_CHAT_BODY_OR_ARGUMENTS';
 const self = '999';
 const cfg: ListenerConfig = {
+  groupId: LISTENER_GROUP,
+  ownerId: OWNER_ID,
   enabled: true,
   baseUrl: 'https://example.test',
   apiKey: 'key',

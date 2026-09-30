@@ -1,5 +1,5 @@
 import { canonicalMessageId } from '../../onebot/identity.ts';
-import { LISTENER_GROUP, resolveGroupId } from '../../contracts/identity.ts';
+import { resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
 import { type ChatContentPart } from '../../contracts/model.ts';
 import { type Memory } from '../../contracts/messages.ts';
@@ -106,7 +106,7 @@ export class ImageTools {
     private readonly memory: Memory,
     options: ImagesConfig,
     private readonly downloader: ImageDownloader = downloadImage,
-    groupId: string = LISTENER_GROUP,
+    groupId: string,
     private readonly artifacts?: ArtifactStore,
   ) {
     this.groupId = resolveGroupId(groupId);

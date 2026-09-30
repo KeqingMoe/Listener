@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ReplyBatch, type BatchItem } from '../../../src/agent/reply-batch.ts';
 import type { MessageSegment } from '../../../src/contracts/messages.ts';
+import { OWNER_ID } from '../../../src/contracts/identity.ts';
 
 const digits = (prefix: string, index: number) =>
   prefix.repeat(29) + String(index).padStart(3, '0');
@@ -42,7 +43,7 @@ for (const signed of [false, true]) {
       item(index, signed, segments),
     );
     // 最后一项先到达时，不能打乱模型来源或调用方的顺序。
-    const batch = new ReplyBatch(inputs[63]!, 0, false);
+    const batch = new ReplyBatch(inputs[63]!, 0, false, OWNER_ID);
     for (const incoming of inputs.slice(0, 63)) {
       batch.add(incoming, 0);
     }
@@ -118,7 +119,7 @@ test('typed batch clones both input segments and projected output without interp
   ]);
   const expectedId = original.entry.messageId,
     expectedActor = original.entry.userId;
-  const batch = new ReplyBatch(original, 0, false);
+  const batch = new ReplyBatch(original, 0, false, OWNER_ID);
   (original.entry.segments![0] as { type: 'text'; text: string }).text =
     'mutated after capture';
   original.entry.userId = '999';

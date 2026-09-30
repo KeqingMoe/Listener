@@ -10,11 +10,13 @@ import { ReminderScheduler } from '../../../src/reminders/scheduler.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
 import type { Memory, TimelineEntry } from '../../../src/contracts/messages.ts';
 import type { Api } from '../../../src/contracts/onebot.ts';
+import { OWNER_ID } from '../../../src/contracts/identity.ts';
 
 const group = '123456789',
   self = '900000001',
   actor = '12345';
 const config: ListenerConfig = {
+  ownerId: OWNER_ID,
   groupId: group,
   enabled: true,
   baseUrl: 'https://example.invalid',

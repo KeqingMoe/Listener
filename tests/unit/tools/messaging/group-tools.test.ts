@@ -57,7 +57,7 @@ const remote = (extra = {}) => ({
 function setup(
   response: unknown = record(),
   entries: TimelineEntry[] = [entry],
-  options?: GroupToolsOptions,
+  options?: Partial<GroupToolsOptions>,
 ) {
   const calls: Array<{ action: string; params: unknown }> = [];
   const api: Api = {
@@ -78,7 +78,20 @@ function setup(
     clear() {},
     close() {},
   };
-  return { tools: new GroupTools(api, memory, options), calls };
+  return {
+    tools: new GroupTools(
+      api,
+      memory,
+      // 非普通对象原样传入，以便测试构造函数的校验。
+      options === undefined ||
+        (options !== null &&
+          Object.getPrototypeOf(options) === Object.prototype &&
+          !Reflect.ownKeys(options).some((key) => typeof key === 'symbol'))
+        ? { groupId: LISTENER_GROUP, ...options }
+        : (options as GroupToolsOptions),
+    ),
+    calls,
+  };
 }
 
 test('options reject malformed runtime values and increased hard limits', () => {
@@ -104,7 +117,10 @@ test('options reject malformed runtime values and increased hard limits', () => 
 });
 
 test('members disabled denies invented member tools without disabling message reads', async () => {
-  const { tools, calls } = setup(remote(), [entry], { members: false });
+  const { tools, calls } = setup(remote(), [entry], {
+    groupId: LISTENER_GROUP,
+    members: false,
+  });
   for (const [name, args] of [
     ['get_group_members', { limit: 20 }],
     ['get_member_info', { user_id: '123' }],
@@ -135,7 +151,10 @@ const message = (text: string, reply_to?: string) => ({
 });
 
 test('disabled mentions reject invented at during preparation before reply lookup', async () => {
-  const { tools, calls } = setup(record(), [entry], { mention: false });
+  const { tools, calls } = setup(record(), [entry], {
+    groupId: LISTENER_GROUP,
+    mention: false,
+  });
   await assert.rejects(
     tools.prepareMessage(
       {
@@ -181,6 +200,7 @@ test('reply targets cannot fetch arbitrary messages outside the supplied snapsho
 
 test('mention verification remains allowed when member tools are disabled', async () => {
   const { tools, calls } = setup(record(), [entry], {
+    groupId: LISTENER_GROUP,
     members: false,
     mention: true,
   });
@@ -198,6 +218,7 @@ test('mention verification remains allowed when member tools are disabled', asyn
     ['get_group_member_info'],
   );
   const wrongGroup = setup(record('123', { group_id: '1' }), [entry], {
+    groupId: LISTENER_GROUP,
     members: false,
   });
   await assert.rejects(
@@ -216,7 +237,7 @@ test('removed part options are rejected and remaining options are captured by co
       /Invalid group tool options/,
     );
   }
-  const options = { members: false, mention: false };
+  const options = { groupId: LISTENER_GROUP, members: false, mention: false };
   const { tools, calls } = setup(record(), [entry], options);
   options.members = true;
   options.mention = true;

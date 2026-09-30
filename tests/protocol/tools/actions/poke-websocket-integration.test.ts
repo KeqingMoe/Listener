@@ -21,6 +21,7 @@ import type {
   Memory,
   TimelineEntry,
 } from '../../../../src/contracts/messages.ts';
+import { OWNER_ID } from '../../../../src/contracts/identity.ts';
 
 const GROUP = '123456',
   SELF = '999',
@@ -189,6 +190,7 @@ for (const scenario of scenarios) {
           heartbeatMs: 10000,
         });
         const config: ListenerConfig = {
+          ownerId: OWNER_ID,
           groupId: GROUP,
           enabled: true,
           baseUrl: 'https://fixture.invalid',

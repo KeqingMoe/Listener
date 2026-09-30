@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { ModelSession } from '../../../../src/agent/session/store.ts';
 import type { Completion } from '../../../../src/contracts/model.ts';
 import type { ToolDefinition } from '../../../../src/contracts/tools.ts';
+import { LISTENER_GROUP } from '../../../../src/contracts/identity.ts';
 
 const tool: ToolDefinition = {
   type: 'function',
@@ -52,7 +53,7 @@ function cleanup(x: { dir: string }) {
 test('images remain transient, recovered session rotates explicitly and clears transport chain', () => {
   const x = file();
   try {
-    let s = new ModelSession({ path: x.path });
+    let s = new ModelSession({ groupId: LISTENER_GROUP, path: x.path });
     s.beginWake('instructions', [tool]);
     const old = s.state();
     const image = 'data:image/jpeg;base64,PRIVATE_IMAGE_BYTES_DO_NOT_PERSIST';
@@ -65,7 +66,7 @@ test('images remain transient, recovered session rotates explicitly and clears t
     s.finishWake();
     s.close();
     assert.equal(readFileSync(x.path).includes(Buffer.from(image)), false);
-    s = new ModelSession({ path: x.path });
+    s = new ModelSession({ groupId: LISTENER_GROUP, path: x.path });
     assert.notEqual(s.state().sessionId, old.sessionId);
     assert.equal(s.state().resetReason, 'transient_images_lost');
     assert.equal(s.getTransportCheckpoint(), undefined);
@@ -83,7 +84,11 @@ test('images remain transient, recovered session rotates explicitly and clears t
 test('transcript limits fail closed and rotate explicitly while preserving old ledger audit', () => {
   const x = file();
   try {
-    let s = new ModelSession({ path: x.path, maxTranscriptBytes: 4096 });
+    let s = new ModelSession({
+      groupId: LISTENER_GROUP,
+      path: x.path,
+      maxTranscriptBytes: 4096,
+    });
     s.beginWake('instructions', [tool]);
     assert.throws(
       () =>
@@ -102,7 +107,11 @@ test('transcript limits fail closed and rotate explicitly while preserving old l
       /resource/,
     );
     s.close();
-    s = new ModelSession({ path: x.path, maxTranscriptBytes: 4096 });
+    s = new ModelSession({
+      groupId: LISTENER_GROUP,
+      path: x.path,
+      maxTranscriptBytes: 4096,
+    });
     const recovered = s.messages().filter((m) => m.role === 'tool');
     assert.equal(recovered.length, 2);
     assert.match(String(recovered[0]!.content), /unknown/);
@@ -132,7 +141,7 @@ test('transcript limits fail closed and rotate explicitly while preserving old l
 });
 
 test('returned snapshots are immutable and request/call IDs are scoped to assistant checkpoints', () => {
-  const s = new ModelSession({ path: ':memory:' });
+  const s = new ModelSession({ groupId: LISTENER_GROUP, path: ':memory:' });
   s.beginWake('stable', [second]);
   const output = completion(call('reuse', 'send_message', '{invalid json'));
   const a = s.appendAssistant(output, 'request');
@@ -189,7 +198,7 @@ test('reopen preserves stable system/transcript prefix and group isolation', () 
 test('configuration fingerprint rotates current projection but keeps audit journal', () => {
   const x = file();
   try {
-    const s = new ModelSession({ path: x.path });
+    const s = new ModelSession({ groupId: LISTENER_GROUP, path: x.path });
     s.beginWake('a', [tool]);
     s.finishWake();
     const old = s.state().sessionId;
@@ -205,12 +214,12 @@ test('configuration fingerprint rotates current projection but keeps audit journ
 test('ledger intent is durable, crash recovery marks started unknown and never replays', () => {
   const x = file();
   try {
-    let s = new ModelSession({ path: x.path });
+    let s = new ModelSession({ groupId: LISTENER_GROUP, path: x.path });
     s.beginWake('instructions', [tool]);
     s.appendAssistant(completion(call('write', 'send_message', '{}')));
     assert.equal(s.startTool('write'), true);
     s.close();
-    s = new ModelSession({ path: x.path });
+    s = new ModelSession({ groupId: LISTENER_GROUP, path: x.path });
     const rows = s.messages();
     const result = rows.find(
       (m) => m.role === 'tool' && m.tool_call_id === 'write',
@@ -227,7 +236,7 @@ test('ledger intent is durable, crash recovery marks started unknown and never r
 test('unstarted calls are skipped and duplicate result never overwrites', () => {
   const x = file();
   try {
-    const s = new ModelSession({ path: x.path });
+    const s = new ModelSession({ groupId: LISTENER_GROUP, path: x.path });
     s.beginWake('instructions', [tool, second]);
     s.appendAssistant(
       completion(call('a', 'send_message', '{}'), call('b', 'finish', '{}')),
@@ -248,7 +257,7 @@ test('unstarted calls are skipped and duplicate result never overwrites', () => 
 test('finish result closes pending trailing calls with explicit skipped results', () => {
   const x = file();
   try {
-    const s = new ModelSession({ path: x.path });
+    const s = new ModelSession({ groupId: LISTENER_GROUP, path: x.path });
     s.beginWake('instructions', [tool]);
     s.appendAssistant(
       completion(
@@ -270,7 +279,7 @@ test('finish result closes pending trailing calls with explicit skipped results'
 test('transport checkpoint is bounded and reset clears it', () => {
   const x = file();
   try {
-    const s = new ModelSession({ path: x.path });
+    const s = new ModelSession({ groupId: LISTENER_GROUP, path: x.path });
     s.setTransportCheckpoint({ response_id: 'private' });
     assert.deepEqual(s.getTransportCheckpoint(), { response_id: 'private' });
     assert.throws(
@@ -291,7 +300,10 @@ test('symlink database is refused before opening', () => {
   try {
     writeFileSync(x.path, 'not sqlite');
     symlinkSync(x.path, link);
-    assert.throws(() => new ModelSession({ path: link }), /symlink|file/);
+    assert.throws(
+      () => new ModelSession({ groupId: LISTENER_GROUP, path: link }),
+      /symlink|file/,
+    );
   } finally {
     cleanup(x);
     try {

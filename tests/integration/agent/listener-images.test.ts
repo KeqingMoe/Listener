@@ -25,6 +25,8 @@ const attachment = {
   data: { url: transportUrl, file: '/private/image.png' },
 };
 const cfg: ListenerConfig = {
+  groupId: LISTENER_GROUP,
+  ownerId: OWNER_ID,
   enabled: true,
   baseUrl: 'https://example.invalid/v1',
   apiKey: 'test',

@@ -25,12 +25,18 @@ const typed = (
   extra: Record<string, unknown> = {},
 ): TimelineEntry => ({ ...row(id), segments, ...extra }) as TimelineEntry;
 const make = (maxContextChars = 8000) =>
-  new SQLiteMemory({ path: ':memory:', maxContextChars, retentionDays: 7 });
+  new SQLiteMemory({
+    groupId: LISTENER_GROUP,
+    path: ':memory:',
+    maxContextChars,
+    retentionDays: 7,
+  });
 
 test('typed face and literal marker text remain distinct across SQLite reopen, including bot provenance', () => {
   const dir = mkdtempSync(join(tmpdir(), 'listener-structured-memory-')),
     path = join(dir, 'memory.sqlite');
   let memory = new SQLiteMemory({
+    groupId: LISTENER_GROUP,
     path,
     maxContextChars: 8000,
     retentionDays: 7,
@@ -68,6 +74,7 @@ test('typed face and literal marker text remain distinct across SQLite reopen, i
     assert.equal(projected.segments[1].type, 'face');
     memory.close();
     memory = new SQLiteMemory({
+      groupId: LISTENER_GROUP,
       path,
       maxContextChars: 8000,
       retentionDays: 7,
@@ -100,6 +107,7 @@ test('record metadata is sanitized before SQLite storage and remains record in r
   const dir = mkdtempSync(join(tmpdir(), 'listener-record-memory-')),
     path = join(dir, 'memory.sqlite');
   let memory = new SQLiteMemory({
+    groupId: LISTENER_GROUP,
     path,
     maxContextChars: 8000,
     retentionDays: 7,
@@ -126,6 +134,7 @@ test('record metadata is sanitized before SQLite storage and remains record in r
     );
     memory.close();
     memory = new SQLiteMemory({
+      groupId: LISTENER_GROUP,
       path,
       maxContextChars: 8000,
       retentionDays: 7,
@@ -232,6 +241,7 @@ test('legacy records retain exact literal text and are never guessed into typed 
   const dir = mkdtempSync(join(tmpdir(), 'listener-legacy-content-')),
     path = join(dir, 'memory.sqlite');
   let memory = new SQLiteMemory({
+    groupId: LISTENER_GROUP,
     path,
     maxContextChars: 8000,
     retentionDays: 7,
@@ -253,6 +263,7 @@ test('legacy records retain exact literal text and are never guessed into typed 
       db.close();
     }
     memory = new SQLiteMemory({
+      groupId: LISTENER_GROUP,
       path,
       maxContextChars: 8000,
       retentionDays: 7,

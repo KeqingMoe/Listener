@@ -9,7 +9,10 @@ import { Listener } from '../../../../src/agent/listener.ts';
 import { ModelSession } from '../../../../src/agent/session/store.ts';
 import { WorldEventStore } from '../../../../src/world/events.ts';
 import { SQLiteMemory } from '../../../../src/agent/memory.ts';
-import { LISTENER_GROUP } from '../../../../src/contracts/identity.ts';
+import {
+  LISTENER_GROUP,
+  OWNER_ID,
+} from '../../../../src/contracts/identity.ts';
 import { type Api } from '../../../../src/contracts/onebot.ts';
 import {
   type ChatMessage,
@@ -200,6 +203,7 @@ function fixture(options: {
     },
   };
   const config: ListenerConfig = {
+    ownerId: OWNER_ID,
     enabled: true,
     groupId: GROUP,
     baseUrl: 'https://fixture.invalid',
@@ -213,8 +217,20 @@ function fixture(options: {
     maxContextChars: 8000,
     retentionDays: 7,
     randomReplyProbability: 0,
-    ...(options.images ? { images: { enabled: true, maxDownloadMb: 10 } } : {}),
-    ...(options.forward ? { forward: { enabled: true } } : {}),
+    ...(options.images
+      ? {
+          groupId: LISTENER_GROUP,
+          ownerId: OWNER_ID,
+          images: { enabled: true, maxDownloadMb: 10 },
+        }
+      : { groupId: LISTENER_GROUP, ownerId: OWNER_ID }),
+    ...(options.forward
+      ? {
+          groupId: LISTENER_GROUP,
+          ownerId: OWNER_ID,
+          forward: { enabled: true },
+        }
+      : { groupId: LISTENER_GROUP, ownerId: OWNER_ID }),
     tools: {
       members: false,
       mention: false,

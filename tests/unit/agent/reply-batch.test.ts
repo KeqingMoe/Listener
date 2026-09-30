@@ -40,7 +40,7 @@ function item(
 }
 
 test('late classified earlier caller displaces newest direct when the roster is full', () => {
-  const batch = new ReplyBatch(item(2, 'mention'), 20);
+  const batch = new ReplyBatch(item(2, 'mention'), 20, false, OWNER_ID);
   for (let seq = 3; seq <= 65; seq++) {
     batch.add(item(seq, 'mention'), 20);
   }
@@ -54,7 +54,7 @@ test('late classified earlier caller displaces newest direct when the roster is 
 });
 
 test('1000 ordinary arrivals retain 64, sort by arrival sequence rather than timestamp', () => {
-  const batch = new ReplyBatch(item(0), 20);
+  const batch = new ReplyBatch(item(0), 20, false, OWNER_ID);
   for (let i = 1; i < 1000; i++) {
     batch.add(item(i), 20);
   }
@@ -73,7 +73,7 @@ test('1000 ordinary arrivals retain 64, sort by arrival sequence rather than tim
 });
 
 test('direct requests evict ordinary entries and the first 64 direct requests stay pinned', () => {
-  const batch = new ReplyBatch(item(0, 'mention'), 20);
+  const batch = new ReplyBatch(item(0, 'mention'), 20, false, OWNER_ID);
   for (let i = 1; i <= 63; i++) {
     batch.add(item(i), 20);
   }
@@ -106,7 +106,7 @@ test('omitted non-owner caller provenance remains recorded independently of capa
     value.context.actorId = OWNER_ID;
     return value;
   };
-  const batch = new ReplyBatch(owned(0), 0);
+  const batch = new ReplyBatch(owned(0), 0, false, OWNER_ID);
   for (let i = 1; i < 64; i++) {
     batch.add(owned(i), 0);
   }
@@ -123,7 +123,7 @@ test('omitted non-owner caller provenance remains recorded independently of capa
 });
 
 test('duplicate IDs do not grow counts, even after eviction or omission', () => {
-  const batch = new ReplyBatch(item(0), 1);
+  const batch = new ReplyBatch(item(0), 1, false, OWNER_ID);
   for (let i = 1; i < 70; i++) {
     batch.add(item(i, 'mention'), 1);
   }
@@ -144,7 +144,7 @@ test('duplicate IDs do not grow counts, even after eviction or omission', () => 
 });
 
 test('promotion anchors first direct; older resolved quotes only move deadline earlier', () => {
-  const batch = new ReplyBatch(item(10), 500, true);
+  const batch = new ReplyBatch(item(10), 500, true, OWNER_ID);
   batch.add(item(20, 'mention', 200), 50);
   assert.equal(batch.readyAt, 250);
   batch.add(item(30, 'mention', 300), 1000);
@@ -160,7 +160,7 @@ test('promotion anchors first direct; older resolved quotes only move deadline e
   );
   assert.equal(batch.randomSelected, true);
   assert.equal(batch.primary.sequence, 5);
-  const next = new ReplyBatch(item(100), 50);
+  const next = new ReplyBatch(item(100), 50, false, OWNER_ID);
   assert.notEqual(next.turnId, batch.turnId);
   assert.equal(next.omittedMessages, 0);
   assert.equal(next.randomSelected, false);
@@ -169,7 +169,7 @@ test('promotion anchors first direct; older resolved quotes only move deadline e
 test('batches deep-copy inputs and payload results do not mutate the batch', () => {
   const first = item(1, 'mention');
   const second = item(2, 'quote');
-  const batch = new ReplyBatch(first, 0);
+  const batch = new ReplyBatch(first, 0, false, OWNER_ID);
   batch.add(second, 0);
   first.entry.text = 'mutated';
   first.entry.images![0]!.id = 'mutated';
@@ -197,7 +197,7 @@ test('payload retains full text when it fits, sanitizes names, and omits attachm
   first.entry.text = 'x'.repeat(5000);
   first.entry.nickname = '\u0000\n' + 'a'.repeat(40) + '\u007f';
   first.entry.replyTo = '42';
-  const payload = new ReplyBatch(first, 0).payload() as any;
+  const payload = new ReplyBatch(first, 0, false, OWNER_ID).payload() as any;
   const message = payload.current_batch.messages[0];
   assert.equal(message.text.length, 5000);
   assert.equal(message.nickname, 'a'.repeat(24));
@@ -219,7 +219,7 @@ test('worst escaped bodies, names, and maximal provenance remain within 24000 se
     value.entry.nickname = '"\\'.repeat(100);
     return value;
   });
-  const batch = new ReplyBatch(inputs[0]!, 0);
+  const batch = new ReplyBatch(inputs[0]!, 0, false, OWNER_ID);
   for (const value of inputs.slice(1)) {
     batch.add(value, 0);
   }

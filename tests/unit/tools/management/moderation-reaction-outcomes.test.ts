@@ -64,12 +64,18 @@ function moderationFixture(
       return await write();
     },
   };
-  const moderation = new Moderation(api, Date.now, {
-    mute: mode,
-    unmute: mode,
-    recall: mode,
-    memberCard: mode,
-  });
+  const moderation = new Moderation(
+    api,
+    Date.now,
+    {
+      mute: mode,
+      unmute: mode,
+      recall: mode,
+      memberCard: mode,
+    },
+    LISTENER_GROUP,
+    OWNER_ID,
+  );
   return {
     moderation,
     writes: () => writes,
@@ -124,7 +130,7 @@ function reactionFixture(write: () => unknown | Promise<unknown>) {
       return await write();
     },
   };
-  const tools = new ReactionTools(api, memory),
+  const tools = new ReactionTools(api, memory, LISTENER_GROUP),
     turn = tools.createTurn();
   return { tools, turn, writes: () => writes };
 }

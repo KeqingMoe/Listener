@@ -23,7 +23,7 @@ import { type ToolDefinition } from '../../contracts/tools.ts';
 
 interface ModelSessionOptions {
   path: string;
-  groupId?: string;
+  groupId: string;
   maxTranscriptBytes?: number;
 }
 

@@ -108,7 +108,7 @@ class ApiMock implements Api {
 
 test('all four capabilities default off in executor and model schema', async () => {
   const api = new ApiMock(),
-    m = new Moderation(api);
+    m = new Moderation(api, Date.now, {}, LISTENER_GROUP, OWNER_ID);
   assert.deepEqual(buildModerationTools(), []);
   for (const item of cases) {
     assert.equal(
@@ -123,7 +123,13 @@ for (const item of cases) {
   for (const mode of ['off', 'confirm', 'direct'] as const) {
     test(`${item.name}: ${mode} is independent and supports nonowner autonomous decisions`, async () => {
       const api = new ApiMock(),
-        m = new Moderation(api, Date.now, { [item.key]: mode });
+        m = new Moderation(
+          api,
+          Date.now,
+          { [item.key]: mode },
+          LISTENER_GROUP,
+          OWNER_ID,
+        );
       for (const other of cases.filter((c) => c.key !== item.key)) {
         assert.equal(
           (await m.request(other.name, other.args, ctx)).error,
@@ -222,7 +228,13 @@ test('schema filters off capabilities, reflects modes and reduced bounds, and ca
 
 test('direct capability policy is not a global deduplication lock across future decisions', async () => {
   const api = new ApiMock(),
-    m = new Moderation(api, Date.now, { mute: 'direct', unmute: 'direct' });
+    m = new Moderation(
+      api,
+      Date.now,
+      { mute: 'direct', unmute: 'direct' },
+      LISTENER_GROUP,
+      OWNER_ID,
+    );
   for (const name of ['mute_member', 'unmute_member', 'mute_member']) {
     assert.equal(
       (
@@ -248,11 +260,13 @@ test('real bot role is mandatory and target roles are checked for every capabili
     for (const role of ['member', 'unknown', '', undefined]) {
       const api = new ApiMock();
       api.botRole = role as any;
-      const result = await new Moderation(api, Date.now, all('direct')).request(
-        item.name,
-        item.args,
-        ctx,
-      );
+      const result = await new Moderation(
+        api,
+        Date.now,
+        all('direct'),
+        LISTENER_GROUP,
+        OWNER_ID,
+      ).request(item.name, item.args, ctx);
       assert.equal(result.status, 'error');
       assert.equal(api.mutations().length, 0);
       assert.deepEqual(
@@ -280,6 +294,8 @@ test('real bot role is mandatory and target roles are checked for every capabili
           api,
           Date.now,
           all('direct'),
+          LISTENER_GROUP,
+          OWNER_ID,
         ).request(item.name, item.args, ctx);
         assert.equal(
           result.status,
@@ -299,7 +315,13 @@ test('group-owner bot can request mute and unmute for administrator targets in e
         const api = new ApiMock();
         api.botRole = 'owner';
         api.targetRole = 'admin';
-        const m = new Moderation(api, Date.now, all(mode));
+        const m = new Moderation(
+          api,
+          Date.now,
+          all(mode),
+          LISTENER_GROUP,
+          OWNER_ID,
+        );
         let result = await m.request(item.name, { ...item.args, user_id }, ctx);
         if (mode === 'off') {
           assert.equal(result.error, 'tool_disabled');
@@ -326,7 +348,13 @@ test('administrator target permission is rechecked if the bot loses group owners
     const api = new ApiMock();
     api.botRole = 'owner';
     api.targetRole = 'admin';
-    const m = new Moderation(api, Date.now, all('confirm'));
+    const m = new Moderation(
+      api,
+      Date.now,
+      all('confirm'),
+      LISTENER_GROUP,
+      OWNER_ID,
+    );
     const proposed = await m.request(item.name, item.args, ctx);
     assert.equal(proposed.status, 'confirmation_required');
     api.botRole = 'admin';
@@ -343,11 +371,13 @@ test('non-contract result field of an administrator mute is never mistaken for a
   api.botRole = 'owner';
   api.targetRole = 'admin';
   api.result = { result: 1 };
-  const r = await new Moderation(api, Date.now, all('direct')).request(
-    'mute_member',
-    { user_id: target, seconds: 2 },
-    ctx,
-  );
+  const r = await new Moderation(
+    api,
+    Date.now,
+    all('direct'),
+    LISTENER_GROUP,
+    OWNER_ID,
+  ).request('mute_member', { user_id: target, seconds: 2 }, ctx);
   assert.equal(api.mutations().length, 1);
   assert.equal(r.status, 'unknown');
 });
@@ -368,11 +398,13 @@ test('bot group/id metadata cannot be replaced with claimed administrator names'
     };
     assert.equal(
       (
-        await new Moderation(api, Date.now, all('direct')).request(
-          'unmute_member',
-          { user_id: target },
-          ctx,
-        )
+        await new Moderation(
+          api,
+          Date.now,
+          all('direct'),
+          LISTENER_GROUP,
+          OWNER_ID,
+        ).request('unmute_member', { user_id: target }, ctx)
       ).status,
       'error',
     );
@@ -387,7 +419,13 @@ test('already cancelled requests do no reads or writes in either mode', async ()
     const api = new ApiMock();
     assert.equal(
       (
-        await new Moderation(api, Date.now, all(mode)).request(
+        await new Moderation(
+          api,
+          Date.now,
+          all(mode),
+          LISTENER_GROUP,
+          OWNER_ID,
+        ).request(
           'recall_message',
           { message_id: '-9' },
           ctx,
@@ -406,7 +444,13 @@ test('cancellation and disposal after every verification await stop further read
       for (const step of [1, 2, 3, 4]) {
         const api = new ApiMock(),
           controller = new AbortController(),
-          m = new Moderation(api, Date.now, all(mode));
+          m = new Moderation(
+            api,
+            Date.now,
+            all(mode),
+            LISTENER_GROUP,
+            OWNER_ID,
+          );
         api.hook = () => {
           if (api.calls.length === step) {
             if (stop === 'abort') {
@@ -442,7 +486,13 @@ test('owner confirmation rechecks cancellation and expiry after every verificati
       let now = 0;
       const api = new ApiMock(),
         controller = new AbortController(),
-        m = new Moderation(api, () => now, all('confirm'));
+        m = new Moderation(
+          api,
+          () => now,
+          all('confirm'),
+          LISTENER_GROUP,
+          OWNER_ID,
+        );
       const result = await m.request(
           'recall_message',
           { message_id: '-9' },
@@ -478,7 +528,7 @@ test('owner confirmation rechecks cancellation and expiry after every verificati
 
 test('pending capacity is enforced after concurrent verification returns', async () => {
   const api = new ApiMock(),
-    m = new Moderation(api, Date.now, all('confirm'));
+    m = new Moderation(api, Date.now, all('confirm'), LISTENER_GROUP, OWNER_ID);
   const results = await Promise.all(
     Array.from({ length: 25 }, () =>
       m.request('unmute_member', { user_id: target }, ctx),
@@ -502,7 +552,7 @@ test('successful dispatch acknowledgement stays executed after abort/dispose ins
     for (const stop of ['abort', 'dispose']) {
       const api = new ApiMock(),
         controller = new AbortController(),
-        m = new Moderation(api, Date.now, all(mode));
+        m = new Moderation(api, Date.now, all(mode), LISTENER_GROUP, OWNER_ID);
       api.hook = (name) => {
         if (writes.has(name)) {
           if (stop === 'abort') {
@@ -561,9 +611,15 @@ test('only the contracted null acknowledgement executes; arbitrary shapes remain
   for (const [response, status] of responses) {
     const api = new ApiMock();
     api.result = response;
-    const result = await new Moderation(api, Date.now, {
-      unmute: 'direct',
-    }).request('unmute_member', { user_id: target }, ctx);
+    const result = await new Moderation(
+      api,
+      Date.now,
+      {
+        unmute: 'direct',
+      },
+      LISTENER_GROUP,
+      OWNER_ID,
+    ).request('unmute_member', { user_id: target }, ctx);
     assert.equal(result.status, status);
     assert.ok(!JSON.stringify(result).includes('SECRET'));
     assert.equal(api.mutations().length, 1);
@@ -580,7 +636,7 @@ test('only the contracted null acknowledgement executes; arbitrary shapes remain
 test('transport failure after dispatch is unknown in direct and confirm modes and never auto-retried', async () => {
   for (const mode of ['direct', 'confirm'] as const) {
     const api = new ApiMock(),
-      m = new Moderation(api, Date.now, all(mode));
+      m = new Moderation(api, Date.now, all(mode), LISTENER_GROUP, OWNER_ID);
     api.hook = (name) => {
       if (writes.has(name)) {
         throw new Error('SECRET TRANSPORT BODY');
@@ -609,7 +665,13 @@ test('transport failure after dispatch is unknown in direct and confirm modes an
 test('recall binds fresh sender to optional frozen sender proof before proposing or executing', async () => {
   for (const mode of ['direct', 'confirm'] as const) {
     const wrongApi = new ApiMock(),
-      wrong = new Moderation(wrongApi, Date.now, { recall: mode });
+      wrong = new Moderation(
+        wrongApi,
+        Date.now,
+        { recall: mode },
+        LISTENER_GROUP,
+        OWNER_ID,
+      );
     assert.deepEqual(
       await wrong.request(
         'recall_message',
@@ -628,7 +690,13 @@ test('recall binds fresh sender to optional frozen sender proof before proposing
     );
     for (const expected of [target, undefined]) {
       const api = new ApiMock(),
-        m = new Moderation(api, Date.now, { recall: mode });
+        m = new Moderation(
+          api,
+          Date.now,
+          { recall: mode },
+          LISTENER_GROUP,
+          OWNER_ID,
+        );
       const result = await m.request(
         'recall_message',
         { message_id: '-9' },
@@ -665,7 +733,13 @@ test('known owner or bot sender still requires a matching fresh sender, and malf
       null,
     ]) {
       const api = new ApiMock(),
-        m = new Moderation(api, Date.now, { recall: mode });
+        m = new Moderation(
+          api,
+          Date.now,
+          { recall: mode },
+          LISTENER_GROUP,
+          OWNER_ID,
+        );
       const result = await m.request(
         'recall_message',
         { message_id: '-9' },
@@ -687,7 +761,13 @@ test('known owner or bot sender still requires a matching fresh sender, and malf
     }
   }
   const api = new ApiMock(),
-    m = new Moderation(api, Date.now, { recall: 'direct' });
+    m = new Moderation(
+      api,
+      Date.now,
+      { recall: 'direct' },
+      LISTENER_GROUP,
+      OWNER_ID,
+    );
   assert.equal(
     (
       await m.request(
@@ -706,7 +786,13 @@ test('configured owner is an ordinary target when QQ membership permits, across 
     for (const mode of ['off', 'confirm', 'direct'] as const) {
       const api = new ApiMock();
       api.sender = OWNER_ID;
-      const m = new Moderation(api, Date.now, { [item.key]: mode });
+      const m = new Moderation(
+        api,
+        Date.now,
+        { [item.key]: mode },
+        LISTENER_GROUP,
+        OWNER_ID,
+      );
       const args: JsonObject =
         item.key === 'recall'
           ? { ...item.args }
@@ -761,7 +847,13 @@ test('bot recalls its own verified messages as member, admin or owner under each
       const api = new ApiMock();
       api.botRole = botRole;
       api.sender = self;
-      const m = new Moderation(api, Date.now, { recall: mode });
+      const m = new Moderation(
+        api,
+        Date.now,
+        { recall: mode },
+        LISTENER_GROUP,
+        OWNER_ID,
+      );
       const r = await m.request(
         'recall_message',
         { message_id: '-9' },
@@ -805,7 +897,13 @@ test('bot may edit its own card as a regular member while mode and approval stil
     for (const mode of ['off', 'confirm', 'direct'] as const) {
       const api = new ApiMock();
       api.botRole = botRole;
-      const m = new Moderation(api, Date.now, { memberCard: mode });
+      const m = new Moderation(
+        api,
+        Date.now,
+        { memberCard: mode },
+        LISTENER_GROUP,
+        OWNER_ID,
+      );
       const r = await m.request(
         'set_member_card',
         { user_id: self, card: 'new self card' },
@@ -867,7 +965,13 @@ test('a frozen self-sender hint never bypasses fresh group, message or sender pr
       api.botRole = 'member';
       api.sender = self;
       api.message = { ...good, ...change };
-      const m = new Moderation(api, Date.now, { recall: mode });
+      const m = new Moderation(
+        api,
+        Date.now,
+        { recall: mode },
+        LISTENER_GROUP,
+        OWNER_ID,
+      );
       const r = await m.request(
         'recall_message',
         { message_id: '-9' },
@@ -891,7 +995,13 @@ test('removing target immunity does not let an ordinary bot manage other people 
   for (const item of cases) {
     const api = new ApiMock();
     api.botRole = 'member';
-    const m = new Moderation(api, Date.now, all('direct'));
+    const m = new Moderation(
+      api,
+      Date.now,
+      all('direct'),
+      LISTENER_GROUP,
+      OWNER_ID,
+    );
     const r = await m.request(item.name, item.args, ctx);
     assert.equal(r.error, 'permission_denied');
     assert.equal(api.mutations().length, 0);
@@ -900,7 +1010,13 @@ test('removing target immunity does not let an ordinary bot manage other people 
     for (const name of ['mute_member', 'unmute_member']) {
       const api = new ApiMock();
       api.botRole = botRole;
-      const m = new Moderation(api, Date.now, all('direct'));
+      const m = new Moderation(
+        api,
+        Date.now,
+        all('direct'),
+        LISTENER_GROUP,
+        OWNER_ID,
+      );
       const r = await m.request(
         name,
         name === 'mute_member'
@@ -922,11 +1038,13 @@ test('verification read failure cannot be reported as an uncertain mutation', as
         throw new Error('SECRET READ FAILURE');
       }
     };
-    const result = await new Moderation(api, Date.now, all('direct')).request(
-      'recall_message',
-      { message_id: '-9' },
-      ctx,
-    );
+    const result = await new Moderation(
+      api,
+      Date.now,
+      all('direct'),
+      LISTENER_GROUP,
+      OWNER_ID,
+    ).request('recall_message', { message_id: '-9' }, ctx);
     assert.deepEqual(result, {
       status: 'error',
       error: 'verification_unavailable',

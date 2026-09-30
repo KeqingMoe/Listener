@@ -35,6 +35,7 @@ const policy: NonNullable<ListenerConfig['tools']> = {
   },
 };
 const base: ListenerConfig = {
+  ownerId: OWNER_ID,
   groupId: GROUP,
   enabled: true,
   baseUrl: 'https://example.invalid/v1',

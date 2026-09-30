@@ -19,6 +19,8 @@ import {
 const self = '900000001';
 const target = '123456';
 const config: ListenerConfig = {
+  groupId: LISTENER_GROUP,
+  ownerId: OWNER_ID,
   enabled: true,
   baseUrl: 'https://example.com/v1',
   apiKey: 'test',

@@ -4,7 +4,7 @@
  */
 export const LISTENER_GROUP = '100000002';
 
-export function resolveGroupId(value: unknown = LISTENER_GROUP): string {
+export function resolveGroupId(value: unknown): string {
   if (
     typeof value !== 'string' ||
     !/^[1-9]\d{0,31}$/.test(value) ||
@@ -17,7 +17,7 @@ export function resolveGroupId(value: unknown = LISTENER_GROUP): string {
 
 export const OWNER_ID = '100000001';
 
-export function resolveOwnerId(value: unknown = OWNER_ID): string {
+export function resolveOwnerId(value: unknown): string {
   if (
     typeof value !== 'string' ||
     !/^[1-9]\d{0,31}$/.test(value) ||

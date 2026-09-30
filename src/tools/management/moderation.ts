@@ -4,12 +4,7 @@ import { MAX_MUTE_SECONDS } from '../../contracts/tool-limits.ts';
 import { writeFailure } from '../../onebot/operation-result.ts';
 import { log } from '../../observability/logger.ts';
 import type { ModerationPolicy } from '../../config/listener.ts';
-import {
-  LISTENER_GROUP,
-  resolveGroupId,
-  OWNER_ID,
-  resolveOwnerId,
-} from '../../contracts/identity.ts';
+import { resolveGroupId, resolveOwnerId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
 import { type JsonObject } from '../../contracts/json.ts';
 import {
@@ -242,8 +237,8 @@ export class Moderation {
     private readonly api: Api,
     private readonly now: () => number = Date.now,
     options: Partial<ModerationPolicy> = {},
-    groupId: string = LISTENER_GROUP,
-    ownerId: string = OWNER_ID,
+    groupId: string,
+    ownerId: string,
   ) {
     this.groupId = resolveGroupId(groupId);
     this.ownerId = resolveOwnerId(ownerId);

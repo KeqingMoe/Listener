@@ -16,7 +16,7 @@ export interface SQLiteMemoryOptions {
   path: string;
   maxContextChars: number;
   retentionDays: number;
-  groupId?: string;
+  groupId: string;
 }
 
 type Row = { seq: number; entry: string; time: number };

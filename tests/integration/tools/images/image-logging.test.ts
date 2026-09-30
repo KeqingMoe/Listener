@@ -123,6 +123,7 @@ test('actual transfer and native decode have separate timings and inherit image 
       memory,
       { enabled: true, maxDownloadMb: 1 },
       createImageDownloader(network(bytes)),
+      LISTENER_GROUP,
     );
     const result = await tools.view(
       { image_ids: ['img_1_0'] },

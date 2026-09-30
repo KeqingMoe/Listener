@@ -377,6 +377,7 @@ function moderationFixture(group: string) {
         memberCard: 'confirm',
       },
       group,
+      OWNER_ID,
     ),
     foreign() {
       foreign = true;
@@ -502,6 +503,7 @@ test('SQLite ownership mismatch is read-only, legacy ownership stays compatible,
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const path = join(dir, 'legacy.sqlite');
   const legacy = new SQLiteMemory({
+    groupId: LISTENER_GROUP,
     path,
     maxContextChars: 4000,
     retentionDays: 7,
@@ -564,6 +566,7 @@ test('SQLite ownership mismatch is read-only, legacy ownership stays compatible,
   );
   bareCheck.close();
   const reopened = new SQLiteMemory({
+    groupId: LISTENER_GROUP,
     path,
     maxContextChars: 4000,
     retentionDays: 7,
@@ -638,7 +641,9 @@ test('all constructors reject invalid group IDs before opening files or calling 
     assert.throws(
       () => new ForwardTools(a.client, memory(), forwardOptions, group as any),
     );
-    assert.throws(() => new Moderation(a.client, Date.now, {}, group as any));
+    assert.throws(
+      () => new Moderation(a.client, Date.now, {}, group as any, OWNER_ID),
+    );
     const path = join(dir, 'must-not-exist.sqlite');
     assert.throws(
       () =>

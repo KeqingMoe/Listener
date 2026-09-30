@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { ResponsesModel } from '../../../src/model/responses.ts';
 import { ModelSession } from '../../../src/agent/session/store.ts';
 import type { ChatMessage, Completion } from '../../../src/contracts/model.ts';
+import { LISTENER_GROUP } from '../../../src/contracts/identity.ts';
 
 const options = {
   baseUrl: 'https://example.invalid/v1',
@@ -90,10 +91,10 @@ test('full mode preserves all native outputs in order with tool results, persist
     const cp = model.getContinuationCheckpoint()!;
     assert.equal(JSON.stringify(cp).includes('user-input'), false);
     assert.equal(JSON.stringify(cp).includes('tool-result'), false);
-    let session = new ModelSession({ path });
+    let session = new ModelSession({ groupId: LISTENER_GROUP, path });
     session.setTransportCheckpoint(cp);
     session.close();
-    session = new ModelSession({ path });
+    session = new ModelSession({ groupId: LISTENER_GROUP, path });
     const restored = new ResponsesModel(options);
     restored.restoreContinuationCheckpoint(session.getTransportCheckpoint());
     session.close();
@@ -275,7 +276,10 @@ test('removed middle native mapping fails closed before any request', async (t) 
 });
 
 test('full checkpoint resource limit rotates before tool dispatch rather than retaining stale checkpoint', () => {
-  const session = new ModelSession({ path: ':memory:' });
+  const session = new ModelSession({
+    groupId: LISTENER_GROUP,
+    path: ':memory:',
+  });
   try {
     session.setTransportCheckpoint({
       version: 1,

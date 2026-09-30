@@ -11,7 +11,7 @@ import type {
 } from '../../../src/contracts/model.ts';
 import type { Memory, TimelineEntry } from '../../../src/contracts/messages.ts';
 import type { ToolCall } from '../../../src/contracts/tools.ts';
-import { LISTENER_GROUP } from '../../../src/contracts/identity.ts';
+import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.ts';
 
 const self = '900000001',
   actor = '12345';
@@ -20,6 +20,7 @@ const voice = {
   data: { file: 'PRIVATE_TOKEN', url: 'https://private.invalid/voice' },
 };
 const cfg: ListenerConfig = {
+  ownerId: OWNER_ID,
   groupId: LISTENER_GROUP,
   enabled: true,
   baseUrl: 'https://example.invalid',

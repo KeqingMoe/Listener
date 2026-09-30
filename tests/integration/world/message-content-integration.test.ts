@@ -5,7 +5,7 @@ import { Listener, normalizeEvent } from '../../../src/agent/listener.ts';
 import { GroupTools } from '../../../src/tools/messaging/tools.ts';
 import { ReplyBatch } from '../../../src/agent/reply-batch.ts';
 import { projectMessage } from '../../../src/world/message-content.ts';
-import { LISTENER_GROUP } from '../../../src/contracts/identity.ts';
+import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.ts';
 import { type Api } from '../../../src/contracts/onebot.ts';
 import {
   type Memory,
@@ -21,6 +21,8 @@ import type { ListenerConfig } from '../../../src/config/listener.ts';
 const self = '99999',
   actor = '123';
 const cfg: ListenerConfig = {
+  groupId: LISTENER_GROUP,
+  ownerId: OWNER_ID,
   enabled: true,
   baseUrl: 'https://example.invalid/v1',
   apiKey: 'test',
@@ -119,6 +121,7 @@ test('native structure and literal marker text remain distinct across normalizat
       { type: 'forward', data: { id: 'private-resource' } },
     ]),
     self,
+    LISTENER_GROUP,
   )!;
   const memory = new Mem();
   memory.append(entry);
@@ -135,10 +138,12 @@ test('native structure and literal marker text remain distinct across normalizat
       };
     },
   };
-  const tools = new GroupTools(api, memory),
+  const tools = new GroupTools(api, memory, { groupId: LISTENER_GROUP }),
     batch = new ReplyBatch(
       { entry, context, sequence: 1, received: 0, trigger: 'mention' },
       0,
+      false,
+      OWNER_ID,
     );
   const displayed = (batch.payload().current_batch as any).messages[0];
   for (const row of [
@@ -186,7 +191,7 @@ test('clipping long content never erases a later native quote from provenance', 
     text('x'.repeat(5000)),
     { type: 'reply', data: { id: '2' } },
   ]);
-  const entry = normalizeEvent(value, self)!;
+  const entry = normalizeEvent(value, self, LISTENER_GROUP)!;
   assert.equal(entry.replyTo, '2');
   assert.equal(entry.content_truncated, true);
   const displayed = projectMessage(entry);
@@ -213,11 +218,9 @@ test('clipping long content never erases a later native quote from provenance', 
       };
     },
   };
-  const result = await new GroupTools(api, memory).execute(
-    'read_message',
-    { message_id: '2' },
-    context,
-  );
+  const result = await new GroupTools(api, memory, {
+    groupId: LISTENER_GROUP,
+  }).execute('read_message', { message_id: '2' }, context);
   assert.equal(result.status, 'ok');
   assert.equal((result.message as any).replyTo, '3');
   assert.equal((result.message as any).content_truncated, true);
@@ -231,7 +234,10 @@ test('marker and CQ-looking text is allowed even with mentions disabled and neve
     },
   };
   for (const mention of [true, false]) {
-    const tools = new GroupTools(api, memory, { mention });
+    const tools = new GroupTools(api, memory, {
+      groupId: LISTENER_GROUP,
+      mention,
+    });
     const parts = [
       await tools.prepareMessage(
         { segments: [{ type: 'text', text: literal }] },
@@ -262,7 +268,7 @@ test('marker and CQ-looking text is allowed even with mentions disabled and neve
       ),
     );
   }
-  const tools = new GroupTools(api, memory);
+  const tools = new GroupTools(api, memory, { groupId: LISTENER_GROUP });
   const result = await tools.prepareMessage(
     { segments: [{ type: 'face', id: '0', name: '辅助说明不会发送' }] },
     context,
@@ -351,11 +357,14 @@ test('maximal structured batch fits 24000 characters without losing caller ident
         })),
       ]),
       self,
+      LISTENER_GROUP,
     )!;
   const first = build(1),
     batch = new ReplyBatch(
       { entry: first, context, sequence: 1, received: 0, trigger: 'mention' },
       0,
+      false,
+      OWNER_ID,
     );
   for (let i = 2; i <= 64; i++) {
     const entry = build(i);

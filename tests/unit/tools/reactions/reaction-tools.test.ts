@@ -165,7 +165,7 @@ test('scope and turn ownership checks happen before every API/cache access', asy
 
 test('legacy constructor default remains bound to the original installation group', async () => {
   const f = fixture({ remote: verified('1', '123', LISTENER_GROUP) });
-  const tools = new ReactionTools(f.api, f.memory),
+  const tools = new ReactionTools(f.api, f.memory, LISTENER_GROUP),
     state = tools.createTurn();
   assert.equal(
     (await tools.react(args(), { ...context, groupId: LISTENER_GROUP }, state))

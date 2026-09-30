@@ -1,4 +1,4 @@
-import { OWNER_ID, resolveOwnerId } from '../contracts/identity.ts';
+import { resolveOwnerId } from '../contracts/identity.ts';
 import { type JsonObject } from '../contracts/json.ts';
 import { type Memory, type TimelineEntry } from '../contracts/messages.ts';
 import { type TurnContext } from '../contracts/tools.ts';
@@ -58,7 +58,7 @@ export class ReplyBatch {
     item: BatchItem,
     delayMs: number,
     randomSelected = false,
-    ownerId: string = OWNER_ID,
+    ownerId: string,
   ) {
     this.ownerId = resolveOwnerId(ownerId);
     this.openedAt = item.received;

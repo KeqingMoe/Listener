@@ -22,6 +22,8 @@ const self = '999',
   actor = '123',
   target = '456';
 const config: ListenerConfig = {
+  groupId: LISTENER_GROUP,
+  ownerId: OWNER_ID,
   enabled: true,
   baseUrl: 'https://example.invalid/v1',
   apiKey: 'test',

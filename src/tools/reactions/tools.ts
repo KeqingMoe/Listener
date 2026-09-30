@@ -1,5 +1,5 @@
 import { canonicalMessageId } from '../../onebot/identity.ts';
-import { LISTENER_GROUP, resolveGroupId } from '../../contracts/identity.ts';
+import { resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
 import { type Memory, type TimelineEntry } from '../../contracts/messages.ts';
 import { type JsonObject } from '../../contracts/json.ts';
@@ -146,7 +146,7 @@ export class ReactionTools {
   constructor(
     private readonly api: Api,
     private readonly memory: Memory,
-    groupId: string = LISTENER_GROUP,
+    groupId: string,
   ) {
     this.groupId = resolveGroupId(groupId);
   }

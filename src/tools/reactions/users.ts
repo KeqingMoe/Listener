@@ -1,6 +1,6 @@
 import { canonicalMessageId } from '../../onebot/identity.ts';
 import { randomBytes } from 'node:crypto';
-import { LISTENER_GROUP, resolveGroupId } from '../../contracts/identity.ts';
+import { resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
 import { type JsonObject } from '../../contracts/json.ts';
 import { type Memory } from '../../contracts/messages.ts';
@@ -160,7 +160,7 @@ export class ReactionUserTools {
   constructor(
     private readonly api: Api,
     private readonly memory: Memory,
-    groupId = LISTENER_GROUP,
+    groupId: string,
   ) {
     this.groupId = resolveGroupId(groupId);
   }

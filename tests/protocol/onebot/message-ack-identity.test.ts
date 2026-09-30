@@ -198,6 +198,7 @@ async function fixture(
       heartbeatMs: 10000,
     });
     const config: ListenerConfig = {
+      ownerId: OWNER_ID,
       groupId: GROUP,
       enabled: true,
       baseUrl: 'https://fixture.invalid',

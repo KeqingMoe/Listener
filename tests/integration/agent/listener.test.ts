@@ -53,6 +53,8 @@ class MockMemory implements Memory {
 }
 
 const cfg: ListenerConfig = {
+  groupId: LISTENER_GROUP,
+  ownerId: OWNER_ID,
   enabled: true,
   baseUrl: 'https://example.com/v1',
   apiKey: 'test',
@@ -580,6 +582,7 @@ test('event normalization preserves provenance and never dereferences media URLs
       ],
     }),
     self,
+    LISTENER_GROUP,
   )!;
   assert.equal(e.replyTo, '-1');
   assert.ok(!e.text.includes('http'));

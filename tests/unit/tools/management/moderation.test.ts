@@ -122,7 +122,8 @@ test('policy rejects legacy booleans, malformed options and security-limit incre
   ];
   for (const options of invalid) {
     assert.throws(
-      () => new Moderation(api, Date.now, options as any),
+      () =>
+        new Moderation(api, Date.now, options as any, LISTENER_GROUP, OWNER_ID),
       /Invalid moderation options/,
     );
     assert.throws(
@@ -138,7 +139,7 @@ test('adopted thirty-day inclusive application cap executes in direct and confir
   for (const mute of ['direct', 'confirm'] as const) {
     for (const seconds of [1, 601, MAX_MUTE_SECONDS]) {
       const api = new FakeApi(),
-        m = new Moderation(api, Date.now, { mute });
+        m = new Moderation(api, Date.now, { mute }, LISTENER_GROUP, OWNER_ID);
       const result = await m.request(
         'mute_member',
         { ...args, seconds },
@@ -168,13 +169,25 @@ test('off policy denies requests and confirmation before any API calls', async (
     ['memberCard', 'set_member_card', { user_id: target, card: 'x' }],
   ] as const) {
     const api = new FakeApi(),
-      m = new Moderation(api, Date.now, { [key]: 'off' });
+      m = new Moderation(
+        api,
+        Date.now,
+        { [key]: 'off' },
+        LISTENER_GROUP,
+        OWNER_ID,
+      );
     assert.equal(
       (await m.request(name, value, context)).error,
       'tool_disabled',
     );
     assert.equal(api.calls.length, 0);
-    const enabled = new Moderation(new FakeApi(), Date.now, CONFIRM),
+    const enabled = new Moderation(
+        new FakeApi(),
+        Date.now,
+        CONFIRM,
+        LISTENER_GROUP,
+        OWNER_ID,
+      ),
       code = await proposal(enabled, name, value);
     (m as any).pending.set(code, (enabled as any).pending.get(code));
     assert.equal((await m.confirm(code, context)).error, 'tool_disabled');
@@ -191,7 +204,7 @@ test('reduced caps and TTL apply to requests and confirmation with copied policy
     mute: 'confirm',
   };
   const api = new FakeApi(),
-    m = new Moderation(api, () => now, options);
+    m = new Moderation(api, () => now, options, LISTENER_GROUP, OWNER_ID);
   options.maxMuteSeconds = 600;
   options.confirmationTtlSeconds = 60;
   options.mute = 'off';
@@ -230,7 +243,13 @@ test('reduced caps and TTL apply to requests and confirmation with copied policy
     'confirmation_expired',
   );
   assert.equal(api.calls.length, before);
-  const enabled = new Moderation(new FakeApi(), () => now, CONFIRM),
+  const enabled = new Moderation(
+      new FakeApi(),
+      () => now,
+      CONFIRM,
+      LISTENER_GROUP,
+      OWNER_ID,
+    ),
     code = await proposal(enabled);
   (m as any).pending.set(code, (enabled as any).pending.get(code));
   assert.equal((await m.confirm(code, context)).error, 'invalid_arguments');
@@ -240,7 +259,7 @@ test('reduced caps and TTL apply to requests and confirmation with copied policy
 test('disabled policy remains disabled after caller mutates options', async () => {
   const options: Partial<ModerationPolicy> = { mute: 'off' },
     api = new FakeApi(),
-    m = new Moderation(api, Date.now, options);
+    m = new Moderation(api, Date.now, options, LISTENER_GROUP, OWNER_ID);
   options.mute = 'direct';
   assert.equal(
     (await m.request('mute_member', args, context)).error,
@@ -297,7 +316,7 @@ test('confirm requests never mutate; owner revalidates and executes exact action
     ],
   ] as const) {
     const api = new FakeApi(),
-      m = new Moderation(api, Date.now, CONFIRM);
+      m = new Moderation(api, Date.now, CONFIRM, LISTENER_GROUP, OWNER_ID);
     const code = await proposal(m, name, value, { ...context, actorId: '456' });
     assert.equal(api.writes().length, 0);
     assert.equal(
@@ -342,7 +361,7 @@ test('wrong group, malformed actor and unverified bot identity fail; names and q
     { messageId: '' },
   ]) {
     const api = new FakeApi(),
-      m = new Moderation(api, Date.now, CONFIRM);
+      m = new Moderation(api, Date.now, CONFIRM, LISTENER_GROUP, OWNER_ID);
     assert.equal(
       (await m.request('mute_member', args, { ...context, ...patch })).status,
       'error',
@@ -350,7 +369,7 @@ test('wrong group, malformed actor and unverified bot identity fail; names and q
     assert.equal(api.writes().length, 0);
   }
   const api = new FakeApi(),
-    m = new Moderation(api, Date.now, CONFIRM);
+    m = new Moderation(api, Date.now, CONFIRM, LISTENER_GROUP, OWNER_ID);
   assert.equal(
     (
       await m.request(
@@ -370,7 +389,7 @@ test('wrong group, malformed actor and unverified bot identity fail; names and q
 
 test('strict argument allowlist rejects arbitrary actions, fields and malformed values', async () => {
   const api = new FakeApi(),
-    m = new Moderation(api, Date.now, CONFIRM);
+    m = new Moderation(api, Date.now, CONFIRM, LISTENER_GROUP, OWNER_ID);
   const invalid: [string, unknown][] = [
     ['call_api', { action: 'set_group_ban', params: args }],
     ['set_group_ban', args],
@@ -456,11 +475,13 @@ test('target member identity, group and actual QQ role still fail closed', async
     api.member = member;
     assert.equal(
       (
-        await new Moderation(api, Date.now, CONFIRM).request(
-          'mute_member',
-          args,
-          context,
-        )
+        await new Moderation(
+          api,
+          Date.now,
+          CONFIRM,
+          LISTENER_GROUP,
+          OWNER_ID,
+        ).request('mute_member', args, context)
       ).status,
       'error',
     );
@@ -485,11 +506,13 @@ test('recall requires matching message ID, group, type, sender and any redundant
     api.message = { ...(api.message as JsonObject), ...patch };
     assert.equal(
       (
-        await new Moderation(api, Date.now, CONFIRM).request(
-          'recall_message',
-          { message_id: '-99' },
-          context,
-        )
+        await new Moderation(
+          api,
+          Date.now,
+          CONFIRM,
+          LISTENER_GROUP,
+          OWNER_ID,
+        ).request('recall_message', { message_id: '-99' }, context)
       ).status,
       'error',
     );
@@ -506,7 +529,7 @@ test('confirmation detects changed target members, messages, current self and re
     { user_id: undefined },
   ]) {
     const api = new FakeApi(),
-      m = new Moderation(api, Date.now, CONFIRM),
+      m = new Moderation(api, Date.now, CONFIRM, LISTENER_GROUP, OWNER_ID),
       code = await proposal(m);
     api.member = { ...(api.member as JsonObject), ...patch };
     assert.equal((await m.confirm(code, context)).status, 'error');
@@ -521,7 +544,7 @@ test('confirmation detects changed target members, messages, current self and re
     { message_id: undefined },
   ]) {
     const api = new FakeApi(),
-      m = new Moderation(api, Date.now, CONFIRM),
+      m = new Moderation(api, Date.now, CONFIRM, LISTENER_GROUP, OWNER_ID),
       code = await proposal(m, 'recall_message', { message_id: '-99' });
     api.message = { ...(api.message as JsonObject), ...patch };
     assert.equal((await m.confirm(code, context)).status, 'error');
@@ -536,7 +559,7 @@ test('confirmation detects changed target members, messages, current self and re
     },
   ]) {
     const api = new FakeApi(),
-      m = new Moderation(api, Date.now, CONFIRM),
+      m = new Moderation(api, Date.now, CONFIRM, LISTENER_GROUP, OWNER_ID),
       code = await proposal(m);
     revoke(api);
     assert.equal((await m.confirm(code, context)).status, 'error');
@@ -551,7 +574,7 @@ test('unauthorized or foreign confirmation cannot burn codes; concurrent owner c
     { selfId: '999' },
   ]) {
     const api = new FakeApi(),
-      m = new Moderation(api, Date.now, CONFIRM),
+      m = new Moderation(api, Date.now, CONFIRM, LISTENER_GROUP, OWNER_ID),
       code = await proposal(m);
     const before = api.calls.length;
     assert.equal(
@@ -563,7 +586,7 @@ test('unauthorized or foreign confirmation cannot burn codes; concurrent owner c
     assert.equal(api.writes().length, 1);
   }
   const api = new FakeApi(),
-    m = new Moderation(api, Date.now, CONFIRM),
+    m = new Moderation(api, Date.now, CONFIRM, LISTENER_GROUP, OWNER_ID),
     code = await proposal(m);
   assert.deepEqual(
     (await Promise.all([m.confirm(code, context), m.confirm(code, context)]))
@@ -577,7 +600,7 @@ test('unauthorized or foreign confirmation cannot burn codes; concurrent owner c
 test('TTL, bounded pending capacity, and disposal', async () => {
   let now = 1000;
   const api = new FakeApi(),
-    m = new Moderation(api, () => now, CONFIRM),
+    m = new Moderation(api, () => now, CONFIRM, LISTENER_GROUP, OWNER_ID),
     code = await proposal(m);
   for (let i = 1; i < 10; i++) {
     await proposal(m);
@@ -602,7 +625,7 @@ test('expiry and disposal during async verification stop further reads and preve
   for (const mode of ['expire', 'dispose']) {
     let now = 0;
     const api = new FakeApi(),
-      m = new Moderation(api, () => now, CONFIRM),
+      m = new Moderation(api, () => now, CONFIRM, LISTENER_GROUP, OWNER_ID),
       code = await proposal(m);
     const before = api.calls.length;
     api.hook = async (action) => {
@@ -622,7 +645,7 @@ test('expiry and disposal during async verification stop further reads and preve
 
 test('snapshots request args/context and returned action; uncertain dispatch consumes code without leaking or retrying', async () => {
   const api = new FakeApi(),
-    m = new Moderation(api, Date.now, CONFIRM),
+    m = new Moderation(api, Date.now, CONFIRM, LISTENER_GROUP, OWNER_ID),
     original = { ...args },
     originalContext = { ...context };
   const pending = m.request('mute_member', original, originalContext);
@@ -648,7 +671,7 @@ test('snapshots request args/context and returned action; uncertain dispatch con
 
 test('revoked recall lookup fails safely and consumes owner confirmation', async () => {
   const api = new FakeApi(),
-    m = new Moderation(api, Date.now, CONFIRM),
+    m = new Moderation(api, Date.now, CONFIRM, LISTENER_GROUP, OWNER_ID),
     code = await proposal(m, 'recall_message', { message_id: '-99' });
   api.hook = async (action) => {
     if (action === 'get_msg') {
@@ -676,7 +699,7 @@ test('audit distinguishes request, confirmed and autonomous phases without card 
   });
   try {
     const api = new FakeApi(),
-      m = new Moderation(api, Date.now, CONFIRM);
+      m = new Moderation(api, Date.now, CONFIRM, LISTENER_GROUP, OWNER_ID);
     const code = await proposal(
       m,
       'set_member_card',
@@ -685,9 +708,15 @@ test('audit distinguishes request, confirmed and autonomous phases without card 
     );
     api.failMutation = true;
     await m.confirm(code, context);
-    const direct = new Moderation(new FakeApi(), Date.now, {
-      unmute: 'direct',
-    });
+    const direct = new Moderation(
+      new FakeApi(),
+      Date.now,
+      {
+        unmute: 'direct',
+      },
+      LISTENER_GROUP,
+      OWNER_ID,
+    );
     await direct.request(
       'unmute_member',
       { user_id: target },

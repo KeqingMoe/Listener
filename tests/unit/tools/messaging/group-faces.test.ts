@@ -43,7 +43,7 @@ function memory(entries: TimelineEntry[]): Memory {
   };
 }
 
-function setup(options: GroupToolsOptions = {}, response?: unknown) {
+function setup(options: Partial<GroupToolsOptions> = {}, response?: unknown) {
   const calls: Array<{ action: string; params: unknown }> = [];
   const api: Api = {
     async call(action, params) {
@@ -58,7 +58,13 @@ function setup(options: GroupToolsOptions = {}, response?: unknown) {
       );
     },
   };
-  return { tools: new GroupTools(api, memory([entry]), options), calls };
+  return {
+    tools: new GroupTools(api, memory([entry]), {
+      groupId: LISTENER_GROUP,
+      ...options,
+    }),
+    calls,
+  };
 }
 
 test('ordinary zero and animated faces are independently visible without text', async () => {
@@ -134,7 +140,7 @@ test('faces coexist with many verified mentions and disabling mentions preserves
   );
   assert.equal(prepared.segments.length, 5);
   assert.equal(many.calls.length, 4);
-  const noMention = setup({ mention: false });
+  const noMention = setup({ groupId: LISTENER_GROUP, mention: false });
   assert.equal(
     (await noMention.tools.prepareMessage(part([face('375')]), context))
       .segments.length,
@@ -186,7 +192,7 @@ test('all invalid face IDs and extra animation fields fail before earlier member
 
 test('remote read_message renders face names and IDs without raw transport metadata', async () => {
   const s = setup(
-    {},
+    { groupId: LISTENER_GROUP },
     {
       message_type: 'group',
       group_id: LISTENER_GROUP,
@@ -268,7 +274,12 @@ test('forward read node faces use the same typed segments and never expose raw f
       };
     },
   };
-  const tools = new ForwardTools(api, memory(entries), { enabled: true });
+  const tools = new ForwardTools(
+    api,
+    memory(entries),
+    { enabled: true },
+    LISTENER_GROUP,
+  );
   const result = await tools.read(
     { forward_id: 'fwd_1_0', start: 1, limit: 1 },
     context,

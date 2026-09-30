@@ -7,7 +7,7 @@ import {
 import { Listener } from '../../../src/agent/listener.ts';
 import { GroupRouter } from '../../../src/app/group-router.ts';
 import { TurnScheduler } from '../../../src/agent/scheduler.ts';
-import { OWNER_ID } from '../../../src/contracts/identity.ts';
+import { OWNER_ID, LISTENER_GROUP } from '../../../src/contracts/identity.ts';
 import { type Api } from '../../../src/contracts/onebot.ts';
 import {
   type ChatMessage,
@@ -26,6 +26,8 @@ const A = '22',
   B = '33',
   C = '44';
 const config: ListenerConfig = {
+  groupId: LISTENER_GROUP,
+  ownerId: OWNER_ID,
   enabled: true,
   baseUrl: 'https://example.invalid/v1',
   apiKey: 'fixture',

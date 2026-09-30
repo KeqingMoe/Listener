@@ -102,7 +102,7 @@ function setup({
     },
     close() {},
   };
-  const tools = new ForwardTools(api, memory, options),
+  const tools = new ForwardTools(api, memory, options, LISTENER_GROUP),
     state = tools.createTurn();
   return {
     tools,

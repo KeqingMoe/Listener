@@ -29,9 +29,9 @@ interface ToolsConfig {
 
 /** 底层模块选项。实际部署通过toListenerConfig获得完整策略。 */
 export interface ListenerConfig {
-  groupId?: string;
+  groupId: string;
   /** 可信的全局部署owner；从不接受来自群级覆盖或聊天内容的值。 */
-  ownerId?: string;
+  ownerId: string;
   enabled: boolean;
   baseUrl: string;
   apiKey: string;

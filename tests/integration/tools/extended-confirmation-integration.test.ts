@@ -176,6 +176,7 @@ function setup(
   };
   const config: ListenerConfig = {
     groupId: GROUP,
+    ownerId: OWNER_ID,
     enabled: true,
     baseUrl: 'https://example.invalid',
     apiKey: 'fixture',

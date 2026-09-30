@@ -9,7 +9,7 @@ import {
   FACE_LAYOUT_GUIDANCE,
 } from '../../../src/tools/faces/tools.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
-import { LISTENER_GROUP } from '../../../src/contracts/identity.ts';
+import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.ts';
 import {
   type Memory,
   type TimelineEntry,
@@ -23,6 +23,8 @@ import {
 
 const self = '900000001';
 const config: ListenerConfig = {
+  groupId: LISTENER_GROUP,
+  ownerId: OWNER_ID,
   enabled: true,
   baseUrl: 'https://example.invalid/v1',
   apiKey: 'test',
@@ -228,6 +230,7 @@ test('incoming faces preserve semantic names and order without raw metadata', ()
       { type: 'face', data: { id: 375 } },
     ]),
     self,
+    LISTENER_GROUP,
   )!;
   assert.equal(entry.text, `before${faceMarker('20')}middle${faceMarker(375)}`);
   assert.match(entry.text, /偷笑.*20/);
@@ -240,6 +243,7 @@ test('unknown and malformed incoming IDs keep safe generic markers rather than r
   const unknown = normalizeEvent(
     event([{ type: 'face', data: { id: '999999', raw: 'SECRET_RAW' } }]),
     self,
+    LISTENER_GROUP,
   )!;
   assert.match(unknown.text, /QQ表情/);
   assert.match(unknown.text, /999999/);
@@ -257,6 +261,7 @@ test('unknown and malformed incoming IDs keep safe generic markers rather than r
     const entry = normalizeEvent(
       event([{ type: 'face', data: { id, raw: 'SECRET_RAW' } }]),
       self,
+      LISTENER_GROUP,
     )!;
     assert.match(entry.text, /QQ表情/);
     assert.match(entry.text, /未知/);

@@ -230,7 +230,13 @@ test('moderation proposal and confirmation audits contain IDs but no card or cod
         throw new Error(secret);
       },
     };
-    const moderation = new Moderation(api, Date.now, { memberCard: 'confirm' });
+    const moderation = new Moderation(
+      api,
+      Date.now,
+      { memberCard: 'confirm' },
+      LISTENER_GROUP,
+      OWNER_ID,
+    );
     const proposal = await moderation.request(
       'set_member_card',
       { user_id: '123', card: secret },
@@ -309,6 +315,7 @@ test('image logs cover origin validation download failures and safe image metric
           firstFrameOnly: true,
         };
       },
+      LISTENER_GROUP,
     );
     const state = tools.createTurn();
     await tools.view({ image_ids: ['img_1_0', 'img_2_0'] }, context, state);
@@ -346,6 +353,7 @@ test('image logs cover origin validation download failures and safe image metric
 test('memory only logs actual compaction, preserves swallowed failures and marks stale cancellation', async () => {
   const rows = await capture(async () => {
     const memory = new SQLiteMemory({
+      groupId: LISTENER_GROUP,
       path: ':memory:',
       maxContextChars: 1000,
       retentionDays: 1,

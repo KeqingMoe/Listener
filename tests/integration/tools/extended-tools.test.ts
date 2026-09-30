@@ -23,7 +23,7 @@ import { buildToolDefinitions } from '../../../src/agent/tool-definitions.ts';
 import { ModelSession } from '../../../src/agent/session/store.ts';
 import { WorldEventStore } from '../../../src/world/events.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
-import { LISTENER_GROUP } from '../../../src/contracts/identity.ts';
+import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.ts';
 import { type Api } from '../../../src/contracts/onebot.ts';
 import {
   type ChatMessage,
@@ -49,6 +49,8 @@ const context: TurnContext = {
   messageId: '1',
 };
 const base: ListenerConfig = {
+  groupId: LISTENER_GROUP,
+  ownerId: OWNER_ID,
   enabled: true,
   baseUrl: 'https://fixture.invalid/v1',
   apiKey: 'fixture-key',
@@ -231,7 +233,13 @@ async function fixture(options: {
     memory(),
     {
       ...config(options.extended),
-      ...(options.budget ? { maxToolCallsPerWake: options.budget } : {}),
+      ...(options.budget
+        ? {
+            groupId: LISTENER_GROUP,
+            ownerId: OWNER_ID,
+            maxToolCallsPerWake: options.budget,
+          }
+        : { groupId: LISTENER_GROUP, ownerId: OWNER_ID }),
     },
     () => 0,
     undefined,

@@ -42,6 +42,7 @@ import type {
   ToolCall,
   ToolDefinition,
 } from '../../../../src/contracts/tools.ts';
+import { LISTENER_GROUP } from '../../../../src/contracts/identity.ts';
 
 const SELF = '100000001',
   OWNER = '100000002',
@@ -160,6 +161,7 @@ async function fixture(
     session: join(directory, 'session.sqlite'),
   };
   const memory = new SQLiteMemory({
+    groupId: LISTENER_GROUP,
     path: paths.memory,
     retentionDays: 7,
     maxContextChars: 40000,

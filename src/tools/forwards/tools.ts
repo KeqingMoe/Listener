@@ -1,6 +1,6 @@
 import { canonicalMessageId } from '../../onebot/identity.ts';
 import { randomBytes } from 'node:crypto';
-import { LISTENER_GROUP, resolveGroupId } from '../../contracts/identity.ts';
+import { resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
 import { type JsonObject } from '../../contracts/json.ts';
 import { type Memory, type MessageSegment } from '../../contracts/messages.ts';
@@ -198,7 +198,7 @@ export class ForwardTools {
     private readonly api: Api,
     private readonly memory: Memory,
     options: ForwardConfig,
-    groupId: string = LISTENER_GROUP,
+    groupId: string,
   ) {
     this.groupId = resolveGroupId(groupId);
     if (

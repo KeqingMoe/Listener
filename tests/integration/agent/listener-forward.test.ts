@@ -29,6 +29,8 @@ const self = '900000001',
   hidden = 'PRIVATE_QUOTED_FORWARD_BODY',
   internal = '9988776655443322110099';
 const cfg: ListenerConfig = {
+  groupId: LISTENER_GROUP,
+  ownerId: OWNER_ID,
   enabled: true,
   baseUrl: 'https://example.invalid/v1',
   apiKey: 'test',
@@ -574,6 +576,7 @@ test('SQLite persisted forward refs survive reopen with all unknown payload fiel
   const dir = mkdtempSync(join(tmpdir(), 'listener-forward-memory-')),
     path = join(dir, 'memory.sqlite');
   let memory = new SQLiteMemory({
+    groupId: LISTENER_GROUP,
     path,
     maxContextChars: 8000,
     retentionDays: 7,
@@ -603,6 +606,7 @@ test('SQLite persisted forward refs survive reopen with all unknown payload fiel
     assert.deepEqual(memory.find('1')?.forwards, expected);
     memory.close();
     memory = new SQLiteMemory({
+      groupId: LISTENER_GROUP,
       path,
       maxContextChars: 8000,
       retentionDays: 7,

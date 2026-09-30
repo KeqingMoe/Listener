@@ -11,10 +11,12 @@ import { GroupRouter } from '../../../src/app/group-router.ts';
 import type { ChatMessage, Completion } from '../../../src/contracts/model.ts';
 import type { Memory } from '../../../src/contracts/messages.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
+import { OWNER_ID } from '../../../src/contracts/identity.ts';
 
 const group = '123456',
   self = '999';
 const config: ListenerConfig = {
+  ownerId: OWNER_ID,
   groupId: group,
   enabled: true,
   baseUrl: 'https://example.invalid',

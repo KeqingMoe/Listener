@@ -60,6 +60,7 @@ interface ExtendedToolOptions {
   sandbox?: SandboxService;
   web?: WebTools;
   artifacts?: ArtifactStore;
+  /** 启用提醒工具时必填。 */
   ownerId?: string;
   beforeSend?: GroupMediaOptions['beforeSend'];
   onSent?: GroupMediaOptions['onSent'];

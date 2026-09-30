@@ -6,8 +6,10 @@ import {
   observedSystemPrompt,
 } from '../../../src/agent/prompts.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
+import { OWNER_ID } from '../../../src/contracts/identity.ts';
 
 const config: ListenerConfig = {
+  ownerId: OWNER_ID,
   groupId: '123456',
   enabled: true,
   baseUrl: 'https://example.invalid',

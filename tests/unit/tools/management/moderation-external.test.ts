@@ -59,7 +59,13 @@ function fixture(options: ConstructorParameters<typeof Moderation>[2] = {}) {
   return {
     api,
     calls,
-    moderation: new Moderation(api, () => now, options),
+    moderation: new Moderation(
+      api,
+      () => now,
+      options,
+      LISTENER_GROUP,
+      OWNER_ID,
+    ),
     setNow(value: number) {
       now = value;
     },
@@ -299,6 +305,8 @@ test('legacy async preflight cannot overfill capacity when external proposals fi
     },
     () => 1000,
     { mute: 'confirm' },
+    LISTENER_GROUP,
+    OWNER_ID,
   );
   for (let n = 0; n < 9; n++) {
     proposal(m);

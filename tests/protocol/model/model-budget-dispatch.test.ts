@@ -5,7 +5,7 @@ import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { OpenAIModel } from '../../../src/model/chat.ts';
 import { Listener } from '../../../src/agent/listener.ts';
-import { LISTENER_GROUP } from '../../../src/contracts/identity.ts';
+import { LISTENER_GROUP, OWNER_ID } from '../../../src/contracts/identity.ts';
 import { sendChatStream } from '../../support/model-sse.ts';
 import {
   type Memory,
@@ -94,6 +94,8 @@ async function run(maxToolCallsPerWake: number) {
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
   const config: ListenerConfig = {
+    groupId: LISTENER_GROUP,
+    ownerId: OWNER_ID,
     enabled: true,
     baseUrl: `http://127.0.0.1:${address.port}/v1`,
     apiKey: 'test',
