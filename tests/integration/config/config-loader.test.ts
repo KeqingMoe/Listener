@@ -13,10 +13,10 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
-  ConfigError,
   loadAppConfig,
   dashboardPassword,
 } from '../../../src/config/loader.ts';
+import { ConfigError } from '../../../src/config/errors.ts';
 import { OWNER_ID } from '../../../src/contracts/identity.ts';
 
 function fixture(t: { after(fn: () => void): void }, source = '') {

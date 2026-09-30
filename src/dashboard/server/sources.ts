@@ -1,5 +1,5 @@
 import type { AppConfig, ResolvedGroupConfig } from '../../config/app.ts';
-import { assertStoragePaths } from '../../config/loader.ts';
+import { assertStoragePaths } from '../../config/storage-paths.ts';
 import { readGroupRegistry } from '../../config/group-registry.ts';
 import type { GroupSource } from './repository.ts';
 

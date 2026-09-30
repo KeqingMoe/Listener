@@ -22,8 +22,8 @@ import {
   newTraceId,
   sanitizeLogFields,
   withLogContext,
-  type LoggingConfig,
 } from '../../../src/observability/logger.ts';
+import type { LoggingConfig } from '../../../src/config/app.ts';
 
 const config = (
   directory: string,

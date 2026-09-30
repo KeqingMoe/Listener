@@ -1,4 +1,5 @@
-import { ConfigError, loadAppConfig } from '../config/loader.ts';
+import { loadAppConfig } from '../config/loader.ts';
+import { ConfigError } from '../config/errors.ts';
 import { inspectGroupConfig } from '../config/inspect.ts';
 
 try {

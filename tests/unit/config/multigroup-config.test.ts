@@ -14,11 +14,9 @@ import {
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
-import {
-  ConfigError,
-  loadAppConfig,
-  assertStoragePaths,
-} from '../../../src/config/loader.ts';
+import { loadAppConfig } from '../../../src/config/loader.ts';
+import { ConfigError } from '../../../src/config/errors.ts';
+import { assertStoragePaths } from '../../../src/config/storage-paths.ts';
 
 function fixture(t: { after(fn: () => void): void }, source = '') {
   const dir = mkdtempSync(join(tmpdir(), 'group-policy-'));

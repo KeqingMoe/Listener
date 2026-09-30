@@ -8,13 +8,14 @@ import {
   SANDBOX_EXCLUDED_TOOLS,
 } from './tool-definitions.ts';
 import { SideEffectPacer } from './pacing.ts';
-import { imagePixels } from '../tools/images/download.ts';
+import { imagePixelsOf } from './image-pixels.ts';
 import { setTimeout as delay } from 'node:timers/promises';
-import {
-  applyToolPolicies,
-  toolEnabled,
-  observesReactions,
-} from '../config/runtime.ts';
+import { logToolResult } from './tool-result-log.ts';
+import { createTurnToolkit, type TurnToolkitOptions } from './turn-toolkit.ts';
+import { normalizeEvent } from './normalize-event.ts';
+
+export { normalizeEvent };
+import { applyToolPolicies, observesReactions } from '../config/runtime.ts';
 import { TOOL_NAMES } from '../config/tool-policy.ts';
 import { canonicalMessageId, id } from '../onebot/identity.ts';
 import { resolveGroupId, resolveOwnerId } from '../contracts/identity.ts';
@@ -36,13 +37,8 @@ import type {
   ListenerConfig,
   ProjectedListenerConfig,
 } from '../config/listener.ts';
-import {
-  GroupTools,
-  GROUP_TOOLS,
-  type PreparedMessage,
-} from '../tools/messaging/tools.ts';
-import { ImageTools } from '../tools/images/tools.ts';
-import { imageReferences, imageMarker } from '../onebot/image-references.ts';
+import { GROUP_TOOLS, type PreparedMessage } from '../tools/messaging/tools.ts';
+import { type ImageTools } from '../tools/images/tools.ts';
 import type {
   ImageDownloader,
   OriginalImageDownloader,
@@ -61,13 +57,7 @@ type SentMessage = TimelineEntry & {
   local_projection_failed?: boolean;
 };
 
-import { ForwardTools } from '../tools/forwards/tools.ts';
-import {
-  forwardReferences,
-  forwardMarker,
-} from '../onebot/forward-references.ts';
 import { ReplyBatch, snapshotMemory, type BatchItem } from './reply-batch.ts';
-import { faceMarker } from '../tools/faces/tools.ts';
 import {
   extractMessageContent,
   projectMessage,
@@ -79,8 +69,6 @@ import {
   type AttentionHit,
   type AttentionTransaction,
 } from './attention.ts';
-import { ReactionTools } from '../tools/reactions/tools.ts';
-import { ReactionUserTools } from '../tools/reactions/users.ts';
 import { ReactionObservations } from '../world/reaction-observations.ts';
 import {
   annotateReactionBatch,
@@ -153,221 +141,21 @@ function keys(value: JsonObject, allowed: string[]): boolean {
   return Object.keys(value).every((k) => allowed.includes(k));
 }
 
-function logToolResult(
-  tool: string,
-  result: JsonObject,
-  started: number,
-  round: number,
-): void {
-  const status = [
-    'ok',
-    'pending',
-    'partial',
-    'error',
-    'confirmation_required',
-    'executed',
-    'staged',
-    'unknown',
-  ].includes(String(result.status))
-    ? String(result.status)
-    : 'error';
-  const codes = [
-    'invalid_arguments',
-    'tool_disabled',
-    'images_disabled',
-    'image_unavailable',
-    'forbidden_group',
-    'message_not_in_context',
-    'cancelled',
-    'image_first',
-    'call_limit',
-    'forward_first',
-    'transcription_first',
-    'forward_disabled',
-    'invalid_range',
-    'budget_exhausted',
-    'forbidden_reference',
-    'resource_limit',
-    'resource_cycle',
-    'forward_unavailable',
-    'range_out_of_bounds',
-    'plan_limit',
-    'operation_limit',
-    'plan_not_found',
-    'invalid_transaction',
-    'random_failed',
-    'turn_finished',
-    'reaction_rejected',
-    'reaction_result_unknown',
-    'verification_failed',
-    'api_unavailable',
-    'reaction_failed',
-    'reaction_catalog_unavailable',
-    'invalid_turn',
-    'reaction_users_unavailable',
-    'pagination_unavailable',
-    'pagination_cycle',
-    'incomplete_page',
-    'invalid_cursor',
-    'query_invalidated',
-    'provider_rejected',
-    'delivery_unknown',
-    'action_result_unknown',
-    'operation_result_unknown',
-    'previous_submission_pending',
-    'membership_transition_pending',
-    'duplicate_message_ack',
-    'management_result_review_required',
-    'confirmation_verification_failed',
-    'busy',
-    'web_unavailable',
-    'search_unavailable',
-    'search_timeout',
-    'invalid_url',
-    'blocked_url',
-    'fetch_timeout',
-    'fetch_too_large',
-    'unsupported_content_type',
-    'unsupported_charset',
-    'fetch_failed',
-  ];
-  const detail =
-    typeof result.error === 'string' ? result.error : result.reason;
-  const reason =
-    typeof detail === 'string' && codes.includes(detail)
-      ? detail
-      : status === 'error'
-        ? 'tool_rejected'
-        : undefined;
-  const flags: Record<string, boolean> = {};
-  for (const key of [
-    'submitted',
-    'effect_confirmed',
-    'effect_unknown',
-    'provider_reported_failure',
-    'cancelled_after_dispatch',
-    'local_projection_failed',
-    'cached',
-    'duplicate',
-    'dispatched',
-  ]) {
-    if (typeof result[key] === 'boolean') {
-      flags[key] = result[key] as boolean;
-    }
-  }
-  log(
-    status === 'error' ||
-      status === 'partial' ||
-      status === 'unknown' ||
-      result.local_projection_failed === true
-      ? 'warn'
-      : 'info',
-    'tool.complete',
-    {
-      tool,
-      status,
-      reason,
-      round,
-      ...flags,
-      ...(Number.isSafeInteger(result.provider_code)
-        ? { retcode: result.provider_code }
-        : {}),
-      duration_ms: Date.now() - started,
-    },
-  );
+/** 发给群里请主人确认的提示文本。 */
+function confirmationNotice(result: JsonObject, code: string): string {
+  return `待主人确认（${String(result.expires_in_seconds)}秒内）：${String(result.description)}\n发送 /confirm ${code} 才会执行。`;
 }
 
-/** 把OneBot群消息事件规范化为TimelineEntry；非本群、非本bot账号或bot自己发的消息返回undefined。 */
-export function normalizeEvent(
-  event: unknown,
-  selfId: string,
-  groupId: string,
-): TimelineEntry | undefined {
-  const expectedGroup = resolveGroupId(groupId);
-  if (
-    !isObject(event) ||
-    event.post_type !== 'message' ||
-    event.message_type !== 'group' ||
-    id(event.group_id) !== expectedGroup ||
-    id(event.self_id) !== selfId
-  ) {
-    return;
-  }
-  const userId = id(event.user_id);
-  const msgId = canonicalMessageId(event.message_id);
-  if (
-    !userId ||
-    userId.length > 32 ||
-    msgId === undefined ||
-    !Array.isArray(event.message) ||
-    event.message.length > 128 ||
-    userId === selfId
-  ) {
-    return;
-  }
-  let text = '';
-  let replyTo: string | undefined;
-  // 先扫描完整片段数组取引用：后续内容截断不能抹掉位于数组靠后位置的真实引用来源。
-  for (const segment of event.message) {
-    if (
-      isObject(segment) &&
-      segment.type === 'reply' &&
-      isObject(segment.data)
-    ) {
-      replyTo = canonicalMessageId(segment.data.id);
-    }
-  }
-  const images = imageReferences(msgId, event.message);
-  const forwards = forwardReferences(msgId, event.message);
-  for (const [index, segment] of event.message.entries()) {
-    if (!isObject(segment) || !isObject(segment.data)) {
-      continue;
-    }
-    if (segment.type === 'text' && typeof segment.data.text === 'string') {
-      text += segment.data.text;
-    } else if (segment.type === 'at') {
-      text += `[at:${id(segment.data.qq) || 'unknown'}]`;
-    } else if (segment.type === 'reply') {
-      continue;
-    } else if (segment.type === 'image') {
-      const ref = images.find((image) => image.index === index);
-      text += ref ? imageMarker(ref) : '[图片：超出单消息附件数量限制]';
-    } else if (segment.type === 'face') {
-      text += faceMarker(segment.data.id);
-    } else if (forwards.some((ref) => ref.index === index)) {
-      text += forwardMarker(forwards.find((ref) => ref.index === index)!);
-    } else if (segment.type === 'forward') {
-      text += '[合并转发：本消息可读取引用上限或格式不支持]';
-    } else {
-      text += '[非文本消息]';
-    }
-    if (text.length > 4000) {
-      text = text.slice(0, 4000) + '…';
-      break;
-    }
-  }
-  const sender = isObject(event.sender) ? event.sender : {};
-  const nickname =
-    typeof sender.card === 'string' && sender.card
-      ? sender.card
-      : typeof sender.nickname === 'string'
-        ? sender.nickname
-        : userId;
-  const time =
-    typeof event.time === 'number' && Number.isFinite(event.time)
-      ? Math.floor(event.time)
-      : Math.floor(Date.now() / 1000);
-  return {
-    messageId: msgId,
-    userId,
-    nickname: nickname.slice(0, 80),
-    text,
-    time,
-    ...extractMessageContent(msgId, event.message, images, forwards),
-    ...(replyTo !== undefined ? { replyTo } : {}),
-    ...(images.length ? { images } : {}),
-    ...(forwards.length ? { forwards } : {}),
-  };
+/** 同一wake内两次对外发送至少间隔450～900ms，避免连发像机器人。 */
+function spaceSends(lastSendAt: number, signal: AbortSignal): Promise<void> {
+  return delay(
+    Math.max(
+      0,
+      lastSendAt + 450 + Math.floor(Math.random() * 450) - Date.now(),
+    ),
+    undefined,
+    { signal },
+  );
 }
 
 /**
@@ -772,17 +560,22 @@ export class Listener {
     return this.runtime.session.externalEventProjected(eventId, result.selfId);
   }
 
+  /** 使进行中的turn与未决工作全部失效：取消调度、丢弃未读、清空确认与临时状态。 */
+  private interrupt(reason: string): void {
+    this.generation++;
+    this.cancelActive(reason);
+    clearTimeout(this.timer);
+    this.timer = undefined;
+    this.dropPending(reason);
+    this.resolving.clear();
+    this.resetModeration();
+    this.clearEphemeralState();
+  }
+
   setConnected(value: boolean): void {
     this.connected = value;
     if (!value) {
-      this.generation++;
-      this.cancelActive('disconnected');
-      clearTimeout(this.timer);
-      this.timer = undefined;
-      this.dropPending('disconnected');
-      this.resolving.clear();
-      this.resetModeration();
-      this.clearEphemeralState();
+      this.interrupt('disconnected');
     }
   }
 
@@ -1366,14 +1159,7 @@ export class Listener {
     let outcome = 'completed';
     try {
       if (text === '/reset') {
-        this.generation++;
-        this.cancelActive('reset');
-        clearTimeout(this.timer);
-        this.timer = undefined;
-        this.dropPending('reset');
-        this.resolving.clear();
-        this.resetModeration();
-        this.clearEphemeralState();
+        this.interrupt('reset');
         this.memory?.clear();
         this.worldTools = undefined;
         this.worldMessageSequences.clear();
@@ -1818,7 +1604,7 @@ export class Listener {
       ): Promise<JsonObject> => {
         const code = String(result.code);
         try {
-          const text = `待主人确认（${String(result.expires_in_seconds)}秒内）：${String(result.description)}\n发送 /confirm ${code} 才会执行。`;
+          const text = confirmationNotice(result, code);
           const entry = await this.sendPart(
             { segments: [{ type: 'text', data: { text } }], text },
             context,
@@ -1926,7 +1712,7 @@ export class Listener {
         );
         return {
           ...viewed.result,
-          images: await this.pixelsOf(viewed.content),
+          images: await imagePixelsOf(viewed.content),
         };
       }
       if (
@@ -1958,7 +1744,7 @@ export class Listener {
             visual_content_already_provided: __,
             ...rest
           } = result;
-          return { ...rest, images: await this.pixelsOf(visual) };
+          return { ...rest, images: await imagePixelsOf(visual) };
         }
         if (
           result.status === 'confirmation_required' &&
@@ -1978,185 +1764,31 @@ export class Listener {
     }
   }
 
-  /** 沙箱中的查看图片结果返回RGBA像素，而不是模型可见的图片内容。 */
-  private async pixelsOf(content: ChatContentPart[]): Promise<JsonObject[]> {
-    const images: JsonObject[] = [];
-    let meta: JsonObject = {};
-    for (const part of content) {
-      if (part.type === 'text') {
-        const at = part.text.indexOf('{');
-        try {
-          meta =
-            at >= 0
-              ? (JSON.parse(
-                  part.text.slice(at, part.text.lastIndexOf('}') + 1),
-                ) as JsonObject)
-              : {};
-        } catch {
-          meta = {};
-        }
-        continue;
-      }
-      if (part.type !== 'image_url') {
-        continue;
-      }
-      const decoded = await imagePixels(part.image_url.url);
-      images.push({
-        ...(typeof meta.image_id === 'string'
-          ? { image_id: meta.image_id }
-          : {}),
-        ...(typeof meta.face_ref === 'string'
-          ? { face_ref: meta.face_ref }
-          : {}),
-        width: decoded.width,
-        height: decoded.height,
-        pixels: decoded.pixels as unknown as JsonObject,
-      });
-      meta = {};
-    }
-    return images;
-  }
-
   /**
    * 绑定到某份工作memory的工具实现，由模型turn和宿主调用方共用；
    * 每轮策略（去重、复核门槛、预算）由调用方负责。
    */
-  private hostToolkit(options: {
-    memory: Memory;
-    valid: () => boolean;
-    onVisualContent?: (parts: ChatContentPart[]) => void;
-    onSent?: (entry: TimelineEntry) => void;
-  }) {
-    const { memory: workingMemory, valid } = options;
-    const observations = this.reactionObservations;
-    const turnApi: Api = observations
-      ? {
-          call: async (action, params) => {
-            if (!valid()) {
-              throw new Error('cancelled');
-            }
-            const target =
-              typeof params?.message_id === 'string'
-                ? params.message_id
-                : undefined;
-            const revision =
-              action === 'get_msg' && target && valid()
-                ? observations.revision(target)
-                : undefined;
-            if (action === 'set_msg_emoji_like' && target && valid()) {
-              observations.markDirty(target);
-            }
-            try {
-              const result = await this.api.call(action, params);
-              if (action === 'get_msg' && target && valid()) {
-                observations.ingest(target, result, workingMemory, revision);
-              }
-              return result;
-            } finally {
-              if (action === 'set_msg_emoji_like' && target && valid()) {
-                observations.markDirty(target);
-              }
-            }
-          },
-        }
-      : this.api;
-    const groupTools = new GroupTools(turnApi, workingMemory, {
-      groupId: this.groupId,
-      members: this.config.tools.members,
-      mention: this.config.tools.mention,
-      getGroupMembers: toolEnabled(this.config, 'get_group_members'),
-      getMemberInfo: toolEnabled(this.config, 'get_member_info'),
-    });
-    const imageTools = this.config.images.enabled
-      ? new ImageTools(
-          this.api,
-          workingMemory,
-          this.config.images,
-          this.imageDownloader,
-          this.groupId,
-          this.runtime.artifacts,
-        )
-      : undefined;
-    const imageState = imageTools?.createTurn() ?? {
-      loadedIds: new Set<string>(),
-    };
-    const forwardTools = this.config.forward.enabled
-      ? new ForwardTools(
-          this.api,
-          workingMemory,
-          this.config.forward,
-          this.groupId,
-        )
-      : undefined;
-    const reactionTools = this.config.tools.reactions
-      ? new ReactionTools(turnApi, workingMemory, this.groupId)
-      : undefined;
-    const reactionUsers = toolEnabled(this.config, 'get_reaction_users')
-      ? new ReactionUserTools(turnApi, workingMemory, this.groupId)
-      : undefined;
-    const extendedTools = createExtendedTools(
-      turnApi,
-      workingMemory,
-      this.groupId,
-      this.config.tools.extended,
+  private hostToolkit(options: TurnToolkitOptions) {
+    return createTurnToolkit(
       {
-        downloader: this.imageDownloader,
-        maxDownloadMb: this.config.images.maxDownloadMb,
-        files: this.groupFiles,
-        requests: this.groupRequests,
-        reminders: this.runtime.reminders,
-        sandbox: this.runtime.sandbox,
-        web: this.runtime.web,
-        artifacts: this.runtime.artifacts,
+        api: this.api,
+        groupId: this.groupId,
         ownerId: this.ownerId,
-        customFaces: this.customFaces
-          ? {
-              ...this.customFaces,
-              imageState,
-              maxDownloadMb: this.config.images.maxDownloadMb,
-              onVisualContent: (parts) => {
-                if (valid()) {
-                  options.onVisualContent?.(parts);
-                }
-              },
-            }
-          : undefined,
-        requestConfirmation: (name, args, definition, context, signal) =>
-          this.proposeExtended(
-            name,
-            args,
-            definition,
-            context,
-            workingMemory,
-            signal,
-          ),
-        beforeSend: () => this.captureSendReceipt(),
-        onSent: (entry, receipt) => {
-          // 迟到但有效的ACK即使在取消或断线后仍记为world中的事实。
-          this.claimMessageAck(entry, receipt);
-          if (this.runtime.world) {
-            recordToolMessage(this.runtime.world, entry);
-          }
-          if (!valid()) {
-            return;
-          }
-          if (!this.memory?.find(entry.messageId)) {
-            this.memory?.append(entry);
-          }
-          options.onSent?.(entry);
-        },
+        config: this.config,
+        runtime: this.runtime,
+        observations: this.reactionObservations,
+        imageDownloader: this.imageDownloader,
+        groupFiles: this.groupFiles,
+        groupRequests: this.groupRequests,
+        customFaces: this.customFaces,
+        memory: () => this.memory,
+        proposeExtended: (...args) => this.proposeExtended(...args),
+        captureSendReceipt: () => this.captureSendReceipt(),
+        claimMessageAck: (entry, receipt) =>
+          this.claimMessageAck(entry, receipt),
       },
+      options,
     );
-    return {
-      turnApi,
-      groupTools,
-      imageTools,
-      imageState,
-      forwardTools,
-      reactionTools,
-      reactionUsers,
-      extendedTools,
-    };
   }
 
   private async runTurn(): Promise<void> {
@@ -2781,17 +2413,7 @@ export class Listener {
               extendedTools.has(call.function.name) &&
               lastWakeSendAt
             ) {
-              await delay(
-                Math.max(
-                  0,
-                  lastWakeSendAt +
-                    450 +
-                    Math.floor(Math.random() * 450) -
-                    Date.now(),
-                ),
-                undefined,
-                { signal: controller.signal },
-              );
+              await spaceSends(lastWakeSendAt, controller.signal);
               if (!valid()) {
                 return;
               }
@@ -2869,7 +2491,7 @@ export class Listener {
                     { signal: controller.signal },
                   );
                 }
-                const text = `待主人确认（${String(result.expires_in_seconds)}秒内）：${String(result.description)}\n发送 /confirm ${code} 才会执行。`;
+                const text = confirmationNotice(result, code);
                 const entry = await this.sendPart(
                   { segments: [{ type: 'text', data: { text } }], text },
                   trigger.context,
@@ -3142,17 +2764,7 @@ export class Listener {
               result = { ...cached, duplicate: true };
             } else {
               if (lastWakeSendAt) {
-                await delay(
-                  Math.max(
-                    0,
-                    lastWakeSendAt +
-                      450 +
-                      Math.floor(Math.random() * 450) -
-                      Date.now(),
-                  ),
-                  undefined,
-                  { signal: controller.signal },
-                );
+                await spaceSends(lastWakeSendAt, controller.signal);
               }
               if (!valid()) {
                 return;
@@ -3332,23 +2944,13 @@ export class Listener {
               const code = String(result.code);
               try {
                 if (lastWakeSendAt) {
-                  await delay(
-                    Math.max(
-                      0,
-                      lastWakeSendAt +
-                        450 +
-                        Math.floor(Math.random() * 450) -
-                        Date.now(),
-                    ),
-                    undefined,
-                    { signal: controller.signal },
-                  );
+                  await spaceSends(lastWakeSendAt, controller.signal);
                 }
                 if (!valid()) {
                   throw new Error('cancelled');
                 }
                 sending = true;
-                const text = `待主人确认（${String(result.expires_in_seconds)}秒内）：${String(result.description)}\n发送 /confirm ${code} 才会执行。`;
+                const text = confirmationNotice(result, code);
                 const entry = await this.sendPart(
                   { segments: [{ type: 'text', data: { text } }], text },
                   trigger.context,
@@ -3614,14 +3216,7 @@ export class Listener {
 
   async stop(): Promise<void> {
     this.stopped = true;
-    this.generation++;
-    this.cancelActive('shutdown');
-    clearTimeout(this.timer);
-    this.timer = undefined;
-    this.dropPending('shutdown');
-    this.resolving.clear();
-    this.resetModeration();
-    this.clearEphemeralState();
+    this.interrupt('shutdown');
     // 等进行中的异步工作感知到取消后再关闭数据库。
     while (
       this.running ||

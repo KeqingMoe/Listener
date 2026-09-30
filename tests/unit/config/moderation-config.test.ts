@@ -10,7 +10,8 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ConfigError, loadAppConfig } from '../../../src/config/loader.ts';
+import { loadAppConfig } from '../../../src/config/loader.ts';
+import { ConfigError } from '../../../src/config/errors.ts';
 import type { AppConfig } from '../../../src/config/app.ts';
 
 const names = [

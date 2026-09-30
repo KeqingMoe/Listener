@@ -3,10 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  WorldEventStore,
-  type WorldEventInput,
-} from '../../../src/world/events.ts';
+import { WorldEventStore } from '../../../src/world/events.ts';
+import { type WorldEventInput } from '../../../src/world/event-types.ts';
 import type { TimelineEntry } from '../../../src/contracts/messages.ts';
 
 const dir = () => mkdtempSync(join(tmpdir(), 'qqbot-world-events-'));

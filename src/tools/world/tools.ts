@@ -6,14 +6,14 @@ import {
   type TurnContext,
 } from '../../contracts/tools.ts';
 import { projectMessage } from '../../world/message-content.ts';
+import { type WorldEventStore } from '../../world/events.ts';
 import {
-  type WorldEventStore,
   WORLD_EVENT_TYPES,
   type MessageView,
   type ProjectedWorldEvent,
   type ReadEventsInput,
   type WorldEventType,
-} from '../../world/events.ts';
+} from '../../world/event-types.ts';
 import { fail, ToolFailure } from '../failure.ts';
 
 interface WakeMetadata {

@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadAppConfig, ConfigError } from '../../../src/config/loader.ts';
+import { loadAppConfig } from '../../../src/config/loader.ts';
+import { ConfigError } from '../../../src/config/errors.ts';
 import type { AppConfig } from '../../../src/config/app.ts';
 import { TOOL_NAMES } from '../../../src/config/tool-policy.ts';
 import {

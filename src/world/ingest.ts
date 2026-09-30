@@ -4,11 +4,8 @@ import { extractMessageContent } from './message-content.ts';
 import { imageReferences } from '../onebot/image-references.ts';
 import { forwardReferences } from '../onebot/forward-references.ts';
 import type { TimelineEntry } from '../contracts/messages.ts';
-import type {
-  EventSource,
-  WorldEventInput,
-  WorldEventStore,
-} from './events.ts';
+import type { WorldEventStore } from './events.ts';
+import type { EventSource, WorldEventInput } from './event-types.ts';
 import { isPlainObject } from '../contracts/json.ts';
 
 const now = () => Date.now() / 1000;

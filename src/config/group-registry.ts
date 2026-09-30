@@ -13,7 +13,7 @@ import {
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { AppConfig, ResolvedGroupConfig } from './app.ts';
-import { assertStoragePaths } from './loader.ts';
+import { assertStoragePaths } from './storage-paths.ts';
 import { resolveGroupId } from '../contracts/identity.ts';
 
 interface RegisteredGroup {

@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { parse } from 'smol-toml';
 import type { AppConfig } from './app.ts';
 import { TOOL_NAMES } from './tool-policy.ts';
-import { ConfigError, matchesConfigSource } from './loader.ts';
+import { matchesConfigSource } from './loader.ts';
+import { ConfigError } from './errors.ts';
 import { isObject } from '../contracts/json.ts';
 
 type RecordValue = Record<string, unknown>;

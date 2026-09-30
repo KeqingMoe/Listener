@@ -1,10 +1,8 @@
 import { mkdirSync, chmodSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import {
-  loadAppConfig,
-  ConfigError,
-  assertStoragePaths,
-} from '../config/loader.ts';
+import { loadAppConfig } from '../config/loader.ts';
+import { ConfigError } from '../config/errors.ts';
+import { assertStoragePaths } from '../config/storage-paths.ts';
 import { toListenerConfig } from '../config/runtime.ts';
 import { OneBotClient } from '../onebot/client.ts';
 import { id } from '../onebot/identity.ts';
