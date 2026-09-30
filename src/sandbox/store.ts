@@ -1,13 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import {
-  closeSync,
-  constants,
-  fchmodSync,
-  fstatSync,
-  lstatSync,
-  openSync,
-} from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
+import { preparePrivateDatabase } from '../storage/private-file.ts';
 import { isExecutionDiagnostic, type ExecutionDiagnostic } from './protocol.ts';
 
 type JobMode = 'sync' | 'async' | 'auto';
@@ -143,52 +136,6 @@ export function validateInput(i: JobInput): void {
   }
 }
 
-function privateFile(path: string) {
-  for (const suffix of ['-journal', '-wal', '-shm']) {
-    try {
-      const s = lstatSync(path + suffix);
-      if (
-        !s.isFile() ||
-        s.isSymbolicLink() ||
-        s.nlink !== 1 ||
-        s.uid !== process.getuid?.() ||
-        (s.mode & 0o077) !== 0
-      ) {
-        throw new Error('unsafe_database');
-      }
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw e;
-      }
-    }
-  }
-  const fd = openSync(
-    path,
-    constants.O_RDWR |
-      constants.O_CREAT |
-      constants.O_NOFOLLOW |
-      constants.O_NONBLOCK,
-    0o600,
-  );
-  try {
-    const s = fstatSync(fd),
-      p = lstatSync(path);
-    if (
-      !s.isFile() ||
-      s.nlink !== 1 ||
-      s.uid !== process.getuid?.() ||
-      p.isSymbolicLink() ||
-      s.ino !== p.ino ||
-      s.dev !== p.dev
-    ) {
-      throw new Error('unsafe_database');
-    }
-    fchmodSync(fd, 0o600);
-  } finally {
-    closeSync(fd);
-  }
-}
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- SQLite行的列由本模块建表语句保证
 function decode(r: any): Job | undefined {
   return r
@@ -239,7 +186,7 @@ export class SandboxJobStore {
       throw new Error('invalid_path');
     }
     if (options.path !== ':memory:') {
-      privateFile(options.path);
+      preparePrivateDatabase(options.path, 'unsafe_database');
     }
     this.db = new DatabaseSync(options.path);
     try {

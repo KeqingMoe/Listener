@@ -1,4 +1,4 @@
-import { chmodSync, closeSync, openSync, existsSync, statSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { log } from '../observability/logger.ts';
 import { sanitizeForwardReferences } from '../onebot/forward-references.ts';
 import { DatabaseSync } from 'node:sqlite';
@@ -10,6 +10,7 @@ import {
   projectMessage,
   sanitizeMessageContent,
 } from '../world/message-content.ts';
+import { preparePrivateDatabase } from '../storage/private-file.ts';
 
 export interface SQLiteMemoryOptions {
   path: string;
@@ -76,8 +77,7 @@ export class SQLiteMemory implements Memory {
       }
     }
     if (options.path !== ':memory:') {
-      closeSync(openSync(options.path, 'a', 0o600));
-      chmodSync(options.path, 0o600);
+      preparePrivateDatabase(options.path, 'Memory file refused');
     }
     this.db = new DatabaseSync(options.path);
     try {

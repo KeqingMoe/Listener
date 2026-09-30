@@ -1,13 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import {
-  closeSync,
-  constants,
-  fchmodSync,
-  fstatSync,
-  lstatSync,
-  openSync,
-} from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
+import { preparePrivateDatabase } from '../storage/private-file.ts';
 
 export const REMINDER_GRACE_MS = 24 * 60 * 60 * 1000;
 const MAX_TIME = 8_640_000_000_000_000;
@@ -137,52 +130,6 @@ function scope(value: ReminderScope): void {
   }
 }
 
-function privateFile(path: string): void {
-  for (const suffix of ['-journal', '-wal', '-shm']) {
-    try {
-      const stat = lstatSync(path + suffix);
-      if (
-        !stat.isFile() ||
-        stat.isSymbolicLink() ||
-        stat.nlink !== 1 ||
-        stat.uid !== process.getuid?.() ||
-        (stat.mode & 0o077) !== 0
-      ) {
-        fail();
-      }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw error;
-      }
-    }
-  }
-  const fd = openSync(
-    path,
-    constants.O_RDWR |
-      constants.O_CREAT |
-      constants.O_NOFOLLOW |
-      constants.O_NONBLOCK,
-    0o600,
-  );
-  try {
-    const stat = fstatSync(fd),
-      current = lstatSync(path);
-    if (
-      !stat.isFile() ||
-      stat.nlink !== 1 ||
-      stat.uid !== process.getuid?.() ||
-      current.isSymbolicLink() ||
-      stat.ino !== current.ino ||
-      stat.dev !== current.dev
-    ) {
-      fail();
-    }
-    fchmodSync(fd, 0o600);
-  } finally {
-    closeSync(fd);
-  }
-}
-
 function row(value: unknown): Reminder | undefined {
   if (!value) {
     return;
@@ -221,7 +168,7 @@ export class ReminderStore {
       fail();
     }
     if (options.path !== ':memory:') {
-      privateFile(options.path);
+      preparePrivateDatabase(options.path, 'Invalid reminder operation');
     }
     this.db = new DatabaseSync(options.path);
     try {

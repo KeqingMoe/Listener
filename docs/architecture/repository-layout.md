@@ -13,6 +13,7 @@
 | `src/model` | Chat Completions与Responses客户端 |
 | `src/world` | 群事实存储、事件摄取、消息表示与反应观察 |
 | `src/tools` | 按能力分组的工具实现 |
+| `src/storage` | 私有数据库文件的创建与权限校验 |
 | `src/observability` | 日志、遥测、请求诊断与运行事件 |
 | `src/cli` | 配置检查、日志查询、表情同步命令 |
 | `src/dashboard/server` | 面板认证、只读查询与HTTP路由 |

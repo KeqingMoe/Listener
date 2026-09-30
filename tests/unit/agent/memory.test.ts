@@ -1,5 +1,13 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  linkSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -58,6 +66,40 @@ test('deduplicates raw inserts, emits untrusted chronological JSON and finds onl
   } finally {
     memory.close();
     memory.close();
+  }
+});
+
+test('memory database refuses symlinked or hard-linked paths before writing', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'listener-memory-links-'));
+  try {
+    const target = join(dir, 'target');
+    const symlink = join(dir, 'symlink.sqlite');
+    symlinkSync(target, symlink);
+    assert.throws(
+      () =>
+        new SQLiteMemory({
+          path: symlink,
+          maxContextChars: 8000,
+          retentionDays: 7,
+        }),
+    );
+    assert.equal(existsSync(target), false);
+    const original = join(dir, 'original');
+    writeFileSync(original, '');
+    const hardlink = join(dir, 'hardlink.sqlite');
+    linkSync(original, hardlink);
+    assert.throws(
+      () =>
+        new SQLiteMemory({
+          path: hardlink,
+          maxContextChars: 8000,
+          retentionDays: 7,
+        }),
+      /Memory file refused/,
+    );
+    assert.equal(statSync(original).size, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
