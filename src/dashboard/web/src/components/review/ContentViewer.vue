@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import JsonNode from './JsonNode.vue';
 import CopyText from './CopyText.vue';
+import { highlightJson } from './json-highlight';
 
 const props = defineProps<{ value: unknown; label?: string }>();
-const query = ref(''),
-  mode = ref<'tree' | 'text'>('tree');
+const query = ref('');
+/** 复制与搜索使用的原文：字符串原样，结构化值为标准缩进JSON。 */
 const text = computed(() => {
   if (typeof props.value === 'string') {
     return props.value;
@@ -18,6 +18,10 @@ const text = computed(() => {
 });
 const structured = computed(
   () => props.value !== null && typeof props.value === 'object',
+);
+/** 结构化值的高亮行；多行字符串展开为真实换行，便于阅读。 */
+const highlighted = computed(() =>
+  structured.value ? highlightJson(props.value) : [],
 );
 const lines = computed(() =>
   text.value
@@ -40,13 +44,6 @@ const lines = computed(() =>
         :aria-label="`搜索${label || '内容'}`"
         placeholder="搜索内容…"
       />
-      <button
-        v-if="structured"
-        type="button"
-        @click="mode = mode === 'tree' ? 'text' : 'tree'"
-      >
-        {{ mode === 'tree' ? '纯文本' : 'JSON 树' }}
-      </button>
       <CopyText :text="text" label="复制全文" />
     </div>
     <div class="viewer-body" tabindex="0">
@@ -58,7 +55,10 @@ const lines = computed(() =>
           <pre>{{ line.text }}</pre>
         </div></template
       >
-      <JsonNode v-else-if="structured && mode === 'tree'" :value="value" />
+      <pre
+        v-else-if="structured"
+        class="json"
+      ><template v-for="(token, index) in highlighted" :key="index"><span :class="token.kind">{{ token.text }}</span></template></pre>
       <pre v-else>{{ text }}</pre>
     </div>
   </section>
@@ -83,6 +83,25 @@ input {
 }
 pre {
   min-width: 0;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.json .key {
+  color: #0b6e86;
+}
+.json .string {
+  color: #3d6b21;
+}
+.json .text {
+  color: #263449;
+}
+.json .number,
+.json .literal {
+  color: #a3531d;
+}
+.json .punct {
+  color: #8493a9;
 }
 .text-line {
   display: flex;

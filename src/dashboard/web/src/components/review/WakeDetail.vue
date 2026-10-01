@@ -100,32 +100,32 @@ const timeline = computed(() =>
             data.wake.finishedAt == null ? '执行中' : status(data.wake.outcome)
           }}</span>
         </header>
-        <div
-          class="request-tokens"
-          title="未缓存输入 / 命中缓存 / 输出（含推理）；未记录显示 —"
-        >
-          <span
-            >输入 <b>{{ number(data.wake.uncachedInputTokens) }}</b></span
-          ><span
-            >缓存 <b>{{ number(data.wake.cachedInputTokens) }}</b></span
-          ><span
-            >输出 <b>{{ number(data.wake.outputTokens) }}</b></span
-          >
-        </div>
-        <PerformanceFacts
-          :performance="data.wake.performance"
-          :cache="data.wake"
-        />
         <div class="request-context muted">
           <span>群 {{ data.wake.groupId }}</span
           ><time>{{ time(data.wake.startedAt) }}</time
           ><span
             >请求 {{ number(data.wake.modelRequests) }} · 工具
             {{ number(data.wake.toolCalls) }}</span
-          >
+          ><span>{{ duration(data.wake.durationMs) }}</span>
         </div>
         <details class="identifiers">
-          <summary>唤醒记录</summary>
+          <summary>用量与记录</summary>
+          <div
+            class="request-tokens"
+            title="未缓存输入 / 命中缓存 / 输出（含推理）；未记录显示 —"
+          >
+            <span
+              >输入 <b>{{ number(data.wake.uncachedInputTokens) }}</b></span
+            ><span
+              >缓存 <b>{{ number(data.wake.cachedInputTokens) }}</b></span
+            ><span
+              >输出 <b>{{ number(data.wake.outputTokens) }}</b></span
+            >
+          </div>
+          <PerformanceFacts
+            :performance="data.wake.performance"
+            :cache="data.wake"
+          />
           <dl class="metadata">
             <div>
               <dt>群组</dt>

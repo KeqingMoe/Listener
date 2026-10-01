@@ -1563,7 +1563,7 @@ test('request chain navigation and genuine error diagnostics', async ({
   ).toBe(true);
 });
 
-test('reasoning and tool bodies support search, tree/text and copying actual content', async ({
+test('reasoning and tool bodies support search, highlighted text and copying actual content', async ({
   page,
   context,
 }) => {
@@ -1583,10 +1583,11 @@ test('reasoning and tool bodies support search, tree/text and copying actual con
     detail(request.requestId).reasoningText,
   );
   await page.getByRole('tab', { name: /^工具/ }).click();
-  await page.locator('.tool-detail > summary').click();
-  await page.getByText('工具参数', { exact: true }).click();
+  await page
+    .locator('.tool-detail')
+    .getByRole('button', { name: '原始数据', exact: true })
+    .click();
   const args = page.getByRole('region', { name: '工具参数', exact: true });
-  await args.getByRole('button', { name: '纯文本' }).click();
   await expect(args).toContainText('synthetic needle');
   await args.getByLabel('搜索工具参数').fill('needle');
   await expect(args).toContainText('1 行匹配');
@@ -1594,9 +1595,7 @@ test('reasoning and tool bodies support search, tree/text and copying actual con
   expect(
     JSON.parse(await page.evaluate(() => navigator.clipboard.readText())),
   ).toEqual(tool.arguments);
-  await page.getByText('工具结果', { exact: true }).click();
   const result = page.getByRole('region', { name: '工具结果', exact: true });
-  await result.getByRole('button', { name: '纯文本' }).click();
   await expect(result).toContainText('synthetic result body');
   await args.getByLabel('搜索工具参数').fill('');
   await expect(args).toBeInViewport({ ratio: 1 });
@@ -1665,7 +1664,6 @@ for (const protocol of [
     await output.getByRole('button', { name: '原始JSON', exact: true }).click();
     const raw = output.getByRole('region', { name: '原始JSON', exact: true });
     await expect(raw).toContainText(protocol.envelope);
-    await raw.getByRole('button', { name: '纯文本', exact: true }).click();
     await expect(raw).toContainText(
       protocol.name === 'Chat' ? 'tool_calls' : 'function_call',
     );
@@ -1693,9 +1691,6 @@ for (const protocol of [
       exact: true,
     });
     await expect(definitions).toBeVisible();
-    await definitions
-      .getByRole('button', { name: '纯文本', exact: true })
-      .click();
     await expect(definitions).toContainText('Synthetic tool definition');
     await body.getByRole('button', { name: '原始JSON', exact: true }).click();
     await expect(
