@@ -38,6 +38,65 @@ async function bounded<T>(promise: Promise<T>, ms = 6000): Promise<T> {
   }
 }
 
+function events(path: string) {
+  if (!existsSync(path)) {
+    return [];
+  }
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    // 懒创建期间文件可能已出现，但建表尚未完成。
+    if (
+      !db
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'world_events'",
+        )
+        .get()
+    ) {
+      return [];
+    }
+    return db
+      .prepare(
+        'SELECT type,payload,group_id FROM world_events ORDER BY sequence',
+      )
+      .all();
+  } finally {
+    db.close();
+  }
+}
+
+function isTransientSqliteLock(error: unknown): boolean {
+  if (
+    !(error instanceof Error) ||
+    !('code' in error) ||
+    error.code !== 'ERR_SQLITE_ERROR' ||
+    !('errcode' in error) ||
+    typeof error.errcode !== 'number' ||
+    !Number.isInteger(error.errcode) ||
+    error.errcode < 0
+  ) {
+    return false;
+  }
+  // SQLite扩展错误码的低8位是主码：SQLITE_BUSY=5、SQLITE_LOCKED=6。
+  return [5, 6].includes(error.errcode & 0xff);
+}
+
+function noticesPersisted(
+  ownPath: string,
+  otherPath: string,
+  ownCount: number,
+): boolean {
+  try {
+    return events(ownPath).length >= ownCount && events(otherPath).length >= 1;
+  } catch (error) {
+    // 初始化/迁移/写入暂时持锁只代表“尚未就绪”，交给有截止时间的wait重试。
+    // 只用于等待条件；后续精确断言仍直接调用events，不能吞掉存储错误。
+    if (isTransientSqliteLock(error)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
 test(
   'wire group metadata persists by scope without waking and is exposed only after explicit observation',
   { timeout: 20000 },
@@ -259,8 +318,10 @@ test(
     const wait = (predicate: () => boolean, label: string) =>
       new Promise<void>((resolve, reject) => {
         let timer: NodeJS.Timeout | undefined;
+        let poll: NodeJS.Timeout | undefined;
         const done = (error?: unknown) => {
           clearTimeout(timer);
+          clearInterval(poll);
           changed.off('change', check);
           error ? reject(error) : resolve();
         };
@@ -277,24 +338,14 @@ test(
           }
         };
         changed.on('change', check);
+        // notice落库不一定产生日志；不能只靠子进程输出唤醒持久化条件检查。
+        poll = setInterval(check, 25);
         timer = setTimeout(
           () => done(new Error(`${label}: ${output.slice(-2000)}`)),
           6000,
         );
         check();
       });
-    const events = (path: string) => {
-      const db = new DatabaseSync(path, { readOnly: true });
-      try {
-        return db
-          .prepare(
-            'SELECT type,payload,group_id FROM world_events ORDER BY sequence',
-          )
-          .all();
-      } finally {
-        db.close();
-      }
-    };
     try {
       http.listen(0, '127.0.0.1');
       await Promise.all([
@@ -403,6 +454,20 @@ enabled = false
       const pong = once(peer!, 'pong');
       peer!.ping();
       await bounded(pong);
+      const ownPath = join(
+          dir,
+          `data/groups/${GROUP}/listener.sqlite.events.sqlite`,
+        ),
+        otherPath = join(
+          dir,
+          `data/groups/${OTHER}/listener.sqlite.events.sqlite`,
+        );
+      // pong只确认传输层已收到帧，不会等待router的异步懒创建/事件持久化。
+      // 先等两个群的实际提交，再开始“不唤醒”观察；后面仍严格检查数量和顺序。
+      await wait(
+        () => noticesPersisted(ownPath, otherPath, notices.length),
+        'notices persisted in both groups',
+      );
       // 观察时间超过配置的100ms回复延迟：notice不能只是排队一个wake，
       // 再与之后发送的显式消息合并。
       await new Promise((resolve) => setTimeout(resolve, 300));
@@ -415,14 +480,6 @@ enabled = false
       );
       assert.equal(modelCalls, 0);
       assert.deepEqual(calls, ['get_login_info', 'get_group_list']);
-      const ownPath = join(
-          dir,
-          `data/groups/${GROUP}/listener.sqlite.events.sqlite`,
-        ),
-        otherPath = join(
-          dir,
-          `data/groups/${OTHER}/listener.sqlite.events.sqlite`,
-        );
       assert.deepEqual(
         events(ownPath).map((row) => row.type),
         [
@@ -433,7 +490,10 @@ enabled = false
           'group.name_changed',
         ],
       );
-      assert.equal(events(otherPath).length, 1);
+      assert.deepEqual(
+        events(otherPath).map(({ type, group_id }) => ({ type, group_id })),
+        [{ type: 'member.joined', group_id: OTHER }],
+      );
       assert.equal(existsSync(join(dir, `data/groups/${DISABLED}`)), false);
       const memory = new DatabaseSync(
         join(dir, `data/groups/${GROUP}/listener.sqlite`),
@@ -477,6 +537,7 @@ enabled = false
         /PRIVATE_FILE_CREDENTIAL|private\.invalid|busid|file_id/,
       );
       assert.equal(events(ownPath).length, 6);
+      assert.equal(events(otherPath).length, 1);
     } finally {
       if (child && child.exitCode === null && child.signalCode === null) {
         child.kill('SIGTERM');
@@ -510,3 +571,83 @@ enabled = false
     }
   },
 );
+
+test('notice persistence readiness retries real writer locks without weakening strict reads', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'notice-readiness-lock-'));
+  const paths = [join(dir, 'own.sqlite'), join(dir, 'other.sqlite')];
+  const writers: DatabaseSync[] = [];
+  const ready = () => noticesPersisted(paths[0]!, paths[1]!, 1);
+  try {
+    assert.equal(ready(), false); // 尚未创建文件。
+    for (const [i, path] of paths.entries()) {
+      const writer = new DatabaseSync(path);
+      writers.push(writer);
+      assert.equal(ready(), false); // 文件存在，建表尚未完成。
+      writer.exec(
+        'PRAGMA journal_mode=DELETE; CREATE TABLE world_events(sequence INTEGER PRIMARY KEY, type TEXT, payload TEXT, group_id TEXT)',
+      );
+      assert.equal(ready(), false); // 两群的事件还没有全部提交。
+      writer
+        .prepare('INSERT INTO world_events VALUES (1, ?, ?, ?)')
+        .run('member.joined', '{}', i === 0 ? GROUP : OTHER);
+    }
+    assert.equal(ready(), true);
+    for (const [i, writer] of writers.entries()) {
+      writer.exec('BEGIN EXCLUSIVE');
+      try {
+        assert.throws(() => events(paths[i]!), isTransientSqliteLock);
+        assert.equal(ready(), false);
+        assert.equal(ready(), false); // 持锁期间只是未就绪，不误判成功。
+      } finally {
+        writer.exec('ROLLBACK');
+      }
+      assert.equal(ready(), true); // 释放后下一次探测即可成功。
+    }
+    assert.equal(events(paths[0]!).length, 1);
+    assert.equal(events(paths[1]!).length, 1);
+  } finally {
+    for (const writer of writers) {
+      writer.close();
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('notice persistence readiness propagates corrupt databases and schema errors', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'notice-readiness-error-'));
+  const path = join(dir, 'bad.sqlite');
+  try {
+    writeFileSync(path, 'not a SQLite database');
+    assert.throws(
+      () => noticesPersisted(path, join(dir, 'other.sqlite'), 1),
+      /not a database/,
+    );
+    rmSync(path);
+    const writer = new DatabaseSync(path);
+    try {
+      writer.exec('CREATE TABLE world_events(unexpected_column TEXT)');
+    } finally {
+      writer.close();
+    }
+    assert.throws(
+      () => noticesPersisted(path, join(dir, 'other.sqlite'), 1),
+      /no such column/,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('SQLite readiness retry accepts only busy/locked driver error codes', () => {
+  const error = (errcode: unknown, code = 'ERR_SQLITE_ERROR') =>
+    Object.assign(new Error('fixture'), { code, errcode });
+  for (const code of [5, 6, 261, 262, 517]) {
+    assert.equal(isTransientSqliteLock(error(code)), true);
+  }
+  for (const code of [1, 11, 14, 26, undefined, '5', 5.5, -251]) {
+    assert.equal(isTransientSqliteLock(error(code)), false);
+  }
+  assert.equal(isTransientSqliteLock(error(5, 'EACCES')), false);
+  assert.equal(isTransientSqliteLock(new Error('database is locked')), false);
+  assert.equal(isTransientSqliteLock(null), false);
+});
