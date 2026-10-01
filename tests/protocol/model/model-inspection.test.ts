@@ -6,6 +6,7 @@ import {
   ResponseStateExpiredError,
 } from '../../../src/model/responses.ts';
 import {
+  ECHOED_FROM_REQUEST,
   ENCRYPTED_REASONING,
   responseInspection,
   sanitizeInspection,
@@ -156,6 +157,35 @@ test('reasoning marks encrypted content only when no readable text exists', () =
     'raw',
   );
   assert.equal(inspect({ type: 'reasoning', summary: [] }), undefined);
+});
+
+test('Responses snapshots drop the echoed instructions and tools but keep output', () => {
+  const body = {
+    object: 'response',
+    id: 'resp-1',
+    instructions: 'long system prompt',
+    tools: [{ type: 'function', name: 'finish' }],
+    output: [{ type: 'function_call', name: 'finish', arguments: '{}' }],
+  };
+  const stored = JSON.parse(
+    responseInspection(JSON.stringify(body)).responseJson!,
+  );
+  assert.deepEqual(stored, {
+    ...body,
+    instructions: ECHOED_FROM_REQUEST,
+    tools: ECHOED_FROM_REQUEST,
+  });
+  // 不是Responses对象、没有回显内容或只收到部分响应时保留原文。
+  for (const [text, partial] of [
+    [JSON.stringify({ choices: [], tools: [{ name: 'x' }] }), false],
+    [
+      JSON.stringify({ object: 'response', instructions: null, tools: [] }),
+      false,
+    ],
+    [JSON.stringify(body), true],
+  ] as const) {
+    assert.ok(responseInspection(text, partial).responseJson!.endsWith(text));
+  }
 });
 
 test('text headers redact complete auth and cookie values without swallowing ordinary prose', () => {

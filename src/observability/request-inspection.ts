@@ -205,6 +205,9 @@ export function providerRequestId(headers: Headers): string | undefined {
   return undefined;
 }
 
+/** Responses响应原样回显请求的系统指令与工具定义；快照中以此替代，原文见请求快照。 */
+export const ECHOED_FROM_REQUEST = '[omitted; same as request]';
+
 export function responseInspection(
   text: string,
   partial = false,
@@ -215,6 +218,22 @@ export function responseInspection(
   };
   try {
     const raw = JSON.parse(text);
+    if (!partial && raw?.object === 'response') {
+      const echoed = ['instructions', 'tools'].filter(
+        (key) =>
+          raw[key] != null &&
+          raw[key] !== '' &&
+          !(Array.isArray(raw[key]) && !raw[key].length),
+      );
+      if (echoed.length) {
+        result.responseJson = JSON.stringify({
+          ...raw,
+          ...Object.fromEntries(
+            echoed.map((key) => [key, ECHOED_FROM_REQUEST]),
+          ),
+        });
+      }
+    }
     const reasoning: string[] = [];
     if (typeof raw.id === 'string') {
       result.responseId = raw.id;
