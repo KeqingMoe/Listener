@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import type { ReviewTool } from '../../../../contracts/review';
 import { duration, status, time } from '../../api/client';
 import { useEstimatedTime } from '../../composables/useEstimatedTime';
 import { isScriptWaiting, scriptTiming } from './script-timing';
 import { toolEvidence } from './tool-evidence';
+import { scriptCallDetails } from './script-call-details';
 import ContentViewer from './ContentViewer.vue';
 import CopyId from './CopyId.vue';
 import FoldBlock from './FoldBlock.vue';
@@ -35,6 +36,27 @@ const view = computed(() =>
     props.tool.result,
     props.lookup,
   ),
+);
+const internalCalls = computed(() =>
+  scriptCallDetails(props.tool.name, props.tool.result),
+);
+const expandedCalls = ref(false);
+const visibleCalls = computed(() => {
+  const items = internalCalls.value?.items ?? [];
+  return expandedCalls.value ? items : items.slice(0, 5);
+});
+watch(
+  () =>
+    JSON.stringify([
+      props.groupId,
+      props.tool.requestId,
+      props.tool.callId,
+      props.tool.ordinal,
+      props.tool.proposedAt,
+    ]),
+  () => {
+    expandedCalls.value = false;
+  },
 );
 const clock = useEstimatedTime(computed(() => isScriptWaiting(props.tool)));
 const timing = computed(() => scriptTiming(props.tool, clock.value));
@@ -147,6 +169,12 @@ const stack = ref(false);
           timing.progress
         }}</span>
       </p>
+      <p
+        v-if="internalCalls"
+        class="summary-line warning script-internal-notice"
+      >
+        内部调用有非成功记录或明细不完整；脚本返回成功不代表所有内部调用成功。
+      </p>
       <FoldBlock v-if="code" :lines="12" label="代码" class="code"
         ><template v-for="(token, index) in code" :key="index"
           ><span :class="token.kind">{{ token.text }}</span></template
@@ -194,10 +222,54 @@ const stack = ref(false);
         <span
           v-for="call in view.calls"
           :key="call.text"
-          :class="{ error: call.abnormal }"
+          :class="{
+            error: call.status === 'error',
+            warning: call.abnormal && call.status !== 'error',
+          }"
           >{{ call.text }}</span
         >
       </p>
+      <section
+        v-if="internalCalls"
+        class="script-internal"
+        aria-label="内部调用非成功明细"
+      >
+        <p class="script-label muted">内部调用非成功明细</p>
+        <ul class="script-abnormal">
+          <li v-for="(call, index) in visibleCalls" :key="index">
+            <div class="internal-call-heading">
+              <span class="muted">{{
+                call.seq == null ? '序号未记录' : `#${call.seq}`
+              }}</span>
+              <code>{{ call.tool }}</code>
+              <span :class="['badge', call.tone]">{{ call.label }}</span>
+            </div>
+            <p v-if="call.detail" class="internal-call-detail">
+              {{ call.detail }}
+            </p>
+          </li>
+        </ul>
+        <button
+          v-if="internalCalls.items.length > 5"
+          type="button"
+          class="raw-toggle internal-toggle"
+          :aria-expanded="expandedCalls"
+          @click="expandedCalls = !expandedCalls"
+        >
+          {{
+            expandedCalls
+              ? '收起内部明细'
+              : `展开其余 ${internalCalls.items.length - 5} 条明细`
+          }}
+        </button>
+        <p
+          v-for="notice in internalCalls.notices"
+          :key="notice"
+          class="summary-line warning"
+        >
+          {{ notice }}
+        </p>
+      </section>
       <template v-if="view.logs.length">
         <p class="script-label muted">日志</p>
         <FoldBlock :lines="8" label="日志">{{
@@ -359,6 +431,44 @@ const stack = ref(false);
 }
 .script-calls span.error {
   color: #b3343d;
+}
+.script-calls span.warning {
+  color: #946018;
+}
+.script-internal {
+  margin-top: var(--space-2);
+}
+.script-abnormal {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 var(--space-2);
+  border-left: 2px solid var(--border);
+  font-size: 12px;
+}
+.script-abnormal li + li {
+  margin-top: var(--space-2);
+}
+.internal-call-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  overflow-wrap: anywhere;
+}
+.internal-call-heading code {
+  min-width: 0;
+}
+.internal-call-heading .badge {
+  white-space: normal;
+  max-width: 100%;
+}
+.internal-call-detail {
+  margin: var(--space-1) 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.internal-toggle {
+  margin: var(--space-1) 0 0;
 }
 .stack-toggle {
   margin: 0;

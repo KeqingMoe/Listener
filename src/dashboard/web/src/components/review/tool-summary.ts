@@ -49,7 +49,7 @@ export interface ScriptJob {
   mode: string;
   outcome: ScriptOutcome | null;
   /** 沙箱内工具调用，如 create_image ×1；非ok的状态单独写出。 */
-  calls: { text: string; abnormal: boolean }[];
+  calls: { text: string; status: string; abnormal: boolean }[];
   logs: string[];
 }
 
@@ -395,10 +395,22 @@ function scriptJob(
               : null;
   const calls = Object.entries(record(summary?.counts) ?? {}).flatMap(
     ([tool, raw]) =>
-      Object.entries(record(raw) ?? {}).map(([status, count]) => ({
-        text: `${tool}${status === 'ok' ? '' : ` ${status}`} ×${String(count)}`,
-        abnormal: status !== 'ok',
-      })),
+      !tool.trim()
+        ? []
+        : Object.entries(record(raw) ?? {}).flatMap(([status, count]) =>
+            status.trim() &&
+            typeof count === 'number' &&
+            Number.isSafeInteger(count) &&
+            count > 0
+              ? [
+                  {
+                    text: `${tool}${status === 'ok' ? '' : ` ${status}`} ×${count}`,
+                    status,
+                    abnormal: status !== 'ok',
+                  },
+                ]
+              : [],
+          ),
   );
   return {
     description: str(meta.description),

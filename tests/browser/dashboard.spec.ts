@@ -3116,7 +3116,11 @@ test('javascript tools show folded code, raw or JSON return values and failures'
         job_id: 'js_1',
         value: art,
         logs: [],
-        tool_calls: { counts: { create_image: { ok: 1 } } },
+        tool_calls: {
+          counts: { create_image: { ok: 1 } },
+          abnormal: [],
+          abnormal_omitted: 0,
+        },
         status: 'ok',
         task_status: 'completed',
       },
@@ -3198,6 +3202,267 @@ test('javascript tools show folded code, raw or JSON return values and failures'
   );
   await expect(items.nth(3)).toContainText('异步');
   await expect(items.nth(3).locator('p.error')).toHaveCount(0);
+});
+
+test('javascript internal non-success details stay distinct, local and safe on mobile', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.clock.install({ time: now });
+  await page.clock.pauseAt(now);
+  const rawError = `<img src=x onerror="window.__internalCallExecuted=true"><script>window.__internalCallExecuted=true</script>${'long-error-'.repeat(80)}`;
+  const abnormal = Array.from({ length: 8 }, (_, index) => ({
+    seq: index + 1,
+    tool: `internal_tool_${index + 1}`,
+    status:
+      index === 1 ? 'unknown' : index === 2 ? 'confirmation_required' : 'error',
+    error: index === 0 ? rawError : `original-error-${index + 1}`,
+  }));
+  const state: MockState = {
+    tools: [
+      {
+        ...tool,
+        name: 'execute_javascript',
+        arguments: {
+          description: '内部调用合成回归',
+          code: 'return "outer success"',
+          mode: 'sync',
+        },
+        result: {
+          status: 'ok',
+          task_status: 'completed',
+          value: 'outer success',
+          tool_calls: {
+            counts: Object.fromEntries(
+              abnormal.map((item) => [item.tool, { [item.status]: 1 }]),
+            ),
+            abnormal,
+            abnormal_omitted: 0,
+          },
+        },
+      },
+    ],
+  };
+  const { requests, posts } = await mock(page, state);
+  await page.goto(wakeUrl);
+  await page.getByRole('checkbox', { name: '自动刷新', exact: true }).uncheck();
+  const item = page.locator('.wake-detail .tool-detail');
+  const section = item.getByRole('region', { name: '内部调用非成功明细' });
+  const rows = section.locator('ul.script-abnormal > li');
+  await expect(item.locator('.script-internal-notice')).toHaveText(
+    '内部调用有非成功记录或明细不完整；脚本返回成功不代表所有内部调用成功。',
+  );
+  await expect(item.locator('.tool-evidence')).toContainText('工具返回成功');
+  await expect(item.locator('.tool-evidence')).not.toContainText(
+    '工具返回错误',
+  );
+  await expect(item.locator('p.error')).toHaveCount(0);
+  await expect(item.getByLabel('返回值', { exact: true })).toHaveText(
+    'outer success',
+  );
+  await expect(rows).toHaveCount(5);
+  await expect(rows.nth(0)).toContainText('#1');
+  await expect(rows.nth(0).locator('code')).toHaveText('internal_tool_1');
+  await expect(rows.nth(0).locator('.badge.error')).toHaveText('工具返回错误');
+  await expect(rows.nth(1).locator('.badge.warning')).toHaveText('结果未知');
+  await expect(rows.nth(2).locator('.badge.warning')).toHaveText('待确认');
+  await expect(rows.nth(0).locator('.internal-call-detail')).toHaveText(
+    `工具返回错误，不代表已有副作用已撤销。\n${rawError}`,
+  );
+  await expect(rows.nth(1).locator('.internal-call-detail')).toHaveText(
+    '调用结果未知，不能断定未执行，也不能确认成功。\noriginal-error-2',
+  );
+  await expect(rows.nth(2).locator('.internal-call-detail')).toHaveText(
+    '调用待确认，不应视为失败。\noriginal-error-3',
+  );
+  await expect(item.locator('.script-calls .error')).toHaveCount(6);
+  await expect(item.locator('.script-calls .warning')).toHaveCount(2);
+  await expect(section.locator('img, script')).toHaveCount(0);
+  expect(await page.evaluate(() => '__internalCallExecuted' in window)).toBe(
+    false,
+  );
+  const initialRequests = requests.length;
+  const expand = section.getByRole('button', { name: '展开其余 3 条明细' });
+  await expect(expand).toHaveAttribute('aria-expanded', 'false');
+  await expand.click();
+  await expect(rows).toHaveCount(8);
+  await expect(rows.last()).toContainText('#8');
+  await expect(
+    section.getByRole('button', { name: '收起内部明细' }),
+  ).toHaveAttribute('aria-expanded', 'true');
+  await page.clock.runFor(1000);
+  expect(requests).toHaveLength(initialRequests);
+  expect(posts).toEqual([]);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  expect(
+    await section.evaluate(
+      (element) => element.scrollWidth <= element.clientWidth,
+    ),
+  ).toBe(true);
+
+  // 同一工具的新快照更新结果，但保留本地展开状态。
+  state.tools = [
+    {
+      ...state.tools![0]!,
+      result: {
+        ...(state.tools![0]!.result as Record<string, unknown>),
+        value: 'refreshed success',
+      },
+    },
+  ];
+  await refreshImmediately(page);
+  await expect(item.getByLabel('返回值', { exact: true })).toHaveText(
+    'refreshed success',
+  );
+  await expect(rows).toHaveCount(8);
+  await expect(
+    section.getByRole('button', { name: '收起内部明细' }),
+  ).toHaveAttribute('aria-expanded', 'true');
+  await page.getByRole('checkbox', { name: '自动刷新', exact: true }).uncheck();
+  const refreshedRequests = requests.length;
+  await section.getByRole('button', { name: '收起内部明细' }).click();
+  await expect(rows).toHaveCount(5);
+  await section.getByRole('button', { name: '展开其余 3 条明细' }).click();
+  await expect(rows).toHaveCount(8);
+  expect(requests).toHaveLength(refreshedRequests);
+  expect(posts).toEqual([]);
+
+  state.tools = [
+    {
+      ...state.tools![0]!,
+      callId: 'different-script-call',
+      result: {
+        ...(state.tools![0]!.result as Record<string, unknown>),
+        value: 'different tool',
+      },
+    },
+  ];
+  await refreshImmediately(page);
+  await expect(item.getByLabel('返回值', { exact: true })).toHaveText(
+    'different tool',
+  );
+  await expect(rows).toHaveCount(5);
+  await expect(
+    section.getByRole('button', { name: '展开其余 3 条明细' }),
+  ).toHaveAttribute('aria-expanded', 'false');
+  expect(posts).toEqual([]);
+});
+
+test('javascript omitted and missing internal details are explicit and legacy job toolCalls work', async ({
+  page,
+}) => {
+  await page.clock.install({ time: now });
+  await page.clock.pauseAt(now);
+  const summary = {
+    counts: { legacy_tool: { unknown: 9 } },
+    abnormal: Array.from({ length: 6 }, (_, index) => ({
+      seq: index + 1,
+      tool: 'legacy_tool',
+      status: 'unknown',
+      error: `legacy-${index}`,
+    })),
+    abnormal_omitted: 3,
+  };
+  const tools: ReviewTool[] = [
+    {
+      ...tool,
+      name: 'query_javascript_jobs',
+      arguments: { job_id: 'legacy-job' },
+      result: {
+        status: 'ok',
+        job: {
+          job_id: 'legacy-job',
+          status: 'completed',
+          value: 'legacy success',
+          toolCalls: summary,
+        },
+      },
+    },
+    {
+      ...tool,
+      ordinal: 2,
+      callId: 'missing-details',
+      proposedAt: tool.proposedAt! + 1,
+      name: 'execute_javascript',
+      arguments: { code: 'return 1' },
+      result: {
+        status: 'ok',
+        value: 1,
+        tool_calls: {
+          counts: { missing_tool: { error: 2 } },
+          abnormal_omitted: 0,
+        },
+      },
+    },
+    {
+      ...tool,
+      ordinal: 3,
+      callId: 'all-ok-details',
+      proposedAt: tool.proposedAt! + 2,
+      name: 'execute_javascript',
+      arguments: { code: 'return 2' },
+      result: {
+        status: 'ok',
+        value: 2,
+        tool_calls: {
+          counts: { successful_tool: { ok: 2 } },
+          abnormal: [],
+          abnormal_omitted: 0,
+        },
+      },
+    },
+  ];
+  const { requests, posts } = await mock(page, { tools });
+  await page.goto(wakeUrl);
+  await page.getByRole('checkbox', { name: '自动刷新', exact: true }).uncheck();
+  const items = page.locator('.wake-detail .tool-detail');
+  await expect(items).toHaveCount(3);
+  const legacy = items.nth(0);
+  const details = legacy.getByRole('region', { name: '内部调用非成功明细' });
+  await expect(legacy.locator('.tool-evidence')).toContainText('工具返回成功');
+  await expect(legacy.locator('.script-calls .warning')).toContainText(
+    'legacy_tool',
+  );
+  await expect(legacy.locator('p.error')).toHaveCount(0);
+  await expect(details).toContainText(
+    '另有 3 条内部非 ok 调用未包含在返回中。',
+  );
+  await expect(details.locator('li')).toHaveCount(5);
+  const initialRequests = requests.length;
+  await details.getByRole('button', { name: '展开其余 1 条明细' }).click();
+  await expect(details.locator('li')).toHaveCount(6);
+  await expect(details).toContainText(
+    '另有 3 条内部非 ok 调用未包含在返回中。',
+  );
+  await expect(details).not.toContainText('全部展开');
+  await expect(details.getByRole('button')).toHaveText('收起内部明细');
+  await page.clock.runFor(1000);
+  expect(requests).toHaveLength(initialRequests);
+  expect(posts).toEqual([]);
+  const missing = items.nth(1);
+  await expect(missing.locator('.script-internal-notice')).toBeVisible();
+  await expect(missing).toContainText(
+    '内部非 ok 调用明细未提供或列表格式异常，明细不完整。',
+  );
+  await expect(missing).toContainText('汇总存在非 ok 调用，但明细未提供。');
+  await expect(missing.locator('.script-abnormal li')).toHaveCount(0);
+  await expect(missing.locator('.internal-toggle')).toHaveCount(0);
+  await expect(missing.locator('.tool-evidence')).toContainText('工具返回成功');
+  await expect(missing.locator('p.error')).toHaveCount(0);
+  const allOk = items.nth(2);
+  await expect(
+    allOk.locator('.script-internal-notice, .script-internal'),
+  ).toHaveCount(0);
+  await expect(allOk.locator('.script-calls')).toContainText(
+    'successful_tool ×2',
+  );
+  await expect(
+    allOk.locator('.script-calls .error, .script-calls .warning'),
+  ).toHaveCount(0);
 });
 
 test('javascript foreground waits count down locally and stop on refreshed results', async ({

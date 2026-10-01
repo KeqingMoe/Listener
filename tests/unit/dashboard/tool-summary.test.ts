@@ -310,9 +310,9 @@ test('execute_javascript shows code, raw string value and sandbox tool calls', (
     mode: '同步',
     outcome: { kind: 'value', text: '  *  \n *** ' },
     calls: [
-      { text: 'create_image ×1', abnormal: false },
-      { text: 'view_images ×2', abnormal: false },
-      { text: 'view_images error ×1', abnormal: true },
+      { text: 'create_image ×1', status: 'ok', abnormal: false },
+      { text: 'view_images ×2', status: 'ok', abnormal: false },
+      { text: 'view_images error ×1', status: 'error', abnormal: true },
     ],
     logs: ['step 1'],
   });
@@ -396,7 +396,7 @@ test('query_javascript_jobs shows the queried job without code, in either field 
         description: '旋转',
         mode: '异步',
         outcome: { kind: 'value', text: '{"a":1}' },
-        calls: [{ text: 'send_group_image ×1', abnormal: false }],
+        calls: [{ text: 'send_group_image ×1', status: 'ok', abnormal: false }],
         logs: [],
       },
     );
@@ -405,6 +405,48 @@ test('query_javascript_jobs shows the queried job without code, in either field 
     toolView('query_javascript_jobs', {}, { status: 'ok', jobs: [{}, {}] }),
     { kind: 'line', text: '列出 2 个任务' },
   );
+});
+
+test('sandbox counters keep status distinctions and do not fabricate counts from malformed fields', () => {
+  const view = toolView(
+    'execute_javascript',
+    {},
+    {
+      tool_calls: {
+        counts: {
+          known: {
+            ok: 2,
+            error: 1,
+            unknown: 3,
+            confirmation_required: 1,
+            future: 1,
+            bad: '4',
+            zero: 0,
+            negative: -1,
+            fraction: 1.5,
+            overflow: Number.MAX_SAFE_INTEGER + 1,
+            '': 2,
+          },
+          ' ': { error: 3 },
+          invalid: [],
+        },
+      },
+    },
+  );
+  assert.equal(view?.kind, 'script');
+  if (view?.kind === 'script') {
+    assert.deepEqual(
+      view.calls.map((call) => [call.status, call.abnormal]),
+      [
+        ['ok', false],
+        ['error', true],
+        ['unknown', true],
+        ['confirmation_required', true],
+        ['future', true],
+      ],
+    );
+    assert.equal(view.calls.length, 5);
+  }
 });
 
 test('only whole JSON objects or arrays are treated as structured return values', () => {
