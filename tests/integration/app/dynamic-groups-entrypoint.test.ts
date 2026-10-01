@@ -185,8 +185,11 @@ test(
     const wait = (predicate: () => boolean, label: string): Promise<void> =>
       new Promise((resolve, reject) => {
         let timer: NodeJS.Timeout | undefined;
+        // fs.watch 的递归监听在部分Node版本上会漏报文件变化，轮询兜底。
+        const poll = setInterval(() => check(), 50);
         const done = (error?: unknown) => {
           clearTimeout(timer);
+          clearInterval(poll);
           changed.off('change', check);
           error ? reject(error) : resolve();
         };
