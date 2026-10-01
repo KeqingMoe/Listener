@@ -124,17 +124,38 @@ export function buildApp(options: AppOptions) {
       );
     const host = req.headers.host;
     const authWrite = req.method === 'POST' && authWrites.has(req.url);
+    const safeRead = req.method === 'GET' || req.method === 'HEAD';
     if (
       !host ||
       !allowedHost(host, options.listenHost) ||
-      (!['GET', 'HEAD'].includes(req.method) && !authWrite)
+      // 只接受origin-form；路由器也能识别absolute-form，但不能让路径分类与路由不一致。
+      !req.url.startsWith('/') ||
+      (!safeRead && !authWrite)
     ) {
       return reply.code(403).send({
         error: 'forbidden',
         message: 'Read-only access from configured host required',
       });
     }
-    if (req.headers['sec-fetch-site'] === 'cross-site') {
+    const path = req.url.split('?')[0]!;
+    // 与API鉴权共用分类，编码/大小写变体及无法解码的路径不能借导航例外放行。
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(path).toLowerCase();
+    } catch {
+      decoded = '/api/';
+    }
+    const apiPath = decoded === '/api' || decoded.startsWith('/api/');
+    // 安卓安装应用的外部启动可能是cross-site顶层导航。公开页面仅允许
+    // 顶层导航跨站读取；安装素材可公开读取，所有API仍保留跨站限制。
+    const publicRead =
+      safeRead &&
+      !apiPath &&
+      ((req.headers['sec-fetch-mode'] === 'navigate' &&
+        req.headers['sec-fetch-dest'] === 'document') ||
+        path === '/manifest.webmanifest' ||
+        /^\/icons\/[a-z0-9-]+\.png$/.test(path));
+    if (req.headers['sec-fetch-site'] === 'cross-site' && !publicRead) {
       return reply
         .code(403)
         .send({ error: 'forbidden', message: 'Cross-site access denied' });
@@ -144,7 +165,7 @@ export function buildApp(options: AppOptions) {
         .code(403)
         .send({ error: 'forbidden', message: 'Same-origin access required' });
     }
-    if (req.headers.origin) {
+    if (req.headers.origin && !publicRead) {
       let origin: URL;
       try {
         origin = new URL(req.headers.origin);
@@ -162,20 +183,11 @@ export function buildApp(options: AppOptions) {
           .send({ error: 'forbidden', message: 'Same-origin access required' });
       }
     }
-    const path = req.url.split('?')[0]!;
     const publicAuth =
-      ((req.method === 'GET' || req.method === 'HEAD') &&
-        path === '/api/auth/session') ||
+      (safeRead && path === '/api/auth/session') ||
       (authWrite &&
         (req.url === '/api/auth/login' || req.url === '/api/auth/logout'));
-    // 在路由之前拦截所有形似API的路径，包括URL编码和大小写变体；解码失败按API路径处理。
-    let decoded: string;
-    try {
-      decoded = decodeURIComponent(path).toLowerCase();
-    } catch {
-      decoded = '/api/';
-    }
-    if ((decoded === '/api' || decoded.startsWith('/api/')) && !publicAuth) {
+    if (apiPath && !publicAuth) {
       if (!auth.configured) {
         return reply.code(503).send({
           error: auth.configurationError,

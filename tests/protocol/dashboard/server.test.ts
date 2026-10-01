@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   mkdtempSync,
+  cpSync,
+  copyFileSync,
   rmSync,
   existsSync,
   readFileSync,
@@ -9,9 +11,11 @@ import {
   mkdirSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { request } from 'node:http';
 import { gunzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import sharp from 'sharp';
 import { buildApp as rawBuildApp } from '../../../src/dashboard/server/app.ts';
 import { AuthStore } from '../../../src/dashboard/server/auth.ts';
 
@@ -461,6 +465,457 @@ test('static SPA stays same-origin and unknown APIs do not return HTML', async (
       ).statusCode,
       403,
     );
+  } finally {
+    await app.close();
+    f.cleanup();
+  }
+});
+
+test('real install resources are public without weakening API authentication or SPA routing', async () => {
+  const f = fixture();
+  const web = join(f.dir, 'web');
+  // Copy only public assets and the HTML shell, never configuration or .env.
+  cpSync(new URL('../../../src/dashboard/web/public/', import.meta.url), web, {
+    recursive: true,
+  });
+  copyFileSync(
+    new URL('../../../src/dashboard/web/index.html', import.meta.url),
+    join(web, 'index.html'),
+  );
+  // Unlike buildApp above, rawBuildApp does not silently attach a session cookie.
+  const app = rawBuildApp({ ...f.options, webRoot: web });
+  try {
+    const manifestResponse = await app.inject('/manifest.webmanifest');
+    assert.equal(manifestResponse.statusCode, 200);
+    assert.match(
+      String(manifestResponse.headers['content-type']),
+      /^application\/manifest\+json(?:;|$)/,
+    );
+    assert.deepEqual(
+      manifestResponse.rawPayload,
+      readFileSync(join(web, 'manifest.webmanifest')),
+    );
+    const manifest = manifestResponse.json();
+    assert.deepEqual(manifest, {
+      id: '/',
+      name: 'Listener · 运行面板',
+      short_name: 'Listener',
+      lang: 'zh-CN',
+      start_url: '/',
+      scope: '/',
+      display: 'standalone',
+      theme_color: '#f3f5f8',
+      background_color: '#f3f5f8',
+      icons: [
+        {
+          src: '/icons/icon-192.png',
+          sizes: '192x192',
+          type: 'image/png',
+          purpose: 'any',
+        },
+        {
+          src: '/icons/icon-512.png',
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'any',
+        },
+        {
+          src: '/icons/icon-maskable-512-v2.png',
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'maskable',
+        },
+      ],
+    });
+    const manifestHead = await app.inject({
+      method: 'HEAD',
+      url: '/manifest.webmanifest',
+    });
+    assert.equal(manifestHead.statusCode, 200);
+    assert.equal(
+      manifestHead.headers['content-type'],
+      manifestResponse.headers['content-type'],
+    );
+    assert.equal(
+      Number(manifestHead.headers['content-length']),
+      manifestResponse.rawPayload.length,
+    );
+    assert.equal(manifestHead.body, '');
+    for (const [url, size] of [
+      ['/icons/icon-192.png', 192],
+      ['/icons/icon-512.png', 512],
+      ['/icons/icon-maskable-512-v2.png', 512],
+      ['/icons/favicon-48.png', 48],
+      ['/icons/apple-touch-icon.png', 180],
+    ] as const) {
+      const response = await app.inject(url);
+      assert.equal(response.statusCode, 200, url);
+      assert.equal(response.headers['content-type'], 'image/png');
+      assert.deepEqual(response.rawPayload, readFileSync(join(web, url)));
+      const metadata = await sharp(response.rawPayload).metadata();
+      assert.equal(metadata.format, 'png');
+      assert.equal(metadata.width, size);
+      assert.equal(metadata.height, size);
+      assert.equal((await sharp(response.rawPayload).stats()).isOpaque, true);
+      if (url.includes('maskable')) {
+        // The launcher gets the full-bleed avatar, not a padded blue canvas.
+        assert.deepEqual(
+          response.rawPayload,
+          readFileSync(join(web, 'icons/icon-512.png')),
+        );
+      }
+      const head = await app.inject({ method: 'HEAD', url });
+      assert.equal(head.statusCode, 200, url);
+      assert.equal(head.headers['content-type'], 'image/png');
+      assert.equal(
+        Number(head.headers['content-length']),
+        response.rawPayload.length,
+      );
+      assert.equal(head.body, '');
+    }
+    const html = readFileSync(join(web, 'index.html'), 'utf8');
+    for (const url of ['/', '/wakes/install-fixture?groupId=11']) {
+      const response = await app.inject(url);
+      assert.equal(response.statusCode, 200);
+      assert.equal(response.body, html);
+      for (const [rel, href] of [
+        ['manifest', '/manifest.webmanifest'],
+        ['icon', '/icons/favicon-48.png'],
+        ['apple-touch-icon', '/icons/apple-touch-icon.png'],
+      ]) {
+        assert.match(
+          response.body,
+          new RegExp(`<link\\s[^>]*rel="${rel}"[^>]*href="${href}"`),
+        );
+        assert.equal(
+          new URL(href!, `http://localhost${url}`).origin,
+          'http://localhost',
+        );
+      }
+      assert.doesNotMatch(response.body, /qlogo\.(?:cn|com)/i);
+    }
+    for (const url of [
+      '/api/meta',
+      '/api/overview',
+      '/api/wakes/wake-one?groupId=11',
+      '/api/unknown',
+      '/%61pi/meta',
+    ]) {
+      for (const method of ['GET', 'HEAD'] as const) {
+        const response = await app.inject({ method, url });
+        assert.equal(response.statusCode, 401, url);
+        assert.equal(response.headers['cache-control'], 'no-store');
+        assert.doesNotMatch(response.body, new RegExp(sentinel));
+      }
+    }
+    assert.equal(existsSync(join(web, 'icons/icon-maskable-512.png')), false);
+    for (const url of [
+      '/assets/does-not-exist.js',
+      '/icons/does-not-exist.png',
+      '/icons/icon-maskable-512.png',
+    ]) {
+      const response = await app.inject(url);
+      assert.equal(response.statusCode, 404);
+      assert.doesNotMatch(
+        String(response.headers['content-type']),
+        /text\/html/,
+      );
+      assert.doesNotMatch(response.body, /<!doctype|<div id="app"/i);
+    }
+    const login = f.options.auth.login('test-password-long', '127.0.0.1');
+    assert.equal(login.status, 'ok');
+    assert.ok(login.status === 'ok');
+    for (const cookie of ['', `dashboard_session=${login.token}`]) {
+      const response = await app.inject({
+        url: '/api/meta',
+        headers: { cookie, 'sec-fetch-site': 'cross-site' },
+      });
+      assert.equal(response.statusCode, 403);
+      assert.equal(response.headers['cache-control'], 'no-store');
+    }
+  } finally {
+    await app.close();
+    f.cleanup();
+  }
+});
+
+test('cross-site installation opens only public documents and install resources, never APIs', async () => {
+  const f = fixture();
+  const web = join(f.dir, 'web');
+  cpSync(new URL('../../../src/dashboard/web/public/', import.meta.url), web, {
+    recursive: true,
+  });
+  const html = '<!doctype html><title>Public installation shell</title>';
+  writeFileSync(join(web, 'index.html'), html);
+  mkdirSync(join(web, 'assets'));
+  writeFileSync(join(web, 'assets/app.js'), 'console.log("public asset")');
+  const app = rawBuildApp({ ...f.options, webRoot: web });
+  const navigation = {
+    'sec-fetch-mode': 'navigate',
+    'sec-fetch-dest': 'document',
+  };
+  const csp =
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'";
+  const checkSecurity = (response: { headers: Record<string, unknown> }) => {
+    assert.equal(response.headers['content-security-policy'], csp);
+    assert.equal(response.headers['access-control-allow-origin'], undefined);
+    assert.equal(response.headers['cache-control'], 'no-store');
+  };
+  try {
+    const login = f.options.auth.login('test-password-long', '127.0.0.1');
+    assert.ok(login.status === 'ok');
+    const installResources = [
+      '/manifest.webmanifest',
+      '/icons/icon-192.png',
+      '/icons/icon-512.png',
+      '/icons/icon-maskable-512-v2.png',
+      '/icons/favicon-48.png',
+      '/icons/apple-touch-icon.png',
+    ];
+    for (const cookie of ['', `dashboard_session=${login.token}`]) {
+      const base = { host: 'localhost:3210', cookie };
+      // Prove both states are real, rather than using the auto-login helper.
+      const session = await app.inject({
+        url: '/api/auth/session',
+        headers: base,
+      });
+      assert.equal(session.statusCode, 200);
+      assert.equal(session.json().authenticated, Boolean(cookie));
+      assert.equal(
+        (await app.inject({ url: '/api/meta', headers: base })).statusCode,
+        cookie ? 200 : 401,
+      );
+      for (const origin of [undefined, 'http://localhost:3210']) {
+        for (const url of [
+          '/',
+          '/wakes/install-fixture?groupId=11',
+          '/assets/app.js',
+        ]) {
+          const response = await app.inject({
+            url,
+            headers: { ...base, ...(origin ? { origin } : {}) },
+          });
+          assert.equal(response.statusCode, 200, url);
+          checkSecurity(response);
+        }
+      }
+      for (const foreign of [
+        { 'sec-fetch-site': 'cross-site' },
+        { origin: 'android-app://test.launcher' },
+        {
+          'sec-fetch-site': 'cross-site',
+          origin: 'android-app://test.launcher',
+        },
+        { 'sec-fetch-site': 'cross-site', origin: 'https://external.example' },
+      ]) {
+        const headers = { ...base, ...foreign };
+        for (const method of ['GET', 'HEAD'] as const) {
+          for (const url of [
+            '/',
+            '/wakes/install-fixture?groupId=11',
+            '/requests',
+          ]) {
+            const response = await app.inject({
+              method,
+              url,
+              headers: { ...headers, ...navigation },
+            });
+            assert.equal(response.statusCode, 200, `${method} ${url}`);
+            assert.match(
+              String(response.headers['content-type']),
+              /text\/html/,
+            );
+            assert.equal(response.body, method === 'HEAD' ? '' : html);
+            checkSecurity(response);
+          }
+          for (const url of installResources) {
+            // Browser manifest/image fetches are not top-level navigations.
+            const response = await app.inject({
+              method,
+              url,
+              headers: {
+                ...headers,
+                'sec-fetch-mode': 'cors',
+                'sec-fetch-dest': url.endsWith('.png') ? 'image' : 'manifest',
+              },
+            });
+            assert.equal(response.statusCode, 200, `${method} ${url}`);
+            if (method === 'HEAD') {
+              assert.equal(response.body, '');
+            } else {
+              assert.deepEqual(
+                response.rawPayload,
+                readFileSync(join(web, url)),
+              );
+            }
+            checkSecurity(response);
+          }
+          for (const url of [
+            '/api',
+            '/api?installation=1',
+            '/api/meta',
+            '/api/unknown',
+            '/API/meta',
+            '/%61pi/meta',
+            '/api%2fmeta',
+            '/%61PI%2Fmeta',
+            '/api/auth/session',
+            '/API/auth/session',
+            '/api%2fauth%2fsession',
+          ]) {
+            const response = await app.inject({
+              method,
+              url,
+              headers: { ...headers, ...navigation },
+            });
+            assert.equal(
+              response.statusCode,
+              403,
+              `${method} ${url} cookie=${Boolean(cookie)}`,
+            );
+            checkSecurity(response);
+          }
+          for (const url of ['/', '/wakes/install-fixture', '/assets/app.js']) {
+            for (const fetchHeaders of [
+              { 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'iframe' },
+              { 'sec-fetch-mode': 'cors', 'sec-fetch-dest': 'document' },
+              { 'sec-fetch-mode': 'cors', 'sec-fetch-dest': 'script' },
+              { 'sec-fetch-mode': 'navigate' },
+              { 'sec-fetch-dest': 'document' },
+              {},
+            ]) {
+              const response = await app.inject({
+                method,
+                url,
+                headers: { ...headers, ...fetchHeaders },
+              });
+              assert.equal(
+                response.statusCode,
+                403,
+                `${method} ${url} ${JSON.stringify(fetchHeaders)}`,
+              );
+              checkSecurity(response);
+            }
+          }
+          for (const url of [
+            '/',
+            '/wakes/install-fixture',
+            ...installResources,
+          ]) {
+            const response = await app.inject({
+              method,
+              url,
+              headers: {
+                ...headers,
+                ...navigation,
+                host: 'localhost.evil.example',
+              },
+            });
+            assert.equal(response.statusCode, 403, url);
+            checkSecurity(response);
+          }
+        }
+        for (const url of ['/api/auth/login', '/api/auth/logout']) {
+          const response = await app.inject({
+            method: 'POST',
+            url,
+            headers: { ...headers, ...navigation },
+            payload: { password: 'test-password-long' },
+          });
+          assert.equal(response.statusCode, 403, url);
+          assert.equal(response.headers['set-cookie'], undefined);
+          checkSecurity(response);
+        }
+        for (const method of [
+          'POST',
+          'PUT',
+          'DELETE',
+          'PATCH',
+          'OPTIONS',
+        ] as const) {
+          for (const url of [
+            '/',
+            '/wakes/install-fixture',
+            ...installResources,
+          ]) {
+            const response = await app.inject({
+              method,
+              url,
+              headers: { ...headers, ...navigation },
+            });
+            assert.equal(response.statusCode, 403, `${method} ${url}`);
+            checkSecurity(response);
+          }
+        }
+      }
+      // Rejected cross-site logout must not revoke the legitimate session.
+      assert.equal(
+        (await app.inject({ url: '/api/auth/session', headers: base })).json()
+          .authenticated,
+        Boolean(cookie),
+      );
+    }
+  } finally {
+    await app.close();
+    f.cleanup();
+  }
+});
+
+test('real HTTP absolute-form targets cannot bypass API authentication or cross-site guards', async () => {
+  const f = fixture();
+  const web = join(f.dir, 'web');
+  mkdirSync(web);
+  writeFileSync(
+    join(web, 'index.html'),
+    '<!doctype html><title>Public shell</title>',
+  );
+  const app = rawBuildApp({ ...f.options, webRoot: web });
+  try {
+    const address = new URL(await app.listen({ host: '127.0.0.1', port: 0 }));
+    // app.inject can normalize absolute URLs; send the exact request-target over TCP.
+    const status = (path: string, headers: Record<string, string>) =>
+      new Promise<number | undefined>((resolve, reject) => {
+        const req = request(
+          {
+            hostname: address.hostname,
+            port: address.port,
+            method: 'GET',
+            path,
+            headers,
+          },
+          (response) => {
+            response.on('error', reject);
+            response.resume();
+            response.on('end', () => resolve(response.statusCode));
+          },
+        );
+        req.on('error', reject);
+        req.end();
+      });
+    const login = f.options.auth.login('test-password-long', '127.0.0.1');
+    assert.ok(login.status === 'ok');
+    const navigation = {
+      'sec-fetch-site': 'cross-site',
+      'sec-fetch-mode': 'navigate',
+      'sec-fetch-dest': 'document',
+      origin: 'android-app://test.launcher',
+    };
+    for (const cookie of ['', `dashboard_session=${login.token}`]) {
+      assert.equal(await status('/api/meta', { cookie }), cookie ? 200 : 401);
+      assert.equal(await status('/', { cookie, ...navigation }), 200);
+      assert.equal(
+        await status('/wakes/install-fixture', { cookie, ...navigation }),
+        200,
+      );
+      assert.equal(await status('/api/meta', { cookie, ...navigation }), 403);
+      for (const headers of [{ cookie }, { cookie, ...navigation }]) {
+        assert.equal(
+          await status(`${address.origin}/api/meta`, headers),
+          403,
+          `absolute-form API target cookie=${Boolean(cookie)} cross-site=${'origin' in headers}`,
+        );
+      }
+    }
   } finally {
     await app.close();
     f.cleanup();
