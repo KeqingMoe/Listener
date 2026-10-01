@@ -870,6 +870,50 @@ test('overview charts preserve raw metrics, free coordinates, filters and mobile
   expect(errors).toEqual([]);
 });
 
+test('scatter guide toggle is local, persists in URL and survives cached navigation', async ({
+  page,
+}) => {
+  await page.clock.install();
+  const { requests } = await mock(page);
+  await page.goto('/?chartGuides=invalid');
+  const button = page.getByRole('button', { name: /^散点辅助线：/ });
+  const note = page.locator('.scatter-panel .chart-note');
+  await expect(page.getByTestId('request-scatter-summary')).toBeVisible();
+  await expect(button).toHaveAccessibleName('散点辅助线：显示，点击切换');
+  const count = () =>
+    requests.filter((u) => u.pathname === '/api/request-trends/sync').length;
+  const before = count();
+  await button.click();
+  await expect(page).toHaveURL(/chartGuides=hide/);
+  await expect(button).toHaveAccessibleName('散点辅助线：隐藏，点击切换');
+  await expect(note).not.toContainText('P5/P95');
+  expect(count()).toBe(before);
+  await page.getByLabel('散点纵轴指标').selectOption('totalInput');
+  await expect(button).toHaveAccessibleName('散点辅助线：隐藏，点击切换');
+  expect(count()).toBe(before);
+  await page.reload();
+  await expect(button).toHaveAccessibleName('散点辅助线：隐藏，点击切换');
+  await page.getByRole('link', { name: '工具', exact: true }).click();
+  await page.getByRole('link', { name: '总览', exact: true }).click();
+  await expect(button).toHaveAccessibleName('散点辅助线：隐藏，点击切换');
+  await expect(page.getByTestId('dashboard-refresh-status')).not.toHaveText(
+    '刷新中…',
+  );
+  await button.click();
+  await expect(page).not.toHaveURL(/chartGuides=/);
+  await expect(note).toContainText('P5/P95');
+  for (const width of [390, 360]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect(button).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+    ).toBe(true);
+  }
+  expect(requests.every((u) => !u.searchParams.has('chartGuides'))).toBe(true);
+});
+
 // Hold only overview-owned responses; all fixture data still comes from mock().
 async function interceptOverviewSync(page: Page) {
   const paths = ['/api/overview', '/api/health', '/api/request-trends/sync'];

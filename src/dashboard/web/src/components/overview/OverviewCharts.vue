@@ -19,6 +19,8 @@ import { GridComponent, TooltipComponent } from 'echarts/components';
 import { useRequestTrends } from '../../composables/useRequestTrends';
 import {
   chartDots,
+  chartGuides,
+  resolveChartGuides,
   chartMetrics,
   chartRanges,
   chartScales,
@@ -55,9 +57,13 @@ watch(
   () => {
     if (
       route.path === '/' &&
-      ['chartMetric', 'chartRange', 'chartScale', 'chartDots'].some(
-        (key) => route.query[key] !== chartQuery.value[key],
-      )
+      [
+        'chartMetric',
+        'chartRange',
+        'chartScale',
+        'chartDots',
+        'chartGuides',
+      ].some((key) => route.query[key] !== chartQuery.value[key])
     ) {
       chartQuery.value = route.query;
     }
@@ -69,6 +75,7 @@ const view = computed<ScatterView>(() => ({
   range: resolveChartRange(chartQuery.value.chartRange),
   scale: resolveChartScale(chartQuery.value.chartScale, metric.value),
   dots: resolveChartDots(chartQuery.value.chartDots),
+  guides: resolveChartGuides(chartQuery.value.chartGuides),
 }));
 const displayRange = computed(() => view.value.range);
 const windowLabel = computed(() => {
@@ -80,13 +87,14 @@ const windowLabel = computed(() => {
 
 /** 视图选项保存在URL中；默认值不写入，保持链接简短。 */
 function setView(
-  key: 'chartRange' | 'chartScale' | 'chartDots',
+  key: 'chartRange' | 'chartScale' | 'chartDots' | 'chartGuides',
   value: string,
 ) {
   const defaults = {
     chartRange: 'all',
     chartScale: 'linear',
     chartDots: 'fine',
+    chartGuides: 'show',
   };
   void router.replace({
     query: {
@@ -134,6 +142,13 @@ const controls = computed(() => [
     name: '点',
     title: '细点适合密集数据，粗点适合稀疏数据',
     ...cycle(chartDots, view.value.dots),
+  },
+  {
+    key: 'chartGuides' as const,
+    label: '散点辅助线',
+    name: '辅助线',
+    title: '显示或隐藏中位数、P5与P95线',
+    ...cycle(chartGuides, view.value.guides),
   },
 ]);
 
@@ -475,12 +490,14 @@ onUnmounted(() => {
               v-if="!summary.limited"
               >有效点少于20条，暂不裁剪。</span
             ></span
-          >实线为中位数，淡虚线为
-          P5/P95，标出中间约90%的分位范围（非置信带，不填色）。按约
-          {{ windowLabel }} 的滑动窗口统计，中位数至少需
-          {{ TREND_MIN_SAMPLES.median }} 条样本，分位线至少需
-          {{ TREND_MIN_SAMPLES.p95 }}
-          条，不足时断开。统计包含被裁剪的点，分位线不等于全局裁剪边界。十字线标签表示鼠标坐标，不代表最近请求。
+          ><span v-if="view.guides === 'show'"
+            >实线为中位数，淡虚线为
+            P5/P95，标出中间约90%的分位范围（非置信带，不填色）。按约
+            {{ windowLabel }} 的滑动窗口统计，中位数至少需
+            {{ TREND_MIN_SAMPLES.median }} 条样本，分位线至少需
+            {{ TREND_MIN_SAMPLES.p95 }}
+            条，不足时断开。统计包含被裁剪的点，分位线不等于全局裁剪边界。</span
+          >十字线标签表示鼠标坐标，不代表最近请求。
         </p>
       </section>
     </template>

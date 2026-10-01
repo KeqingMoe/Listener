@@ -138,16 +138,29 @@ export function resolveChartDots(value: unknown): ChartDots {
   return value === 'bold' ? 'bold' : 'fine';
 }
 
+export const chartGuides = [
+  { key: 'show', label: '显示' },
+  { key: 'hide', label: '隐藏' },
+] as const;
+
+export type ChartGuides = (typeof chartGuides)[number]['key'];
+
+export function resolveChartGuides(value: unknown): ChartGuides {
+  return value === 'hide' ? 'hide' : 'show';
+}
+
 export interface ScatterView {
   range: ChartRange;
   scale: ChartScale;
   dots: ChartDots;
+  guides: ChartGuides;
 }
 
 export const defaultScatterView: ScatterView = {
   range: 'all',
   scale: 'linear',
   dots: 'fine',
+  guides: 'show',
 };
 
 /** 最近秩百分位：取排序后第ceil(n*p)个值，结果总是真实样本值。 */

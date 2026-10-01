@@ -75,9 +75,10 @@ export function chartOptions(
         ? upper
         : floor + Math.max(Math.abs(floor) * 0.01, 0.001);
   const dots = dotStyles[view.dots];
-  const trends = scatter
-    ? trendLines(data.points, data.range, data.bucketMs, metric, view.scale)
-    : null;
+  const trends =
+    scatter && view.guides === 'show'
+      ? trendLines(data.points, data.range, data.bucketMs, metric, view.scale)
+      : null;
   return {
     animation: false,
     textStyle: { color: colors.text },
@@ -157,9 +158,13 @@ export function chartOptions(
                 }),
               };
             }),
-            trendSeries('中位数', trends!.median, colors.text, 'solid'),
-            trendSeries('P95', trends!.p95, colors.text, 'dashed'),
-            trendSeries('P5', trends!.p5, colors.text, 'dashed'),
+            ...(trends
+              ? [
+                  trendSeries('中位数', trends.median, colors.text, 'solid'),
+                  trendSeries('P95', trends.p95, colors.text, 'dashed'),
+                  trendSeries('P5', trends.p5, colors.text, 'dashed'),
+                ]
+              : []),
           ],
   };
 }

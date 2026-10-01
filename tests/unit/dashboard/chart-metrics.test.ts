@@ -13,6 +13,7 @@ import {
   resolveChartRange,
   resolveChartScale,
   resolveChartDots,
+  resolveChartGuides,
   trendLines,
   defaultScatterView,
   outcomes,
@@ -435,6 +436,7 @@ test('log scale excludes non-positive values honestly and is unavailable for per
     range: 'all',
     scale: 'log',
     dots: 'bold',
+    guides: 'show',
   });
   assert.equal((option.yAxis as { type: string }).type, 'log');
   const series = scatterSeries(option);
@@ -554,4 +556,61 @@ test('trend lines use a sliding window, include clipped samples and always show 
   assert.equal(plotted[2]!.connectNulls, false);
   assert.equal(plotted[2]!.clip, true);
   assert.equal(plotted[2]!.areaStyle, undefined);
+});
+
+test('guide toggle removes all statistical lines without changing points, axes or bars', () => {
+  assert.equal(resolveChartGuides('hide'), 'hide');
+  for (const value of [undefined, 'show', 'invalid', ['hide']]) {
+    assert.equal(resolveChartGuides(value), 'show');
+  }
+  const response: RequestTrendsResponse = {
+    range: { since: point.startedAt, until: point.startedAt + 1000 },
+    availability: { telemetry: true, sessions: [] },
+    points: Array.from({ length: 100 }, (_, i) => ({
+      ...point,
+      startedAt: point.startedAt + i,
+      durationMs: 1000 + i * 10,
+    })),
+    bucketMs: 100,
+    buckets: [],
+  };
+  const colors = { text: '#fff', muted: '#aaa', border: '#333' };
+  for (const range of ['all', 'p95', 'p99'] as const) {
+    for (const scale of ['linear', 'log'] as const) {
+      const show = { ...defaultScatterView, range, scale };
+      const hide = { ...show, guides: 'hide' } as const;
+      const visible = chartOptions(
+        response,
+        resolveMetric('duration'),
+        colors,
+        'scatter',
+        show,
+      );
+      const hidden = chartOptions(
+        response,
+        resolveMetric('duration'),
+        colors,
+        'scatter',
+        hide,
+      );
+      assert.equal(
+        allSeries(visible).filter((s) => s.type === 'line').length,
+        3,
+      );
+      assert.equal(
+        allSeries(hidden).filter((s) => s.type === 'line').length,
+        0,
+      );
+      assert.deepEqual(scatterSeries(hidden), scatterSeries(visible));
+      assert.deepEqual(hidden.yAxis, visible.yAxis);
+      // formatter闭包每次新建，比较其余坐标轴配置。
+      assert.equal(JSON.stringify(hidden.xAxis), JSON.stringify(visible.xAxis));
+      assert.deepEqual(
+        chartOptions(response, resolveMetric('duration'), colors, 'bar', hide)
+          .series,
+        chartOptions(response, resolveMetric('duration'), colors, 'bar', show)
+          .series,
+      );
+    }
+  }
 });
