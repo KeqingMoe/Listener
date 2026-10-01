@@ -10,9 +10,31 @@ import {
   resolveMetric,
   scatterSummary,
   resolveChartRange,
+  resolveChartScale,
+  resolveChartDots,
+  trendLines,
+  defaultScatterView,
   outcomes,
 } from '../../../src/dashboard/web/src/components/overview/chartMetrics.ts';
 import { chartOptions } from '../../../src/dashboard/web/src/components/overview/chartOptions.ts';
+
+const p95 = { ...defaultScatterView, range: 'p95' } as const;
+
+type Series = {
+  type: string;
+  name: string;
+  data: number[][];
+  symbolSize: number;
+  itemStyle: { opacity: number };
+  silent: boolean;
+  emphasis: { disabled: boolean };
+  z: number;
+};
+
+const allSeries = (option: ReturnType<typeof chartOptions>) =>
+  option.series as Series[];
+const scatterSeries = (option: ReturnType<typeof chartOptions>) =>
+  allSeries(option).filter((s) => s.type === 'scatter');
 
 const point: RequestTrendPoint = {
   startedAt: 1234567890123,
@@ -47,6 +69,7 @@ test('all eight metrics preserve zero and missing values; duration uses seconds 
       drawable: 1,
       missing: 1,
       hidden: 0,
+      unplottable: 0,
       upper: null,
       limited: false,
     },
@@ -80,7 +103,7 @@ test('cache hit rates plot percentages and retain zero, missing and percentile s
   assert.ok(
     Math.abs(
       (
-        chartOptions(response, metric, colors, 'scatter', 'p95').yAxis as {
+        chartOptions(response, metric, colors, 'scatter', p95).yAxis as {
           max: number;
         }
       ).max - 94,
@@ -101,6 +124,7 @@ test('percentile display keeps ties and zeros, excludes missing samples and leav
       drawable: 95,
       missing: 1,
       hidden: 5,
+      unplottable: 0,
       upper: 94,
       limited: true,
     },
@@ -124,24 +148,20 @@ test('percentile display keeps ties and zeros, excludes missing samples and leav
     buckets: [],
   };
   const colors = { text: '#fff', muted: '#aaa', border: '#333' };
-  const option = chartOptions(response, metric, colors, 'scatter', 'p95');
+  const option = chartOptions(response, metric, colors, 'scatter', p95);
   assert.equal((option.yAxis as { max: number }).max, 94);
-  const series = option.series as Array<{
-    data: number[][];
-    symbolSize: number;
-    itemStyle: { opacity: number };
-  }>;
+  const series = scatterSeries(option);
   assert.equal(series.flatMap((s) => s.data).length, 95);
   assert.ok(
     series.every((s) => s.symbolSize === 2 && s.itemStyle.opacity === 0.9),
   );
   assert.deepEqual(
-    chartOptions(response, metric, colors, 'bar', 'p95').series,
+    chartOptions(response, metric, colors, 'bar', p95).series,
     chartOptions(response, metric, colors, 'bar').series,
   );
   assert.equal(
     (
-      chartOptions(response, metric, colors, 'bar', 'p95').yAxis as {
+      chartOptions(response, metric, colors, 'bar', p95).yAxis as {
         max?: number;
       }
     ).max,
@@ -186,11 +206,7 @@ test('options preserve all 10000 raw timestamp/value pairs and seven outcome ser
     { text: '#fff', muted: '#aaa', border: '#333' },
     'scatter',
   );
-  const series = option.series as Array<{
-    data: number[][];
-    silent: boolean;
-    emphasis: { disabled: boolean };
-  }>;
+  const series = scatterSeries(option);
   assert.equal(series.length, 7);
   const coordinates = series
     .flatMap((series) => series.data)
@@ -207,7 +223,125 @@ test('options preserve all 10000 raw timestamp/value pairs and seven outcome ser
     drawable: 10000,
     missing: 0,
     hidden: 0,
+    unplottable: 0,
     upper: null,
     limited: false,
   });
+});
+
+test('log scale excludes non-positive values honestly and is unavailable for percentages', () => {
+  const duration = resolveMetric('duration');
+  assert.equal(resolveChartScale('log', duration), 'log');
+  assert.equal(resolveChartScale('bad', duration), 'linear');
+  assert.equal(
+    resolveChartScale('log', resolveMetric('cacheHitRate')),
+    'linear',
+  );
+  assert.equal(resolveChartDots('bold'), 'bold');
+  assert.equal(resolveChartDots('x'), 'fine');
+  const points = [0, 0, 1000, 2000].map((durationMs, i) => ({
+    ...point,
+    startedAt: point.startedAt + i,
+    outcome: 'success' as const,
+    durationMs,
+  }));
+  assert.deepEqual(scatterSummary(points, duration, 'all', 'log'), {
+    total: 4,
+    drawable: 2,
+    missing: 0,
+    hidden: 0,
+    unplottable: 2,
+    upper: null,
+    limited: false,
+  });
+  const response: RequestTrendsResponse = {
+    range: { since: point.startedAt, until: point.startedAt + 10 },
+    availability: { telemetry: true, sessions: [] },
+    points,
+    bucketMs: 10,
+    buckets: [],
+  };
+  const colors = { text: '#fff', muted: '#aaa', border: '#333' };
+  const option = chartOptions(response, duration, colors, 'scatter', {
+    range: 'all',
+    scale: 'log',
+    dots: 'bold',
+  });
+  assert.equal((option.yAxis as { type: string }).type, 'log');
+  const series = scatterSeries(option);
+  assert.deepEqual(
+    series.flatMap((s) => s.data).map((d) => d[1]),
+    [1, 2],
+  );
+  assert.ok(
+    series.every((s) => s.symbolSize === 5 && s.itemStyle.opacity === 0.5),
+  );
+  // 少见结果最后绘制，叠在成功点之上。
+  const z = Object.fromEntries(series.map((s) => [s.name, s.z]));
+  assert.ok(z['失败']! > z['成功']! && z['超时']! > z['成功']!);
+});
+
+test('trend lines use a sliding window, include clipped samples and always show P95', () => {
+  const metric = resolveMetric('duration');
+  const range = { since: 0, until: 400 };
+  // 桶宽100：每50取一个位置，窗口为前后各150。
+  const points = [
+    // 0..19，耗时1..20秒。
+    ...Array.from({ length: 20 }, (_, i) => ({
+      ...point,
+      startedAt: i,
+      durationMs: (i + 1) * 1000,
+    })),
+    // 远处只有2个样本，不足以画任何线。
+    { ...point, startedAt: 390, durationMs: 1000 },
+    { ...point, startedAt: 400, durationMs: 3000 },
+    { ...point, startedAt: 10, durationMs: null },
+  ];
+  const lines = trendLines(points, range, 100, metric, 'linear');
+  assert.deepEqual(
+    lines.median.map(([x]) => x),
+    [0, 50, 100, 150, 200, 250, 300, 350, 400],
+  );
+  // 0..150的窗口都覆盖全部20个早期样本。
+  assert.deepEqual(
+    lines.median.slice(0, 4).map(([, y]) => y),
+    [10, 10, 10, 10],
+  );
+  assert.deepEqual(
+    lines.p95.slice(0, 4).map(([, y]) => y),
+    [19, 19, 19, 19],
+  );
+  // 200之后只剩远处2个样本，断开而不是外推。
+  assert.ok(lines.median.slice(4).every(([, y]) => y === null));
+  assert.ok(lines.p95.slice(4).every(([, y]) => y === null));
+  const zeros = points.map((p) => ({ ...p, durationMs: 0 }));
+  assert.equal(
+    trendLines(zeros, range, 100, metric, 'log').median[0]![1],
+    null,
+  );
+  assert.equal(
+    trendLines(zeros, range, 100, metric, 'linear').median[0]![1],
+    0,
+  );
+  const response: RequestTrendsResponse = {
+    range,
+    availability: { telemetry: true, sessions: [] },
+    points,
+    bucketMs: 100,
+    buckets: [],
+  };
+  const colors = { text: '#fff', muted: '#aaa', border: '#333' };
+  const names = (view: typeof defaultScatterView) =>
+    allSeries(chartOptions(response, metric, colors, 'scatter', view))
+      .filter((s) => s.type === 'line')
+      .map((s) => s.name);
+  // P95线是窗口自己的百分位，任何裁剪范围下都显示。
+  assert.deepEqual(names(defaultScatterView), ['中位数', 'P95']);
+  assert.deepEqual(names(p95), ['中位数', 'P95']);
+  // 裁剪纵轴不影响统计线。
+  const line = (view: typeof defaultScatterView) =>
+    allSeries(chartOptions(response, metric, colors, 'scatter', view)).find(
+      (s) => s.name === 'P95',
+    )!.data;
+  assert.deepEqual(line(p95), line(defaultScatterView));
 });

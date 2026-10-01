@@ -121,22 +121,32 @@ const metrics = computed(() => {
 <template>
   <section :aria-busy="loading">
     <header class="page-heading"><h1>总览</h1></header>
-    <DataState :loading="loading" :error="error" :stale="!!data" @retry="retry">
-      <template v-if="data">
-        <AvailabilityNote :value="data.availability" />
-        <div class="metric-strip" aria-label="总览汇总">
-          <div
-            v-for="metric in metrics"
-            :key="metric.label"
-            :title="metric.value == null ? missing : metric.hint"
+    <OverviewCharts>
+      <template #side>
+        <section class="panel metric-panel">
+          <DataState
+            :loading="loading"
+            :error="error"
+            :stale="!!data"
+            @retry="retry"
           >
-            <span class="muted">{{ metric.label }}</span>
-            <strong>{{ display(metric.value, metric.format) }}</strong>
-          </div>
-        </div>
+            <template v-if="data">
+              <AvailabilityNote :value="data.availability" />
+              <div class="metric-strip" aria-label="总览汇总">
+                <div
+                  v-for="metric in metrics"
+                  :key="metric.label"
+                  :title="metric.value == null ? missing : metric.hint"
+                >
+                  <span class="muted">{{ metric.label }}</span>
+                  <strong>{{ display(metric.value, metric.format) }}</strong>
+                </div>
+              </div>
+            </template>
+          </DataState>
+        </section>
       </template>
-    </DataState>
-    <OverviewCharts />
+    </OverviewCharts>
     <template v-if="data && !loading && !error">
       <section class="panel">
         <div class="section-title">
@@ -385,11 +395,19 @@ const metrics = computed(() => {
   </section>
 </template>
 <style scoped>
+.metric-panel {
+  margin-bottom: 0;
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+}
 .metric-strip {
+  flex: 1;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  /* 多出的高度平均分给各行，指标卡与右侧图表同高时不留大块空白。 */
+  align-content: space-evenly;
   gap: var(--space-2) var(--space-4);
-  align-items: stretch;
 }
 .metric-strip > div {
   min-width: 0;

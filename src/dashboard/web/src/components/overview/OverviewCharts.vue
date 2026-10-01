@@ -4,13 +4,21 @@ import { useRoute, useRouter } from 'vue-router';
 import VChart from 'vue-echarts';
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
-import { BarChart, ScatterChart } from 'echarts/charts';
+import { BarChart, LineChart, ScatterChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent } from 'echarts/components';
 import { useRequestTrends } from '../../composables/useRequestTrends';
 import {
+  chartDots,
   chartMetrics,
   chartRanges,
+  chartScales,
+  resolveChartDots,
   resolveChartRange,
+  resolveChartScale,
+  supportsLog,
+  TREND_MIN_SAMPLES,
+  TREND_WINDOW_BUCKETS,
+  type ScatterView,
   coordinateNumber,
   coordinateTime,
   outcomes,
@@ -19,19 +27,89 @@ import {
 } from './chartMetrics';
 import { chartOptions, plot } from './chartOptions';
 
-use([CanvasRenderer, BarChart, ScatterChart, GridComponent, TooltipComponent]);
+use([
+  CanvasRenderer,
+  BarChart,
+  LineChart,
+  ScatterChart,
+  GridComponent,
+  TooltipComponent,
+]);
 const route = useRoute();
 const router = useRouter();
 const { data, loading, error, retry } = useRequestTrends();
 const metric = computed(() => resolveMetric(route.query.chartMetric));
-const displayRange = computed(() => resolveChartRange(route.query.chartRange));
+const view = computed<ScatterView>(() => ({
+  range: resolveChartRange(route.query.chartRange),
+  scale: resolveChartScale(route.query.chartScale, metric.value),
+  dots: resolveChartDots(route.query.chartDots),
+}));
+const displayRange = computed(() => view.value.range);
+const windowLabel = computed(() => {
+  const minutes = ((data.value?.bucketMs ?? 0) * TREND_WINDOW_BUCKETS) / 60000;
+  return minutes >= 60
+    ? `${coordinateNumber(minutes / 60)} 小时`
+    : `${coordinateNumber(minutes)} 分钟`;
+});
 
-function selectRange(event: Event) {
-  const value = resolveChartRange((event.target as HTMLSelectElement).value);
+/** 视图选项保存在URL中；默认值不写入，保持链接简短。 */
+function setView(
+  key: 'chartRange' | 'chartScale' | 'chartDots',
+  value: string,
+) {
+  const defaults = {
+    chartRange: 'all',
+    chartScale: 'linear',
+    chartDots: 'fine',
+  };
   void router.replace({
-    query: { ...route.query, chartRange: value === 'all' ? undefined : value },
+    query: {
+      ...route.query,
+      [key]: value === defaults[key] ? undefined : value,
+    },
   });
 }
+
+/** 每个选项是一个按钮，点击依次切换到下一个可用值，避免多组按钮在窄屏换行。 */
+function cycle<K extends string>(
+  options: readonly { key: K; label: string }[],
+  current: K,
+  available: (key: K) => boolean = () => true,
+) {
+  const usable = options.filter((option) => available(option.key));
+  const index = usable.findIndex((option) => option.key === current);
+  const next = usable[(index + 1) % usable.length]!;
+  return {
+    current: options.find((option) => option.key === current)!.label,
+    next: usable.length > 1 ? next.key : null,
+  };
+}
+
+const controls = computed(() => [
+  {
+    key: 'chartScale' as const,
+    label: '散点纵轴刻度',
+    name: '刻度',
+    title: supportsLog(metric.value) ? undefined : '百分比指标不提供对数刻度',
+    ...cycle(chartScales, view.value.scale, (key) =>
+      key === 'linear' ? true : supportsLog(metric.value),
+    ),
+  },
+  {
+    key: 'chartRange' as const,
+    label: '散点显示范围',
+    name: '范围',
+    title: '按全部有效点的百分位裁剪纵轴上限',
+    ...cycle(chartRanges, view.value.range),
+  },
+  {
+    key: 'chartDots' as const,
+    label: '散点样式',
+    name: '点',
+    title: '细点适合密集数据，粗点适合稀疏数据',
+    ...cycle(chartDots, view.value.dots),
+  },
+]);
 
 function selectMetric(event: Event) {
   const value = (event.target as HTMLSelectElement).value;
@@ -53,12 +131,17 @@ const scatterOption = computed(() =>
         metric.value,
         colors.value,
         'scatter',
-        displayRange.value,
+        view.value,
       )
     : {},
 );
 const summary = computed(() =>
-  scatterSummary(data.value?.points ?? [], metric.value, displayRange.value),
+  scatterSummary(
+    data.value?.points ?? [],
+    metric.value,
+    view.value.range,
+    view.value.scale,
+  ),
 );
 const total = computed(
   () => data.value?.buckets.reduce((sum, bucket) => sum + bucket.total, 0) ?? 0,
@@ -123,7 +206,7 @@ watch(
   },
   { flush: 'post' },
 );
-watch([metric, data, displayRange], hideCrosshair);
+watch([metric, data, view], hideCrosshair);
 let themeObserver: MutationObserver | undefined;
 let resizeObserver: ResizeObserver | undefined;
 let media: MediaQueryList | undefined;
@@ -179,9 +262,6 @@ onUnmounted(() => {
     >
       正在更新请求趋势…
     </div>
-    <div v-if="loading && !data" class="panel data-state" role="status">
-      正在加载请求趋势…
-    </div>
     <div v-if="error" class="panel data-state" role="alert">
       <span class="error"
         >{{ data ? '图表数据已过期，更新失败：' : '请求趋势加载失败：'
@@ -189,158 +269,168 @@ onUnmounted(() => {
       >
       <button type="button" @click="retry">重试图表</button>
     </div>
-    <template v-if="data">
-      <p
-        v-if="!data.availability.telemetry"
-        class="chart-note muted"
-        role="status"
-      >
-        趋势遥测不可用；空图不代表没有请求。
-      </p>
-      <ul class="chart-legend" aria-label="请求状态图例与数量">
-        <li v-for="status in statusSummary" :key="status.key">
-          <span
-            :style="{ backgroundColor: status.color }"
-            aria-hidden="true"
-          ></span
-          >{{ status.label }} {{ status.count }}
-        </li>
-      </ul>
-      <div class="chart-grid">
-        <section class="panel chart-panel">
-          <div class="section-title"><h2>请求数量趋势</h2></div>
-          <p class="chart-summary muted" data-testid="request-trends-summary">
-            总数 {{ total }} · {{ data.buckets.length }} 时间桶 · 每桶约
-            {{ coordinateNumber(data.bucketMs / 1000) }} 秒
-          </p>
-          <div
-            class="chart-box"
-            role="img"
-            aria-label="按时间桶的请求数量堆叠柱状图"
-          >
-            <VChart
-              :option="barOption"
-              autoresize
-              :update-options="{ notMerge: true }"
-            />
-          </div>
-          <p class="chart-note muted">
-            按请求开始时间统计；首尾桶裁切到当前范围。<span
-              v-if="data.availability.telemetry && !total"
-              >当前范围内无请求。</span
-            >
-          </p>
-        </section>
-        <section class="panel chart-panel">
-          <div class="section-title">
-            <h2>每请求指标</h2>
-            <label
-              >纵轴
-              <select
-                aria-label="散点纵轴指标"
-                :value="metric.key"
-                @change="selectMetric"
-              >
-                <option
-                  v-for="item in chartMetrics"
-                  :key="item.key"
-                  :value="item.key"
-                >
-                  {{ item.label }}
-                </option>
-              </select></label
-            ><label
-              >显示
-              <select
-                aria-label="散点显示范围"
-                :value="displayRange"
-                @change="selectRange"
-              >
-                <option
-                  v-for="item in chartRanges"
-                  :key="item.key"
-                  :value="item.key"
-                >
-                  {{ item.label }}
-                </option>
-              </select></label
-            >
-          </div>
-          <p class="chart-summary muted" data-testid="request-scatter-summary">
-            总数 {{ summary.total }} · 可绘制 {{ summary.drawable }} · 缺失
-            {{ summary.missing }} · 超出显示范围 {{ summary.hidden
-            }}<span v-if="summary.upper !== null">
-              · 上限 {{ coordinateNumber(summary.upper) }}
-              {{ metric.unit }}</span
-            >
-          </p>
-          <div
-            class="chart-box chart-crosshair-host"
-            role="img"
-            aria-label="每请求原始散点图"
-            @mouseleave="hideCrosshair"
-          >
-            <VChart
-              ref="scatterChart"
-              :option="scatterOption"
-              autoresize
-              :update-options="{ notMerge: true }"
-            />
-            <div
-              v-if="crosshair.visible"
-              class="chart-crosshair"
-              data-testid="chart-crosshair"
-              aria-hidden="true"
-            >
-              <i
-                class="vertical"
-                :style="{
-                  left: `${crosshair.left}px`,
-                  top: `${plot.top}px`,
-                  bottom: `${plot.bottom}px`,
-                }"
-              ></i>
-              <i
-                class="horizontal"
-                :style="{
-                  top: `${crosshair.top}px`,
-                  left: `${plot.left}px`,
-                  right: `${plot.right}px`,
-                }"
-              ></i>
-              <span
-                class="coordinate x-coordinate"
-                data-testid="crosshair-x"
-                :style="{
-                  left: `clamp(94px, ${crosshair.left}px, calc(100% - 94px))`,
-                }"
-                >{{ crosshair.x }}</span
-              >
-              <span
-                class="coordinate y-coordinate"
-                data-testid="crosshair-y"
-                :style="{ top: `${crosshair.top}px` }"
-                >{{ crosshair.y }}</span
-              >
-            </div>
-          </div>
-          <p class="chart-note muted">
-            保留每个请求的真实开始时间，不聚合、不抽样、不移动点。缺失不作
-            0；零值正常绘制。<span v-if="metric.key === 'ttft'"
-              >TTFT 是首个有效输出前的等待时间，缺失不作 0。</span
-            ><span v-if="metric.key === 'tps'"
-              >TPS 仅统计首个有效输出之后的输出阶段，不含 TTFT。</span
-            ><span v-if="summary.total && !summary.drawable"
-              >当前指标无可绘制数据。</span
-            ><span v-if="displayRange !== 'all'"
-              >仅裁剪高于当前指标百分位上限的点，同值全部保留；不改变柱状图和汇总。<span
-                v-if="!summary.limited"
-                >有效点少于20条，暂不裁剪。</span
-              ></span
-            >十字线标签表示鼠标坐标，不代表最近请求。
-          </p>
-        </section>
+    <!-- 汇总指标由页面通过插槽传入，不随图表数据加载而出现或移动。 -->
+    <div class="chart-top">
+      <div class="chart-top-side"><slot name="side" /></div>
+      <div v-if="loading && !data" class="panel data-state" role="status">
+        正在加载请求趋势…
       </div>
+      <section v-if="data" class="panel chart-panel trend-panel">
+        <div class="section-title"><h2>请求数量趋势</h2></div>
+        <p class="chart-summary muted" data-testid="request-trends-summary">
+          总数 {{ total }} · {{ data.buckets.length }} 时间桶 · 每桶约
+          {{ coordinateNumber(data.bucketMs / 1000) }} 秒
+        </p>
+        <p
+          v-if="!data.availability.telemetry"
+          class="chart-summary muted"
+          role="status"
+        >
+          趋势遥测不可用；空图不代表没有请求。
+        </p>
+        <ul class="chart-legend" aria-label="请求状态图例与数量">
+          <li v-for="status in statusSummary" :key="status.key">
+            <span
+              :style="{ backgroundColor: status.color }"
+              aria-hidden="true"
+            ></span
+            >{{ status.label }} {{ status.count }}
+          </li>
+        </ul>
+        <div
+          class="chart-box trend-box"
+          role="img"
+          aria-label="按时间桶的请求数量堆叠柱状图"
+        >
+          <VChart
+            :option="barOption"
+            autoresize
+            :update-options="{ notMerge: true }"
+          />
+        </div>
+        <p class="chart-note muted">
+          按请求开始时间统计；首尾桶裁切到当前范围。<span
+            v-if="data.availability.telemetry && !total"
+            >当前范围内无请求。</span
+          >
+        </p>
+      </section>
+    </div>
+    <template v-if="data">
+      <section class="panel chart-panel scatter-panel">
+        <div class="section-title">
+          <h2>每请求指标</h2>
+          <label
+            >纵轴
+            <select
+              aria-label="散点纵轴指标"
+              :value="metric.key"
+              @change="selectMetric"
+            >
+              <option
+                v-for="item in chartMetrics"
+                :key="item.key"
+                :value="item.key"
+              >
+                {{ item.label }}
+              </option>
+            </select></label
+          >
+          <div class="chart-controls">
+            <button
+              v-for="control in controls"
+              :key="control.key"
+              type="button"
+              class="cycle"
+              :aria-label="`${control.label}：${control.current}，点击切换`"
+              :title="control.title"
+              :disabled="control.next === null"
+              @click="control.next && setView(control.key, control.next)"
+            >
+              <span class="muted">{{ control.name }}</span>
+              {{ control.current }}
+            </button>
+          </div>
+        </div>
+        <p class="chart-summary muted" data-testid="request-scatter-summary">
+          总数 {{ summary.total }} · 可绘制 {{ summary.drawable }} · 缺失
+          {{ summary.missing }} · 超出显示范围 {{ summary.hidden
+          }}<span v-if="summary.unplottable">
+            · 对数轴无法显示的零值 {{ summary.unplottable }}</span
+          ><span v-if="summary.upper !== null">
+            · 上限 {{ coordinateNumber(summary.upper) }} {{ metric.unit }}</span
+          >
+        </p>
+        <div
+          class="chart-box scatter-box chart-crosshair-host"
+          role="img"
+          aria-label="每请求原始散点图"
+          @mouseleave="hideCrosshair"
+        >
+          <VChart
+            ref="scatterChart"
+            :option="scatterOption"
+            autoresize
+            :update-options="{ notMerge: true }"
+          />
+          <div
+            v-if="crosshair.visible"
+            class="chart-crosshair"
+            data-testid="chart-crosshair"
+            aria-hidden="true"
+          >
+            <i
+              class="vertical"
+              :style="{
+                left: `${crosshair.left}px`,
+                top: `${plot.top}px`,
+                bottom: `${plot.bottom}px`,
+              }"
+            ></i>
+            <i
+              class="horizontal"
+              :style="{
+                top: `${crosshair.top}px`,
+                left: `${plot.left}px`,
+                right: `${plot.right}px`,
+              }"
+            ></i>
+            <span
+              class="coordinate x-coordinate"
+              data-testid="crosshair-x"
+              :style="{
+                left: `clamp(94px, ${crosshair.left}px, calc(100% - 94px))`,
+              }"
+              >{{ crosshair.x }}</span
+            >
+            <span
+              class="coordinate y-coordinate"
+              data-testid="crosshair-y"
+              :style="{ top: `${crosshair.top}px` }"
+              >{{ crosshair.y }}</span
+            >
+          </div>
+        </div>
+        <p class="chart-note muted">
+          保留每个请求的真实开始时间，不聚合、不抽样、不移动点。缺失不作
+          0；零值正常绘制。<span v-if="metric.key === 'ttft'"
+            >TTFT 是首个有效输出前的等待时间，缺失不作 0。</span
+          ><span v-if="metric.key === 'tps'"
+            >TPS 仅统计首个有效输出之后的输出阶段，不含 TTFT。</span
+          ><span v-if="summary.total && !summary.drawable"
+            >当前指标无可绘制数据。</span
+          ><span v-if="displayRange !== 'all'"
+            >仅裁剪高于当前指标百分位上限的点，同值全部保留；不改变柱状图和汇总。<span
+              v-if="!summary.limited"
+              >有效点少于20条，暂不裁剪。</span
+            ></span
+          >实线为中位数、虚线为 P95，按约
+          {{ windowLabel }} 的滑动窗口统计（样本少于
+          {{ TREND_MIN_SAMPLES.median }} /
+          {{ TREND_MIN_SAMPLES.p95 }} 条时断开），包含被裁剪的点；P95
+          线与纵轴裁剪的百分位上限不是同一个值。十字线标签表示鼠标坐标，不代表最近请求。
+        </p>
+      </section>
     </template>
   </section>
 </template>
@@ -363,10 +453,45 @@ onUnmounted(() => {
   background: var(--surface);
   pointer-events: none;
 }
-.chart-grid {
+/* 上方：左侧汇总指标，右侧请求量趋势；散点图单独占满一行。 */
+.chart-top {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-4);
+  align-items: stretch;
+  margin-bottom: var(--space-4);
+}
+.chart-top-side {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* 左侧指标卡与右侧趋势图等高：两边都拉伸到同一行高，图表填满面板剩余空间。 */
+.chart-top-side > :deep(.metric-panel) {
+  flex: 1;
+}
+.trend-panel {
+  display: flex;
+  flex-direction: column;
+}
+.trend-panel > .trend-box {
+  flex: 1;
+  min-height: 180px;
+  height: auto;
+}
+.chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.cycle {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+}
+.cycle:disabled {
+  cursor: not-allowed;
 }
 .chart-panel {
   margin-bottom: 0;
@@ -392,6 +517,9 @@ onUnmounted(() => {
   width: 100%;
   min-width: 0;
 }
+.scatter-box {
+  height: 440px;
+}
 .chart-box :deep(.echarts) {
   width: 100%;
   height: 100%;
@@ -409,9 +537,9 @@ onUnmounted(() => {
 .chart-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2) var(--space-4);
-  padding: 0;
-  margin: 0 0 var(--space-2);
+  gap: var(--space-1) var(--space-3);
+  padding: 0 var(--space-4);
+  margin: 0 0 var(--space-1);
   list-style: none;
   font-size: 12px;
   color: var(--muted);
@@ -471,11 +599,17 @@ onUnmounted(() => {
   max-width: 160px;
 }
 @media (max-width: 1000px) {
-  .chart-grid {
-    grid-template-columns: 1fr;
+  .chart-top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .scatter-box {
+    height: 340px;
   }
 }
 @media (max-width: 420px) {
+  .chart-controls {
+    gap: var(--space-1);
+  }
   .chart-panel > .section-title {
     align-items: flex-start;
     flex-direction: column;

@@ -771,6 +771,7 @@ test('overview charts preserve raw metrics, free coordinates, filters and mobile
       '总数 3',
     );
   }
+  await scatter.scrollIntoViewIfNeeded();
   const box = (await scatter.boundingBox())!;
   await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
   await expect(page.getByTestId('chart-crosshair')).toBeVisible();
@@ -803,18 +804,50 @@ test('overview charts preserve raw metrics, free coordinates, filters and mobile
       .every((u) => !u.searchParams.has('chartMetric')),
   ).toBe(true);
   await metric.selectOption('output');
-  await page.getByLabel('散点显示范围').selectOption('p95');
+  // 每个选项是一个循环按钮：范围 全部 -> 99% -> 95% -> 全部。
+  const cycle = (name: string) =>
+    page.getByRole('button', { name: new RegExp(`^${name}：`) });
+  const range = cycle('散点显示范围');
+  await expect(range).toHaveAccessibleName('散点显示范围：全部，点击切换');
+  await range.click();
+  await expect(page).toHaveURL(/chartRange=p99/);
+  await range.click();
   await expect(page).toHaveURL(/chartRange=p95/);
   await expect(page.getByLabel('请求趋势图表', { exact: true })).toContainText(
     '有效点少于20条',
   );
   await page.reload();
   await expect(metric).toHaveValue('output');
-  await expect(page.getByLabel('散点显示范围')).toHaveValue('p95');
+  await expect(range).toHaveAccessibleName('散点显示范围：95%，点击切换');
   expect(
     requests
       .filter((u) => u.pathname === '/api/request-trends/sync')
       .every((u) => !u.searchParams.has('chartRange')),
+  ).toBe(true);
+  // 刻度与点样式同样只在URL中，不改变数据请求；百分比指标禁用对数刻度。
+  const scale = cycle('散点纵轴刻度');
+  await scale.click();
+  await expect(page).toHaveURL(/chartScale=log/);
+  await cycle('散点样式').click();
+  await expect(page).toHaveURL(/chartDots=bold/);
+  await metric.selectOption('cacheHitRate');
+  await expect(scale).toBeDisabled();
+  await expect(scale).toHaveAccessibleName('散点纵轴刻度：线性，点击切换');
+  await metric.selectOption('output');
+  await expect(scale).toHaveAccessibleName('散点纵轴刻度：对数，点击切换');
+  // 选项按钮与纵轴下拉框在同一行。
+  const top = async (locator: typeof metric) =>
+    Math.round((await locator.boundingBox())!.y);
+  expect(
+    Math.abs((await top(scale)) - (await top(metric))),
+  ).toBeLessThanOrEqual(4);
+  expect(
+    requests
+      .filter((u) => u.pathname === '/api/request-trends/sync')
+      .every(
+        (u) =>
+          !u.searchParams.has('chartScale') && !u.searchParams.has('chartDots'),
+      ),
   ).toBe(true);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(scatter).toBeVisible();
@@ -1112,20 +1145,34 @@ test('scatter percentile controls clip the display without changing request tota
   });
   await page.goto('/?chartRange=invalid');
   const summary = page.getByTestId('request-scatter-summary');
-  const control = page.getByLabel('散点显示范围');
-  await expect(control).toHaveValue('all');
+  const control = page.getByRole('button', { name: /^散点显示范围：/ });
+  const pick = async (label: string) => {
+    for (let i = 0; i < 3; i++) {
+      if (
+        (await control.getAttribute('aria-label')) ===
+        `散点显示范围：${label}，点击切换`
+      ) {
+        return;
+      }
+      await control.click();
+    }
+    await expect(control).toHaveAccessibleName(
+      `散点显示范围：${label}，点击切换`,
+    );
+  };
+  await expect(control).toHaveAccessibleName('散点显示范围：全部，点击切换');
   await expect(summary).toContainText('可绘制 100');
-  await control.selectOption('p95');
+  await pick('95%');
   await expect(summary).toContainText('可绘制 95');
   await expect(summary).toContainText('超出显示范围 5');
   await expect(summary).toContainText('上限 94 秒');
   await expect(page.getByTestId('request-trends-summary')).toContainText(
     '总数 100',
   );
-  await control.selectOption('p99');
+  await pick('99%');
   await expect(summary).toContainText('可绘制 99');
   await expect(summary).toContainText('上限 98 秒');
-  await control.selectOption('all');
+  await pick('全部');
   await expect(page).not.toHaveURL(/chartRange=/);
   await expect(summary).toContainText('可绘制 100');
   await expect(summary).not.toContainText('上限');
