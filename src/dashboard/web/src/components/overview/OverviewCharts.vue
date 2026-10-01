@@ -430,11 +430,12 @@ onUnmounted(() => {
               v-if="!summary.limited"
               >有效点少于20条，暂不裁剪。</span
             ></span
-          >实线为中位数、虚线为 P95，按约
-          {{ windowLabel }} 的滑动窗口统计（样本少于
-          {{ TREND_MIN_SAMPLES.median }} /
-          {{ TREND_MIN_SAMPLES.p95 }} 条时断开），包含被裁剪的点；P95
-          线与纵轴裁剪的百分位上限不是同一个值。十字线标签表示鼠标坐标，不代表最近请求。
+          >实线为中位数，淡虚线为
+          P5/P95，标出中间约90%的分位范围（非置信带，不填色）。按约
+          {{ windowLabel }} 的滑动窗口统计，中位数至少需
+          {{ TREND_MIN_SAMPLES.median }} 条样本，分位线至少需
+          {{ TREND_MIN_SAMPLES.p95 }}
+          条，不足时断开。统计包含被裁剪的点，分位线不等于全局裁剪边界。十字线标签表示鼠标坐标，不代表最近请求。
         </p>
       </section>
     </template>

@@ -241,10 +241,12 @@ export interface TrendLines {
   median: Array<[number, number | null]>;
   /** 每个时间窗口自己的P95，与按全部样本计算的显示上限不是同一个值。 */
   p95: Array<[number, number | null]>;
+  /** 与P95共同标出窗口内中间约90%的分位范围，不是回归置信带。 */
+  p5: Array<[number, number | null]>;
 }
 
 /**
- * 滑动窗口的中位数与P95：在范围内每半个桶取一个位置，统计其前后各1.5个桶时长内的请求。
+ * 滑动窗口的中位数与P5/P95：在范围内每半个桶取一个位置，统计其前后各1.5个桶时长内的请求。
  * 统计包括被显示范围裁剪掉的样本；对数刻度下非正值的统计结果留空。
  */
 export function trendLines(
@@ -263,7 +265,8 @@ export function trendLines(
     })
     .sort((a, b) => a[0] - b[0]);
   const median: TrendLines['median'] = [],
-    p95: TrendLines['p95'] = [];
+    p95: TrendLines['p95'] = [],
+    p5: TrendLines['p5'] = [];
   // 位置数有上限，范围与桶宽不匹配时也不会退化成海量循环。
   const step = Math.max(
       bucketMs / 2,
@@ -271,7 +274,7 @@ export function trendLines(
     ),
     half = (bucketMs * TREND_WINDOW_BUCKETS) / 2;
   if (!(step > 0) || range.until < range.since) {
-    return { median, p95 };
+    return { median, p95, p5 };
   }
   const keep = (value: number | null) =>
     value !== null && (scale !== 'log' || value > 0) ? value : null;
@@ -298,6 +301,14 @@ export function trendLines(
           : null,
       ),
     ]);
+    p5.push([
+      x,
+      keep(
+        values.length >= TREND_MIN_SAMPLES.p95
+          ? percentile(values, 0.05)
+          : null,
+      ),
+    ]);
     p95.push([
       x,
       keep(
@@ -307,7 +318,7 @@ export function trendLines(
       ),
     ]);
   }
-  return { median, p95 };
+  return { median, p95, p5 };
 }
 
 export function coordinateNumber(value: number): string {

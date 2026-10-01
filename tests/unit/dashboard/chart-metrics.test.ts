@@ -450,7 +450,7 @@ test('log scale excludes non-positive values honestly and is unavailable for per
   assert.ok(z['失败']! > z['成功']! && z['超时']! > z['成功']!);
 });
 
-test('trend lines use a sliding window, include clipped samples and always show P95', () => {
+test('trend lines use a sliding window, include clipped samples and always show P5 and P95', () => {
   const metric = resolveMetric('duration');
   const range = { since: 0, until: 400 };
   // 桶宽100：每50取一个位置，窗口为前后各150。
@@ -480,10 +480,32 @@ test('trend lines use a sliding window, include clipped samples and always show 
     lines.p95.slice(0, 4).map(([, y]) => y),
     [19, 19, 19, 19],
   );
+  assert.deepEqual(
+    lines.p5.slice(0, 4).map(([, y]) => y),
+    [1, 1, 1, 1],
+  );
+  assert.deepEqual(
+    lines.p5.map(([x]) => x),
+    lines.p95.map(([x]) => x),
+  );
   // 200之后只剩远处2个样本，断开而不是外推。
+  assert.ok(lines.p5.slice(4).every(([, y]) => y === null));
+  const sparse = trendLines(points.slice(0, 19), range, 100, metric, 'linear');
+  assert.equal(sparse.p5[0]![1], null);
+  assert.equal(sparse.p95[0]![1], null);
   assert.ok(lines.median.slice(4).every(([, y]) => y === null));
   assert.ok(lines.p95.slice(4).every(([, y]) => y === null));
   const zeros = points.map((p) => ({ ...p, durationMs: 0 }));
+  assert.equal(trendLines(zeros, range, 100, metric, 'log').p5[0]![1], null);
+  assert.equal(trendLines(zeros, range, 100, metric, 'linear').p5[0]![1], 0);
+  assert.deepEqual(
+    trendLines([], { since: 1, until: 0 }, 100, metric, 'linear'),
+    {
+      median: [],
+      p5: [],
+      p95: [],
+    },
+  );
   assert.equal(
     trendLines(zeros, range, 100, metric, 'log').median[0]![1],
     null,
@@ -504,13 +526,32 @@ test('trend lines use a sliding window, include clipped samples and always show 
     allSeries(chartOptions(response, metric, colors, 'scatter', view))
       .filter((s) => s.type === 'line')
       .map((s) => s.name);
-  // P95线是窗口自己的百分位，任何裁剪范围下都显示。
-  assert.deepEqual(names(defaultScatterView), ['中位数', 'P95']);
-  assert.deepEqual(names(p95), ['中位数', 'P95']);
-  // 裁剪纵轴不影响统计线。
-  const line = (view: typeof defaultScatterView) =>
-    allSeries(chartOptions(response, metric, colors, 'scatter', view)).find(
-      (s) => s.name === 'P95',
-    )!.data;
-  assert.deepEqual(line(p95), line(defaultScatterView));
+  // 分位线在每种裁剪范围下都存在，裁剪不改变统计值。
+  for (const range of ['all', 'p95', 'p99'] as const) {
+    const view = { ...defaultScatterView, range };
+    assert.deepEqual(names(view), ['中位数', 'P95', 'P5']);
+    for (const name of ['P5', 'P95']) {
+      const line = (v: typeof defaultScatterView) =>
+        allSeries(chartOptions(response, metric, colors, 'scatter', v)).find(
+          (s) => s.name === name,
+        )!.data;
+      assert.deepEqual(line(view), line(defaultScatterView));
+    }
+  }
+  const plotted = allSeries(
+    chartOptions(response, metric, colors, 'scatter'),
+  ).filter((s) => s.type === 'line') as unknown as Array<{
+    lineStyle: { type: string; opacity: number };
+    smooth: number;
+    connectNulls: boolean;
+    clip: boolean;
+    areaStyle?: unknown;
+  }>;
+  assert.deepEqual(plotted[1]!.lineStyle, plotted[2]!.lineStyle);
+  assert.ok(plotted[0]!.lineStyle.opacity > plotted[2]!.lineStyle.opacity);
+  assert.equal(plotted[2]!.lineStyle.type, 'dashed');
+  assert.equal(plotted[2]!.smooth, plotted[1]!.smooth);
+  assert.equal(plotted[2]!.connectNulls, false);
+  assert.equal(plotted[2]!.clip, true);
+  assert.equal(plotted[2]!.areaStyle, undefined);
 });

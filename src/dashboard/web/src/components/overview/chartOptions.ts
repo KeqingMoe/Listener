@@ -159,6 +159,7 @@ export function chartOptions(
             }),
             trendSeries('中位数', trends!.median, colors.text, 'solid'),
             trendSeries('P95', trends!.p95, colors.text, 'dashed'),
+            trendSeries('P5', trends!.p5, colors.text, 'dashed'),
           ],
   };
 }
@@ -183,7 +184,12 @@ function trendSeries(
     smoothMonotone: 'x' as const,
     // 样本不足的桶断开，不跨空桶连线。
     connectNulls: false,
-    lineStyle: { color, width: 1.5, type, opacity: 0.85 },
+    lineStyle: {
+      color,
+      width: 1.5,
+      type,
+      opacity: type === 'solid' ? 0.85 : 0.55,
+    },
     data,
   };
 }
