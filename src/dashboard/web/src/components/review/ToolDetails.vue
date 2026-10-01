@@ -5,12 +5,28 @@ import type { ReviewTool } from '../../../../contracts/review';
 import { duration, status, time } from '../../api/client';
 import ContentViewer from './ContentViewer.vue';
 import CopyId from './CopyId.vue';
-import { argumentsLine, resultProblem, toolView } from './tool-summary';
+import MessageParts from './MessageParts.vue';
+import {
+  argumentsLine,
+  type Names,
+  resultProblem,
+  toolView,
+} from './tool-summary';
 
 const route = useRoute();
-const props = defineProps<{ tool: ReviewTool; groupId: string }>();
+const props = defineProps<{
+  tool: ReviewTool;
+  groupId: string;
+  /** 同一唤醒或请求范围内收集的QQ号到显示名。 */
+  names?: Names;
+}>();
 const view = computed(() =>
-  toolView(props.tool.name, props.tool.arguments, props.tool.result),
+  toolView(
+    props.tool.name,
+    props.tool.arguments,
+    props.tool.result,
+    props.names,
+  ),
 );
 const problem = computed(() => resultProblem(props.tool.result));
 const argsLine = computed(() => argumentsLine(props.tool.arguments));
@@ -42,7 +58,7 @@ const raw = ref(false);
     <div v-if="view?.kind === 'send'" class="bubble">
       <span v-if="view.replyTo" class="muted reply"
         >回复 {{ view.replyTo }}</span
-      >{{ view.text || '（空消息）' }}
+      ><MessageParts :parts="view.parts" />
     </div>
     <ul v-else-if="view?.kind === 'messages'" class="chat-lines">
       <li v-if="!view.lines.length" class="muted">没有消息</li>
@@ -51,8 +67,12 @@ const raw = ref(false);
         :key="index"
         :class="{ bot: line.bot, recalled: line.recalled }"
       >
-        <span class="who">{{ line.who || '?' }}</span
-        ><span class="said">{{ line.text || '（无文字）' }}</span>
+        <span class="who" :title="line.userId"
+          >{{ line.who || '?'
+          }}<small v-if="line.userId && line.who !== line.userId">
+            ({{ line.userId }})</small
+          ></span
+        ><MessageParts class="said" :parts="line.parts" />
       </li>
       <li v-if="view.more" class="muted">另有 {{ view.more }} 条</li>
     </ul>
@@ -126,6 +146,7 @@ const raw = ref(false);
   padding: var(--space-2) var(--space-3);
   border-radius: 10px;
   background: #e3f3f6;
+  line-height: 1.8;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   max-width: 36rem;
@@ -144,11 +165,15 @@ const raw = ref(false);
 .chat-lines li {
   display: flex;
   gap: var(--space-2);
-  padding: 1px 0;
+  padding: 2px 0;
+}
+.who small {
+  font-size: var(--font-small);
+  opacity: 0.75;
 }
 .who {
   flex: 0 0 auto;
-  max-width: 9rem;
+  max-width: 16rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

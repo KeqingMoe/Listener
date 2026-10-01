@@ -9,6 +9,7 @@ import PerformanceFacts from '../ui/PerformanceFacts.vue';
 import ContentViewer from './ContentViewer.vue';
 import CopyId from './CopyId.vue';
 import ToolDetails from './ToolDetails.vue';
+import { collectNames } from './tool-summary';
 import ModelBodyReader from './ModelBodyReader.vue';
 
 const route = useRoute();
@@ -18,6 +19,9 @@ const { data, loading, error, retry } = useResource<RequestReviewDetail>(
     () =>
       `requests/${encodeURIComponent(props.requestId)}?groupId=${encodeURIComponent(props.groupId)}`,
   ),
+);
+const names = computed(() =>
+  collectNames(data.value?.tools ?? [], data.value?.memberNames),
 );
 const tab = ref('output');
 const tabs = [
@@ -270,6 +274,7 @@ const diagnosticFacts = computed(() => {
               :key="`${tool.ordinal}-${index}`"
               :tool="tool"
               :group-id="data.request.groupId"
+              :names="names"
           /></template>
         </section> </template
     ></DataState>

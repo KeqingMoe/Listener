@@ -70,6 +70,8 @@ export interface RequestReviewDetail {
   errorText: string | null;
   contentTruncated: boolean;
   tools: ReviewTool[];
+  /** 工具内容中出现的成员QQ号到最近观测的群名片或昵称；未观测到的不列出。 */
+  memberNames: Record<string, string>;
   previousRequest: RequestLink | null;
   nextRequests: RequestLink[];
 }
@@ -78,6 +80,8 @@ export interface WakeReviewDetail {
   wake: WakeItem;
   requests: ReviewRequest[];
   tools: ReviewTool[];
+  /** 工具内容中出现的成员QQ号到最近观测的群名片或昵称；未观测到的不列出。 */
+  memberNames: Record<string, string>;
   messages: Array<{
     role: string;
     content: unknown;

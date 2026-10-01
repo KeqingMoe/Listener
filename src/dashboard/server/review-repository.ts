@@ -69,6 +69,37 @@ const parse = (v: unknown): any => {
     return v;
   }
 };
+const MEMBER_ID_KEY = /^(?:user_?id|actor_id|operator_id|recalled_by)$/i;
+const MAX_MEMBER_NAMES = 200;
+
+/** 收集工具参数与结果中出现的成员QQ号，深度和数量有界。 */
+function memberIds(values: unknown[]): string[] {
+  const ids = new Set<string>();
+  const walk = (value: unknown, depth: number) => {
+    if (depth > 12 || ids.size >= MAX_MEMBER_NAMES || !value) {
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item) => walk(item, depth + 1));
+    } else if (typeof value === 'object') {
+      for (const [key, item] of Object.entries(value)) {
+        const id = typeof item === 'number' ? String(item) : item;
+        if (
+          MEMBER_ID_KEY.test(key) &&
+          typeof id === 'string' &&
+          /^[1-9]\d{0,19}$/.test(id)
+        ) {
+          ids.add(id);
+        } else {
+          walk(item, depth + 1);
+        }
+      }
+    }
+  };
+  values.forEach((value) => walk(value, 0));
+  return [...ids].slice(0, MAX_MEMBER_NAMES);
+}
+
 const columns = (db: DatabaseSync, table: string) =>
   new Set(
     db
@@ -631,6 +662,10 @@ export class ReviewRepository {
         this.clean(row?.reasoning_text).truncated ||
         this.clean(row?.error_text).truncated,
       tools: tools.items.filter((t) => t.requestId === id),
+      memberNames: this.memberNames(
+        groupId,
+        tools.items.filter((t) => t.requestId === id),
+      ),
       previousRequest: previous ? link(previous) : null,
       nextRequests: request.responseId
         ? all
@@ -827,6 +862,7 @@ export class ReviewRepository {
       wake: this.summarizeWake(legacy.wake, requests),
       requests: requests.slice(0, 500),
       tools: tools.items,
+      memberNames: this.memberNames(groupId, tools.items),
       messages,
       events: events
         .sort((a, b) => (a.time ?? 0) - (b.time ?? 0))
@@ -899,6 +935,55 @@ export class ReviewRepository {
       }),
       hasMore: rows.length > limit,
     };
+  }
+
+  /**
+   * 成员QQ号到最近一次观测到的群名片或昵称，取自本群world库的消息记录。
+   * 只读、有界；world库缺失或不属于本群时返回空表。
+   */
+  private memberNames(
+    groupId: string,
+    tools: readonly { arguments: unknown; result: unknown }[],
+  ): Record<string, string> {
+    const ids = memberIds(tools.flatMap((t) => [t.arguments, t.result]));
+    const source = this.base.groups.find((g) => g.groupId === groupId);
+    const names: Record<string, string> = {};
+    if (!ids.length || !source?.worldPath) {
+      return names;
+    }
+    let db: DatabaseSync | undefined;
+    try {
+      if (!lstatSync(source.worldPath).isFile()) {
+        return names;
+      }
+      db = new DatabaseSync(source.worldPath, { readOnly: true });
+      db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=250');
+      if (
+        db
+          .prepare('SELECT group_id FROM world_identity WHERE singleton=1')
+          .get()?.group_id !== groupId
+      ) {
+        return names;
+      }
+      // 聚合中的裸列取自MAX(sequence)所在行，即每人最近一条消息的显示名。
+      const rows = db
+        .prepare(
+          `SELECT actor_id, json_extract(payload,'$.message.nickname') AS name, MAX(sequence) FROM world_events WHERE type='message.created' AND group_id=? AND actor_id IN (${ids.map(() => '?').join(',')}) GROUP BY actor_id`,
+        )
+        .all(groupId, ...ids);
+      for (const row of rows) {
+        const id = s(row.actor_id),
+          name = s(row.name);
+        if (id && name && name !== id) {
+          names[id] = name.slice(0, 256);
+        }
+      }
+    } catch {
+      return {};
+    } finally {
+      db?.close();
+    }
+    return names;
   }
 
   health(now: number): HealthResponse {

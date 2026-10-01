@@ -3,21 +3,33 @@
  * 原始参数与结果仍按原样提供给“原始数据”。
  */
 
-export interface ChatLine {
-  /** 发言人；未知时为空串。 */
-  who: string;
+/** 消息中的一个片段；kind 决定展示样式。 */
+export interface Part {
+  kind: 'text' | 'at' | 'face' | 'media' | 'other';
   text: string;
+  /** 悬停提示，例如 at 的QQ号。 */
+  title?: string;
+}
+
+export interface ChatLine {
+  /** 发言人显示名；未知时为空串。 */
+  who: string;
+  userId: string;
+  parts: Part[];
   bot?: boolean;
   recalled?: boolean;
 }
 
 export type ToolView =
   /** Bot发出的一条消息。 */
-  | { kind: 'send'; text: string; replyTo: string | null }
+  | { kind: 'send'; parts: Part[]; replyTo: string | null }
   /** 读取到的消息列表。 */
   | { kind: 'messages'; lines: ChatLine[]; more: number }
   /** 一行文字说明。 */
   | { kind: 'line'; text: string };
+
+/** QQ号到显示名的对照，来自同一范围内读到的消息与成员资料。 */
+export type Names = ReadonlyMap<string, string>;
 
 type Json = Record<string, unknown>;
 
@@ -27,50 +39,121 @@ const record = (value: unknown): Json | null =>
     : null;
 const str = (value: unknown) =>
   typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+const nameOf = (names: Names, userId: string) => names.get(userId) || userId;
 
-/** 片段渲染为一行可读文本；与 Segment 声明一一对应，未知片段给出类型。 */
-export function segmentsText(segments: unknown): string {
-  if (!Array.isArray(segments)) {
-    return '';
+/**
+ * 从工具结果中收集QQ号到显示名；群名片优先于昵称，先出现的保留。
+ * 本次读到的名字反映当时状态，优先；fallback（服务端按本群消息记录查到的
+ * 最近名字）只补足本次没出现过的人。
+ */
+export function collectNames(
+  tools: readonly { result: unknown }[],
+  fallback: Readonly<Record<string, string>> = {},
+): Map<string, string> {
+  const names = new Map<string, string>();
+  const add = (userId: unknown, ...candidates: unknown[]) => {
+    const id = str(userId);
+    const name = candidates.map(str).find(Boolean);
+    if (id && name && !names.has(id)) {
+      names.set(id, name);
+    }
+  };
+  const message = (raw: unknown) => {
+    const m = record(raw);
+    add(m?.userId, m?.nickname);
+  };
+  const member = (raw: unknown) => {
+    const m = record(raw);
+    add(m?.user_id, m?.card, m?.nickname);
+  };
+  for (const tool of tools) {
+    const r = record(tool.result);
+    if (!r) {
+      continue;
+    }
+    list(r.messages).forEach(message);
+    message(r.message);
+    for (const raw of list(r.events)) {
+      message(record(record(raw)?.payload)?.message);
+    }
+    list(r.members).forEach(member);
+    member(r.member);
   }
-  return segments
-    .map((raw) => {
-      const s = record(raw);
-      switch (s?.type) {
-        case 'text':
-          return str(s.text);
-        case 'face':
-          return `[${str(s.name) || `表情${str(s.id)}`}]`;
-        case 'at':
-          return `@${str(s.user_id)} `;
-        case 'reply':
-          return '';
-        case 'image':
-          return '[图片]';
-        case 'record':
-          return '[语音]';
-        case 'forward':
-          return '[合并转发]';
-        default:
-          return `[${str(s?.kind) || str(s?.type) || '未知'}]`;
-      }
-    })
-    .join('')
-    .trim();
+  for (const [id, name] of Object.entries(fallback)) {
+    add(id, name);
+  }
+  return names;
 }
 
-function messageLine(raw: unknown): ChatLine | null {
+/** 片段转为展示片段；与 Segment 声明一一对应，reply 片段不展示。 */
+export function segmentParts(segments: unknown, names: Names = new Map()) {
+  const parts: Part[] = [];
+  for (const raw of list(segments)) {
+    const s = record(raw);
+    switch (s?.type) {
+      case 'text':
+        if (str(s.text)) {
+          parts.push({ kind: 'text', text: str(s.text) });
+        }
+        break;
+      case 'face':
+        parts.push({
+          kind: 'face',
+          text: str(s.name) || `表情${str(s.id)}`,
+          title: `表情 ${str(s.id)}`,
+        });
+        break;
+      case 'at': {
+        const id = str(s.user_id);
+        parts.push({ kind: 'at', text: `@${nameOf(names, id)}`, title: id });
+        break;
+      }
+      case 'reply':
+        break;
+      case 'image':
+        parts.push({ kind: 'media', text: '图片' });
+        break;
+      case 'record':
+        parts.push({ kind: 'media', text: '语音' });
+        break;
+      case 'forward':
+        parts.push({ kind: 'media', text: '合并转发' });
+        break;
+      default:
+        parts.push({
+          kind: 'other',
+          text: str(s?.kind) || str(s?.type) || '未知',
+        });
+    }
+  }
+  return parts;
+}
+
+/** 展示片段拼成纯文本，用于测试与无障碍文本。 */
+export function partsText(parts: readonly Part[]): string {
+  return parts
+    .map((part) => (part.kind === 'text' ? part.text : `[${part.text}]`))
+    .join('');
+}
+
+function messageLine(raw: unknown, names: Names): ChatLine | null {
   const m = record(raw);
   if (!m) {
     return null;
   }
-  const text =
+  const userId = str(m.userId);
+  const parts =
     m.representation === 'legacy_text'
-      ? str(m.text)
-      : segmentsText(m.segments) || str(m.text);
+      ? [{ kind: 'text' as const, text: str(m.text) }]
+      : segmentParts(m.segments, names);
   return {
-    who: str(m.nickname) || str(m.userId),
-    text,
+    who: str(m.nickname) || nameOf(names, userId),
+    userId,
+    parts:
+      parts.length || !str(m.text)
+        ? parts
+        : [{ kind: 'text', text: str(m.text) }],
     ...(m.bot === true ? { bot: true } : {}),
     ...(m.recalled === true ? { recalled: true } : {}),
   };
@@ -78,17 +161,12 @@ function messageLine(raw: unknown): ChatLine | null {
 
 const MAX_LINES = 20;
 
-function messages(list: unknown): ToolView | null {
-  if (!Array.isArray(list)) {
-    return null;
-  }
-  const lines = list
-    .map(messageLine)
-    .filter((line): line is ChatLine => !!line);
+function lines(items: (ChatLine | null)[]): ToolView {
+  const shown = items.filter((line): line is ChatLine => !!line);
   return {
     kind: 'messages',
-    lines: lines.slice(0, MAX_LINES),
-    more: Math.max(0, lines.length - MAX_LINES),
+    lines: shown.slice(0, MAX_LINES),
+    more: Math.max(0, shown.length - MAX_LINES),
   };
 }
 
@@ -112,6 +190,7 @@ export function toolView(
   name: string,
   args: unknown,
   result: unknown,
+  names: Names = new Map(),
 ): ToolView | null {
   const a = record(args) ?? {};
   const r = record(result) ?? {};
@@ -119,43 +198,54 @@ export function toolView(
     case 'send_message':
       return {
         kind: 'send',
-        text: segmentsText(a.segments),
+        parts: segmentParts(a.segments, names),
         replyTo: str(a.reply_to) || null,
       };
     case 'read_messages':
-      return messages(r.messages);
+      return Array.isArray(r.messages)
+        ? lines(r.messages.map((m) => messageLine(m, names)))
+        : null;
     case 'read_message': {
-      const line = messageLine(r.message);
-      return line ? { kind: 'messages', lines: [line], more: 0 } : null;
+      const line = messageLine(r.message, names);
+      return line ? lines([line]) : null;
     }
-    case 'read_events': {
-      if (!Array.isArray(r.events)) {
-        return null;
-      }
-      const lines = r.events
-        .map((raw): ChatLine | null => {
-          const e = record(raw);
-          const payload = record(e?.payload);
-          return e?.type === 'message.created' && payload?.message
-            ? messageLine(payload.message)
-            : { who: str(e?.actor_id), text: `〈${str(e?.type)}〉` };
-        })
-        .filter((line): line is ChatLine => !!line);
-      return {
-        kind: 'messages',
-        lines: lines.slice(0, MAX_LINES),
-        more: Math.max(0, lines.length - MAX_LINES),
-      };
-    }
+    case 'read_events':
+      return Array.isArray(r.events)
+        ? lines(
+            r.events.map((raw) => {
+              const e = record(raw);
+              const payload = record(e?.payload);
+              if (e?.type === 'message.created' && payload?.message) {
+                return messageLine(payload.message, names);
+              }
+              const actor = str(e?.actor_id);
+              return {
+                who: actor ? nameOf(names, actor) : '',
+                userId: actor,
+                parts: [{ kind: 'other', text: str(e?.type) }],
+              };
+            }),
+          )
+        : null;
     case 'react_message':
       return {
         kind: 'line',
         text: `${a.action === 'remove' ? '撤回' : '给'}消息 ${str(a.message_id)} 的回应 ${str(a.emoji_id)}`,
       };
     case 'poke_member':
-      return { kind: 'line', text: `戳了戳 ${str(a.user_id)}` };
+      return {
+        kind: 'line',
+        text: `戳了戳 ${nameOf(names, str(a.user_id))}`,
+      };
     case 'send_group_ai_voice':
-      return { kind: 'send', text: `[AI语音] ${str(a.text)}`, replyTo: null };
+      return {
+        kind: 'send',
+        parts: [
+          { kind: 'media', text: 'AI语音' },
+          { kind: 'text', text: str(a.text) },
+        ],
+        replyTo: null,
+      };
     case 'finish':
       return { kind: 'line', text: '结束本次唤醒' };
     default:

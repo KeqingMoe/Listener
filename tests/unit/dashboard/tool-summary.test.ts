@@ -2,39 +2,80 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   argumentsLine,
+  collectNames,
+  partsText,
   resultProblem,
-  segmentsText,
+  segmentParts,
   toolView,
 } from '../../../src/dashboard/web/src/components/review/tool-summary.ts';
 
-test('segments render as readable text without the reply marker', () => {
-  assert.equal(
-    segmentsText([
-      { type: 'reply', message_id: '1' },
-      { type: 'at', user_id: '100000001' },
-      { type: 'text', text: '你好' },
-      { type: 'face', id: 14, name: '微笑' },
-      { type: 'face', id: 15 },
-      { type: 'image', content_status: 'not_viewed' },
-      { type: 'unsupported', kind: 'json' },
-    ]),
-    '@100000001 你好[微笑][表情15][图片][json]',
+test('segments become typed parts without the reply marker', () => {
+  const parts = segmentParts([
+    { type: 'reply', message_id: '1' },
+    { type: 'at', user_id: '100000001' },
+    { type: 'text', text: '你好' },
+    { type: 'text', text: '' },
+    { type: 'face', id: 14, name: '微笑' },
+    { type: 'face', id: 15 },
+    { type: 'image', content_status: 'not_viewed' },
+    { type: 'unsupported', kind: 'json' },
+  ]);
+  assert.deepEqual(
+    parts.map((part) => part.kind),
+    ['at', 'text', 'face', 'face', 'media', 'other'],
   );
-  assert.equal(segmentsText(null), '');
+  assert.equal(partsText(parts), '[@100000001]你好[微笑][表情15][图片][json]');
+  assert.deepEqual(segmentParts(null), []);
 });
 
-test('send_message shows the outgoing text and reply target', () => {
+test('at parts show the collected name and keep the id as a tooltip', () => {
+  const names = new Map([['100000001', '群友甲']]);
+  assert.deepEqual(
+    segmentParts([{ type: 'at', user_id: '100000001' }], names),
+    [{ kind: 'at', text: '@群友甲', title: '100000001' }],
+  );
+});
+
+test('names come from messages, events and members, then the server fallback; card wins over nickname', () => {
+  const names = collectNames(
+    [
+      {
+        result: {
+          messages: [{ userId: '1', nickname: '甲' }],
+          events: [{ payload: { message: { userId: '2', nickname: '乙' } } }],
+        },
+      },
+      { result: { members: [{ user_id: '3', nickname: '丙', card: '丙卡' }] } },
+      { result: { member: { user_id: '4', nickname: '丁', card: '' } } },
+      { result: { messages: [{ userId: '1', nickname: '甲后来' }] } },
+      { result: 'not an object' },
+    ],
+    { 1: '甲旧名', 5: '戊' },
+  );
+  assert.deepEqual(
+    [...names],
+    [
+      ['1', '甲'],
+      ['2', '乙'],
+      ['3', '丙卡'],
+      ['4', '丁'],
+      ['5', '戊'],
+    ],
+  );
+});
+
+test('send_message shows the outgoing parts and reply target', () => {
   assert.deepEqual(
     toolView(
       'send_message',
       { reply_to: '42', segments: [{ type: 'text', text: '收到' }] },
       { status: 'ok' },
     ),
-    { kind: 'send', text: '收到', replyTo: '42' },
+    { kind: 'send', parts: [{ kind: 'text', text: '收到' }], replyTo: '42' },
   );
 });
 
-test('read_messages lists speakers, marks bot and recalled, and caps length', () => {
+test('read_messages lists speakers with ids, marks bot and recalled, and caps length', () => {
   const message = (i: number, extra = {}) => ({
     messageId: String(i),
     userId: '100000001',
@@ -63,16 +104,17 @@ test('read_messages lists speakers, marks bot and recalled, and caps length', ()
   }
   assert.equal(view.lines.length, 20);
   assert.equal(view.more, 5);
-  assert.deepEqual(view.lines[0], { who: '群友0', text: '第0条', bot: true });
-  assert.deepEqual(view.lines[1], {
-    who: '群友1',
-    text: '第1条',
-    recalled: true,
+  assert.deepEqual(view.lines[0], {
+    who: '群友0',
+    userId: '100000001',
+    parts: [{ kind: 'text', text: '第0条' }],
+    bot: true,
   });
-  assert.equal(view.lines[2]!.text, '旧文本');
+  assert.equal(view.lines[1]!.recalled, true);
+  assert.equal(partsText(view.lines[2]!.parts), '旧文本');
 });
 
-test('read_events shows messages inline and other events by type', () => {
+test('read_events shows messages inline and other events by type and actor name', () => {
   const view = toolView(
     'read_events',
     { limit: 5 },
@@ -83,21 +125,31 @@ test('read_events shows messages inline and other events by type', () => {
           type: 'message.created',
           payload: {
             message: {
+              userId: '100000002',
               nickname: '群友',
               representation: 'segments',
               segments: [{ type: 'text', text: 'hi' }],
             },
           },
         },
-        { type: 'poke.created', actor_id: '100000001', payload: null },
+        { type: 'poke.created', actor_id: '100000002', payload: null },
       ],
     },
+    new Map([['100000002', '群友']]),
   );
   assert.deepEqual(view, {
     kind: 'messages',
     lines: [
-      { who: '群友', text: 'hi' },
-      { who: '100000001', text: '〈poke.created〉' },
+      {
+        who: '群友',
+        userId: '100000002',
+        parts: [{ kind: 'text', text: 'hi' }],
+      },
+      {
+        who: '群友',
+        userId: '100000002',
+        parts: [{ kind: 'other', text: 'poke.created' }],
+      },
     ],
     more: 0,
   });

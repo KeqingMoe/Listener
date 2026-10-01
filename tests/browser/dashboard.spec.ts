@@ -201,6 +201,7 @@ const wakeDetail: WakeReviewDetail = {
   wake,
   requests: [previous, request, failed],
   tools: [tool],
+  memberNames: {},
   contentTruncated: false,
   trigger: {
     type: 'message',
@@ -391,6 +392,7 @@ function detail(id: string): RequestReviewDetail {
         : null,
     contentTruncated: false,
     tools: id === request.requestId ? [tool] : [],
+    memberNames: {},
     previousRequest:
       id === previous.requestId
         ? null

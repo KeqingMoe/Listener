@@ -10,6 +10,7 @@ import { eventTitle } from '../../../src/dashboard/contracts/event-labels.ts';
 import { Repository } from '../../../src/dashboard/server/repository.ts';
 import { ReviewRepository } from '../../../src/dashboard/server/review-repository.ts';
 import { TelemetryStore } from '../../../src/observability/telemetry.ts';
+import { WorldEventStore } from '../../../src/world/events.ts';
 
 function fixture(old = false) {
   const dir = mkdtempSync(join(tmpdir(), 'review-')),
@@ -155,12 +156,14 @@ function fixture(old = false) {
       JSON.stringify({
         cursor: 'cursor-visible',
         message_id: '123',
+        user_id: '100000001',
         face_ref: 'face-visible',
         password: 'private-pw',
       }),
       JSON.stringify({
         status: 'ok',
         messages: ['actual readable content'],
+        members: [{ user_id: '100000002' }, { user_id: '100000003' }],
         authorization: 'secret',
         cookie: 'sessioncookie',
       }),
@@ -171,6 +174,23 @@ function fixture(old = false) {
       'call-one',
     );
   session.close();
+  const worldPath = join(dir, 's.events.sqlite');
+  if (!old) {
+    const world = new WorldEventStore({ path: worldPath, groupId: '11' });
+    const message = (id: string, userId: string, nickname: string) =>
+      world.appendMessage({
+        messageId: id,
+        userId,
+        nickname,
+        text: 'x',
+        time: 1,
+        segments: [{ type: 'text', text: 'x' }],
+      });
+    message('m1', '100000001', '旧名');
+    message('m2', '100000001', '新名');
+    message('m3', '100000002', '100000002');
+    world.close();
+  }
   const auth = new AuthStore({
       path: join(dir, 'auth.sqlite'),
       password: 'test-password-long',
@@ -178,7 +198,7 @@ function fixture(old = false) {
     login = auth.login('test-password-long', '127.0.0.1');
   assert.equal(login.status, 'ok');
   const cookie = `dashboard_session=${login.status === 'ok' ? login.token : ''}`;
-  let groups = [{ groupId: '11', sessionPath }];
+  let groups = [{ groupId: '11', sessionPath, worldPath }];
   const app = buildApp({
     auth,
     telemetryPath,
@@ -550,6 +570,8 @@ test('authorized review exposes business context, exact tool linkage and Respons
     assert.equal(b.tools[0].arguments.cursor, 'cursor-visible');
     assert.equal(b.tools[0].arguments.face_ref, 'face-visible');
     assert.deepEqual(b.tools[0].result.messages, ['actual readable content']);
+    // 最近一次观测的名字；名字等于QQ号或从未出现的成员不列出。
+    assert.deepEqual(b.memberNames, { 100000001: '新名' });
     assert.equal(b.reasoningText, 'visible reasoning');
     assert.equal(b.errorText, null);
     assert.equal(b.nextRequests[0].requestId, 'cancel');
