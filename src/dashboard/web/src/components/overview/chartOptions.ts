@@ -2,6 +2,7 @@ import type { EChartsOption } from 'echarts';
 import type { RequestTrendsResponse } from '../../../../contracts/request-trends';
 import {
   axisNumber,
+  axisFloor,
   metricValue,
   outcomes,
   timeLabel,
@@ -42,9 +43,37 @@ export function chartOptions(
   const { since, until } = data.range;
   const scatter = kind === 'scatter';
   const log = scatter && view.scale === 'log';
-  const upper = scatter
-    ? scatterSummary(data.points, metric, view.range, view.scale).upper
+  const summary = scatter
+    ? scatterSummary(data.points, metric, view.range, view.scale)
     : null;
+  const lower = summary?.lower ?? null;
+  const upper = summary?.upper ?? null;
+  const shown = (value: number) =>
+    (lower === null || value >= lower) &&
+    (upper === null || value <= upper) &&
+    (!log || value > 0);
+  const values = scatter
+    ? data.points.flatMap((point) => {
+        const value = metricValue(point, metric);
+        return Number.isFinite(point.startedAt) &&
+          value !== null &&
+          shown(value)
+          ? [value]
+          : [];
+      })
+    : [];
+  const minimum = values.length ? values.reduce((a, b) => Math.min(a, b)) : 0;
+  const maximum = values.length ? values.reduce((a, b) => Math.max(a, b)) : 0;
+  // 显示范围只由保留的散点决定，不让未裁剪的统计线重新撑开纵轴。
+  const floor = scatter && !log ? axisFloor(minimum, maximum) : 0;
+  const ceiling =
+    upper === null
+      ? metric.key === 'cacheHitRate'
+        ? 100
+        : null
+      : upper > floor
+        ? upper
+        : floor + Math.max(Math.abs(floor) * 0.01, 0.001);
   const dots = dotStyles[view.dots];
   const trends = scatter
     ? trendLines(data.points, data.range, data.bucketMs, metric, view.scale)
@@ -73,12 +102,12 @@ export function chartOptions(
     },
     yAxis: {
       // 对数轴的下限由数据决定，0和负值不可表示。
-      ...(log ? { type: 'log', logBase: 10 } : { type: 'value', min: 0 }),
-      ...(upper === null
-        ? scatter && metric.key === 'cacheHitRate'
-          ? { max: 100 }
-          : {}
-        : { max: upper }),
+      ...(log
+        ? { type: 'log', logBase: 10, ...(minimum > 0 ? { min: minimum } : {}) }
+        : { type: 'value', min: floor }),
+      ...(scatter && ceiling !== null
+        ? { max: log ? Math.max(ceiling, minimum * 1.01) : ceiling }
+        : {}),
       ...(kind === 'bar' ? { minInterval: 1 } : {}),
       name: kind === 'bar' ? '请求数' : metric.label,
       nameLocation: 'end',
@@ -122,8 +151,7 @@ export function chartOptions(
                   return point.outcome === outcome.key &&
                     Number.isFinite(point.startedAt) &&
                     value !== null &&
-                    (upper === null || value <= upper) &&
-                    (!log || value > 0)
+                    shown(value)
                     ? [[point.startedAt, value]]
                     : [];
                 }),

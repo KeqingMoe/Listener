@@ -5,6 +5,7 @@ import type {
   RequestTrendsResponse,
 } from '../../../src/dashboard/contracts/request-trends.ts';
 import {
+  axisFloor,
   chartMetrics,
   metricValue,
   resolveMetric,
@@ -68,8 +69,10 @@ test('all eight metrics preserve zero and missing values; duration uses seconds 
       total: 2,
       drawable: 1,
       missing: 1,
-      hidden: 0,
+      below: 0,
+      above: 0,
       unplottable: 0,
+      lower: null,
       upper: null,
       limited: false,
     },
@@ -106,7 +109,7 @@ test('cache hit rates plot percentages and retain zero, missing and percentile s
         chartOptions(response, metric, colors, 'scatter', p95).yAxis as {
           max: number;
         }
-      ).max - 94,
+      ).max - 97,
     ) < 1e-9,
   );
 });
@@ -121,25 +124,52 @@ test('percentile display keeps ties and zeros, excludes missing samples and leav
     scatterSummary([...points, { ...point, durationMs: null }], metric, 'p95'),
     {
       total: 101,
-      drawable: 95,
+      drawable: 96,
       missing: 1,
-      hidden: 5,
+      below: 2,
+      above: 2,
       unplottable: 0,
-      upper: 94,
+      lower: 2,
+      upper: 97,
       limited: true,
     },
   );
-  assert.equal(scatterSummary(points, metric, 'p99').upper, 98);
-  assert.equal(scatterSummary(points.slice(0, 19), metric, 'p95').upper, null);
-  assert.equal(scatterSummary(points.slice(0, 20), metric, 'p95').hidden, 1);
-  assert.equal(
-    scatterSummary(
-      points.map((p) => ({ ...p, durationMs: 0 })),
-      metric,
-      'p95',
-    ).hidden,
-    0,
-  );
+  assert.deepEqual(scatterSummary(points, metric, 'p99'), {
+    total: 100,
+    drawable: 100,
+    missing: 0,
+    below: 0,
+    above: 0,
+    unplottable: 0,
+    lower: 0,
+    upper: 99,
+    limited: true,
+  });
+  const small = scatterSummary(points.slice(0, 19), metric, 'p95');
+  assert.equal(small.lower, null);
+  assert.equal(small.upper, null);
+  assert.equal(small.limited, false);
+  assert.deepEqual(scatterSummary(points.slice(0, 20), metric, 'p95'), {
+    total: 20,
+    drawable: 20,
+    missing: 0,
+    below: 0,
+    above: 0,
+    unplottable: 0,
+    lower: 0,
+    upper: 19,
+    limited: true,
+  });
+  const ties = points.map((p, i) => ({
+    ...p,
+    durationMs: i < 3 ? 2000 : i > 96 ? 97000 : p.durationMs,
+  }));
+  const tied = scatterSummary(ties, metric, 'p95');
+  assert.equal(tied.lower, 2);
+  assert.equal(tied.upper, 97);
+  assert.equal(tied.below, 0);
+  assert.equal(tied.above, 0);
+  assert.equal(tied.drawable, 100);
   const response: RequestTrendsResponse = {
     range: { since: 0, until: point.startedAt },
     availability: { telemetry: true, sessions: [] },
@@ -149,9 +179,12 @@ test('percentile display keeps ties and zeros, excludes missing samples and leav
   };
   const colors = { text: '#fff', muted: '#aaa', border: '#333' };
   const option = chartOptions(response, metric, colors, 'scatter', p95);
-  assert.equal((option.yAxis as { max: number }).max, 94);
+  assert.equal((option.yAxis as { max: number }).max, 97);
   const series = scatterSeries(option);
-  assert.equal(series.flatMap((s) => s.data).length, 95);
+  assert.deepEqual(
+    series.flatMap((s) => s.data).map((d) => d[1]),
+    Array.from({ length: 96 }, (_, i) => i + 2),
+  );
   assert.ok(
     series.every((s) => s.symbolSize === 2 && s.itemStyle.opacity === 0.9),
   );
@@ -168,6 +201,138 @@ test('percentile display keeps ties and zeros, excludes missing samples and leav
     undefined,
   );
   assert.equal(points.length, 100);
+});
+
+test('automatic axis floors stay below visible values without forcing positive data to zero', () => {
+  for (const [min, max] of [
+    [19220, 142800],
+    [12.3, 19.8],
+    [0.12, 0.18],
+    [100, 100],
+  ]) {
+    const floor = axisFloor(min!, max!);
+    assert.ok(Number.isFinite(floor));
+    assert.ok(floor > 0 && floor <= min!);
+  }
+  assert.equal(axisFloor(0, 99), 0);
+  assert.equal(axisFloor(0, 0), 0);
+  assert.equal(axisFloor(NaN, 100), 0);
+  assert.equal(axisFloor(1, Infinity), 0);
+  const response: RequestTrendsResponse = {
+    range: { since: 0, until: point.startedAt },
+    availability: { telemetry: true, sessions: [] },
+    points: [19220, 142800].map((totalInputTokens) => ({
+      ...point,
+      totalInputTokens,
+    })),
+    bucketMs: 1000,
+    buckets: [],
+  };
+  const colors = { text: '#fff', muted: '#aaa', border: '#333' };
+  const metric = resolveMetric('totalInput');
+  const axis = chartOptions(response, metric, colors, 'scatter').yAxis as {
+    min: number;
+  };
+  assert.ok(axis.min > 0 && axis.min <= 19220);
+  assert.equal(
+    (chartOptions(response, metric, colors, 'bar').yAxis as { min: number })
+      .min,
+    0,
+  );
+});
+
+test('all-zero, all-100-percent and constant samples retain ties and nondegenerate axes', () => {
+  const colors = { text: '#fff', muted: '#aaa', border: '#333' };
+  for (const [key, value] of [
+    ['duration', 0],
+    ['duration', 5000],
+    ['cacheHitRate', 0],
+    ['cacheHitRate', 1],
+  ] as const) {
+    const metric = resolveMetric(key);
+    const points = Array.from({ length: 100 }, () => ({
+      ...point,
+      [metric.field]: value,
+    }));
+    const response: RequestTrendsResponse = {
+      range: { since: 0, until: point.startedAt },
+      availability: { telemetry: true, sessions: [] },
+      points,
+      bucketMs: 1000,
+      buckets: [],
+    };
+    for (const range of ['all', 'p95', 'p99'] as const) {
+      const summary = scatterSummary(points, metric, range);
+      assert.equal(summary.drawable, 100);
+      assert.equal(summary.below, 0);
+      assert.equal(summary.above, 0);
+      assert.equal(
+        summary.lower,
+        range === 'all' ? null : value / metric.divisor,
+      );
+      assert.equal(
+        summary.upper,
+        range === 'all' ? null : value / metric.divisor,
+      );
+      const option = chartOptions(response, metric, colors, 'scatter', {
+        ...defaultScatterView,
+        range,
+      });
+      const axis = option.yAxis as { min: number; max?: number };
+      assert.ok(Number.isFinite(axis.min) && axis.min >= 0);
+      assert.ok(axis.min <= value / metric.divisor);
+      if (axis.max !== undefined) {
+        assert.ok(Number.isFinite(axis.max) && axis.max > axis.min);
+        assert.ok(axis.max >= value / metric.divisor);
+        if (key === 'cacheHitRate') {
+          assert.ok(axis.max <= 100);
+        }
+      }
+      assert.equal(scatterSeries(option).flatMap((s) => s.data).length, 100);
+    }
+  }
+});
+
+test('two-tail log clipping separates clipped zeros from unplottable retained zeros', () => {
+  const metric = resolveMetric('duration');
+  const points = Array.from({ length: 100 }, (_, i) => ({
+    ...point,
+    durationMs: i * 1000,
+  }));
+  for (const range of ['p95', 'p99'] as const) {
+    const summary = scatterSummary(points, metric, range, 'log');
+    assert.deepEqual(
+      [summary.below, summary.above, summary.unplottable, summary.drawable],
+      range === 'p95' ? [2, 2, 0, 96] : [0, 0, 1, 99],
+    );
+    const response: RequestTrendsResponse = {
+      range: { since: 0, until: point.startedAt },
+      availability: { telemetry: true, sessions: [] },
+      points,
+      bucketMs: 1000,
+      buckets: [],
+    };
+    const option = chartOptions(
+      response,
+      metric,
+      { text: '#fff', muted: '#aaa', border: '#333' },
+      'scatter',
+      { ...defaultScatterView, range, scale: 'log' },
+    );
+    const axis = option.yAxis as { min: number; max: number };
+    assert.equal(axis.min, range === 'p95' ? 2 : 1);
+    assert.equal(axis.max, range === 'p95' ? 97 : 99);
+    assert.equal(
+      scatterSeries(option).flatMap((s) => s.data).length,
+      summary.drawable,
+    );
+  }
+  const zeros = points.map((p) => ({ ...p, durationMs: 0 }));
+  const summary = scatterSummary(zeros, metric, 'p95', 'log');
+  assert.deepEqual(
+    [summary.below, summary.above, summary.unplottable, summary.drawable],
+    [0, 0, 100, 0],
+  );
 });
 
 test('invalid route metric resolves to duration, including arrays and inherited property names', () => {
@@ -222,8 +387,10 @@ test('options preserve all 10000 raw timestamp/value pairs and seven outcome ser
     total: 10000,
     drawable: 10000,
     missing: 0,
-    hidden: 0,
+    below: 0,
+    above: 0,
     unplottable: 0,
+    lower: null,
     upper: null,
     limited: false,
   });
@@ -249,8 +416,10 @@ test('log scale excludes non-positive values honestly and is unavailable for per
     total: 4,
     drawable: 2,
     missing: 0,
-    hidden: 0,
+    below: 0,
+    above: 0,
     unplottable: 2,
+    lower: null,
     upper: null,
     limited: false,
   });

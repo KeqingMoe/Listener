@@ -99,7 +99,7 @@ const controls = computed(() => [
     key: 'chartRange' as const,
     label: '散点显示范围',
     name: '范围',
-    title: '按全部有效点的百分位裁剪纵轴上限',
+    title: '保留中间95%或99%，两端等量裁剪，边界同值保留',
     ...cycle(chartRanges, view.value.range),
   },
   {
@@ -354,9 +354,12 @@ onUnmounted(() => {
         </div>
         <p class="chart-summary muted" data-testid="request-scatter-summary">
           总数 {{ summary.total }} · 可绘制 {{ summary.drawable }} · 缺失
-          {{ summary.missing }} · 超出显示范围 {{ summary.hidden
+          {{ summary.missing }} · 低于下限 {{ summary.below }} · 高于上限
+          {{ summary.above
           }}<span v-if="summary.unplottable">
             · 对数轴无法显示的零值 {{ summary.unplottable }}</span
+          ><span v-if="summary.lower !== null">
+            · 下限 {{ coordinateNumber(summary.lower) }} {{ metric.unit }}</span
           ><span v-if="summary.upper !== null">
             · 上限 {{ coordinateNumber(summary.upper) }} {{ metric.unit }}</span
           >
@@ -420,7 +423,10 @@ onUnmounted(() => {
           ><span v-if="summary.total && !summary.drawable"
             >当前指标无可绘制数据。</span
           ><span v-if="displayRange !== 'all'"
-            >仅裁剪高于当前指标百分位上限的点，同值全部保留；不改变柱状图和汇总。<span
+            >两端各裁去
+            {{
+              displayRange === 'p95' ? '2.5%' : '0.5%'
+            }}，按样本数向下取整，边界同值全部保留；不改变柱状图和汇总。<span
               v-if="!summary.limited"
               >有效点少于20条，暂不裁剪。</span
             ></span

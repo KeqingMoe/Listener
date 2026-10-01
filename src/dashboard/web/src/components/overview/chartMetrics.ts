@@ -165,30 +165,68 @@ export function scatterSummary(
     const value = metricValue(point, metric);
     return Number.isFinite(point.startedAt) && value !== null ? [value] : [];
   });
-  // 最近秩百分位会保留所有并列值；这只是显示上限，不是离群值检测。
+  // 两端各裁去一半：95%显示P2.5..P97.5，99%显示P0.5..P99.5。
+  // 最近秩百分位会保留所有并列值；这只是显示范围，不是离群值检测。
   const limited = range !== 'all' && values.length >= 20;
   const sorted = limited ? [...values].sort((a, b) => a - b) : [];
-  const upper = limited
-    ? percentile(sorted, range === 'p95' ? 0.95 : 0.99)
-    : null;
-  const hidden =
+  const tail = range === 'p95' ? 0.025 : 0.005;
+  const cut = Math.floor(values.length * tail);
+  const lower = limited ? sorted[cut]! : null;
+  const upper = limited ? sorted[values.length - 1 - cut]! : null;
+  const below =
+    lower === null ? 0 : values.filter((value) => value < lower).length;
+  const above =
     upper === null ? 0 : values.filter((value) => value > upper).length;
   // 对数轴无法表示0，这些点如实计数而不是挪到底边。
   const unplottable =
     scale === 'log'
       ? values.filter(
-          (value) => value <= 0 && (upper === null || value <= upper),
+          (value) =>
+            value <= 0 &&
+            (lower === null || value >= lower) &&
+            (upper === null || value <= upper),
         ).length
       : 0;
   return {
     total: points.length,
-    drawable: values.length - hidden - unplottable,
+    drawable: values.length - below - above - unplottable,
     missing: points.length - values.length,
-    hidden,
+    below,
+    above,
     unplottable,
+    lower,
     upper,
     limited,
   };
+}
+
+/** 1、2、5乘10的幂中不小于 value 的最小值。 */
+function niceStep(value: number): number {
+  const power = 10 ** Math.floor(Math.log10(value));
+  const unit = value / power;
+  return (unit <= 1 ? 1 : unit <= 2 ? 2 : unit <= 5 ? 5 : 10) * power;
+}
+
+/**
+ * 线性纵轴的下界：不强制从0开始，取不高于最小显示值的整齐刻度。
+ * 预留少量边距；同值数据也保留可见的纵轴跨度。
+ */
+export function axisFloor(min: number, max: number): number {
+  if (!Number.isFinite(min) || !Number.isFinite(max)) {
+    return 0;
+  }
+  if (min <= 0) {
+    return 0;
+  }
+  const span = Math.max(max - min, min * 0.05);
+  const padding = Math.min(span * 0.05, min * 0.05);
+  const step = niceStep(Math.min(span / 5, min / 10));
+  return Math.max(0, niceFloor(min - padding, step));
+}
+
+function niceFloor(value: number, step: number) {
+  // 消除浮点误差，例如 0.1*3。
+  return Number((Math.floor(value / step + 1e-9) * step).toPrecision(12));
 }
 
 /** 窗口内至少有这么多样本才画对应的统计线，样本过少的位置断开。 */

@@ -1169,19 +1169,23 @@ test('scatter percentile controls clip the display without changing request tota
   await expect(control).toHaveAccessibleName('散点显示范围：全部，点击切换');
   await expect(summary).toContainText('可绘制 100');
   await pick('95%');
-  await expect(summary).toContainText('可绘制 95');
-  await expect(summary).toContainText('超出显示范围 5');
-  await expect(summary).toContainText('上限 94 秒');
+  await expect(summary).toContainText('可绘制 96');
+  await expect(summary).toContainText(
+    '低于下限 2 · 高于上限 2 · 下限 2 秒 · 上限 97 秒',
+  );
   await expect(page.getByTestId('request-trends-summary')).toContainText(
     '总数 100',
   );
   await pick('99%');
-  await expect(summary).toContainText('可绘制 99');
-  await expect(summary).toContainText('上限 98 秒');
+  await expect(summary).toContainText('可绘制 100');
+  await expect(summary).toContainText(
+    '低于下限 0 · 高于上限 0 · 下限 0 秒 · 上限 99 秒',
+  );
   await pick('全部');
   await expect(page).not.toHaveURL(/chartRange=/);
   await expect(summary).toContainText('可绘制 100');
-  await expect(summary).not.toContainText('上限');
+  await expect(summary).not.toContainText('· 上限');
+  await expect(summary).not.toContainText('· 下限');
 });
 
 test('chart empty, unavailable, failed and missing metric states stay distinct', async ({
