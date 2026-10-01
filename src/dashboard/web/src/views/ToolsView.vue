@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRoute } from 'vue-router';
-import type { ToolsResponse } from '../../../contracts/contracts';
+import type { ToolSummary, ToolsResponse } from '../../../contracts/contracts';
 import { useResource, useFilters } from '../composables/useDashboard';
 import { number, duration } from '../api/client';
 import DataState from '../components/ui/DataState.vue';
@@ -17,6 +17,22 @@ const missing = '未记录或不可用，不能视为 0。';
 const search = computed(() =>
   typeof route.query.q === 'string' ? route.query.q.trim().toLowerCase() : '',
 );
+/** 少见的结果合并为一列，悬停可见非零项明细。 */
+const OTHER_OUTCOMES = [
+  ['rejected', '拒绝'],
+  ['deferred', '延后'],
+  ['cancelled', '取消'],
+  ['unknown', '不明（不代表操作未发生）'],
+  ['skipped', '跳过'],
+  ['pending', '待执行'],
+  ['started', '执行中'],
+] as const satisfies readonly (readonly [keyof ToolSummary, string])[];
+const other = (tool: ToolSummary) =>
+  OTHER_OUTCOMES.reduce((n, [key]) => n + tool[key], 0);
+const otherDetail = (tool: ToolSummary) =>
+  OTHER_OUTCOMES.filter(([key]) => tool[key] > 0)
+    .map(([key, label]) => `${label} ${number(tool[key])}`)
+    .join('，') || undefined;
 const items = computed(() =>
   [...(data.value?.items ?? [])]
     .filter((row) => row.name.toLowerCase().includes(search.value))
@@ -71,20 +87,15 @@ const unknown = computed(() =>
                 <tr>
                   <th>工具</th>
                   <th>调用</th>
-                  <th title="执行账本完成，不保证操作成功；与结果列不可相加">
-                    完成
-                  </th>
-                  <th title="已处理不保证外部操作成功">处理</th>
+                  <th title="已处理不保证外部操作成功">已处理</th>
                   <th title="仅 failed，不包含拒绝、延后、取消或结果不明">
                     失败
                   </th>
-                  <th>拒绝</th>
-                  <th>延后</th>
-                  <th>取消</th>
-                  <th title="不代表操作未发生">不明</th>
-                  <th>跳过</th>
-                  <th>待执行</th>
-                  <th>执行中</th>
+                  <th
+                    title="拒绝、延后、取消、不明、跳过、待执行、执行中；悬停数字看明细"
+                  >
+                    其他
+                  </th>
                   <th>P50</th>
                   <th>P95</th>
                 </tr>
@@ -95,16 +106,13 @@ const unknown = computed(() =>
                     <code>{{ tool.name }}</code>
                   </td>
                   <td>{{ number(tool.calls) }}</td>
-                  <td>{{ number(tool.finished) }}</td>
                   <td>{{ number(tool.handled) }}</td>
-                  <td>{{ number(tool.errors) }}</td>
-                  <td>{{ number(tool.rejected) }}</td>
-                  <td>{{ number(tool.deferred) }}</td>
-                  <td>{{ number(tool.cancelled) }}</td>
-                  <td>{{ number(tool.unknown) }}</td>
-                  <td>{{ number(tool.skipped) }}</td>
-                  <td>{{ number(tool.pending) }}</td>
-                  <td>{{ number(tool.started) }}</td>
+                  <td :class="{ error: tool.errors > 0 }">
+                    {{ number(tool.errors) }}
+                  </td>
+                  <td :title="otherDetail(tool)">
+                    {{ other(tool) ? number(other(tool)) : '—' }}
+                  </td>
                   <td :title="tool.durationP50Ms == null ? missing : undefined">
                     {{
                       tool.durationP50Ms == null
@@ -121,13 +129,13 @@ const unknown = computed(() =>
                   </td>
                 </tr>
                 <tr v-if="!items.length">
-                  <td colspan="14" class="muted">当前筛选无工具调用</td>
+                  <td colspan="7" class="muted">当前筛选无工具调用</td>
                 </tr>
               </tbody>
             </table>
           </div>
           <div class="section-title muted">
-            <span>完成数与结果分类不相加；参数 / 返回值请进入逐次复盘。</span>
+            <span>参数 / 返回值请进入逐次复盘。</span>
             <RouterLink :to="{ path: '/requests', query: route.query }"
               >请求复盘 →</RouterLink
             >
