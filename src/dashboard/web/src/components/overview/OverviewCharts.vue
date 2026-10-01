@@ -37,7 +37,8 @@ import {
   resolveMetric,
   scatterSummary,
 } from './chartMetrics';
-import { chartOptions, plot } from './chartOptions';
+import { chartOptions, fitColor, plot } from './chartOptions';
+import { FIT_WINDOW, FIT_MIN_SAMPLES, fitLines, supportsFit } from './chartFit';
 
 use([
   CanvasRenderer,
@@ -75,7 +76,10 @@ const view = computed<ScatterView>(() => ({
   range: resolveChartRange(chartQuery.value.chartRange),
   scale: resolveChartScale(chartQuery.value.chartScale, metric.value),
   dots: resolveChartDots(chartQuery.value.chartDots),
-  guides: resolveChartGuides(chartQuery.value.chartGuides),
+  guides: resolveChartGuides(
+    chartQuery.value.chartGuides,
+    supportsFit(metric.value),
+  ),
 }));
 const displayRange = computed(() => view.value.range);
 const windowLabel = computed(() => {
@@ -94,7 +98,7 @@ function setView(
     chartRange: 'all',
     chartScale: 'linear',
     chartDots: 'fine',
-    chartGuides: 'show',
+    chartGuides: 'quantiles',
   };
   void router.replace({
     query: {
@@ -147,8 +151,14 @@ const controls = computed(() => [
     key: 'chartGuides' as const,
     label: '散点辅助线',
     name: '辅助线',
-    title: '显示或隐藏中位数、P5与P95线',
-    ...cycle(chartGuides, view.value.guides),
+    title: supportsFit(metric.value)
+      ? '分位线 / 按群拟合线 / 隐藏'
+      : '拟合仅支持缓存输入和总输入，其他指标可选分位线或隐藏',
+    ...cycle(
+      chartGuides,
+      view.value.guides,
+      (key) => key !== 'fit' || supportsFit(metric.value),
+    ),
   },
 ]);
 
@@ -166,6 +176,15 @@ const colors = ref({ text: '#263449', muted: '#68788a', border: '#d8e0e8' });
 const barOption = computed(() =>
   data.value ? chartOptions(data.value, metric.value, colors.value, 'bar') : {},
 );
+const fitted = computed(() =>
+  view.value.guides === 'fit' && data.value
+    ? fitLines(data.value.points, metric.value).filter(
+        (line) =>
+          view.value.scale !== 'log' ||
+          line.data.some(([, y]) => y !== null && y > 0),
+      )
+    : [],
+);
 const scatterOption = computed(() =>
   data.value
     ? chartOptions(
@@ -174,6 +193,7 @@ const scatterOption = computed(() =>
         colors.value,
         'scatter',
         view.value,
+        fitted.value,
       )
     : {},
 );
@@ -424,6 +444,19 @@ onUnmounted(() => {
             · 上限 {{ coordinateNumber(summary.upper) }} {{ metric.unit }}</span
           >
         </p>
+        <ul
+          v-if="view.guides === 'fit' && fitted.length"
+          class="chart-legend fit-legend"
+          aria-label="拟合线群组图例"
+        >
+          <li v-for="line in fitted" :key="line.groupId">
+            <span
+              :style="{ backgroundColor: fitColor(line.groupId) }"
+              aria-hidden="true"
+            ></span
+            >群 {{ line.groupId }}
+          </li>
+        </ul>
         <div
           class="chart-box scatter-box chart-crosshair-host"
           role="img"
@@ -490,13 +523,23 @@ onUnmounted(() => {
               v-if="!summary.limited"
               >有效点少于20条，暂不裁剪。</span
             ></span
-          ><span v-if="view.guides === 'show'"
+          ><span v-if="view.guides === 'quantiles'"
             >实线为中位数，淡虚线为
             P5/P95，标出中间约90%的分位范围（非置信带，不填色）。按约
             {{ windowLabel }} 的滑动窗口统计，中位数至少需
             {{ TREND_MIN_SAMPLES.median }} 条样本，分位线至少需
             {{ TREND_MIN_SAMPLES.p95 }}
             条，不足时断开。统计包含被裁剪的点，分位线不等于全局裁剪边界。</span
+          ><span v-if="view.guides === 'fit'"
+            >按群分段，以最多
+            {{ FIT_WINDOW }} 个相邻请求做稳健局部拟合，每段至少需
+            {{ FIT_MIN_SAMPLES }}
+            个有效样本，不强制单调；总输入明显骤降、长时间断档或缺失值处断开，边界为启发式识别，不代表已确认压缩。统计包含被裁剪的点，原始散点不变。<span
+              v-if="!fitted.length"
+              >当前范围暂无可绘制的拟合线。</span
+            ></span
+          ><span v-else-if="chartQuery.chartGuides === 'fit'"
+            >拟合仅支持缓存输入和总输入，当前指标暂不显示辅助线。</span
           >十字线标签表示鼠标坐标，不代表最近请求。
         </p>
       </section>
@@ -622,6 +665,11 @@ onUnmounted(() => {
   width: 8px;
   height: 8px;
   border-radius: 2px;
+}
+.fit-legend li > span {
+  width: 18px;
+  height: 2px;
+  border-radius: 0;
 }
 .chart-crosshair-host {
   position: relative;

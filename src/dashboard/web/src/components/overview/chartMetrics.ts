@@ -139,14 +139,21 @@ export function resolveChartDots(value: unknown): ChartDots {
 }
 
 export const chartGuides = [
-  { key: 'show', label: '显示' },
+  { key: 'quantiles', label: '分位线' },
+  { key: 'fit', label: '拟合线' },
   { key: 'hide', label: '隐藏' },
 ] as const;
 
 export type ChartGuides = (typeof chartGuides)[number]['key'];
 
-export function resolveChartGuides(value: unknown): ChartGuides {
-  return value === 'hide' ? 'hide' : 'show';
+export function resolveChartGuides(
+  value: unknown,
+  allowFit = true,
+): ChartGuides {
+  if (value === 'fit') {
+    return allowFit ? 'fit' : 'hide';
+  }
+  return value === 'hide' ? 'hide' : 'quantiles';
 }
 
 export interface ScatterView {
@@ -160,7 +167,7 @@ export const defaultScatterView: ScatterView = {
   range: 'all',
   scale: 'linear',
   dots: 'fine',
-  guides: 'show',
+  guides: 'quantiles',
 };
 
 /** 最近秩百分位：取排序后第ceil(n*p)个值，结果总是真实样本值。 */

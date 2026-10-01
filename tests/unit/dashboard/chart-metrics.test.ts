@@ -18,7 +18,10 @@ import {
   defaultScatterView,
   outcomes,
 } from '../../../src/dashboard/web/src/components/overview/chartMetrics.ts';
-import { chartOptions } from '../../../src/dashboard/web/src/components/overview/chartOptions.ts';
+import {
+  chartOptions,
+  fitColor,
+} from '../../../src/dashboard/web/src/components/overview/chartOptions.ts';
 
 const p95 = { ...defaultScatterView, range: 'p95' } as const;
 
@@ -436,7 +439,7 @@ test('log scale excludes non-positive values honestly and is unavailable for per
     range: 'all',
     scale: 'log',
     dots: 'bold',
-    guides: 'show',
+    guides: 'quantiles',
   });
   assert.equal((option.yAxis as { type: string }).type, 'log');
   const series = scatterSeries(option);
@@ -558,10 +561,88 @@ test('trend lines use a sliding window, include clipped samples and always show 
   assert.equal(plotted[2]!.areaStyle, undefined);
 });
 
+test('fit mode draws one independent line per group without changing scatter data', () => {
+  const points = ['11', '22'].flatMap((group, g) =>
+    Array.from({ length: 16 }, (_, i) => ({
+      ...point,
+      key: JSON.stringify([group, `req-${i}`]),
+      startedAt: point.startedAt + i * 1000,
+      totalInputTokens: 10000 + g * 10000 + i * 100,
+      cachedInputTokens: 9000 + g * 10000 + i * 100,
+    })),
+  );
+  const data: RequestTrendsResponse = {
+    range: { since: point.startedAt, until: point.startedAt + 16000 },
+    availability: { telemetry: true, sessions: [] },
+    points,
+    bucketMs: 1000,
+    buckets: [],
+  };
+  const colors = { text: '#fff', muted: '#aaa', border: '#333' };
+  for (const key of ['totalInput', 'cachedInput']) {
+    const metric = resolveMetric(key);
+    let expected: unknown;
+    for (const range of ['all', 'p95', 'p99'] as const) {
+      const view = { ...defaultScatterView, range, guides: 'fit' } as const;
+      const option = chartOptions(data, metric, colors, 'scatter', view);
+      const hidden = chartOptions(data, metric, colors, 'scatter', {
+        ...view,
+        guides: 'hide',
+      });
+      const lines = allSeries(option).filter((s) => s.type === 'line');
+      assert.deepEqual(
+        lines.map((s) => s.name),
+        ['群 11 拟合', '群 22 拟合'],
+      );
+      assert.deepEqual(scatterSeries(option), scatterSeries(hidden));
+      assert.deepEqual(option.yAxis, hidden.yAxis);
+      const projections = lines.map((s) => s.data);
+      if (expected) {
+        assert.deepEqual(projections, expected);
+      }
+      expected = projections;
+      const styled = lines as unknown as Array<{
+        lineStyle: { color: string };
+        connectNulls: boolean;
+        silent: boolean;
+      }>;
+      assert.equal(styled[0]!.lineStyle.color, fitColor('11'));
+      assert.equal(styled[1]!.lineStyle.color, fitColor('22'));
+      assert.ok(styled.every((s) => s.silent && !s.connectNulls));
+      const single = chartOptions(
+        { ...data, points: points.slice(16) },
+        metric,
+        colors,
+        'scatter',
+        view,
+      );
+      assert.deepEqual(
+        allSeries(single).filter((s) => s.type === 'line'),
+        [lines[1]],
+      );
+    }
+  }
+  for (const metric of chartMetrics.filter(
+    (m) => !['totalInput', 'cachedInput'].includes(m.key),
+  )) {
+    assert.equal(
+      allSeries(
+        chartOptions(data, metric, colors, 'scatter', {
+          ...defaultScatterView,
+          guides: 'fit',
+        }),
+      ).filter((s) => s.type === 'line').length,
+      0,
+    );
+  }
+});
+
 test('guide toggle removes all statistical lines without changing points, axes or bars', () => {
   assert.equal(resolveChartGuides('hide'), 'hide');
-  for (const value of [undefined, 'show', 'invalid', ['hide']]) {
-    assert.equal(resolveChartGuides(value), 'show');
+  assert.equal(resolveChartGuides('fit'), 'fit');
+  assert.equal(resolveChartGuides('fit', false), 'hide');
+  for (const value of [undefined, 'quantiles', 'invalid', ['hide']]) {
+    assert.equal(resolveChartGuides(value), 'quantiles');
   }
   const response: RequestTrendsResponse = {
     range: { since: point.startedAt, until: point.startedAt + 1000 },

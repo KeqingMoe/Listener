@@ -630,9 +630,9 @@ async function mock(page: Page, state: MockState = {}) {
         mode: 'snapshot',
         cursor: 'fixture-cursor',
         removals: [],
-        upserts: snapshot.points.map((point, i) => ({
+        upserts: snapshot.points.map((point, index) => ({
           ...point,
-          key: String(i),
+          key: JSON.stringify([items[index]!.groupId, items[index]!.requestId]),
         })),
       };
     } else if (path === '/api/health') {
@@ -879,7 +879,7 @@ test('scatter guide toggle is local, persists in URL and survives cached navigat
   const button = page.getByRole('button', { name: /^散点辅助线：/ });
   const note = page.locator('.scatter-panel .chart-note');
   await expect(page.getByTestId('request-scatter-summary')).toBeVisible();
-  await expect(button).toHaveAccessibleName('散点辅助线：显示，点击切换');
+  await expect(button).toHaveAccessibleName('散点辅助线：分位线，点击切换');
   const count = () =>
     requests.filter((u) => u.pathname === '/api/request-trends/sync').length;
   const before = count();
@@ -912,6 +912,198 @@ test('scatter guide toggle is local, persists in URL and survives cached navigat
     ).toBe(true);
   }
   expect(requests.every((u) => !u.searchParams.has('chartGuides'))).toBe(true);
+});
+
+// 独立覆盖趋势接口，避免拟合数据改变其他页面的通用 fixture。
+async function mockFitTrends(page: Page) {
+  const { requests } = await mock(page);
+  const trendRequests: URL[] = [];
+  const groups = ['10001', '10002'];
+  await page.route(
+    (url) => effectiveApiUrl(url).pathname === '/api/meta',
+    (route) =>
+      route.fulfill({
+        json: snapshot({
+          groups: groups.map((groupId) => ({ groupId })),
+          models: ['synthetic'],
+          readOnly: true,
+          maxRangeDays: 31,
+          now,
+          availability,
+        }),
+      }),
+  );
+  await page.route('**/api/request-trends/sync?*', async (route) => {
+    const url = new URL(route.request().url());
+    trendRequests.push(url);
+    const selectedRange = {
+      since: Number(url.searchParams.get('since')),
+      until: Number(url.searchParams.get('until')),
+    };
+    const rows = groups
+      .flatMap((groupId, groupIndex) =>
+        Array.from({ length: 16 }, (_, index): ReviewRequest => {
+          const totalInputTokens = 2000 + groupIndex * 4000 + index * 600;
+          // 单个缓存跌落不应被当作整群重置；两群复用 requestId 验证复合键。
+          const cachedInputTokens =
+            index === 8 ? 100 : 1000 + groupIndex * 2000 + index * 400;
+          const startedAt =
+            selectedRange.since +
+            ((selectedRange.until - selectedRange.since) * (index + 1)) / 18;
+          return {
+            ...request,
+            groupId,
+            requestId: `fit-request-${index}`,
+            startedAt,
+            endedAt: startedAt + 2000,
+            totalInputTokens,
+            cachedInputTokens,
+            inputTokens: totalInputTokens - cachedInputTokens,
+          };
+        }),
+      )
+      .filter(
+        (row) =>
+          !url.searchParams.has('groupId') ||
+          row.groupId === url.searchParams.get('groupId'),
+      );
+    const data = buildRequestTrends(selectedRange, availability, rows);
+    await route.fulfill({
+      json: {
+        ...data,
+        mode: 'snapshot',
+        cursor: 'fit-fixture-cursor',
+        removals: [],
+        upserts: data.points.map((point, index) => ({
+          ...point,
+          key: JSON.stringify([rows[index]!.groupId, rows[index]!.requestId]),
+        })),
+      },
+    });
+  });
+  return { requests, trendRequests };
+}
+
+test('scatter fit mode cycles locally, supports only total and cached input and restores URL intent', async ({
+  page,
+}) => {
+  await page.clock.install();
+  const { requests, trendRequests } = await mockFitTrends(page);
+  await page.goto('/?range=5m&chartMetric=totalInput');
+  const metric = page.getByLabel('散点纵轴指标');
+  const button = page.getByRole('button', { name: /^散点辅助线：/ });
+  const legend = page.getByRole('list', { name: '拟合线群组图例' });
+  await expect(page.getByTestId('request-scatter-summary')).toContainText(
+    '总数 32',
+  );
+  await expect(page.getByTestId('dashboard-refresh-status')).not.toHaveText(
+    '刷新中…',
+  );
+  const before = [requests.length, trendRequests.length];
+  await expect(button).toHaveAccessibleName('散点辅助线：分位线，点击切换');
+  await button.click();
+  await expect(button).toHaveAccessibleName('散点辅助线：拟合线，点击切换');
+  await expect(page).toHaveURL(/chartGuides=fit/);
+  await expect(legend.getByRole('listitem')).toHaveCount(2);
+  await expect(legend).toContainText('群 10001');
+  await expect(legend).toContainText('群 10002');
+  await button.click();
+  await expect(button).toHaveAccessibleName('散点辅助线：隐藏，点击切换');
+  await expect(page).toHaveURL(/chartGuides=hide/);
+  await expect(legend).toHaveCount(0);
+  await button.click();
+  await expect(button).toHaveAccessibleName('散点辅助线：分位线，点击切换');
+  await expect(page).not.toHaveURL(/chartGuides=/);
+  await metric.selectOption('cachedInput');
+  await button.click();
+  await expect(button).toHaveAccessibleName('散点辅助线：拟合线，点击切换');
+  await expect(legend.getByRole('listitem')).toHaveCount(2);
+  for (const unsupported of [
+    'duration',
+    'input',
+    'output',
+    'ttft',
+    'tps',
+    'cacheHitRate',
+  ]) {
+    await metric.selectOption(unsupported);
+    await expect(button).toHaveAccessibleName('散点辅助线：隐藏，点击切换');
+    await expect(legend).toHaveCount(0);
+    await expect(page).toHaveURL(/chartGuides=fit/);
+  }
+  for (const supported of ['totalInput', 'cachedInput']) {
+    await metric.selectOption(supported);
+    await expect(button).toHaveAccessibleName('散点辅助线：拟合线，点击切换');
+    await expect(legend.getByRole('listitem')).toHaveCount(2);
+  }
+  await metric.selectOption('output');
+  await button.click();
+  await expect(button).toHaveAccessibleName('散点辅助线：分位线，点击切换');
+  await expect(page).not.toHaveURL(/chartGuides=/);
+  await button.click();
+  await expect(button).toHaveAccessibleName('散点辅助线：隐藏，点击切换');
+  await expect(page).toHaveURL(/chartGuides=hide/);
+  expect([requests.length, trendRequests.length]).toEqual(before);
+  expect(
+    [...requests, ...trendRequests].every(
+      (url) =>
+        !url.searchParams.has('chartGuides') &&
+        !url.searchParams.has('chartMetric'),
+    ),
+  ).toBe(true);
+});
+
+test('scatter per-group fit legend filters and survives reload, cached navigation and mobile layout', async ({
+  page,
+}) => {
+  await page.clock.install();
+  const { trendRequests } = await mockFitTrends(page);
+  await page.goto('/?range=5m&chartMetric=cachedInput&chartGuides=fit');
+  const button = page.getByRole('button', { name: /^散点辅助线：/ });
+  const legend = page.getByRole('list', { name: '拟合线群组图例' });
+  await expect(legend.getByRole('listitem')).toHaveCount(2);
+  await page.reload();
+  await expect(button).toHaveAccessibleName('散点辅助线：拟合线，点击切换');
+  await expect(legend.getByRole('listitem')).toHaveCount(2);
+  await page.getByRole('link', { name: '工具', exact: true }).click();
+  await page.getByRole('link', { name: '总览', exact: true }).click();
+  await expect(page).toHaveURL(/chartGuides=fit/);
+  await expect(button).toHaveAccessibleName('散点辅助线：拟合线，点击切换');
+  await expect(legend.getByRole('listitem')).toHaveCount(2);
+  for (const groupId of ['10001', '10002']) {
+    await page.getByLabel('群组', { exact: true }).selectOption(groupId);
+    await expect
+      .poll(() => trendRequests.at(-1)?.searchParams.get('groupId'))
+      .toBe(groupId);
+    await expect(page.getByTestId('request-scatter-summary')).toContainText(
+      '总数 16',
+    );
+    await expect(legend.getByRole('listitem')).toHaveCount(1);
+    await expect(legend.getByRole('listitem')).toContainText(`群 ${groupId}`);
+    await expect(legend).not.toContainText(
+      `群 ${groupId === '10001' ? '10002' : '10001'}`,
+    );
+  }
+  for (const width of [390, 360]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect(legend).toBeVisible();
+    await expect(button).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+    ).toBe(true);
+  }
+  // 不支持指标刷新仍保留 fit 意图，随后切回支持指标恢复。
+  await page.getByLabel('散点纵轴指标').selectOption('duration');
+  await page.reload();
+  await expect(page).toHaveURL(/chartGuides=fit/);
+  await expect(button).toHaveAccessibleName('散点辅助线：隐藏，点击切换');
+  await expect(legend).toHaveCount(0);
+  await page.getByLabel('散点纵轴指标').selectOption('totalInput');
+  await expect(button).toHaveAccessibleName('散点辅助线：拟合线，点击切换');
+  await expect(legend.getByRole('listitem')).toHaveCount(1);
+  await expect(legend).toContainText('群 10002');
 });
 
 // Hold only overview-owned responses; all fixture data still comes from mock().
@@ -1292,6 +1484,7 @@ test('global refresh counts down each second and shows pending until the refresh
   await page.clock.pauseAt(now + 1000);
   await mock(page);
   let calls = 0;
+  let holdRefresh = false;
   let release!: () => void;
   const pending = new Promise<void>((resolve) => {
     release = resolve;
@@ -1300,7 +1493,7 @@ test('global refresh counts down each second and shows pending until the refresh
     (url) => effectiveApiUrl(url).pathname === '/api/tools',
     async (route) => {
       calls++;
-      if (calls === 2) {
+      if (holdRefresh) {
         await pending;
       }
       await route.fulfill({ json: snapshot(tools) });
@@ -1316,21 +1509,25 @@ test('global refresh counts down each second and shows pending until the refresh
     page.getByRole('button', { name: /^(刷新|暂停自动刷新|恢复自动刷新)$/ }),
   ).toHaveCount(0);
   await expect(status).toHaveText('5秒');
-  expect(calls).toBe(1);
+  // 认证启用调度器时可能立即补刷新，与路由首次加载先后顺序有关。
+  // 启动请求全部完成后才挂起下一轮，不能将“第二个请求”误认为5秒定时刷新。
+  const initialCalls = calls;
+  expect(initialCalls).toBeGreaterThan(0);
+  holdRefresh = true;
   for (const seconds of [4, 3, 2, 1]) {
     await page.clock.runFor(1000);
     await expect(status).toHaveText(`${seconds}秒`);
-    expect(calls).toBe(1);
+    expect(calls).toBe(initialCalls);
   }
   await page.clock.runFor(999);
   await expect(status).toHaveText('1秒');
-  expect(calls).toBe(1);
+  expect(calls).toBe(initialCalls);
   await page.clock.runFor(1);
-  await expect.poll(() => calls).toBe(2);
+  await expect.poll(() => calls).toBe(initialCalls + 1);
   await expect(status).toContainText('刷新中');
   // 慢响应不能与下一轮刷新重叠，也不能显示错误的倒计时。
   await page.clock.runFor(15000);
-  expect(calls).toBe(2);
+  expect(calls).toBe(initialCalls + 1);
   await expect(status).toContainText('刷新中');
   release();
   await expect(status).toHaveText('5秒');

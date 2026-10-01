@@ -1,4 +1,5 @@
 import type { EChartsOption } from 'echarts';
+import { fitLines } from './chartFit';
 import type { RequestTrendsResponse } from '../../../../contracts/request-trends';
 import {
   axisNumber,
@@ -15,6 +16,15 @@ import {
 } from './chartMetrics';
 
 export const plot = { left: 66, right: 20, top: 34, bottom: 58 };
+
+/** 群的颜色独立于当前筛选，全部群与单群视图保持一致。 */
+export function fitColor(groupId: string): string {
+  let hash = 2166136261;
+  for (const char of groupId) {
+    hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+  }
+  return `hsl(${(hash >>> 0) % 360}, 65%, 40%)`;
+}
 
 interface ChartColors {
   text: string;
@@ -39,6 +49,7 @@ export function chartOptions(
   colors: ChartColors,
   kind: 'bar' | 'scatter',
   view: ScatterView = defaultScatterView,
+  fitted?: ReturnType<typeof fitLines>,
 ): EChartsOption {
   const { since, until } = data.range;
   const scatter = kind === 'scatter';
@@ -76,9 +87,13 @@ export function chartOptions(
         : floor + Math.max(Math.abs(floor) * 0.01, 0.001);
   const dots = dotStyles[view.dots];
   const trends =
-    scatter && view.guides === 'show'
+    scatter && view.guides === 'quantiles'
       ? trendLines(data.points, data.range, data.bucketMs, metric, view.scale)
       : null;
+  const fits =
+    scatter && view.guides === 'fit'
+      ? (fitted ?? fitLines(data.points, metric))
+      : [];
   return {
     animation: false,
     textStyle: { color: colors.text },
@@ -165,6 +180,24 @@ export function chartOptions(
                   trendSeries('P5', trends.p5, colors.text, 'dashed'),
                 ]
               : []),
+            ...fits.map((line) => ({
+              ...trendSeries(
+                `群 ${line.groupId} 拟合`,
+                line.data.map(([x, y]): [number, number | null] => [
+                  x,
+                  log && y !== null && y <= 0 ? null : y,
+                ]),
+                fitColor(line.groupId),
+                'solid',
+              ),
+              // 已做局部稳健拟合，只轻度平滑连接；null边界保持断开。
+              smooth: 0.2,
+              lineStyle: {
+                color: fitColor(line.groupId),
+                width: 1.8,
+                opacity: 0.8,
+              },
+            })),
           ],
   };
 }
