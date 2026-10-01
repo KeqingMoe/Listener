@@ -33,7 +33,25 @@ export type ToolView =
   /** 读取到的消息列表。 */
   | { kind: 'messages'; lines: ChatLine[]; more: number }
   /** 一行文字说明。 */
-  | { kind: 'line'; text: string };
+  | { kind: 'line'; text: string }
+  /** 沙箱JavaScript任务：代码（若在参数中）与执行结果。 */
+  | ({ kind: 'script'; code: string | null } & ScriptJob);
+
+/** 沙箱任务的执行结果；返回值只保证是字符串，不假定为JSON。 */
+export type ScriptOutcome =
+  | { kind: 'value'; text: string }
+  | { kind: 'pending'; jobId: string }
+  | { kind: 'error'; message: string; stack: string }
+  | { kind: 'state'; text: string };
+
+export interface ScriptJob {
+  description: string;
+  mode: string;
+  outcome: ScriptOutcome | null;
+  /** 沙箱内工具调用，如 create_image ×1；非ok的状态单独写出。 */
+  calls: { text: string; abnormal: boolean }[];
+  logs: string[];
+}
 
 /** QQ号到显示名的对照，来自同一范围内读到的消息与成员资料。 */
 export type Names = ReadonlyMap<string, string>;
@@ -322,8 +340,84 @@ export function toolView(
       };
     case 'finish':
       return { kind: 'line', text: '结束本次唤醒' };
+    case 'execute_javascript':
+      return {
+        kind: 'script',
+        code: typeof a.code === 'string' ? a.code : null,
+        ...scriptJob(a, r),
+      };
+    case 'query_javascript_jobs': {
+      const job = record(r.job);
+      if (job) {
+        return { kind: 'script', code: null, ...scriptJob(job, job) };
+      }
+      return Array.isArray(r.jobs)
+        ? { kind: 'line', text: `列出 ${r.jobs.length} 个任务` }
+        : null;
+    }
     default:
       return null;
+  }
+}
+
+const SCRIPT_MODES: Record<string, string> = { sync: '同步', async: '异步' };
+
+/** 任务字段：execute_javascript 的参数与结果，或 query_javascript_jobs 返回的任务对象。 */
+function scriptJob(
+  meta: Record<string, unknown>,
+  r: Record<string, unknown>,
+): ScriptJob {
+  // 旧版任务查询结果使用驼峰字段名，历史记录仍按原样读取。
+  const summary = record(r.tool_calls ?? r.toolCalls);
+  const diagnostic = record(r.diagnostic);
+  const state = str(r.task_status) || str(r.status);
+  const outcome: ScriptOutcome | null =
+    typeof r.value === 'string'
+      ? { kind: 'value', text: r.value }
+      : diagnostic
+        ? {
+            kind: 'error',
+            message: [str(diagnostic.name), str(diagnostic.message)]
+              .filter(Boolean)
+              .join(': '),
+            stack: str(diagnostic.stack),
+          }
+        : str(r.error)
+          ? { kind: 'error', message: str(r.error), stack: '' }
+          : state === 'pending' || state === 'queued' || state === 'running'
+            ? { kind: 'pending', jobId: str(r.job_id ?? r.jobId) }
+            : state && state !== 'ok' && state !== 'completed'
+              ? { kind: 'state', text: state }
+              : null;
+  const calls = Object.entries(record(summary?.counts) ?? {}).flatMap(
+    ([tool, raw]) =>
+      Object.entries(record(raw) ?? {}).map(([status, count]) => ({
+        text: `${tool}${status === 'ok' ? '' : ` ${status}`} ×${String(count)}`,
+        abnormal: status !== 'ok',
+      })),
+  );
+  return {
+    description: str(meta.description),
+    mode: SCRIPT_MODES[str(meta.mode)] ?? str(meta.mode),
+    outcome,
+    calls,
+    logs: Array.isArray(r.logs) ? r.logs.map(String) : [],
+  };
+}
+
+/**
+ * 只有整个字符串是JSON对象或数组时才按JSON展示；标量与普通文本（如字符画）按原文展示。
+ */
+export function structuredText(text: string): object | null {
+  const trimmed = text.trim();
+  if (!/^[[{]/.test(trimmed)) {
+    return null;
+  }
+  try {
+    const value: unknown = JSON.parse(trimmed);
+    return value && typeof value === 'object' ? value : null;
+  } catch {
+    return null;
   }
 }
 
@@ -334,7 +428,8 @@ export function resultProblem(result: unknown): string | null {
     return null;
   }
   const status = str(r.status);
-  if (!status || status === 'ok') {
+  // pending 表示已转为后台任务，不是失败。
+  if (!status || status === 'ok' || status === 'pending') {
     return null;
   }
   const detail = str(r.error) || str(r.reason_code) || str(r.reason);

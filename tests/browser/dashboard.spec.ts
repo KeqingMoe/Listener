@@ -461,6 +461,8 @@ const denseRequests: ReviewRequest[] = Array.from(
 );
 
 interface MockState {
+  /** 替换唤醒详情中的工具调用。 */
+  tools?: ReviewTool[];
   authenticated?: boolean;
   configured?: boolean;
   invalidConfig?: boolean;
@@ -701,7 +703,11 @@ async function mock(page: Page, state: MockState = {}) {
               items: state.empty ? [] : [item],
               nextCursor: null,
             } satisfies WakesResponse)
-          : ({ ...wakeDetail, wake: item } satisfies WakeReviewDetail);
+          : ({
+              ...wakeDetail,
+              wake: item,
+              tools: state.tools ?? wakeDetail.tools,
+            } satisfies WakeReviewDetail);
     } else if (path.startsWith('/api/requests/')) {
       const id = decodeURIComponent(path.split('/').at(-1)!);
       if (
@@ -2540,3 +2546,105 @@ for (const viewport of [
     expect(errors).toEqual([]);
   });
 }
+
+test('javascript tools show folded code, raw or JSON return values and failures', async ({
+  page,
+}) => {
+  const code = Array.from(
+    { length: 30 },
+    (_, i) => `const line${i} = ${i}; // 第${i}行`,
+  ).join('\n');
+  const art = '  *  \n ***\n*****';
+  const script = (ordinal: number, args: unknown, result: unknown) => ({
+    ...tool,
+    ordinal,
+    callId: `call-js-${ordinal}`,
+    name: 'execute_javascript',
+    arguments: args,
+    result,
+  });
+  const tools: ReviewTool[] = [
+    script(
+      1,
+      { description: '画字符画', code, mode: 'sync', wait_ms: 5000 },
+      {
+        job_id: 'js_1',
+        value: art,
+        logs: [],
+        tool_calls: { counts: { create_image: { ok: 1 } } },
+        status: 'ok',
+        task_status: 'completed',
+      },
+    ),
+    script(
+      2,
+      {
+        description: '返回对象',
+        code: 'return JSON.stringify({a:1})',
+        mode: 'sync',
+      },
+      {
+        job_id: 'js_2',
+        value: '{"artifact":"a.png"}',
+        logs: [],
+        status: 'ok',
+        task_status: 'completed',
+      },
+    ),
+    script(
+      3,
+      { description: '会失败', code: 'x()', mode: 'sync' },
+      {
+        job_id: 'js_3',
+        error: 'execution_error',
+        logs: [],
+        diagnostic: {
+          name: 'TypeError',
+          message: 'x is not a function',
+          stack: 'TypeError: x is not a function\n    at main (job.js:1:1)',
+          truncated: false,
+          kind: 'guest_exception',
+          phase: 'execute',
+        },
+        status: 'error',
+        task_status: 'failed',
+      },
+    ),
+    script(
+      4,
+      { description: '后台跑', code: 'await sleep(1)', mode: 'async' },
+      { status: 'pending', job_id: 'js_4' },
+    ),
+  ];
+  await mock(page, { tools });
+  await page.goto(wakeUrl);
+  const items = page.locator('.wake-detail .tool-detail');
+  await expect(items).toHaveCount(4);
+  const first = items.nth(0);
+  await expect(first).toContainText('画字符画');
+  await expect(first).toContainText('同步');
+  await expect(first).toContainText('create_image ×1');
+  const codeBlock = first.getByLabel('代码', { exact: true });
+  const folded = (await codeBlock.boundingBox())!.height;
+  await expect(codeBlock).toContainText('line0');
+  await first.getByRole('button', { name: '展开全部' }).first().click();
+  expect((await codeBlock.boundingBox())!.height).toBeGreaterThan(folded * 1.8);
+  await expect(codeBlock.locator('.keyword').first()).toHaveText('const');
+  // 普通字符串返回值原样显示，保留空格与换行。
+  const value = first.getByLabel('返回值', { exact: true });
+  expect(await value.textContent()).toBe(art);
+  await expect(first.locator('.script-label .badge')).toHaveCount(0);
+  const second = items.nth(1);
+  await expect(second.locator('.script-label .badge')).toHaveText('JSON');
+  await expect(
+    second.getByLabel('返回值', { exact: true }).locator('.key'),
+  ).toHaveText('"artifact"');
+  const third = items.nth(2);
+  await expect(third).toContainText('TypeError: x is not a function');
+  await expect(third.getByLabel('调用栈')).toHaveCount(0);
+  await third.getByRole('button', { name: '调用栈' }).click();
+  await expect(third.getByLabel('调用栈')).toContainText('at main');
+  await expect(items.nth(3)).toContainText('已转为后台任务js_4');
+  await expect(items.nth(3)).toContainText('异步');
+  await expect(items.nth(3).locator('p.error')).toHaveCount(0);
+});

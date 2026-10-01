@@ -7,8 +7,10 @@ import {
   partsText,
   resultProblem,
   segmentParts,
+  structuredText,
   toolView,
 } from '../../../src/dashboard/web/src/components/review/tool-summary.ts';
+import { highlightJs } from '../../../src/dashboard/web/src/components/review/js-highlight.ts';
 
 test('segments become typed parts without the reply marker', () => {
   const parts = segmentParts([
@@ -227,4 +229,180 @@ test('result problems surface non-ok status with the error code', () => {
     resultProblem({ status: 'confirmation_required' }),
     'confirmation_required',
   );
+  // 转为后台任务不是失败。
+  assert.equal(resultProblem({ status: 'pending', job_id: 'js_1' }), null);
+});
+
+const budget = {
+  max_tool_calls: 8,
+  used_tool_calls: 1,
+  remaining_tool_calls: 7,
+  remaining_ms: 1000,
+};
+
+test('execute_javascript shows code, raw string value and sandbox tool calls', () => {
+  const view = toolView(
+    'execute_javascript',
+    {
+      description: '画一只椰子',
+      code: 'return "ok";',
+      mode: 'sync',
+      wait_ms: 5000,
+    },
+    {
+      job_id: 'js_1',
+      value: '  *  \n *** ',
+      logs: ['step 1'],
+      tool_calls: {
+        counts: { create_image: { ok: 1 }, view_images: { ok: 2, error: 1 } },
+        abnormal: [],
+        abnormal_omitted: 0,
+      },
+      status: 'ok',
+      task_status: 'completed',
+      wake_budget: budget,
+    },
+  );
+  assert.deepEqual(view, {
+    kind: 'script',
+    code: 'return "ok";',
+    description: '画一只椰子',
+    mode: '同步',
+    outcome: { kind: 'value', text: '  *  \n *** ' },
+    calls: [
+      { text: 'create_image ×1', abnormal: false },
+      { text: 'view_images ×2', abnormal: false },
+      { text: 'view_images error ×1', abnormal: true },
+    ],
+    logs: ['step 1'],
+  });
+});
+
+test('execute_javascript distinguishes pending jobs and failures', () => {
+  const pending = toolView(
+    'execute_javascript',
+    { description: 'd', code: 'x', mode: 'async' },
+    { status: 'pending', job_id: 'js_2', wake_budget: budget },
+  );
+  assert.equal(pending?.kind, 'script');
+  assert.deepEqual(pending?.kind === 'script' && pending.outcome, {
+    kind: 'pending',
+    jobId: 'js_2',
+  });
+  const failed = toolView(
+    'execute_javascript',
+    { description: 'd', code: 'x', mode: 'sync' },
+    {
+      job_id: 'js_3',
+      error: 'execution_error',
+      logs: [],
+      diagnostic: {
+        name: 'TypeError',
+        message: 'x is not a function',
+        stack: 'TypeError: x is not a function\n    at main',
+        truncated: false,
+        kind: 'guest_exception',
+        phase: 'execute',
+      },
+      status: 'error',
+      task_status: 'failed',
+    },
+  );
+  assert.deepEqual(failed?.kind === 'script' && failed.outcome, {
+    kind: 'error',
+    message: 'TypeError: x is not a function',
+    stack: 'TypeError: x is not a function\n    at main',
+  });
+  const contract = toolView(
+    'execute_javascript',
+    { code: 'x' },
+    { error: 'invalid_log_type', status: 'error', task_status: 'failed' },
+  );
+  assert.deepEqual(contract?.kind === 'script' && contract.outcome, {
+    kind: 'error',
+    message: 'invalid_log_type',
+    stack: '',
+  });
+});
+
+test('query_javascript_jobs shows the queried job without code, in either field naming', () => {
+  for (const job of [
+    {
+      job_id: 'js_4',
+      description: '旋转',
+      mode: 'async',
+      status: 'completed',
+      value: '{"a":1}',
+      tool_calls: { counts: { send_group_image: { ok: 1 } } },
+    },
+    {
+      jobId: 'js_4',
+      description: '旋转',
+      mode: 'async',
+      status: 'completed',
+      value: '{"a":1}',
+      toolCalls: { counts: { send_group_image: { ok: 1 } } },
+    },
+  ]) {
+    assert.deepEqual(
+      toolView(
+        'query_javascript_jobs',
+        { job_id: 'js_4' },
+        { status: 'ok', job },
+      ),
+      {
+        kind: 'script',
+        code: null,
+        description: '旋转',
+        mode: '异步',
+        outcome: { kind: 'value', text: '{"a":1}' },
+        calls: [{ text: 'send_group_image ×1', abnormal: false }],
+        logs: [],
+      },
+    );
+  }
+  assert.deepEqual(
+    toolView('query_javascript_jobs', {}, { status: 'ok', jobs: [{}, {}] }),
+    { kind: 'line', text: '列出 2 个任务' },
+  );
+});
+
+test('only whole JSON objects or arrays are treated as structured return values', () => {
+  assert.deepEqual(structuredText(' {"a":[1]} '), { a: [1] });
+  assert.deepEqual(structuredText('[1,2]'), [1, 2]);
+  // 标量、普通文本和夹着JSON的文本都按原文展示。
+  for (const text of [
+    '123456789123',
+    '"hi"',
+    'true',
+    'null',
+    '  *  \n ***',
+    'x\n{"fish":42}',
+    '{broken',
+    '',
+  ]) {
+    assert.equal(structuredText(text), null, text);
+  }
+});
+
+test('javascript highlighting keeps the exact source text', () => {
+  const code = [
+    '// 注释',
+    'const s = `a ${b} c`; /* 块 */',
+    "let n = 0x1f + 3.5e2 + 10n, t = 'it\\'s', u = \"q\";",
+    'if (x === null) return undefined;',
+    'const unterminated = "oops',
+  ].join('\n');
+  const tokens = highlightJs(code);
+  assert.equal(tokens.map((t) => t.text).join(''), code);
+  const kinds = (kind: string) =>
+    tokens.filter((t) => t.kind === kind).map((t) => t.text.trim());
+  assert.ok(kinds('comment').includes('// 注释'));
+  assert.ok(kinds('keyword').some((t) => t.startsWith('const')));
+  assert.ok(kinds('string').includes('`a ${b} c`'));
+  assert.ok(kinds('number').includes('0x1f'));
+  assert.ok(kinds('number').includes('10n'));
+  assert.ok(kinds('literal').includes('null'));
+  // 标识符中包含关键字片段时不着色。
+  assert.ok(!highlightJs('constant').some((t) => t.kind === 'keyword'));
 });

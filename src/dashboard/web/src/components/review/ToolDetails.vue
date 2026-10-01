@@ -5,12 +5,16 @@ import type { ReviewTool } from '../../../../contracts/review';
 import { duration, status, time } from '../../api/client';
 import ContentViewer from './ContentViewer.vue';
 import CopyId from './CopyId.vue';
+import FoldBlock from './FoldBlock.vue';
+import { highlightJs } from './js-highlight';
+import { highlightJson } from './json-highlight';
 import MessageParts from './MessageParts.vue';
 import ReplyQuote from './ReplyQuote.vue';
 import {
   argumentsLine,
   type LookupContext,
   resultProblem,
+  structuredText,
   toolView,
 } from './tool-summary';
 
@@ -37,6 +41,24 @@ const failed = computed(() =>
   ),
 );
 const raw = ref(false);
+const code = computed(() =>
+  view.value?.kind === 'script' && view.value.code !== null
+    ? highlightJs(view.value.code)
+    : null,
+);
+const returned = computed(() => {
+  const outcome = view.value?.kind === 'script' ? view.value.outcome : null;
+  if (outcome?.kind !== 'value') {
+    return null;
+  }
+  const json = structuredText(outcome.text);
+  return {
+    json: json !== null,
+    tokens: json ? highlightJson(json) : null,
+    text: outcome.text,
+  };
+});
+const stack = ref(false);
 </script>
 <template>
   <article class="tool-detail" :class="{ failed }">
@@ -80,6 +102,72 @@ const raw = ref(false);
       </li>
       <li v-if="view.more" class="muted">另有 {{ view.more }} 条</li>
     </ul>
+    <div v-else-if="view?.kind === 'script'" class="script">
+      <p v-if="view.description || view.mode" class="summary-line">
+        {{ view.description
+        }}<span v-if="view.mode" class="badge script-mode">{{
+          view.mode
+        }}</span>
+      </p>
+      <FoldBlock v-if="code" :lines="12" label="代码" class="code"
+        ><template v-for="(token, index) in code" :key="index"
+          ><span :class="token.kind">{{ token.text }}</span></template
+        ></FoldBlock
+      >
+      <template v-if="view.outcome">
+        <template v-if="returned">
+          <p class="script-label muted">
+            返回值<span v-if="returned.json" class="badge">JSON</span>
+          </p>
+          <FoldBlock :lines="8" label="返回值" :class="{ json: returned.json }"
+            ><template v-if="returned.tokens"
+              ><template v-for="(token, index) in returned.tokens" :key="index"
+                ><span :class="token.kind">{{ token.text }}</span></template
+              ></template
+            ><template v-else>{{ returned.text }}</template></FoldBlock
+          >
+        </template>
+        <p v-else-if="view.outcome.kind === 'pending'" class="summary-line">
+          已转为后台任务<code v-if="view.outcome.jobId">{{
+            view.outcome.jobId
+          }}</code>
+        </p>
+        <template v-else-if="view.outcome.kind === 'error'">
+          <p class="summary-line error">{{ view.outcome.message }}</p>
+          <button
+            v-if="view.outcome.stack"
+            type="button"
+            class="raw-toggle stack-toggle"
+            :aria-expanded="stack"
+            @click="stack = !stack"
+          >
+            {{ stack ? '收起调用栈' : '调用栈' }}
+          </button>
+          <FoldBlock
+            v-if="stack && view.outcome.stack"
+            :lines="12"
+            label="调用栈"
+            >{{ view.outcome.stack }}</FoldBlock
+          >
+        </template>
+        <p v-else class="summary-line muted">{{ status(view.outcome.text) }}</p>
+      </template>
+      <p v-if="view.calls.length" class="summary-line script-calls">
+        沙箱内调用
+        <span
+          v-for="call in view.calls"
+          :key="call.text"
+          :class="{ error: call.abnormal }"
+          >{{ call.text }}</span
+        >
+      </p>
+      <template v-if="view.logs.length">
+        <p class="script-label muted">日志</p>
+        <FoldBlock :lines="8" label="日志">{{
+          view.logs.join('\n')
+        }}</FoldBlock>
+      </template>
+    </div>
     <p v-else-if="view?.kind === 'line'" class="summary-line">
       {{ view.text }}
     </p>
@@ -195,6 +283,61 @@ const raw = ref(false);
   margin: var(--space-1) 0 0;
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+.script-mode {
+  margin-left: var(--space-2);
+}
+.script-label {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-small);
+}
+.script-label .badge {
+  margin-left: var(--space-1);
+}
+.script-calls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  color: var(--muted);
+}
+.script-calls span {
+  color: var(--text);
+  font-family: ui-monospace, monospace;
+}
+.script-calls span.error {
+  color: #b3343d;
+}
+.stack-toggle {
+  margin: 0;
+  padding: 0;
+}
+.summary-line code {
+  margin-left: var(--space-2);
+  font-size: var(--font-small);
+}
+/* 与 ContentViewer 的JSON配色一致。 */
+.code :deep(.keyword) {
+  color: #8a3ab9;
+}
+.code :deep(.string),
+.json :deep(.string) {
+  color: #3d6b21;
+}
+.code :deep(.number),
+.code :deep(.literal),
+.json :deep(.number),
+.json :deep(.literal) {
+  color: #a3531d;
+}
+.code :deep(.comment) {
+  color: #8493a9;
+  font-style: italic;
+}
+.json :deep(.key) {
+  color: #0b6e86;
+}
+.json :deep(.punct) {
+  color: #8493a9;
 }
 .raw {
   display: grid;
