@@ -11,7 +11,7 @@ import PerformanceFacts from '../ui/PerformanceFacts.vue';
 import ContentViewer from './ContentViewer.vue';
 import CopyId from './CopyId.vue';
 import ToolDetails from './ToolDetails.vue';
-import { collectNames } from './tool-summary';
+import { collectNames, collectQuotes } from './tool-summary';
 
 const props = defineProps<{ wakeId: string; groupId: string }>();
 const { data, loading, error, retry } = useResource<WakeReviewDetail>(
@@ -20,9 +20,10 @@ const { data, loading, error, retry } = useResource<WakeReviewDetail>(
       `wakes/${encodeURIComponent(props.wakeId)}/review?groupId=${encodeURIComponent(props.groupId)}`,
   ),
 );
-const names = computed(() =>
-  collectNames(data.value?.tools ?? [], data.value?.memberNames),
-);
+const lookup = computed(() => ({
+  names: collectNames(data.value?.tools ?? [], data.value?.memberNames),
+  quotes: collectQuotes(data.value?.tools ?? [], data.value?.quotedMessages),
+}));
 const tab = ref('process');
 const tabs = [
   { id: 'process', label: '执行过程' },
@@ -227,7 +228,7 @@ const timeline = computed(() =>
                   v-else-if="item.tool"
                   :tool="item.tool"
                   :group-id="data.wake.groupId"
-                  :names="names"
+                  :lookup="lookup"
                 />
               </li>
             </ol>

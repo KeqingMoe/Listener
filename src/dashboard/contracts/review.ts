@@ -72,8 +72,18 @@ export interface RequestReviewDetail {
   tools: ReviewTool[];
   /** 工具内容中出现的成员QQ号到最近观测的群名片或昵称；未观测到的不列出。 */
   memberNames: Record<string, string>;
+  /** 工具内容中被回复的消息ID到该消息；本地已不保留的不列出。 */
+  quotedMessages: Record<string, QuotedMessage>;
   previousRequest: RequestLink | null;
   nextRequests: RequestLink[];
+}
+
+/** 被回复消息的概要，内容已按审阅规则脱敏并截断。 */
+export interface QuotedMessage {
+  userId: string;
+  nickname: string;
+  text: string;
+  segments?: unknown[];
 }
 
 export interface WakeReviewDetail {
@@ -82,6 +92,8 @@ export interface WakeReviewDetail {
   tools: ReviewTool[];
   /** 工具内容中出现的成员QQ号到最近观测的群名片或昵称；未观测到的不列出。 */
   memberNames: Record<string, string>;
+  /** 工具内容中被回复的消息ID到该消息；本地已不保留的不列出。 */
+  quotedMessages: Record<string, QuotedMessage>;
   messages: Array<{
     role: string;
     content: unknown;

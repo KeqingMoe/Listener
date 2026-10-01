@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   argumentsLine,
   collectNames,
+  collectQuotes,
   partsText,
   resultProblem,
   segmentParts,
@@ -18,13 +19,17 @@ test('segments become typed parts without the reply marker', () => {
     { type: 'face', id: 14, name: '微笑' },
     { type: 'face', id: 15 },
     { type: 'image', content_status: 'not_viewed' },
+    { type: 'image', image_id: 'img_9_0', content_status: 'not_viewed' },
     { type: 'unsupported', kind: 'json' },
   ]);
   assert.deepEqual(
     parts.map((part) => part.kind),
-    ['at', 'text', 'face', 'face', 'media', 'other'],
+    ['at', 'text', 'face', 'face', 'media', 'media', 'other'],
   );
-  assert.equal(partsText(parts), '[@100000001]你好[微笑][表情15][图片][json]');
+  assert.equal(
+    partsText(parts),
+    '[@100000001]你好[微笑][表情15][图片][图片 img_9_0][json]',
+  );
   assert.deepEqual(segmentParts(null), []);
 });
 
@@ -71,8 +76,50 @@ test('send_message shows the outgoing parts and reply target', () => {
       { reply_to: '42', segments: [{ type: 'text', text: '收到' }] },
       { status: 'ok' },
     ),
-    { kind: 'send', parts: [{ kind: 'text', text: '收到' }], replyTo: '42' },
+    {
+      kind: 'send',
+      parts: [{ kind: 'text', text: '收到' }],
+      reply: { messageId: '42', quote: null },
+    },
   );
+});
+
+test('replies resolve to the quoted message one level deep', () => {
+  const quotes = collectQuotes(
+    [
+      {
+        result: {
+          messages: [
+            {
+              messageId: '42',
+              userId: '100000001',
+              nickname: '本次名字',
+              replyTo: '41',
+              representation: 'segments',
+              segments: [{ type: 'text', text: '原消息' }],
+            },
+          ],
+        },
+      },
+    ],
+    {
+      42: { userId: '100000001', nickname: '服务端名字', text: '旧' },
+      41: { userId: '100000002', nickname: '乙', text: '更早' },
+    },
+  );
+  const view = toolView(
+    'send_message',
+    { reply_to: '42', segments: [{ type: 'text', text: '好' }] },
+    { status: 'ok' },
+    { quotes },
+  );
+  assert.equal(view?.kind, 'send');
+  if (view?.kind !== 'send') {
+    return;
+  }
+  assert.equal(view.reply?.quote?.who, '本次名字');
+  assert.equal(partsText(view.reply!.quote!.parts), '原消息');
+  assert.equal(view.reply?.quote?.reply?.quote, null);
 });
 
 test('read_messages lists speakers with ids, marks bot and recalled, and caps length', () => {
@@ -135,7 +182,7 @@ test('read_events shows messages inline and other events by type and actor name'
         { type: 'poke.created', actor_id: '100000002', payload: null },
       ],
     },
-    new Map([['100000002', '群友']]),
+    { names: new Map([['100000002', '群友']]) },
   );
   assert.deepEqual(view, {
     kind: 'messages',
@@ -160,6 +207,10 @@ test('unknown tools fall back to a compact argument line', () => {
   assert.equal(
     argumentsLine({ user_id: '1', limit: 5, nested: { a: 1 }, flag: true }),
     'user_id=1 limit=5 nested flag=true',
+  );
+  assert.equal(
+    argumentsLine({ image_ids: ['img_1_0', 'img_2_0'], items: [{ a: 1 }] }),
+    'image_ids=img_1_0,img_2_0 items',
   );
   assert.equal(argumentsLine({ text: 'x'.repeat(200) }, 20).length, 20);
   assert.equal(argumentsLine(null), '');

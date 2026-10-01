@@ -9,7 +9,7 @@ import PerformanceFacts from '../ui/PerformanceFacts.vue';
 import ContentViewer from './ContentViewer.vue';
 import CopyId from './CopyId.vue';
 import ToolDetails from './ToolDetails.vue';
-import { collectNames } from './tool-summary';
+import { collectNames, collectQuotes } from './tool-summary';
 import ModelBodyReader from './ModelBodyReader.vue';
 
 const route = useRoute();
@@ -20,9 +20,10 @@ const { data, loading, error, retry } = useResource<RequestReviewDetail>(
       `requests/${encodeURIComponent(props.requestId)}?groupId=${encodeURIComponent(props.groupId)}`,
   ),
 );
-const names = computed(() =>
-  collectNames(data.value?.tools ?? [], data.value?.memberNames),
-);
+const lookup = computed(() => ({
+  names: collectNames(data.value?.tools ?? [], data.value?.memberNames),
+  quotes: collectQuotes(data.value?.tools ?? [], data.value?.quotedMessages),
+}));
 const tab = ref('output');
 const tabs = [
   { id: 'output', label: '输出' },
@@ -274,7 +275,7 @@ const diagnosticFacts = computed(() => {
               :key="`${tool.ordinal}-${index}`"
               :tool="tool"
               :group-id="data.request.groupId"
-              :names="names"
+              :lookup="lookup"
           /></template>
         </section> </template
     ></DataState>

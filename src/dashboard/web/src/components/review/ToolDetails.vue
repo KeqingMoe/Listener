@@ -6,9 +6,10 @@ import { duration, status, time } from '../../api/client';
 import ContentViewer from './ContentViewer.vue';
 import CopyId from './CopyId.vue';
 import MessageParts from './MessageParts.vue';
+import ReplyQuote from './ReplyQuote.vue';
 import {
   argumentsLine,
-  type Names,
+  type LookupContext,
   resultProblem,
   toolView,
 } from './tool-summary';
@@ -17,15 +18,15 @@ const route = useRoute();
 const props = defineProps<{
   tool: ReviewTool;
   groupId: string;
-  /** 同一唤醒或请求范围内收集的QQ号到显示名。 */
-  names?: Names;
+  /** 同一唤醒或请求范围内收集的名字与可引用消息。 */
+  lookup?: LookupContext;
 }>();
 const view = computed(() =>
   toolView(
     props.tool.name,
     props.tool.arguments,
     props.tool.result,
-    props.names,
+    props.lookup,
   ),
 );
 const problem = computed(() => resultProblem(props.tool.result));
@@ -56,9 +57,9 @@ const raw = ref(false);
       {{ problem || status(tool.reasonCode) }}
     </p>
     <div v-if="view?.kind === 'send'" class="bubble">
-      <span v-if="view.replyTo" class="muted reply"
-        >回复 {{ view.replyTo }}</span
-      ><MessageParts :parts="view.parts" />
+      <ReplyQuote v-if="view.reply" :reply="view.reply" /><MessageParts
+        :parts="view.parts"
+      />
     </div>
     <ul v-else-if="view?.kind === 'messages'" class="chat-lines">
       <li v-if="!view.lines.length" class="muted">没有消息</li>
@@ -72,7 +73,10 @@ const raw = ref(false);
           }}<small v-if="line.userId && line.who !== line.userId">
             ({{ line.userId }})</small
           ></span
-        ><MessageParts class="said" :parts="line.parts" />
+        ><span class="said"
+          ><ReplyQuote v-if="line.reply" :reply="line.reply" /><MessageParts
+            :parts="line.parts"
+        /></span>
       </li>
       <li v-if="view.more" class="muted">另有 {{ view.more }} 条</li>
     </ul>
@@ -150,10 +154,6 @@ const raw = ref(false);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   max-width: 36rem;
-}
-.reply {
-  display: block;
-  font-size: var(--font-small);
 }
 .chat-lines {
   list-style: none;

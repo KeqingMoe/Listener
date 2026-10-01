@@ -11,18 +11,25 @@ export interface Part {
   title?: string;
 }
 
+/** 被回复的消息；本地查不到时 quote 为 null，只显示ID。 */
+export interface Reply {
+  messageId: string;
+  quote: ChatLine | null;
+}
+
 export interface ChatLine {
   /** 发言人显示名；未知时为空串。 */
   who: string;
   userId: string;
   parts: Part[];
+  reply?: Reply;
   bot?: boolean;
   recalled?: boolean;
 }
 
 export type ToolView =
   /** Bot发出的一条消息。 */
-  | { kind: 'send'; parts: Part[]; replyTo: string | null }
+  | { kind: 'send'; parts: Part[]; reply: Reply | null }
   /** 读取到的消息列表。 */
   | { kind: 'messages'; lines: ChatLine[]; more: number }
   /** 一行文字说明。 */
@@ -30,6 +37,14 @@ export type ToolView =
 
 /** QQ号到显示名的对照，来自同一范围内读到的消息与成员资料。 */
 export type Names = ReadonlyMap<string, string>;
+
+/** 消息ID到原始消息对象，用于展示回复引用。 */
+export type Quotes = ReadonlyMap<string, unknown>;
+
+export interface LookupContext {
+  names?: Names;
+  quotes?: Quotes;
+}
 
 type Json = Record<string, unknown>;
 
@@ -86,6 +101,37 @@ export function collectNames(
   return names;
 }
 
+/** 从工具结果收集消息ID到消息；本次读到的优先，fallback 补足其余。 */
+export function collectQuotes(
+  tools: readonly { result: unknown }[],
+  fallback: Readonly<Record<string, unknown>> = {},
+): Map<string, unknown> {
+  const quotes = new Map<string, unknown>();
+  const add = (raw: unknown) => {
+    const id = str(record(raw)?.messageId);
+    if (id && !quotes.has(id)) {
+      quotes.set(id, raw);
+    }
+  };
+  for (const tool of tools) {
+    const r = record(tool.result);
+    if (!r) {
+      continue;
+    }
+    list(r.messages).forEach(add);
+    add(r.message);
+    for (const raw of list(r.events)) {
+      add(record(record(raw)?.payload)?.message);
+    }
+  }
+  for (const [id, message] of Object.entries(fallback)) {
+    if (!quotes.has(id)) {
+      quotes.set(id, message);
+    }
+  }
+  return quotes;
+}
+
 /** 片段转为展示片段；与 Segment 声明一一对应，reply 片段不展示。 */
 export function segmentParts(segments: unknown, names: Names = new Map()) {
   const parts: Part[] = [];
@@ -112,7 +158,10 @@ export function segmentParts(segments: unknown, names: Names = new Map()) {
       case 'reply':
         break;
       case 'image':
-        parts.push({ kind: 'media', text: '图片' });
+        parts.push({
+          kind: 'media',
+          text: str(s.image_id) ? `图片 ${str(s.image_id)}` : '图片',
+        });
         break;
       case 'record':
         parts.push({ kind: 'media', text: '语音' });
@@ -137,11 +186,29 @@ export function partsText(parts: readonly Part[]): string {
     .join('');
 }
 
-function messageLine(raw: unknown, names: Names): ChatLine | null {
+function reply(id: string, ctx: Required<LookupContext>): Reply {
+  // 引用只展开一层，避免链式回复无限嵌套。
+  const quote = messageLine(ctx.quotes.get(id), {
+    names: ctx.names,
+    quotes: new Map(),
+  });
+  return { messageId: id, quote };
+}
+
+function context(ctx: LookupContext): Required<LookupContext> {
+  return { names: ctx.names ?? new Map(), quotes: ctx.quotes ?? new Map() };
+}
+
+function messageLine(
+  raw: unknown,
+  ctx: Required<LookupContext>,
+): ChatLine | null {
   const m = record(raw);
   if (!m) {
     return null;
   }
+  const names = ctx.names;
+  const replyTo = str(m.replyTo);
   const userId = str(m.userId);
   const parts =
     m.representation === 'legacy_text'
@@ -154,6 +221,7 @@ function messageLine(raw: unknown, names: Names): ChatLine | null {
       parts.length || !str(m.text)
         ? parts
         : [{ kind: 'text', text: str(m.text) }],
+    ...(replyTo ? { reply: reply(replyTo, ctx) } : {}),
     ...(m.bot === true ? { bot: true } : {}),
     ...(m.recalled === true ? { recalled: true } : {}),
   };
@@ -170,16 +238,20 @@ function lines(items: (ChatLine | null)[]): ToolView {
   };
 }
 
-/** 参数概要：标量写成 key=value，复杂值只写键名，按原顺序。 */
-export function argumentsLine(args: unknown, max = 120): string {
+const scalar = (value: unknown) => value === null || typeof value !== 'object';
+
+/** 参数概要：标量和标量数组写成 key=value，其他复杂值只写键名，按原顺序。 */
+export function argumentsLine(args: unknown, max = 160): string {
   const a = record(args);
   if (!a) {
     return '';
   }
   const parts = Object.entries(a).map(([key, value]) =>
-    value !== null && typeof value === 'object'
-      ? key
-      : `${key}=${typeof value === 'string' ? value : String(value)}`,
+    Array.isArray(value) && value.every(scalar)
+      ? `${key}=${value.map(String).join(',')}`
+      : scalar(value)
+        ? `${key}=${String(value)}`
+        : key,
   );
   const line = parts.join(' ');
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
@@ -190,8 +262,10 @@ export function toolView(
   name: string,
   args: unknown,
   result: unknown,
-  names: Names = new Map(),
+  lookup: LookupContext = {},
 ): ToolView | null {
+  const ctx = context(lookup);
+  const names = ctx.names;
   const a = record(args) ?? {};
   const r = record(result) ?? {};
   switch (name) {
@@ -199,14 +273,14 @@ export function toolView(
       return {
         kind: 'send',
         parts: segmentParts(a.segments, names),
-        replyTo: str(a.reply_to) || null,
+        reply: str(a.reply_to) ? reply(str(a.reply_to), ctx) : null,
       };
     case 'read_messages':
       return Array.isArray(r.messages)
-        ? lines(r.messages.map((m) => messageLine(m, names)))
+        ? lines(r.messages.map((m) => messageLine(m, ctx)))
         : null;
     case 'read_message': {
-      const line = messageLine(r.message, names);
+      const line = messageLine(r.message, ctx);
       return line ? lines([line]) : null;
     }
     case 'read_events':
@@ -216,7 +290,7 @@ export function toolView(
               const e = record(raw);
               const payload = record(e?.payload);
               if (e?.type === 'message.created' && payload?.message) {
-                return messageLine(payload.message, names);
+                return messageLine(payload.message, ctx);
               }
               const actor = str(e?.actor_id);
               return {
@@ -244,7 +318,7 @@ export function toolView(
           { kind: 'media', text: 'AI语音' },
           { kind: 'text', text: str(a.text) },
         ],
-        replyTo: null,
+        reply: null,
       };
     case 'finish':
       return { kind: 'line', text: '结束本次唤醒' };

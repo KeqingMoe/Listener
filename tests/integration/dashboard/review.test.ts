@@ -157,6 +157,7 @@ function fixture(old = false) {
         cursor: 'cursor-visible',
         message_id: '123',
         user_id: '100000001',
+        reply_to: '9003',
         face_ref: 'face-visible',
         password: 'private-pw',
       }),
@@ -186,9 +187,9 @@ function fixture(old = false) {
         time: 1,
         segments: [{ type: 'text', text: 'x' }],
       });
-    message('m1', '100000001', '旧名');
-    message('m2', '100000001', '新名');
-    message('m3', '100000002', '100000002');
+    message('9001', '100000001', '旧名');
+    message('9002', '100000001', '新名');
+    message('9003', '100000002', '100000002');
     world.close();
   }
   const auth = new AuthStore({
@@ -572,6 +573,14 @@ test('authorized review exposes business context, exact tool linkage and Respons
     assert.deepEqual(b.tools[0].result.messages, ['actual readable content']);
     // 最近一次观测的名字；名字等于QQ号或从未出现的成员不列出。
     assert.deepEqual(b.memberNames, { 100000001: '新名' });
+    assert.deepEqual(b.quotedMessages, {
+      9003: {
+        userId: '100000002',
+        nickname: '100000002',
+        text: 'x',
+        segments: [{ type: 'text', text: 'x' }],
+      },
+    });
     assert.equal(b.reasoningText, 'visible reasoning');
     assert.equal(b.errorText, null);
     assert.equal(b.nextRequests[0].requestId, 'cancel');
