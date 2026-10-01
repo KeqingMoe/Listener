@@ -6,6 +6,8 @@ import {
   ResponseStateExpiredError,
 } from '../../../src/model/responses.ts';
 import {
+  ENCRYPTED_REASONING,
+  responseInspection,
   sanitizeInspection,
   sanitizeInspectionValue,
 } from '../../../src/observability/request-inspection.ts';
@@ -129,6 +131,31 @@ test('structured image base64 is omitted precisely while business data stays int
   assert.deepEqual(value.business, original.business);
   assert.deepEqual(value.other, original.other);
   assert.deepEqual(value.remote, original.remote);
+});
+
+test('reasoning marks encrypted content only when no readable text exists', () => {
+  const inspect = (...output: unknown[]) =>
+    responseInspection(JSON.stringify({ output })).reasoningText;
+  assert.equal(
+    inspect(
+      {
+        type: 'reasoning',
+        summary: [{ type: 'summary_text', text: 'visible' }],
+        encrypted_content: 'opaque',
+      },
+      { type: 'reasoning', encrypted_content: 'opaque' },
+    ),
+    `visible\n${ENCRYPTED_REASONING}`,
+  );
+  assert.equal(
+    inspect({
+      type: 'reasoning',
+      content: [{ type: 'reasoning_text', text: 'raw' }],
+      encrypted_content: 'opaque',
+    }),
+    'raw',
+  );
+  assert.equal(inspect({ type: 'reasoning', summary: [] }), undefined);
 });
 
 test('text headers redact complete auth and cookie values without swallowing ordinary prose', () => {
@@ -346,8 +373,7 @@ test('Responses captures reasoning, actual live/restored modes and explicit expi
   const messages = [{ role: 'user' as const, content: 'question' }];
   await model.complete(messages);
   const checkpoint = model.getContinuationCheckpoint()!;
-  assert.match(ends[0]!.inspection!.reasoningText!, /actual summary/);
-  assert.match(ends[0]!.inspection!.reasoningText!, /not readable/);
+  assert.equal(ends[0]!.inspection!.reasoningText, 'actual summary');
   const restored = new ResponsesModel({
     ...options,
     sessionId: 'test',

@@ -37,6 +37,9 @@ function scrubText(text: string, secrets: readonly string[]): string {
   );
 }
 
+export const ENCRYPTED_REASONING =
+  '[encrypted reasoning omitted; not readable]';
+
 function scrub(value: unknown, secrets: readonly string[], depth = 0): unknown {
   if (depth > 80) {
     return '[omitted: nesting limit]';
@@ -67,7 +70,7 @@ function scrub(value: unknown, secrets: readonly string[], depth = 0): unknown {
         (key === 'code' && record.status === 'confirmation_required')
           ? '[REDACTED]'
           : key === 'encrypted_content'
-            ? '[encrypted reasoning omitted; not readable]'
+            ? ENCRYPTED_REASONING
             : key === 'data' && imageBase64 && typeof v === 'string'
               ? `[image data omitted; ${Buffer.byteLength(v)} bytes]`
               : scrub(v, secrets, depth + 1),
@@ -226,19 +229,25 @@ export function responseInspection(
     }
     for (const item of raw.output ?? []) {
       if (item?.type === 'reasoning') {
+        const readable: string[] = [];
         for (const key of ['summary', 'content']) {
           for (const part of Array.isArray(item[key]) ? item[key] : []) {
             if (typeof part?.text === 'string') {
-              reasoning.push(part.text);
+              readable.push(part.text);
             }
           }
         }
         if (typeof item.text === 'string') {
-          reasoning.push(item.text);
+          readable.push(item.text);
         }
-        if (item.encrypted_content) {
-          reasoning.push('[encrypted reasoning omitted; not readable]');
-        }
+        // 加密副本与可读摘要常同时返回；只有完全没有可读内容时才标注。
+        reasoning.push(
+          ...(readable.length
+            ? readable
+            : item.encrypted_content
+              ? [ENCRYPTED_REASONING]
+              : []),
+        );
       }
     }
     if (reasoning.length) {
