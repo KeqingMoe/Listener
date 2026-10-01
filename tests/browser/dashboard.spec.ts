@@ -1654,9 +1654,9 @@ for (const protocol of [
       output.getByRole('region', { name: '模型正文', exact: true }),
     ).toContainText(protocol.answer);
     await expect(
-      output.getByText('模型提出（未据此确认执行）', { exact: true }),
+      output.getByRole('heading', { name: /^提出调用 read_events/ }),
     ).toBeVisible();
-    await expect(output).toContainText('read_events');
+    await expect(output).not.toContainText('工具名称');
     await expect(output).toContainText(protocol.args);
     if (protocol.name === 'Responses') {
       await mkdir(resolve('artifacts'), { recursive: true });

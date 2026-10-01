@@ -134,13 +134,13 @@ const reading = computed(() => {
         /* 非JSON参数保留原样。 */
       }
     }
-    add('模型提出（未据此确认执行）', {
-      工具名称: typeof fn.name === 'string' ? fn.name : '未记录',
-      参数: args,
-      ...(typeof (item.call_id ?? item.id) === 'string'
-        ? { 调用标识: item.call_id ?? item.id }
-        : {}),
-    });
+    // 只是模型提出的调用，是否执行以工具记录为准；参数按原值展示。
+    const id = item.call_id ?? item.id;
+    add(
+      `提出调用 ${typeof fn.name === 'string' ? fn.name : '（未记录名称）'}`,
+      args,
+      typeof id === 'string' ? id : undefined,
+    );
   }
   function message(item: unknown): boolean {
     if (typeof item === 'string') {
