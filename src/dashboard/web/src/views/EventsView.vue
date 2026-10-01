@@ -238,6 +238,9 @@ const levelLabel = (level: string) =>
 .events-table td {
   vertical-align: top;
 }
+.event-time span + span {
+  margin-left: 0.5em;
+}
 .event-detail {
   min-width: 18rem;
   max-width: 42rem;
@@ -256,6 +259,9 @@ const levelLabel = (level: string) =>
 @media (max-width: 600px) {
   .event-time span {
     display: block;
+  }
+  .event-time span + span {
+    margin-left: 0;
   }
   .events-table th,
   .events-table td {

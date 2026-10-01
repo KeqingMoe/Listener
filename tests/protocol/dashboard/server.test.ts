@@ -228,6 +228,47 @@ test('safe metadata, weighted usage, missing usage, and enabled-group isolation'
   }
 });
 
+test('wake list summarizes only executed bot replies in order with folded whitespace', async () => {
+  const f = fixture();
+  const db = new DatabaseSync(f.sessionPath);
+  const send = db.prepare(
+    'INSERT INTO model_tool_ledger VALUES(?,?,?,?,?,?,?,?,?)',
+  );
+  const message = (ordinal: number, state: string, segments: unknown[]) =>
+    send.run(
+      ordinal,
+      'send_message',
+      'wake-one',
+      state,
+      JSON.stringify({ segments }),
+      JSON.stringify({ status: 'ok' }),
+      111,
+      112,
+      113,
+    );
+  message(2, 'finished', [
+    { type: 'at', user_id: '1' },
+    { type: 'text', text: ' 你好\n世界 ' },
+    { type: 'face', id: 1, name: '微笑' },
+  ]);
+  message(3, 'proposed', [{ type: 'text', text: '未执行' }]);
+  message(4, 'finished', [{ type: 'text', text: '第二条' }]);
+  db.close();
+  const app = buildApp(f.options);
+  try {
+    const d = (await app.inject('/api/wakes/wake-one?groupId=11')).json();
+    assert.equal(d.wake.reply, '@ 你好 世界 [微笑] / 第二条');
+    const list = (await app.inject('/api/wakes?since=0&until=300')).json();
+    const other = list.items.find(
+      (w: { wakeId: string }) => w.wakeId === 'wake-two',
+    );
+    assert.equal(other.reply, null);
+  } finally {
+    await app.close();
+    f.cleanup();
+  }
+});
+
 test('wake correlation uses request IDs, safe detail projection, bound pagination', async () => {
   const f = fixture(),
     app = buildApp(f.options);
@@ -255,7 +296,7 @@ test('wake correlation uses request IDs, safe detail projection, bound paginatio
     assert.equal(detail.statusCode, 200);
     const d = detail.json();
     assert.equal(d.wake.outcome, 'completed');
-    assert.equal(d.wake.trigger, null);
+    assert.equal(d.wake.reply, null);
     assert.equal(d.requests[0].requestId, 'request-one');
     assert.equal(d.requests[0].errorCode, null);
     assert.equal(d.requests[0].httpStatus, null);

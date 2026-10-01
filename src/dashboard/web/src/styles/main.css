@@ -433,6 +433,15 @@ td small {
   cursor: help;
   margin-left: auto;
 }
+/* 发言摘要只占一行，完整文本见悬停或详情。 */
+.wake-reply {
+  display: block;
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
 .model-cell {
   max-width: 140px;
   overflow: hidden;

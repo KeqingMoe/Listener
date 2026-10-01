@@ -71,7 +71,8 @@ export interface WakeItem extends CacheMetrics {
   outcome: string | null;
   reasonCode: string | null;
   diagnostics: Record<string, number>;
-  trigger: null;
+  /** 本次唤醒Bot发言的纯文本摘要（已脱敏、截断）；没有发言时为null。 */
+  reply: string | null;
   modelRequests: number;
   toolCalls: number;
   /** 总输入token，包含缓存命中部分。 */

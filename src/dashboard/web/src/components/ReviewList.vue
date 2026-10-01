@@ -275,6 +275,11 @@ function resizeKey(e: KeyboardEvent) {
                       ? '执行中'
                       : status(r.outcome)
                   }}</span
+                ><small
+                  v-if="kind === 'wakes' && r.reply"
+                  class="wake-reply"
+                  :title="r.reply"
+                  >{{ r.reply }}</small
                 >
               </td>
               <template v-if="kind === 'requests'"

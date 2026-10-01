@@ -262,7 +262,12 @@ const metrics = computed(() => {
                       query: { ...route.query, model: m.modelName },
                     }"
                     >{{ m.modelName }}</RouterLink
-                  ><span v-else title="未记录模型名">—</span>
+                  ><span
+                    v-else
+                    class="muted"
+                    title="早期版本的请求记录没有保存模型名"
+                    >未记录模型</span
+                  >
                 </td>
                 <td>{{ number(m.requests) }}</td>
                 <td>{{ number(m.successes) }}</td>

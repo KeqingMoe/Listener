@@ -8,6 +8,7 @@ import {
 import { lstatSync } from 'node:fs';
 import { normalizeModelRequestDiagnostics } from '../../observability/model-diagnostics.ts';
 import { normalizeWakeDiagnostics } from '../../observability/wake-diagnostics.ts';
+import { sanitizeInspectionValue } from '../../observability/request-inspection.ts';
 import {
   requestOutcome,
   requestReason,
@@ -409,6 +410,52 @@ export class Repository {
     };
   }
 
+  /**
+   * 本次唤醒中Bot发言的纯文本摘要，供列表一眼看出做了什么；
+   * 只取已执行完成的send_message，按审阅规则脱敏，长度有界。没有发言时为null。
+   */
+  private replySummary(db: DatabaseSync, wakeId: string): string | null {
+    const texts: string[] = [];
+    for (const row of db
+      .prepare(
+        "SELECT substr(arguments,1,16384) AS arguments FROM model_tool_ledger WHERE wake_id=? AND name='send_message' AND state='finished' ORDER BY ordinal LIMIT 5",
+      )
+      .iterate(wakeId) as Iterable<Row>) {
+      let args: unknown;
+      try {
+        args = JSON.parse(row.arguments);
+      } catch {
+        continue;
+      }
+      const segments = (args as { segments?: unknown })?.segments;
+      const text = (Array.isArray(segments) ? segments : [])
+        .map((part: Row | null) =>
+          part?.type === 'text' && typeof part.text === 'string'
+            ? part.text
+            : part?.type === 'face'
+              ? `[${typeof part.name === 'string' ? part.name : '表情'}]`
+              : part?.type === 'at'
+                ? '@'
+                : '',
+        )
+        .join('')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (text) {
+        texts.push(text);
+      }
+    }
+    if (!texts.length) {
+      return null;
+    }
+    const joined = texts.join(' / ');
+    const clean = sanitizeInspectionValue(
+      joined.length > 120 ? `${joined.slice(0, 119)}…` : joined,
+      this.sources.inspectionSecrets ?? [],
+    ).value;
+    return typeof clean === 'string' ? clean : null;
+  }
+
   private wake(
     db: DatabaseSync,
     groupId: string,
@@ -450,7 +497,7 @@ export class Repository {
           sourceComplete: false,
         },
       ),
-      trigger: null,
+      reply: this.replySummary(db, row.wake_id),
       modelRequests: usage.requests,
       toolCalls: Number(
         db

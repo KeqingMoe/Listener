@@ -189,7 +189,7 @@ const wake: WakeItem = {
   outcome: 'message_submitted',
   reasonCode: 'message_submitted',
   diagnostics: { sent_submissions: 1 },
-  trigger: null,
+  reply: 'Synthetic bot reply',
   modelRequests: 3,
   toolCalls: 1,
   inputTokens: 1200,
