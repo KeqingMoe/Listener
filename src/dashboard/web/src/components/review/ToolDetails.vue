@@ -3,6 +3,8 @@ import { computed, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import type { ReviewTool } from '../../../../contracts/review';
 import { duration, status, time } from '../../api/client';
+import { useEstimatedTime } from '../../composables/useEstimatedTime';
+import { isScriptWaiting, scriptTiming } from './script-timing';
 import ContentViewer from './ContentViewer.vue';
 import CopyId from './CopyId.vue';
 import FoldBlock from './FoldBlock.vue';
@@ -33,6 +35,8 @@ const view = computed(() =>
     props.lookup,
   ),
 );
+const clock = useEstimatedTime(computed(() => isScriptWaiting(props.tool)));
+const timing = computed(() => scriptTiming(props.tool, clock.value));
 const problem = computed(() => resultProblem(props.tool.result));
 const argsLine = computed(() => argumentsLine(props.tool.arguments));
 const failed = computed(() =>
@@ -107,6 +111,12 @@ const stack = ref(false);
         {{ view.description
         }}<span v-if="view.mode" class="badge script-mode">{{
           view.mode
+        }}</span>
+      </p>
+      <p v-if="timing" class="summary-line script-timing" :title="timing.title">
+        <span class="muted">{{ timing.setting }}</span>
+        <span v-if="timing.progress" class="script-countdown">{{
+          timing.progress
         }}</span>
       </p>
       <FoldBlock v-if="code" :lines="12" label="代码" class="code"
@@ -293,6 +303,15 @@ const stack = ref(false);
 }
 .script-label .badge {
   margin-left: var(--space-1);
+}
+.script-timing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+.script-countdown {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
 }
 .script-calls {
   display: flex;

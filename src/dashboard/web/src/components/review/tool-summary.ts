@@ -360,7 +360,11 @@ export function toolView(
   }
 }
 
-const SCRIPT_MODES: Record<string, string> = { sync: '同步', async: '异步' };
+const SCRIPT_MODES: Record<string, string> = {
+  sync: '同步',
+  auto: '自动',
+  async: '异步',
+};
 
 /** 任务字段：execute_javascript 的参数与结果，或 query_javascript_jobs 返回的任务对象。 */
 function scriptJob(

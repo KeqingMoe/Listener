@@ -1,4 +1,5 @@
 import { rejectConfiguration } from '../composables/useAuth';
+import { serverClock } from '../composables/serverClock';
 
 export class ApiError extends Error {
   constructor(
@@ -15,6 +16,8 @@ export async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
     headers: { Accept: 'application/json' },
     credentials: 'same-origin',
   });
+  // Capture receipt before consuming the body; reuse existing GETs only.
+  serverClock.calibrate(response.headers.get('Date'), performance.now());
   if (response.status === 401) {
     window.dispatchEvent(new Event('dashboard:unauthorized'));
   }

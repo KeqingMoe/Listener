@@ -3168,6 +3168,9 @@ test('javascript tools show folded code, raw or JSON return values and failures'
   const first = items.nth(0);
   await expect(first).toContainText('画字符画');
   await expect(first).toContainText('同步');
+  await expect(first).toContainText('最多等待 5 秒，超时终止');
+  await expect(first).not.toContainText('约 ');
+  await expect(first).not.toContainText('已到预计时限');
   await expect(first).toContainText('create_image ×1');
   const codeBlock = first.getByLabel('代码', { exact: true });
   const folded = (await codeBlock.boundingBox())!.height;
@@ -3192,4 +3195,171 @@ test('javascript tools show folded code, raw or JSON return values and failures'
   await expect(items.nth(3)).toContainText('已转为后台任务js_4');
   await expect(items.nth(3)).toContainText('异步');
   await expect(items.nth(3).locator('p.error')).toHaveCount(0);
+});
+
+test('javascript foreground waits count down locally and stop on refreshed results', async ({
+  page,
+}) => {
+  await page.clock.install({ time: now });
+  await page.clock.pauseAt(now);
+  const running = (ordinal: number, mode: 'sync' | 'auto'): ReviewTool => ({
+    ...tool,
+    ordinal,
+    callId: `call-wait-${ordinal}`,
+    name: 'execute_javascript',
+    arguments: {
+      description: `等待-${mode}`,
+      code: 'await sleep(10)',
+      mode,
+      wait_ms: 5000,
+    },
+    state: 'started',
+    outcome: 'started',
+    status: null,
+    result: null,
+    startedAt: now,
+    finishedAt: null,
+    durationMs: null,
+  });
+  const state: MockState = { tools: [running(1, 'sync'), running(2, 'auto')] };
+  const { requests, posts } = await mock(page, state);
+  await page.goto(wakeUrl);
+  const automatic = page.getByRole('checkbox', {
+    name: '自动刷新',
+    exact: true,
+  });
+  await automatic.uncheck();
+  const items = page.locator('.wake-detail .tool-detail');
+  const sync = items.nth(0);
+  const auto = items.nth(1);
+  await expect(sync).toContainText('最多等待 5 秒，超时终止');
+  await expect(auto).toContainText('自动');
+  await expect(auto).toContainText('最多等待 5 秒，未完成则转后台');
+  await expect(sync).toContainText('约 5 秒后超时终止');
+  await expect(auto).toContainText('约 5 秒后转后台');
+  const initialRequests = requests.length;
+  await page.clock.runFor(2000);
+  await expect(sync).toContainText('约 3 秒后超时终止');
+  await expect(auto).toContainText('约 3 秒后转后台');
+  expect(requests).toHaveLength(initialRequests);
+  await page.clock.runFor(3000);
+  for (const item of [sync, auto]) {
+    await expect(item).toContainText('已到预计时限，等待状态更新');
+    await expect(item).not.toContainText('约 ');
+    await expect(item).not.toContainText('已转为后台任务');
+    await expect(item).not.toContainText('已取消');
+  }
+  expect(requests).toHaveLength(initialRequests);
+  expect(posts).toEqual([]);
+
+  // Resource snapshots, not the local clock, determine completion/background state.
+  state.tools = [
+    {
+      ...state.tools![0]!,
+      state: 'finished',
+      outcome: 'handled',
+      status: 'ok',
+      finishedAt: now + 5000,
+      result: { status: 'ok', task_status: 'completed', value: 'done' },
+    },
+    {
+      ...state.tools![1]!,
+      status: 'pending',
+      result: { status: 'pending', job_id: 'js_wait' },
+    },
+  ];
+  await refreshImmediately(page);
+  await expect(sync).toContainText('done');
+  await expect(auto).toContainText('已转为后台任务js_wait');
+  await automatic.uncheck();
+  for (const item of [sync, auto]) {
+    await expect(item).not.toContainText('已到预计时限');
+    await expect(item).not.toContainText('约 ');
+  }
+  await expect(sync).toContainText('最多等待 5 秒，超时终止');
+  await expect(auto).toContainText('最多等待 5 秒，未完成则转后台');
+  const refreshedRequests = requests.length;
+  await page.clock.runFor(10000);
+  expect(requests).toHaveLength(refreshedRequests);
+  expect(posts).toEqual([]);
+  await expect(sync).not.toContainText('已到预计时限');
+  await expect(auto).not.toContainText('已到预计时限');
+  await expect(sync).not.toContainText('约 ');
+  await expect(auto).not.toContainText('约 ');
+});
+
+test('javascript wait metadata handles pending, missing, invalid and async values on mobile', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.clock.install({ time: now });
+  await page.clock.pauseAt(now);
+  const script = (
+    ordinal: number,
+    args: Record<string, unknown>,
+    overrides: Partial<ReviewTool> = {},
+  ): ReviewTool => ({
+    ...tool,
+    ordinal,
+    callId: `call-metadata-${ordinal}`,
+    name: 'execute_javascript',
+    arguments: {
+      code: 'await sleep(10)',
+      mode: 'sync',
+      wait_ms: 5000,
+      ...args,
+    },
+    state: 'started',
+    outcome: 'started',
+    status: null,
+    result: null,
+    startedAt: now,
+    finishedAt: null,
+    durationMs: null,
+    ...overrides,
+  });
+  const { requests, posts } = await mock(page, {
+    tools: [
+      script(1, {}, { state: 'pending', outcome: 'pending', startedAt: null }),
+      script(2, {}, { startedAt: null }),
+      script(3, {}, { arguments: { code: 'return 1', mode: 'auto' } }),
+      script(4, { wait_ms: '5000' }),
+      script(5, { mode: 'async' }),
+      script(
+        6,
+        {},
+        {
+          state: 'finished',
+          outcome: 'handled',
+          status: 'ok',
+          finishedAt: now - 1000,
+          startedAt: now - 10000,
+          result: { status: 'ok', task_status: 'completed', value: '历史完成' },
+        },
+      ),
+    ],
+  });
+  await page.goto(wakeUrl);
+  await page.getByRole('checkbox', { name: '自动刷新', exact: true }).uncheck();
+  const items = page.locator('.wake-detail .tool-detail');
+  await expect(items).toHaveCount(6);
+  await expect(items.nth(0)).toContainText('尚未开始计时');
+  await expect(items.nth(1)).toContainText('开始时间未记录');
+  await expect(items.nth(2)).toContainText('等待时限未记录');
+  await expect(items.nth(3)).toContainText('等待时限无效');
+  await expect(items.nth(4)).toContainText('立即返回');
+  await expect(items.nth(5)).toContainText('最多等待 5 秒，超时终止');
+  const initialRequests = requests.length;
+  await page.clock.runFor(10000);
+  for (const item of await items.all()) {
+    await expect(item).not.toContainText('约 ');
+    await expect(item).not.toContainText('已到预计时限');
+  }
+  expect(requests).toHaveLength(initialRequests);
+  expect(posts).toEqual([]);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
+    ),
+  ).toBe(true);
 });
