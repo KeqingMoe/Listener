@@ -1,7 +1,16 @@
 {
   "name": "listener",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "author": "時雨てる <me@keqing.moe>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KeqingMoe/listener.git"
+  },
+  "engines": {
+    "node": ">=24"
+  },
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",

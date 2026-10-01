@@ -2,6 +2,21 @@
 
 面板使用与登录见 [Dashboard](dashboard.md)，配置项见 [配置说明](configuration.md)。
 
+## 日志与群内命令
+
+```sh
+npm run config:check -- --group 123456789
+npm run logs -- --follow
+npm run logs -- --level warn
+```
+
+主人在群内可用：
+
+- `/confirm CODE`：确认本群待执行操作，默认有效期60秒。
+- `/reset`：重置本群模型会话和运行期状态，不删除已保存的群消息、事件和提醒。
+
+配置、人设修改后先检查再重启；不支持热重载。不要让多个 Bot 进程同时使用同一数据库。
+
 ## 群内提及后没有唤醒
 
 先在面板选择对应群和时间，在“事件”查看接收与触发记录：

@@ -392,7 +392,7 @@ test('new ordinary message neither cancels active reply nor enters its frozen pr
 test('nonowner cannot clear memory; owner reset clears and nicknames cannot enable default-off abilities', async () => {
   const s = setup([tool('read_messages', { limit: 10 }), tool('finish', {})]);
   try {
-    await s.bot.receive(event({ sender: { nickname: '時雨てる' } }), self);
+    await s.bot.receive(event({ sender: { nickname: '示例群友' } }), self);
     await until(() => s.requests.length === 2);
     // 群管能力默认关闭：会话模式下体现为不提供对应工具。
     for (const name of [
