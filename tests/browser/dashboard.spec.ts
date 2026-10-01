@@ -870,6 +870,306 @@ test('overview charts preserve raw metrics, free coordinates, filters and mobile
   expect(errors).toEqual([]);
 });
 
+// Hold only overview-owned responses; all fixture data still comes from mock().
+async function interceptOverviewSync(page: Page) {
+  const paths = ['/api/overview', '/api/health', '/api/request-trends/sync'];
+  const calls: URL[] = [];
+  let held = false;
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(
+    (url) => paths.includes(effectiveApiUrl(url).pathname),
+    async (route) => {
+      const url = new URL(route.request().url());
+      calls.push(url);
+      if (held) {
+        await pending;
+      }
+      await route.fallback();
+    },
+  );
+  return {
+    calls,
+    paths,
+    hold: () => {
+      held = true;
+    },
+    release: () => {
+      held = false;
+      release();
+    },
+  };
+}
+
+test('overview KeepAlive preserves canvas and visible data while immediately resuming all cursors', async ({
+  page,
+}) => {
+  await page.clock.install();
+  await mock(page);
+  const sync = await interceptOverviewSync(page);
+  await page.goto('/?range=5m');
+  const scatter = page.getByRole('img', {
+    name: '每请求原始散点图',
+    exact: true,
+  });
+  const canvas = scatter.locator('canvas').first();
+  const summary = page.getByTestId('request-scatter-summary');
+  const metrics = page.getByLabel('总览汇总');
+  await expect(canvas).toBeVisible();
+  await expect(summary).toContainText('总数 3');
+  await expect(metrics).toBeVisible();
+  const originalCanvas = (await canvas.elementHandle())!;
+  const initialSummary = await summary.textContent();
+  const initialMetrics = await metrics.textContent();
+  await page.getByRole('link', { name: '工具', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: '工具统计', exact: true }),
+  ).toBeVisible();
+  await expect(scatter).toHaveCount(0);
+  const before = sync.calls.length;
+  sync.hold();
+  try {
+    await page.getByRole('link', { name: '总览', exact: true }).click();
+    // No clock advancement: reactivation must not wait for the next poll.
+    await expect.poll(() => sync.calls.length).toBe(before + 3);
+    for (const path of sync.paths) {
+      const call = sync.calls
+        .slice(before)
+        .find((url) => effectiveApiUrl(url).pathname === path)!;
+      expect(call.pathname).toBe(
+        path === '/api/request-trends/sync' ? path : '/api/resource-sync',
+      );
+      expect(call.searchParams.get('cursor')).toBe(
+        path === '/api/request-trends/sync'
+          ? 'fixture-cursor'
+          : 'opaque-fixture-cursor',
+      );
+    }
+    await expect(canvas).toBeVisible();
+    expect(
+      await canvas.evaluate(
+        (node, original) => node === original,
+        originalCanvas,
+      ),
+    ).toBe(true);
+    await expect(summary).toHaveText(initialSummary!);
+    await expect(metrics).toHaveText(initialMetrics!);
+  } finally {
+    sync.release();
+  }
+  await expect(page.getByTestId('dashboard-refresh-status')).not.toHaveText(
+    '刷新中…',
+  );
+  expect(
+    await canvas.evaluate(
+      (node, original) => node === original,
+      originalCanvas,
+    ),
+  ).toBe(true);
+});
+
+test('overview KeepAlive stays idle while hidden and resets changed scope before showing old data', async ({
+  page,
+}) => {
+  await page.clock.install();
+  const state: MockState = {};
+  await mock(page, state);
+  const sync = await interceptOverviewSync(page);
+  await page.goto('/?range=5m');
+  const summary = page.getByTestId('request-scatter-summary');
+  const metrics = page.getByLabel('总览汇总');
+  await expect(summary).toContainText('总数 3');
+  await expect(metrics.locator('strong').first()).toHaveText('3');
+  await page.getByRole('link', { name: '工具', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: '工具统计', exact: true }),
+  ).toBeVisible();
+  const before = sync.calls.length;
+  await refreshImmediately(page);
+  await page.clock.runFor(15100);
+  expect(sync.calls).toHaveLength(before);
+  await page.getByLabel('群组', { exact: true }).selectOption('10001');
+  await page.getByLabel('时间范围').selectOption('3h');
+  await page.clock.runFor(5100);
+  expect(sync.calls).toHaveLength(before);
+  state.empty = true;
+  state.dense = true;
+  sync.hold();
+  try {
+    await page.getByRole('link', { name: '总览', exact: true }).click();
+    await expect.poll(() => sync.calls.length).toBe(before + 3);
+    for (const path of ['/api/overview', '/api/request-trends/sync']) {
+      const call = sync.calls
+        .slice(before)
+        .find((url) => effectiveApiUrl(url).pathname === path)!;
+      expect(call.searchParams.has('cursor')).toBe(false);
+      const scope = effectiveApiUrl(call).searchParams;
+      expect(scope.get('groupId')).toBe('10001');
+      expect(Number(scope.get('until')) - Number(scope.get('since'))).toBe(
+        3 * 3600000,
+      );
+    }
+    // Responses are held so a fast replacement cannot mask stale scope data.
+    await expect(metrics).not.toBeVisible();
+    await expect(summary.filter({ hasText: '总数 3' })).toHaveCount(0);
+  } finally {
+    sync.release();
+  }
+  await expect(metrics.locator('strong').first()).toHaveText('16');
+  await expect(summary).toContainText('总数 0');
+});
+
+test('overview KeepAlive cache is destroyed on logout and login starts without old cursors', async ({
+  page,
+}) => {
+  await page.clock.install();
+  const state: MockState = {};
+  await mock(page, state);
+  const sync = await interceptOverviewSync(page);
+  await page.goto('/?range=5m');
+  const canvas = page
+    .getByRole('img', { name: '每请求原始散点图', exact: true })
+    .locator('canvas')
+    .first();
+  await expect(canvas).toBeVisible();
+  await expect(page.getByTestId('request-scatter-summary')).toContainText(
+    '总数 3',
+  );
+  const originalCanvas = (await canvas.elementHandle())!;
+  await page.getByRole('link', { name: '工具', exact: true }).click();
+  await page.getByRole('button', { name: '退出', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: '登录', exact: true }),
+  ).toBeVisible();
+  const before = sync.calls.length;
+  await page.clock.runFor(15000);
+  expect(sync.calls).toHaveLength(before);
+  state.dense = true;
+  sync.hold();
+  try {
+    await page.getByLabel('密码', { exact: true }).fill('synthetic-password');
+    await page.getByRole('button', { name: '登录', exact: true }).click();
+    await page.getByRole('link', { name: '总览', exact: true }).click();
+    await expect.poll(() => sync.calls.length).toBe(before + 3);
+    for (const call of sync.calls.slice(before)) {
+      expect(call.searchParams.has('cursor')).toBe(false);
+    }
+    await expect(page.getByLabel('总览汇总')).not.toBeVisible();
+    await expect(
+      page.getByTestId('request-scatter-summary').filter({ hasText: '总数 3' }),
+    ).toHaveCount(0);
+  } finally {
+    sync.release();
+  }
+  await expect(
+    page.getByLabel('总览汇总').locator('strong').first(),
+  ).toHaveText('16');
+  await expect(canvas).toBeVisible();
+  expect(
+    await canvas.evaluate(
+      (node, original) => node === original,
+      originalCanvas,
+    ),
+  ).toBe(false);
+});
+
+test('overview KeepAlive aborts in-flight trends and ignores late responses after reactivation', async ({
+  page,
+}) => {
+  await page.clock.install();
+  const { requests } = await mock(page);
+  await page.goto('/?range=5m');
+  const summary = page.getByTestId('request-scatter-summary');
+  await expect(summary).toContainText('总数 3');
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let finish!: () => void;
+  const finished = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  let heldUrl: string | undefined;
+  let aborted = false;
+  page.on('requestfailed', (request) => {
+    if (request.url() === heldUrl) {
+      aborted = true;
+    }
+  });
+  await page.route('**/api/request-trends/sync?*', async (route) => {
+    if (heldUrl) {
+      return route.fallback();
+    }
+    heldUrl = route.request().url();
+    const url = new URL(heldUrl);
+    const stale = buildRequestTrends(
+      {
+        since: Number(url.searchParams.get('since')),
+        until: Number(url.searchParams.get('until')),
+      },
+      availability,
+      [],
+    );
+    await pending;
+    try {
+      await route.fulfill({
+        json: {
+          ...stale,
+          mode: 'snapshot',
+          cursor: 'late-obsolete-cursor',
+          upserts: [],
+          removals: [],
+        },
+      });
+    } finally {
+      finish();
+    }
+  });
+  try {
+    await refreshImmediately(page);
+    await expect.poll(() => heldUrl).toBeTruthy();
+    await page.getByRole('link', { name: '工具', exact: true }).click();
+    await expect.poll(() => aborted).toBe(true);
+    const before = requests.filter(
+      (url) => url.pathname === '/api/request-trends/sync',
+    ).length;
+    await page.getByRole('link', { name: '总览', exact: true }).click();
+    await expect
+      .poll(
+        () =>
+          requests.filter((url) => url.pathname === '/api/request-trends/sync')
+            .length,
+      )
+      .toBe(before + 1);
+    await expect(summary).toContainText('总数 3');
+    await expect(page.getByTestId('dashboard-refresh-status')).toHaveText(
+      '5秒',
+    );
+    release();
+    await finished;
+    // The abandoned empty snapshot must not clear the restored chart or cursor.
+    await refreshImmediately(page);
+    await expect
+      .poll(
+        () =>
+          requests.filter((url) => url.pathname === '/api/request-trends/sync')
+            .length,
+      )
+      .toBe(before + 2);
+    expect(
+      requests
+        .filter((url) => url.pathname === '/api/request-trends/sync')
+        .at(-1)!
+        .searchParams.get('cursor'),
+    ).toBe('fixture-cursor');
+    await expect(summary).toContainText('总数 3');
+  } finally {
+    release();
+  }
+});
+
 test('trend refresh merges delta updates and removals, retries stale data and resets on filters', async ({
   page,
 }) => {

@@ -6,6 +6,7 @@ import {
   authenticated,
   configured,
   configurationError,
+  authVersion,
   auth,
 } from './composables/useAuth';
 import {
@@ -331,7 +332,13 @@ function applyRange() {
       {{ meta ? '群组信息已过期，更新失败：' : '' }}{{ metaError }}
       <button @click="retryMeta">重试</button>
     </div>
-    <main id="main"><RouterView /></main>
+    <main id="main">
+      <RouterView v-slot="{ Component }">
+        <KeepAlive :key="authVersion" include="OverviewView" :max="1">
+          <component :is="Component" />
+        </KeepAlive>
+      </RouterView>
+    </main>
   </div>
 </template>
 <style scoped>

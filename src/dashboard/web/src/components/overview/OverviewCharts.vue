@@ -1,5 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onDeactivated,
+  onMounted,
+  onUnmounted,
+  ref,
+  shallowRef,
+  watch,
+} from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import VChart from 'vue-echarts';
 import { use } from 'echarts/core';
@@ -38,11 +48,27 @@ use([
 const route = useRoute();
 const router = useRouter();
 const { data, loading, error, retry } = useRequestTrends();
-const metric = computed(() => resolveMetric(route.query.chartMetric));
+// 缓存图表不跟随其他页面的查询参数重绘；回来后再更新视图选项。
+const chartQuery = shallowRef(route.query);
+watch(
+  () => [route.path, route.query],
+  () => {
+    if (
+      route.path === '/' &&
+      ['chartMetric', 'chartRange', 'chartScale', 'chartDots'].some(
+        (key) => route.query[key] !== chartQuery.value[key],
+      )
+    ) {
+      chartQuery.value = route.query;
+    }
+  },
+  { flush: 'sync' },
+);
+const metric = computed(() => resolveMetric(chartQuery.value.chartMetric));
 const view = computed<ScatterView>(() => ({
-  range: resolveChartRange(route.query.chartRange),
-  scale: resolveChartScale(route.query.chartScale, metric.value),
-  dots: resolveChartDots(route.query.chartDots),
+  range: resolveChartRange(chartQuery.value.chartRange),
+  scale: resolveChartScale(chartQuery.value.chartScale, metric.value),
+  dots: resolveChartDots(chartQuery.value.chartDots),
 }));
 const displayRange = computed(() => view.value.range);
 const windowLabel = computed(() => {
@@ -120,6 +146,7 @@ function selectMetric(event: Event) {
 
 const root = ref<HTMLElement>();
 const scatterChart = ref<InstanceType<typeof VChart>>();
+const barChart = ref<InstanceType<typeof VChart>>();
 const colors = ref({ text: '#263449', muted: '#68788a', border: '#d8e0e8' });
 const barOption = computed(() =>
   data.value ? chartOptions(data.value, metric.value, colors.value, 'bar') : {},
@@ -212,15 +239,22 @@ let resizeObserver: ResizeObserver | undefined;
 let media: MediaQueryList | undefined;
 
 function readColors() {
-  if (!root.value) {
+  if (!root.value || route.path !== '/') {
     return;
   }
   const css = getComputedStyle(root.value);
-  colors.value = {
+  const next = {
     text: css.getPropertyValue('--text').trim() || '#263449',
     muted: css.getPropertyValue('--muted').trim() || '#68788a',
     border: css.getPropertyValue('--border').trim() || '#d8e0e8',
   };
+  if (
+    next.text !== colors.value.text ||
+    next.muted !== colors.value.muted ||
+    next.border !== colors.value.border
+  ) {
+    colors.value = next;
+  }
 }
 
 onMounted(() => {
@@ -240,6 +274,16 @@ onMounted(() => {
   if (root.value) {
     resizeObserver.observe(root.value);
   }
+});
+onDeactivated(hideCrosshair);
+onActivated(async () => {
+  await nextTick();
+  if (route.path !== '/') {
+    return;
+  }
+  readColors();
+  barChart.value?.resize();
+  scatterChart.value?.resize();
 });
 onUnmounted(() => {
   themeObserver?.disconnect();
@@ -303,6 +347,7 @@ onUnmounted(() => {
           aria-label="按时间桶的请求数量堆叠柱状图"
         >
           <VChart
+            ref="barChart"
             :option="barOption"
             autoresize
             :update-options="{ notMerge: true }"

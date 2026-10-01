@@ -1,4 +1,5 @@
-import { onUnmounted, ref, shallowRef, watch } from 'vue';
+import { computed, onUnmounted, ref, shallowRef, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import type {
   RequestTrendSyncPoint,
   RequestTrendsResponse,
@@ -14,9 +15,12 @@ import {
 } from './useDashboard';
 import { applyTrendSync } from './requestTrendsState';
 
-/** 请求趋势的增量同步。cursor归当前挂载的实例私有，刷新调度由App负责。 */
+/** 请求趋势的增量同步。游标归总览实例私有，离开时暂停并保留，刷新调度由App负责。 */
 export function useRequestTrends() {
   const { query, identity } = useFilters();
+  const route = useRoute();
+  const active = computed(() => route.path === '/');
+  let boundIdentity = identity.value;
   const data = shallowRef<RequestTrendsResponse | null>(null);
   const loading = ref(false),
     error = ref(''),
@@ -27,10 +31,15 @@ export function useRequestTrends() {
     disposed = false,
     forbidden = false;
   let controller: AbortController | undefined;
-  function clear() {
+  function suspend() {
     sequence++;
     controller?.abort();
     controller = undefined;
+    loading.value = false;
+  }
+  function clear() {
+    suspend();
+    boundIdentity = identity.value;
     points.clear();
     cursor = '';
     data.value = null;
@@ -39,12 +48,14 @@ export function useRequestTrends() {
     loading.value = false;
   }
   async function sync() {
-    if (
-      disposed ||
-      forbidden ||
-      authenticated.value !== true ||
-      loading.value
-    ) {
+    if (disposed || !active.value || authenticated.value !== true) {
+      return;
+    }
+    if (boundIdentity !== identity.value) {
+      clear();
+      forbidden = false;
+    }
+    if (forbidden || loading.value) {
       return;
     }
     const current = ++sequence;
@@ -102,7 +113,17 @@ export function useRequestTrends() {
     forbidden = false;
     void sync();
   }
-  watch(identity, reset, { immediate: true });
+  watch(
+    [identity, active],
+    () => {
+      if (!active.value) {
+        suspend();
+        return;
+      }
+      void sync();
+    },
+    { immediate: true, flush: 'sync' },
+  );
   watch(refreshVersion, () => {
     void sync();
   });

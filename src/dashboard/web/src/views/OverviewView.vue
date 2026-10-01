@@ -9,13 +9,17 @@ import DataState from '../components/ui/DataState.vue';
 import AvailabilityNote from '../components/ui/AvailabilityNote.vue';
 import OverviewCharts from '../components/overview/OverviewCharts.vue';
 
+defineOptions({ name: 'OverviewView' });
 const route = useRoute();
+const active = computed(() => route.path === '/');
 const { query, groupId, identity } = useFilters();
 const { data, loading, error, retry } = useResource<OverviewResponse>(
   computed(() => `overview?${query.value}`),
   identity,
+  active,
 );
-const health = useResource<HealthResponse>(computed(() => 'health'));
+const healthPath = computed(() => 'health');
+const health = useResource<HealthResponse>(healthPath, healthPath, active);
 const connectivityLabel: Record<HealthResponse['connectivity'], string> = {
   connected: '接入已连接',
   disconnected: '接入已断开',

@@ -83,11 +83,13 @@ export function useFilters() {
 
 /**
  * 基于resource-sync的增量资源加载。sequence用于丢弃过期响应；
- * identity或登录状态变化时清空数据与cursor，重新拉取完整快照。
+ * enabled=false暂停请求但保留数据与cursor；恢复时核对identity再同步。
+ * identity不匹配时重取快照，登录状态变化则立即清空缓存。
  */
 export function useResource<T>(
   path: Ref<string>,
   identity: Ref<string> = path,
+  enabled: Ref<boolean> = ref(true),
 ) {
   const data = shallowRef<T | null>(null),
     pending = ref(false),
@@ -98,17 +100,28 @@ export function useResource<T>(
     cursor = '',
     sequence = 0,
     disposed = false;
-  function clear() {
+  let boundIdentity = identity.value;
+  function suspend() {
     sequence++;
     controller?.abort();
     controller = undefined;
+    pending.value = false;
+  }
+  function clear() {
+    suspend();
     data.value = null;
     cursor = '';
-    pending.value = false;
     error.value = '';
+    boundIdentity = identity.value;
   }
   async function load() {
-    if (disposed || authenticated.value !== true || pending.value) {
+    if (disposed || !enabled.value || authenticated.value !== true) {
+      return;
+    }
+    if (boundIdentity !== identity.value) {
+      clear();
+    }
+    if (pending.value) {
       return;
     }
     const current = ++sequence;
@@ -152,12 +165,24 @@ export function useResource<T>(
     }
   }
   watch(
-    [identity, authenticated, authVersion],
+    [authenticated, authVersion],
     () => {
       clear();
       void load();
     },
     { immediate: true, flush: 'sync' },
+  );
+  // 隐藏总览时只暂停请求，保留快照与游标；回来时核对筛选再同步。
+  watch(
+    [identity, enabled],
+    () => {
+      if (!enabled.value) {
+        suspend();
+        return;
+      }
+      void load();
+    },
+    { flush: 'sync' },
   );
   watch([path, refreshVersion], () => {
     void load();
