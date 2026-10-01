@@ -5,6 +5,7 @@ import type { ReviewTool } from '../../../../contracts/review';
 import { duration, status, time } from '../../api/client';
 import { useEstimatedTime } from '../../composables/useEstimatedTime';
 import { isScriptWaiting, scriptTiming } from './script-timing';
+import { toolEvidence } from './tool-evidence';
 import ContentViewer from './ContentViewer.vue';
 import CopyId from './CopyId.vue';
 import FoldBlock from './FoldBlock.vue';
@@ -39,11 +40,27 @@ const clock = useEstimatedTime(computed(() => isScriptWaiting(props.tool)));
 const timing = computed(() => scriptTiming(props.tool, clock.value));
 const problem = computed(() => resultProblem(props.tool.result));
 const argsLine = computed(() => argumentsLine(props.tool.arguments));
-const failed = computed(() =>
-  ['failed', 'error', 'rejected', 'unknown', 'cancelled'].includes(
-    props.tool.outcome,
-  ),
-);
+const evidence = computed(() => toolEvidence(props.tool));
+const failed = computed(() => evidence.value.tone === 'error');
+const contentLabel = computed(() => {
+  const kind = view.value?.kind;
+  if (kind === 'send') {
+    return '请求发送的内容';
+  }
+  if (
+    kind === 'messages' ||
+    (kind != null && props.tool.name === 'query_javascript_jobs')
+  ) {
+    return '工具返回';
+  }
+  if (kind === 'script') {
+    return '执行请求与返回';
+  }
+  if (kind === 'line') {
+    return '请求操作';
+  }
+  return argsLine.value ? '调用参数' : '';
+});
 const raw = ref(false);
 const code = computed(() =>
   view.value?.kind === 'script' && view.value.code !== null
@@ -79,7 +96,18 @@ const stack = ref(false);
         {{ raw ? '收起原始数据' : '原始数据' }}
       </button>
     </header>
-    <p v-if="problem || tool.reasonCode" class="error">
+    <p
+      class="summary-line tool-evidence"
+      :class="evidence.tone"
+      :title="evidence.title"
+    >
+      <span v-if="contentLabel" class="muted">{{ contentLabel }} · </span
+      >{{ evidence.text }}
+    </p>
+    <p
+      v-if="problem || tool.reasonCode"
+      :class="['result-detail', evidence.tone]"
+    >
       {{ problem || status(tool.reasonCode) }}
     </p>
     <div v-if="view?.kind === 'send'" class="bubble">
@@ -138,9 +166,8 @@ const stack = ref(false);
           >
         </template>
         <p v-else-if="view.outcome.kind === 'pending'" class="summary-line">
-          已转为后台任务<code v-if="view.outcome.jobId">{{
-            view.outcome.jobId
-          }}</code>
+          {{ view.outcome.jobId ? '任务 ID' : '未返回任务 ID'
+          }}<code v-if="view.outcome.jobId">{{ view.outcome.jobId }}</code>
         </p>
         <template v-else-if="view.outcome.kind === 'error'">
           <p class="summary-line error">{{ view.outcome.message }}</p>
@@ -240,8 +267,15 @@ const stack = ref(false);
 .raw-toggle[aria-expanded='true'] {
   color: var(--accent);
 }
-.error {
+.error,
+.result-detail {
   margin: var(--space-1) 0;
+}
+.warning {
+  color: #946018;
+}
+.result-detail {
+  overflow-wrap: anywhere;
 }
 .bubble {
   margin-top: var(--space-1);

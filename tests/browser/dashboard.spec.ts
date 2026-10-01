@@ -3192,7 +3192,10 @@ test('javascript tools show folded code, raw or JSON return values and failures'
   await expect(third.getByLabel('调用栈')).toHaveCount(0);
   await third.getByRole('button', { name: '调用栈' }).click();
   await expect(third.getByLabel('调用栈')).toContainText('at main');
-  await expect(items.nth(3)).toContainText('已转为后台任务js_4');
+  await expect(items.nth(3)).toContainText('任务 IDjs_4');
+  await expect(items.nth(3).locator('.tool-evidence')).toContainText(
+    '已返回后台句柄，任务未确认完成',
+  );
   await expect(items.nth(3)).toContainText('异步');
   await expect(items.nth(3).locator('p.error')).toHaveCount(0);
 });
@@ -3246,7 +3249,12 @@ test('javascript foreground waits count down locally and stop on refreshed resul
   for (const item of [sync, auto]) {
     await expect(item).toContainText('已到预计时限，等待状态更新');
     await expect(item).not.toContainText('约 ');
-    await expect(item).not.toContainText('已转为后台任务');
+    await expect(item.locator('.tool-evidence')).toContainText(
+      '执行中，尚未返回',
+    );
+    await expect(item.locator('.tool-evidence')).not.toContainText(
+      '已返回后台句柄',
+    );
     await expect(item).not.toContainText('已取消');
   }
   expect(requests).toHaveLength(initialRequests);
@@ -3270,7 +3278,10 @@ test('javascript foreground waits count down locally and stop on refreshed resul
   ];
   await refreshImmediately(page);
   await expect(sync).toContainText('done');
-  await expect(auto).toContainText('已转为后台任务js_wait');
+  await expect(auto).toContainText('任务 IDjs_wait');
+  await expect(auto.locator('.tool-evidence')).toContainText(
+    '已返回后台句柄，任务未确认完成',
+  );
   await automatic.uncheck();
   for (const item of [sync, auto]) {
     await expect(item).not.toContainText('已到预计时限');
@@ -3286,6 +3297,294 @@ test('javascript foreground waits count down locally and stop on refreshed resul
   await expect(auto).not.toContainText('已到预计时限');
   await expect(sync).not.toContainText('约 ');
   await expect(auto).not.toContainText('约 ');
+});
+
+test('tool evidence preserves send intent without overstating results on mobile', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const args = {
+    segments: [{ type: 'text', text: '同一条请求内容，不等于已送达' }],
+  };
+  // 文案取自 tool-evidence.ts；刻意让 handled/ok 元数据与返回相冲突。
+  const cases: {
+    changes: Partial<ReviewTool>;
+    text: string;
+    tone: 'neutral' | 'warning' | 'error';
+    problem?: string;
+  }[] = [
+    {
+      changes: { result: { status: 'error', reason_code: 'send_failed' } },
+      text: '工具返回错误',
+      tone: 'error',
+      problem: 'send_failed',
+    },
+    {
+      changes: {
+        result: {
+          status: 'unknown',
+          reason_code: 'effect_uncertain',
+          retry_allowed: false,
+        },
+      },
+      text: '结果未知，外部效果未确认',
+      tone: 'warning',
+      problem: 'effect_uncertain',
+    },
+    {
+      changes: {
+        result: {
+          status: 'ok',
+          submitted: true,
+          effect_confirmed: false,
+          delivery_confirmed: false,
+        },
+      },
+      text: '已提交，外部结果未确认',
+      tone: 'warning',
+    },
+    {
+      changes: { result: { status: 'ok', effect_confirmed: true } },
+      text: '工具返回成功',
+      tone: 'neutral',
+    },
+    {
+      changes: {
+        state: 'unknown',
+        outcome: 'unknown',
+        result: { status: 'ok', effect_confirmed: true },
+      },
+      text: '账本结果未知',
+      tone: 'warning',
+    },
+    { changes: { result: null }, text: '结果未记录', tone: 'warning' },
+    {
+      changes: { result: { status: 'confirmation_required' } },
+      text: '待确认',
+      tone: 'warning',
+    },
+    {
+      changes: {
+        result: { status: 'ok', duplicate: true, effect_confirmed: true },
+      },
+      text: '复用/重复结果 · 不确认新的执行',
+      tone: 'warning',
+    },
+    {
+      changes: {
+        state: 'pending',
+        outcome: 'pending',
+        startedAt: null,
+        finishedAt: null,
+        result: null,
+      },
+      text: '尚未执行',
+      tone: 'neutral',
+    },
+    {
+      changes: {
+        state: 'started',
+        outcome: 'started',
+        finishedAt: null,
+        result: null,
+      },
+      text: '执行中，尚未返回',
+      tone: 'neutral',
+    },
+  ];
+  const { posts } = await mock(page, {
+    tools: cases.map(({ changes }, index) => ({
+      ...tool,
+      name: 'send_message',
+      ordinal: index + 1,
+      callId: `evidence-send-${index}`,
+      arguments: args,
+      ...changes,
+    })),
+  });
+  await page.goto(wakeUrl);
+  await page.getByRole('checkbox', { name: '自动刷新', exact: true }).uncheck();
+  const items = page.locator('.wake-detail .tool-detail');
+  await expect(items).toHaveCount(cases.length);
+  for (const [index, expected] of cases.entries()) {
+    const item = items.nth(index);
+    const evidence = item.locator('.summary-line.tool-evidence');
+    await expect(evidence).toHaveText(`请求发送的内容 · ${expected.text}`);
+    await expect(evidence).toHaveClass(new RegExp(`\\b${expected.tone}\\b`));
+    await expect(evidence).toHaveAttribute('title', /原始 JSON 保留供核对/);
+    await expect(item.locator('.bubble')).toHaveText(args.segments[0]!.text);
+    if (expected.tone !== 'error') {
+      await expect(item).not.toHaveClass(/\bfailed\b/);
+      await expect(item.locator('.error')).toHaveCount(0);
+    }
+    if (expected.problem) {
+      await expect(item.locator('.result-detail')).toContainText(
+        expected.problem,
+      );
+      await expect(item.locator('.result-detail')).toHaveClass(
+        new RegExp(`\\b${expected.tone}\\b`),
+      );
+    } else {
+      await expect(item.locator('.result-detail')).toHaveCount(0);
+    }
+    await item.getByRole('button', { name: '原始数据', exact: true }).click();
+    await expect(
+      item.getByRole('region', { name: '工具参数', exact: true }),
+    ).toContainText(args.segments[0]!.text);
+    const result = item.getByRole('region', { name: '工具结果', exact: true });
+    await expect(result).toBeVisible();
+    if (index === 2) {
+      await expect(result).toContainText('submitted');
+      await expect(result).toContainText('delivery_confirmed');
+      await expect(result).toContainText('false');
+    }
+    await item
+      .getByRole('button', { name: '收起原始数据', exact: true })
+      .click();
+  }
+  expect(posts).toEqual([]);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
+    ),
+  ).toBe(true);
+});
+
+test('tool evidence labels operations, returns and fallback arguments neutrally on mobile', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const cases = [
+    {
+      name: 'poke_member',
+      arguments: { user_id: '10002' },
+      result: { status: 'error', code: 'poke_failed' },
+      label: '请求操作',
+      text: '工具返回错误',
+      body: '戳一戳 10002',
+    },
+    {
+      name: 'react_message',
+      arguments: { action: 'add', emoji_id: 'e', message_id: 'm' },
+      result: { status: 'confirmation_required' },
+      label: '请求操作',
+      text: '待确认',
+      body: '添加回应 e → 消息 m',
+    },
+    {
+      name: 'react_message',
+      arguments: { action: 'remove', emoji_id: 'e', message_id: 'm' },
+      result: { status: 'staged' },
+      label: '请求操作',
+      text: '已暂存，待后续处理',
+      body: '撤回回应 e → 消息 m',
+    },
+    {
+      name: 'send_group_ai_voice',
+      arguments: { text: '合成语音请求' },
+      result: { status: 'submitted' },
+      label: '请求发送的内容',
+      text: '已提交，外部结果未确认',
+      body: '合成语音请求',
+    },
+    {
+      name: 'finish',
+      arguments: {},
+      result: { status: 'executed' },
+      label: '请求操作',
+      text: '工具返回成功',
+      body: '结束本次唤醒',
+    },
+    {
+      name: 'read_messages',
+      arguments: { limit: 1 },
+      result: { status: 'ok', messages: [] },
+      label: '工具返回',
+      text: '工具返回成功',
+      body: '没有消息',
+    },
+    {
+      name: 'query_javascript_jobs',
+      arguments: {},
+      result: { status: 'pending', jobs: [] },
+      label: '工具返回',
+      text: '结果待定',
+      body: '列出 0 个任务',
+    },
+    {
+      name: 'query_javascript_jobs',
+      arguments: { job_id: 'js_queued' },
+      result: {
+        status: 'ok',
+        job: { job_id: 'js_queued', task_status: 'queued', background: false },
+      },
+      label: '工具返回',
+      text: '工具返回成功',
+      body: '任务 IDjs_queued',
+    },
+    {
+      name: 'execute_javascript',
+      arguments: { code: 'return 1' },
+      result: { status: 'pending' },
+      label: '执行请求与返回',
+      text: '状态未识别',
+      body: '未返回任务 ID',
+    },
+    {
+      name: 'query_javascript_jobs',
+      arguments: { job_id: 'js_missing_result' },
+      result: null,
+      label: '调用参数',
+      text: '结果未记录',
+      body: 'js_missing_result',
+    },
+    {
+      name: 'synthetic_unknown_tool',
+      arguments: { query: 'fallback request' },
+      result: { status: 'duplicate' },
+      label: '调用参数',
+      text: '复用/重复结果 · 不确认新的执行',
+      body: 'fallback request',
+    },
+  ];
+  const { posts } = await mock(page, {
+    tools: cases.map((entry, index) => ({
+      ...tool,
+      name: entry.name,
+      arguments: entry.arguments,
+      result: entry.result,
+      ordinal: index + 1,
+      callId: `evidence-operation-${index}`,
+      proposedAt: now - 4500 + index,
+    })),
+  });
+  await page.goto(wakeUrl);
+  await page.getByRole('checkbox', { name: '自动刷新', exact: true }).uncheck();
+  const items = page.locator('.wake-detail .tool-detail');
+  await expect(items).toHaveCount(cases.length);
+  for (const [index, expected] of cases.entries()) {
+    const item = items.nth(index);
+    await expect(item.locator('.summary-line.tool-evidence')).toHaveText(
+      `${expected.label} · ${expected.text}`,
+    );
+    await expect(item).toContainText(expected.body);
+    await expect(item).not.toContainText('戳了戳');
+    await expect(item).not.toContainText('已添加');
+    await expect(item).not.toContainText('已转为后台任务');
+    await expect(item.locator('.tool-evidence')).not.toContainText(
+      '已返回后台句柄',
+    );
+    if (index > 0) {
+      await expect(item.locator('.result-detail, .error')).toHaveCount(0);
+      await expect(item).not.toHaveClass(/\bfailed\b/);
+    }
+  }
+  expect(posts).toEqual([]);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
+    ),
+  ).toBe(true);
 });
 
 test('javascript wait metadata handles pending, missing, invalid and async values on mobile', async ({

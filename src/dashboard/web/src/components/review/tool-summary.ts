@@ -28,7 +28,7 @@ export interface ChatLine {
 }
 
 export type ToolView =
-  /** Bot发出的一条消息。 */
+  /** 请求发送的消息内容，不代表已经发送成功。 */
   | { kind: 'send'; parts: Part[]; reply: Reply | null }
   /** 读取到的消息列表。 */
   | { kind: 'messages'; lines: ChatLine[]; more: number }
@@ -322,12 +322,12 @@ export function toolView(
     case 'react_message':
       return {
         kind: 'line',
-        text: `${a.action === 'remove' ? '撤回' : '给'}消息 ${str(a.message_id)} 的回应 ${str(a.emoji_id)}`,
+        text: `${a.action === 'remove' ? '撤回回应' : a.action === 'add' ? '添加回应' : '回应操作'} ${str(a.emoji_id)} → 消息 ${str(a.message_id)}`,
       };
     case 'poke_member':
       return {
         kind: 'line',
-        text: `戳了戳 ${nameOf(names, str(a.user_id))}`,
+        text: `戳一戳 ${nameOf(names, str(a.user_id))}`,
       };
     case 'send_group_ai_voice':
       return {
@@ -425,15 +425,27 @@ export function structuredText(text: string): object | null {
   }
 }
 
-/** 结果中的失败或非成功状态，供醒目显示；成功时返回 null。 */
+/** 错误或未知状态的原始详情；成功和正常流程状态交给结果证据摘要。 */
 export function resultProblem(result: unknown): string | null {
   const r = record(result);
   if (!r) {
     return null;
   }
   const status = str(r.status);
-  // pending 表示已转为后台任务，不是失败。
-  if (!status || status === 'ok' || status === 'pending') {
+  // 已处理、待确认、暂存或后台句柄都不是错误，实际含义由结果摘要说明。
+  if (
+    !status ||
+    [
+      'ok',
+      'pending',
+      'executed',
+      'success',
+      'submitted',
+      'confirmation_required',
+      'staged',
+      'duplicate',
+    ].includes(status)
+  ) {
     return null;
   }
   const detail = str(r.error) || str(r.reason_code) || str(r.reason);

@@ -218,19 +218,59 @@ test('unknown tools fall back to a compact argument line', () => {
   assert.equal(argumentsLine(null), '');
 });
 
-test('result problems surface non-ok status with the error code', () => {
+test('result problems preserve errors without treating accepted or pending states as failures', () => {
   assert.equal(resultProblem({ status: 'ok' }), null);
   assert.equal(resultProblem('text'), null);
   assert.equal(
     resultProblem({ status: 'error', error: 'invalid_arguments' }),
     'error: invalid_arguments',
   );
-  assert.equal(
-    resultProblem({ status: 'confirmation_required' }),
+  for (const status of [
     'confirmation_required',
+    'staged',
+    'executed',
+    'submitted',
+    'duplicate',
+    'success',
+  ]) {
+    assert.equal(resultProblem({ status }), null);
+  }
+  assert.equal(
+    resultProblem({ status: 'unknown', error: 'delivery_unknown' }),
+    'unknown: delivery_unknown',
   );
   // 转为后台任务不是失败。
   assert.equal(resultProblem({ status: 'pending', job_id: 'js_1' }), null);
+});
+
+test('action summaries describe requests, not completed external effects', () => {
+  for (const result of [
+    null,
+    { status: 'error' },
+    { status: 'unknown' },
+    { status: 'ok', submitted: true },
+  ]) {
+    assert.deepEqual(toolView('poke_member', { user_id: '11' }, result), {
+      kind: 'line',
+      text: '戳一戳 11',
+    });
+    assert.deepEqual(
+      toolView(
+        'react_message',
+        { message_id: 'm', emoji_id: 'e', action: 'add' },
+        result,
+      ),
+      { kind: 'line', text: '添加回应 e → 消息 m' },
+    );
+    assert.deepEqual(
+      toolView(
+        'react_message',
+        { message_id: 'm', emoji_id: 'e', action: 'remove' },
+        result,
+      ),
+      { kind: 'line', text: '撤回回应 e → 消息 m' },
+    );
+  }
 });
 
 const budget = {
