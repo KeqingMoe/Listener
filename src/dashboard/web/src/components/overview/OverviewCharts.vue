@@ -347,12 +347,21 @@ onUnmounted(() => {
 
 <style scoped>
 .overview-charts {
+  position: relative;
   min-width: 0;
   margin-bottom: var(--space-4);
 }
+/* 后台刷新提示浮在右上角，不占文档流，避免图表在每次自动刷新时跳动。 */
 .chart-refresh-feedback {
-  padding: var(--space-2) 0;
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  padding: 2px var(--space-2);
   font-size: var(--font-small);
+  border-radius: 4px;
+  background: var(--surface);
+  pointer-events: none;
 }
 .chart-grid {
   display: grid;
