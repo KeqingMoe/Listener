@@ -2,6 +2,8 @@ import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { Readable } from 'node:stream';
+import { createGzip, gzipSync } from 'node:zlib';
 import {
   Repository,
   ResourceLimit,
@@ -60,6 +62,8 @@ function allowedHost(host: string, listenHost = '127.0.0.1') {
   }
 }
 
+const COMPRESS_MIN_BYTES = 1024;
+
 /** 构建只读dashboard服务：除登录/登出外只允许GET/HEAD，所有/api路径都要求认证。 */
 export function buildApp(options: AppOptions) {
   const auth = options.auth;
@@ -75,6 +79,40 @@ export function buildApp(options: AppOptions) {
   const reviewRepository = new ReviewRepository(repository);
   const now = options.now ?? Date.now;
   app.addHook('onClose', async () => repository.close());
+  // 趋势快照和图表脚本都有数百KB；反向代理不一定压缩，这里对文本类响应做gzip。
+  app.addHook('onSend', async (req, reply, payload) => {
+    const type = String(reply.getHeader('content-type') ?? '');
+    if (
+      req.method === 'HEAD' ||
+      reply.getHeader('content-encoding') ||
+      !/\bgzip\b/.test(String(req.headers['accept-encoding'] ?? '')) ||
+      !/^(?:application\/(?:json|javascript)|text\/|image\/svg)/.test(type)
+    ) {
+      return payload;
+    }
+    if (typeof payload === 'string' || Buffer.isBuffer(payload)) {
+      if (Buffer.byteLength(payload) < COMPRESS_MIN_BYTES) {
+        return payload;
+      }
+      reply
+        .header('Content-Encoding', 'gzip')
+        .header('Vary', 'Accept-Encoding')
+        .removeHeader('content-length');
+      return gzipSync(payload);
+    }
+    const length = Number(reply.getHeader('content-length'));
+    if (
+      payload instanceof Readable &&
+      !(Number.isFinite(length) && length < COMPRESS_MIN_BYTES)
+    ) {
+      reply
+        .header('Content-Encoding', 'gzip')
+        .header('Vary', 'Accept-Encoding')
+        .removeHeader('content-length');
+      return payload.pipe(createGzip());
+    }
+    return payload;
+  });
   app.addHook('onRequest', async (req, reply) => {
     reply
       .header('Cache-Control', 'no-store')

@@ -9,6 +9,7 @@ import {
   mkdirSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { gunzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { buildApp as rawBuildApp } from '../../../src/dashboard/server/app.ts';
@@ -387,6 +388,44 @@ test('rejects DNS rebinding, foreign origins, mutation and invalid range paramet
     const r = await app.inject('/api/meta');
     assert.equal(r.headers['cache-control'], 'no-store');
     assert.equal(r.headers['access-control-allow-origin'], undefined);
+  } finally {
+    await app.close();
+    f.cleanup();
+  }
+});
+
+test('text responses are gzip-compressed only when the client accepts it and the body is large enough', async () => {
+  const f = fixture(),
+    web = join(f.dir, 'web');
+  mkdirSync(join(web, 'assets'), { recursive: true });
+  writeFileSync(join(web, 'index.html'), '<!doctype html><title>x</title>');
+  const script = `console.log(${JSON.stringify('x'.repeat(4096))});`;
+  writeFileSync(join(web, 'assets', 'app.js'), script);
+  const app = buildApp({ ...f.options, webRoot: web });
+  try {
+    const gz = { 'accept-encoding': 'gzip, br' };
+    const asset = await app.inject({ url: '/assets/app.js', headers: gz });
+    assert.equal(asset.headers['content-encoding'], 'gzip');
+    assert.equal(asset.headers.vary, 'Accept-Encoding');
+    assert.equal(gunzipSync(asset.rawPayload).toString(), script);
+    const plain = await app.inject('/assets/app.js');
+    assert.equal(plain.headers['content-encoding'], undefined);
+    assert.equal(plain.body, script);
+    // 小响应不压缩；JSON接口与静态文件走同一钩子。
+    const small = await app.inject({ url: '/', headers: gz });
+    assert.equal(small.headers['content-encoding'], undefined);
+    const api = await app.inject({
+      url: '/api/wakes/wake-one?groupId=11',
+      headers: gz,
+    });
+    assert.equal(api.statusCode, 200);
+    const body = JSON.parse(
+      api.headers['content-encoding'] === 'gzip'
+        ? gunzipSync(api.rawPayload).toString()
+        : api.body,
+    );
+    assert.equal(body.wake.wakeId, 'wake-one');
+    assert.equal(api.headers['content-encoding'], 'gzip');
   } finally {
     await app.close();
     f.cleanup();
