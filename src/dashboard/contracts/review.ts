@@ -106,6 +106,8 @@ export interface WakeReviewDetail {
     kind: string;
     title: string;
     detail?: unknown;
+    /** 仅可信session通知投影journal提供的任务引用，不表示群消息送达。 */
+    javascriptJobId?: string;
   }>;
   trigger: { type?: string; messageIds?: string[]; actorId?: string } | null;
   contentTruncated: boolean;

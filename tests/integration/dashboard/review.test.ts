@@ -223,6 +223,88 @@ function fixture(old = false) {
   };
 }
 
+test('only trusted notification projection journal supplies task backlinks to a wake', async () => {
+  const f = fixture();
+  try {
+    const db = new DatabaseSync(f.sessionPath);
+    const insert = db.prepare(
+      'INSERT INTO model_session_journal VALUES(?,?,?,?,?,?)',
+    );
+    insert.run(
+      10,
+      'session-a',
+      'wake-a',
+      'external_event_received',
+      JSON.stringify({ event_id: '10001:js_real' }),
+      150,
+    );
+    insert.run(
+      11,
+      'session-a',
+      'wake-a',
+      'external_event_received',
+      JSON.stringify({ event_id: '10001:js_LIVE_SECRET' }),
+      151,
+    );
+    insert.run(
+      12,
+      'session-a',
+      'wake-a',
+      'tool_result',
+      JSON.stringify({ event_id: '10001:js_wrong_kind' }),
+      152,
+    );
+    insert.run(
+      13,
+      'session-a',
+      'wake-a',
+      'external_event_received',
+      JSON.stringify({ event_id: 'untrusted:js_invalid' }),
+      153,
+    );
+    db.prepare('INSERT INTO model_session_messages VALUES(?,?,?,?,?)').run(
+      20,
+      'session-a',
+      'wake-a',
+      null,
+      JSON.stringify({
+        role: 'user',
+        content: JSON.stringify({
+          host_event: { job_id: 'js_user_text', status: 'completed' },
+        }),
+      }),
+    );
+    db.close();
+    const telemetry = new DatabaseSync(f.telemetryPath);
+    telemetry
+      .prepare('INSERT INTO runtime_events VALUES(?,?,?,?,?,?,?)')
+      .run(
+        20,
+        154,
+        'external_event_received',
+        '11',
+        'physical-turn',
+        null,
+        JSON.stringify({ event_id: '10001:js_runtime' }),
+      );
+    telemetry.close();
+    const response = await f.get('/api/wakes/wake-a/review?groupId=11');
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(
+      response
+        .json()
+        .events.filter(
+          (event: { javascriptJobId?: string }) => event.javascriptJobId,
+        )
+        .map((event: { javascriptJobId: string }) => event.javascriptJobId),
+      ['js_real'],
+    );
+    assert.ok(!response.body.includes('LIVE_SECRET'));
+  } finally {
+    await f.cleanup();
+  }
+});
+
 test('real TelemetryStore restart recovery time is not an interrupted HTTP end or model duration', async () => {
   const f = fixture(),
     telemetryPath = f.telemetryPath + '.real',

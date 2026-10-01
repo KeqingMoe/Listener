@@ -105,7 +105,9 @@ function resourceURL(raw: unknown) {
     !/^\/api\/(?:meta|overview|health|requests|wakes|tools|events)$/.test(
       url.pathname,
     ) &&
-    !/^\/api\/(?:requests\/[^/]+|wakes\/[^/]+(?:\/review)?)$/.test(url.pathname)
+    !/^\/api\/(?:requests\/[^/]+|wakes\/[^/]+(?:\/review)?|javascript-jobs\/[^/]+\/links)$/.test(
+      url.pathname,
+    )
   ) {
     return null;
   }

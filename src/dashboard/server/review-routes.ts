@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { type Repository, ResourceLimit } from './repository.ts';
 import { ReviewRepository } from './review-repository.ts';
+import { isJavascriptJobId } from '../contracts/javascript-jobs.ts';
+import { javascriptJobLinks } from './javascript-job-links.ts';
 import { EVENT_CATEGORIES } from '../contracts/review.ts';
 import {
   InvalidQuery,
@@ -12,6 +14,7 @@ import {
   onlyKeys,
   pageLimit,
   queryBinding,
+  queryInteger,
   searchText,
   timeRange,
   type Query,
@@ -46,6 +49,31 @@ export function registerReviewRoutes(
     }
     return q.groupId;
   };
+  app.get(
+    '/api/javascript-jobs/:id/links',
+    run((req) => {
+      const q = req.query as Query;
+      onlyKeys(q, ['groupId', 'since', 'until', 'anchorOrdinal']);
+      const anchorOrdinal =
+        q.anchorOrdinal === undefined
+          ? undefined
+          : queryInteger(q.anchorOrdinal, 0);
+      if (anchorOrdinal !== undefined && anchorOrdinal < 1) {
+        throw new InvalidQuery();
+      }
+      const groupId = group(q, true)!;
+      if (!isJavascriptJobId(req.params.id)) {
+        throw new InvalidQuery();
+      }
+      return javascriptJobLinks(
+        base,
+        groupId,
+        req.params.id!,
+        timeRange(q, now()),
+        anchorOrdinal,
+      );
+    }),
+  );
   const detail = (req: Req) => {
     const q = req.query as Query;
     onlyKeys(q, ['groupId']);

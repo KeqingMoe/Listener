@@ -7,6 +7,8 @@ import { useEstimatedTime } from '../../composables/useEstimatedTime';
 import { isScriptWaiting, scriptTiming } from './script-timing';
 import { toolEvidence } from './tool-evidence';
 import { scriptCallDetails } from './script-call-details';
+import { javascriptJobReferences } from './javascript-job-references';
+import JavascriptJobLinks from './JavascriptJobLinks.vue';
 import ContentViewer from './ContentViewer.vue';
 import CopyId from './CopyId.vue';
 import FoldBlock from './FoldBlock.vue';
@@ -35,6 +37,13 @@ const view = computed(() =>
     props.tool.arguments,
     props.tool.result,
     props.lookup,
+  ),
+);
+const jobs = computed(() =>
+  javascriptJobReferences(
+    props.tool.name,
+    props.tool.arguments,
+    props.tool.result,
   ),
 );
 const internalCalls = computed(() =>
@@ -281,6 +290,16 @@ const stack = ref(false);
       {{ view.text }}
     </p>
     <p v-else-if="argsLine" class="summary-line muted">{{ argsLine }}</p>
+    <JavascriptJobLinks
+      v-for="jobId in jobs.ids"
+      :key="`${groupId}:${jobId}`"
+      :group-id="groupId"
+      :job-id="jobId"
+      :anchor-ordinal="tool.ordinal"
+    />
+    <p v-if="jobs.more" class="summary-line muted">
+      仅显示前 10 个任务引用，其余请核对原始数据。
+    </p>
     <div v-if="raw" class="raw">
       <ContentViewer :value="tool.arguments" label="工具参数" />
       <ContentViewer :value="tool.result" label="工具结果" />

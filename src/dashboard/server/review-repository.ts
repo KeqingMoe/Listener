@@ -15,6 +15,7 @@ import {
   toolReason,
 } from '../contracts/outcomes.ts';
 import { eventTitle } from '../contracts/event-labels.ts';
+import { isJavascriptJobId } from '../contracts/javascript-jobs.ts';
 import type { Range, WakeItem } from '../contracts/contracts.ts';
 import type {
   ReviewRequest,
@@ -805,13 +806,23 @@ export class ReviewRepository {
       );
       truncated ||= budget.truncated;
       for (const row of rows.slice(0, 500)) {
-        const clean = this.clean(parse(row.payload));
+        const payload = parse(row.payload);
+        const clean = this.clean(payload);
+        const jobId =
+          row.kind === 'external_event_received' &&
+          typeof payload?.event_id === 'string' &&
+          payload.event_id.length <= 256
+            ? /^\d+:(js_[A-Za-z0-9_-]+)$/.exec(payload.event_id)?.[1]
+            : undefined;
         truncated ||= clean.truncated || !!row.clipped;
         events.push({
           time: n(row.created_at),
           kind: s(row.kind) ?? 'unknown',
           title: eventTitle(s(row.kind) ?? 'unknown'),
           detail: clean.value,
+          ...(jobId && isJavascriptJobId(jobId) && this.text(jobId) === jobId
+            ? { javascriptJobId: jobId }
+            : {}),
         });
       }
     }

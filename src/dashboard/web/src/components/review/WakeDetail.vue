@@ -11,6 +11,8 @@ import PerformanceFacts from '../ui/PerformanceFacts.vue';
 import ContentViewer from './ContentViewer.vue';
 import CopyId from './CopyId.vue';
 import ToolDetails from './ToolDetails.vue';
+import JavascriptJobLinks from './JavascriptJobLinks.vue';
+import { isJavascriptJobId } from '../../../../contracts/javascript-jobs';
 import { collectNames, collectQuotes } from './tool-summary';
 
 const props = defineProps<{ wakeId: string; groupId: string }>();
@@ -24,6 +26,15 @@ const lookup = computed(() => ({
   names: collectNames(data.value?.tools ?? [], data.value?.memberNames),
   quotes: collectQuotes(data.value?.tools ?? [], data.value?.quotedMessages),
 }));
+const notificationJobs = computed(() => [
+  ...new Set(
+    (data.value?.events ?? [])
+      .map((event) => event.javascriptJobId)
+      .filter(
+        (id): id is string => typeof id === 'string' && isJavascriptJobId(id),
+      ),
+  ),
+]);
 const tab = ref('process');
 const tabs = [
   { id: 'process', label: '执行过程' },
@@ -112,6 +123,21 @@ const timeline = computed(() =>
             >请求 {{ number(data.wake.modelRequests) }} · 工具
             {{ number(data.wake.toolCalls) }}</span
           ><span>{{ duration(data.wake.durationMs) }}</span>
+        </div>
+        <div v-if="notificationJobs.length" class="notification-jobs">
+          <p class="muted">
+            本轮后台结果通知关联（写入模型上下文，不代表已向群发送）
+          </p>
+          <JavascriptJobLinks
+            v-for="jobId in notificationJobs.slice(0, 10)"
+            :key="`${groupId}:${jobId}`"
+            :group-id="groupId"
+            :job-id="jobId"
+          />
+          <p v-if="notificationJobs.length > 10" class="muted">
+            另有 {{ notificationJobs.length - 10 }} 个通知任务关联未展示，完整
+            ID 可在事件原始记录中核对。
+          </p>
         </div>
         <details class="identifiers">
           <summary>用量与记录</summary>

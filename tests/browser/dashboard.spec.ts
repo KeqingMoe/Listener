@@ -18,6 +18,10 @@ import type {
   WakeReviewDetail,
 } from '../../src/dashboard/contracts/review.ts';
 
+import type {
+  JavascriptJobLink,
+  JavascriptJobLinksResponse,
+} from '../../src/dashboard/contracts/javascript-jobs.ts';
 import type { PerformanceMetrics } from '../../src/dashboard/contracts/metrics.ts';
 import { buildRequestTrends } from '../../src/dashboard/server/request-trends.ts';
 
@@ -461,6 +465,9 @@ const denseRequests: ReviewRequest[] = Array.from(
 );
 
 interface MockState {
+  jobLinks?: Partial<JavascriptJobLinksResponse>;
+  jobLinksGate?: Promise<void>;
+  wakeEvents?: WakeReviewDetail['events'];
   /** 替换唤醒详情中的工具调用。 */
   tools?: ReviewTool[];
   authenticated?: boolean;
@@ -570,7 +577,21 @@ async function mock(page: Page, state: MockState = {}) {
       return route.fulfill({ status: 503, json: { error: 'unavailable' } });
     }
     let body: unknown;
-    if (path === '/api/meta') {
+    if (/^\/api\/javascript-jobs\/[^/]+\/links$/.test(path)) {
+      body = {
+        groupId: url.searchParams.get('groupId')!,
+        jobId: decodeURIComponent(path.split('/')[3]!),
+        range: {
+          since: Number(url.searchParams.get('since')),
+          until: Number(url.searchParams.get('until')),
+        },
+        items: [],
+        truncated: false,
+        unavailable: false,
+        ...state.jobLinks,
+      } satisfies JavascriptJobLinksResponse;
+      await state.jobLinksGate;
+    } else if (path === '/api/meta') {
       body = {
         groups: [{ groupId: '10001' }],
         models: ['synthetic'],
@@ -707,6 +728,7 @@ async function mock(page: Page, state: MockState = {}) {
               ...wakeDetail,
               wake: item,
               tools: state.tools ?? wakeDetail.tools,
+              events: state.wakeEvents ?? wakeDetail.events,
             } satisfies WakeReviewDetail);
     } else if (path.startsWith('/api/requests/')) {
       const id = decodeURIComponent(path.split('/').at(-1)!);
@@ -1851,11 +1873,24 @@ test('password login, session restore, no password-change UI, logout and API 401
   await expect(
     page.getByRole('heading', { name: '模型请求', exact: true }),
   ).toBeVisible();
+  // The heading renders before initial resources settle. The scheduler starts
+  // its five-second countdown only after all in-flight resources have finished.
+  await expect(page.locator('.list-pane tbody tr')).toHaveCount(3);
+  await expect(page.getByTestId('dashboard-refresh-status')).toHaveText(
+    /^[1-5]秒$/,
+  );
+  const expiredResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/resource-sync' &&
+      response.status() === 401,
+  );
   state.expired = true;
   await page.clock.runFor(5100);
+  await expiredResponse;
   await expect(
     page.getByRole('heading', { name: '登录', exact: true }),
   ).toBeVisible();
+  await expect(page.locator('.list-pane tbody tr')).toHaveCount(0);
 });
 
 for (const invalidConfig of [false, true]) {
@@ -3091,6 +3126,598 @@ for (const viewport of [
     expect(errors).toEqual([]);
   });
 }
+
+const jobTool = (jobId = 'js_links'): ReviewTool => ({
+  ...tool,
+  name: 'execute_javascript',
+  arguments: { code: 'return 1', mode: 'async' },
+  status: 'pending',
+  result: { status: 'pending', job_id: jobId },
+});
+const jobObservation = (
+  kind: JavascriptJobLink['kind'],
+  extra: Partial<JavascriptJobLink> = {},
+): JavascriptJobLink => ({
+  key: kind,
+  kind,
+  time: null,
+  wakeId: null,
+  requestId: null,
+  callId: null,
+  ordinal: null,
+  state: null,
+  status: null,
+  taskStatus: null,
+  ...extra,
+});
+const scopedJobUrl = `${wakeUrl}&group=other&range=custom&outcome=failed&q=old-filter&model=old-model&since=${range.since}&until=${range.until}`;
+
+test('javascript job links are lazy scoped snapshots with safe cross-wake navigation', async ({
+  page,
+}) => {
+  await page.clock.install({ time: now });
+  await page.clock.pauseAt(now);
+  const { requests, posts } = await mock(page, {
+    tools: [jobTool()],
+    jobLinks: {
+      truncated: true,
+      limitations: ['inbox_limit'],
+      items: [
+        jobObservation('execution', {
+          anchor: true,
+          state: 'finished',
+          status: 'pending',
+          requestId: previous.requestId,
+          wakeId: 'wake-submission',
+          ordinal: 1,
+        }),
+        jobObservation('query', {
+          state: 'finished',
+          status: 'ok',
+          taskStatus: 'completed',
+          requestId: request.requestId,
+          wakeId: wake.wakeId,
+        }),
+        jobObservation('notification_received'),
+        jobObservation('notification_projected', {
+          wakeId: wake.wakeId,
+          taskStatus: 'completed',
+        }),
+      ],
+    },
+  });
+  await page.goto(scopedJobUrl);
+  await page.getByRole('checkbox', { name: '自动刷新', exact: true }).uncheck();
+  const panel = page.getByRole('region', {
+    name: '任务 js_links 的关联记录',
+    exact: true,
+  });
+  await expect(panel).toBeVisible();
+  const count = requests.length;
+  await page.clock.runFor(10000);
+  expect(requests).toHaveLength(count);
+  expect(
+    requests.filter((url) => url.pathname.includes('/javascript-jobs/')),
+  ).toEqual([]);
+  await panel
+    .getByRole('button', { name: '查看关联记录', exact: true })
+    .click();
+  await expect(panel.locator('li')).toHaveCount(4);
+  const gets = requests.filter((url) =>
+    url.pathname.includes('/javascript-jobs/'),
+  );
+  expect(gets).toHaveLength(1);
+  expect(gets[0]!.pathname).toBe('/api/javascript-jobs/js_links/links');
+  expect(gets[0]!.searchParams.get('groupId')).toBe('10001');
+  expect(gets[0]!.searchParams.get('since')).toBe(String(range.since));
+  expect(gets[0]!.searchParams.get('until')).toBe(String(range.until));
+  expect(gets[0]!.searchParams.get('anchorOrdinal')).toBe(String(tool.ordinal));
+  await expect(panel.locator('li').first()).toContainText(
+    '当前调用（直接核对）',
+  );
+  await expect(panel.locator('.job-links-warning')).toHaveCount(1);
+  await expect(panel.locator('.job-links-warning')).toContainText(
+    '通知收件箱只检查最近 500 条历史记录',
+  );
+  await expect(panel.locator('.job-links-warning')).toContainText(
+    '这是历史覆盖限制，不表示本任务的记录缺失',
+  );
+  await expect(panel).not.toContainText('对应记录或结果正文缺失');
+  const sourceLink = panel
+    .locator('li')
+    .first()
+    .getByRole('link', { name: '查看模型请求' });
+  const sourceTarget = new URL(
+    (await sourceLink.getAttribute('href'))!,
+    page.url(),
+  );
+  expect(sourceTarget.searchParams.get('selected')).toBe(previous.requestId);
+  expect(sourceTarget.searchParams.get('group')).toBe('10001');
+  await expect(panel.locator('li').nth(2)).toContainText(
+    '收件阶段没有专属模型请求；写入上下文的记录可关联唤醒。',
+  );
+  await expect(panel.locator('li').nth(2)).not.toContainText(
+    '没有可用的请求或唤醒跳转证据',
+  );
+  await expect(panel).toContainText('已返回后台句柄，不代表任务已完成');
+  await expect(panel).toContainText('返回记录中的任务状态：已结束');
+  await expect(panel).not.toContainText('已通知群');
+  await expect(panel.locator('li').nth(2)).toContainText(
+    '未取得可识别的任务状态',
+  );
+  for (const row of [panel.locator('li').nth(2), panel.locator('li').nth(3)]) {
+    await expect(row.getByRole('link', { name: '查看模型请求' })).toHaveCount(
+      0,
+    );
+  }
+  const queryLink = panel
+    .locator('li')
+    .nth(1)
+    .getByRole('link', { name: '查看模型请求' });
+  const target = new URL((await queryLink.getAttribute('href'))!, page.url());
+  expect(target.searchParams.get('group')).toBe('10001');
+  for (const key of ['q', 'outcome', 'detailGroup', 'model']) {
+    expect(target.searchParams.has(key)).toBe(false);
+  }
+  expect(target.searchParams.get('since')).toBe(String(range.since));
+  expect(target.searchParams.get('until')).toBe(String(range.until));
+  const wakeLink = panel
+    .locator('li')
+    .nth(3)
+    .getByRole('link', { name: '查看唤醒' });
+  const wakeTarget = new URL(
+    (await wakeLink.getAttribute('href'))!,
+    page.url(),
+  );
+  expect(wakeTarget.searchParams.get('selected')).toBe(wake.wakeId);
+  expect(wakeTarget.searchParams.get('group')).toBe('10001');
+  for (const key of ['q', 'outcome', 'detailGroup', 'model']) {
+    expect(wakeTarget.searchParams.has(key)).toBe(false);
+  }
+  await queryLink.click();
+  await expect(page.locator('.request-detail')).toBeVisible();
+  await expect(page.locator('.request-detail')).toContainText(
+    request.requestId,
+  );
+  await page.goto(wakeTarget.toString());
+  await expect(page.locator('.wake-detail')).toContainText(wake.wakeId);
+  await panel
+    .getByRole('button', { name: '查看关联记录', exact: true })
+    .click();
+  await sourceLink.click();
+  await expect(page.locator('.request-detail')).toContainText(
+    previous.requestId,
+  );
+  expect(posts).toEqual([]);
+});
+
+test('javascript job links retry bounded empty snapshots and stop while collapsed on mobile', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.clock.install({ time: now });
+  await page.clock.pauseAt(now);
+  const state: MockState = {
+    tools: [jobTool()],
+    jobLinks: { unavailable: true, truncated: true },
+  };
+  const { requests } = await mock(page, state);
+  await page.goto(wakeUrl);
+  const panel = page.getByRole('region', {
+    name: '任务 js_links 的关联记录',
+    exact: true,
+  });
+  await panel
+    .getByRole('button', { name: '查看关联记录', exact: true })
+    .click();
+  await expect(panel).toContainText('这不代表任务不存在或结果尚未通知');
+  await expect(panel).toContainText('关联数据源或检索索引不可用');
+  await expect(panel).toContainText(
+    '此接口未提供具体限制原因，检索覆盖范围尚无法确认；这不是任务失败状态。',
+  );
+  await expect(panel).not.toContainText('本任务的关联证据');
+  await expect(panel).not.toContainText('对应记录或结果正文缺失');
+  await expect(panel).not.toContainText('通知收件箱只检查最近 500 条历史记录');
+  state.jobLinks = {
+    items: [jobObservation('cancellation', { state: 'unknown' })],
+  };
+  await panel.getByRole('button', { name: '重新检索此范围' }).click();
+  await expect(panel).toContainText('调用结果未知');
+  await expect(panel.locator('li')).not.toContainText('完成');
+  await expect(panel).not.toContainText('关联数据源或检索索引不可用');
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await panel.getByRole('button', { name: '收起关联记录' }).click();
+  const count = requests.filter((url) =>
+    url.pathname.includes('/javascript-jobs/'),
+  ).length;
+  await page.clock.runFor(15000);
+  expect(
+    requests.filter((url) => url.pathname.includes('/javascript-jobs/')),
+  ).toHaveLength(count);
+});
+
+for (const identity of ['job', 'anchor'] as const) {
+  test(`javascript job links discard delayed responses after ${identity} identity changes and exit`, async ({
+    page,
+  }) => {
+    await page.clock.install({ time: now });
+    await page.clock.pauseAt(now);
+    let release!: () => void;
+    const state: MockState = {
+      tools: [{ ...jobTool('js_same'), ordinal: 31 }],
+      jobLinks: {
+        items: [jobObservation('query', { taskStatus: 'old-private-status' })],
+      },
+      jobLinksGate: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    };
+    const { requests } = await mock(page, state);
+    await page.goto(wakeUrl);
+    await page
+      .getByRole('checkbox', { name: '自动刷新', exact: true })
+      .uncheck();
+    await page
+      .getByRole('button', { name: '查看关联记录', exact: true })
+      .click();
+    await expect
+      .poll(
+        () =>
+          requests.filter((url) => url.pathname.includes('/javascript-jobs/'))
+            .length,
+      )
+      .toBe(1);
+    const nextJob = identity === 'job' ? 'js_new' : 'js_same';
+    state.tools = [
+      { ...jobTool(nextJob), ordinal: identity === 'anchor' ? 32 : 31 },
+    ];
+    state.jobLinks = { items: [] };
+    state.jobLinksGate = undefined;
+    // Closing aborts the in-flight resource; global refresh intentionally waits
+    // for active requests, so close before loading the changed tool snapshot.
+    await page
+      .getByRole('button', { name: '收起关联记录', exact: true })
+      .click();
+    await refreshImmediately(page);
+    const panel = page.getByRole('region', {
+      name: `任务 ${nextJob} 的关联记录`,
+      exact: true,
+    });
+    await expect(panel).toBeVisible();
+    await expect(
+      panel.getByRole('button', { name: '查看关联记录' }),
+    ).toHaveAttribute('aria-expanded', 'false');
+    release();
+    await panel.getByRole('button', { name: '查看关联记录' }).click();
+    await expect(panel).toContainText('此范围内未找到可用关联记录');
+    await expect(page.locator('body')).not.toContainText('old-private-status');
+    let releaseExit!: () => void;
+    state.jobLinks = {
+      items: [jobObservation('query', { taskStatus: 'exit-private-status' })],
+    };
+    state.jobLinksGate = new Promise<void>((resolve) => {
+      releaseExit = resolve;
+    });
+    const count = requests.filter((url) =>
+      url.pathname.includes('/javascript-jobs/'),
+    ).length;
+    await panel.getByRole('button', { name: '重新检索此范围' }).click();
+    await expect
+      .poll(
+        () =>
+          requests.filter((url) => url.pathname.includes('/javascript-jobs/'))
+            .length,
+      )
+      .toBe(count + 1);
+    await page
+      .getByRole('link', { name: '模型请求', exact: true })
+      .first()
+      .click();
+    releaseExit();
+    await expect(page.locator('.wake-detail')).toHaveCount(0);
+    await expect(page.locator('body')).not.toContainText('exit-private-status');
+  });
+}
+
+test('javascript job links require pending execution evidence and retain synchronous raw job IDs', async ({
+  page,
+}) => {
+  const executions = [
+    {
+      mode: 'sync',
+      result: { status: 'ok', job_id: 'js_sync', value: 'sync-value' },
+    },
+    {
+      mode: 'auto',
+      result: { status: 'ok', job_id: 'js_auto', value: 'auto-value' },
+    },
+    {
+      mode: 'async',
+      result: {
+        status: 'ok',
+        job_id: 'js_args_only',
+        value: 'foreground-value',
+      },
+    },
+    { mode: 'async', result: { status: 'pending', job_id: 'js_async' } },
+    { mode: 'auto', result: { status: 'pending', job_id: 'js_pending' } },
+    { mode: 'async', result: { status: 'pending', job_id: ' ' } },
+  ];
+  const { requests, posts } = await mock(page, {
+    tools: [
+      ...executions.map(({ mode, result }, index) => ({
+        ...tool,
+        ordinal: index + 1,
+        callId: `execution-${index}`,
+        name: 'execute_javascript',
+        arguments: { mode, code: 'return 1' },
+        result,
+      })),
+      {
+        ...tool,
+        ordinal: 7,
+        callId: 'query',
+        name: 'query_javascript_jobs',
+        arguments: { job_id: 'js_query' },
+        result: { status: 'ok' },
+      },
+      {
+        ...tool,
+        ordinal: 8,
+        callId: 'cancel',
+        name: 'cancel_javascript_job',
+        arguments: { job_id: 'js_cancel' },
+        result: { status: 'ok' },
+      },
+      {
+        ...tool,
+        ordinal: 9,
+        callId: 'unrelated',
+        name: 'read_events',
+        arguments: { job_id: 'js_unrelated' },
+        result: { status: 'pending', job_id: 'js_unrelated' },
+      },
+    ],
+  });
+  await page.goto(wakeUrl);
+  const tools = page.locator('.wake-detail .tool-detail');
+  await expect(tools).toHaveCount(9);
+  await expect(page.locator('.javascript-job-links')).toHaveCount(4);
+  for (const index of [0, 1, 2, 5, 8]) {
+    await expect(tools.nth(index).locator('.javascript-job-links')).toHaveCount(
+      0,
+    );
+  }
+  for (const [index, id] of ['js_sync', 'js_auto', 'js_args_only'].entries()) {
+    await expect(tools.nth(index)).toContainText(
+      executions[index]!.result.value!,
+    );
+    await tools
+      .nth(index)
+      .getByRole('button', { name: '原始数据', exact: true })
+      .click();
+    await expect(tools.nth(index)).toContainText(id);
+  }
+  for (const id of ['js_async', 'js_pending', 'js_query', 'js_cancel']) {
+    await expect(
+      page.getByRole('region', { name: `任务 ${id} 的关联记录`, exact: true }),
+    ).toBeVisible();
+  }
+  expect(
+    requests.filter((url) => url.pathname.includes('/javascript-jobs/')),
+  ).toEqual([]);
+  expect(posts).toEqual([]);
+});
+
+test('javascript job links reset same-job snapshots when the current call anchor changes', async ({
+  page,
+}) => {
+  const state: MockState = {
+    tools: [{ ...jobTool(), ordinal: 41 }],
+    jobLinks: {
+      items: [
+        jobObservation('execution', {
+          anchor: true,
+          ordinal: 41,
+          taskStatus: 'first-anchor-only',
+        }),
+      ],
+    },
+  };
+  const { requests } = await mock(page, state);
+  await page.goto(wakeUrl);
+  await page.getByRole('checkbox', { name: '自动刷新', exact: true }).uncheck();
+  const panel = page.getByRole('region', {
+    name: '任务 js_links 的关联记录',
+    exact: true,
+  });
+  await panel
+    .getByRole('button', { name: '查看关联记录', exact: true })
+    .click();
+  await expect(panel).toContainText('first-anchor-only');
+  state.tools = [{ ...jobTool(), ordinal: 42 }];
+  state.jobLinks = {
+    items: [
+      jobObservation('execution', {
+        anchor: true,
+        ordinal: 42,
+        taskStatus: 'second-anchor-only',
+      }),
+    ],
+  };
+  await refreshImmediately(page);
+  await expect(
+    panel.getByRole('button', { name: '查看关联记录', exact: true }),
+  ).toHaveAttribute('aria-expanded', 'false');
+  await expect(panel).not.toContainText('first-anchor-only');
+  await panel
+    .getByRole('button', { name: '查看关联记录', exact: true })
+    .click();
+  await expect(panel).toContainText('second-anchor-only');
+  await expect(panel).not.toContainText('first-anchor-only');
+  const gets = requests.filter((url) =>
+    url.pathname.includes('/javascript-jobs/'),
+  );
+  // Enabling global refresh may revalidate the old open snapshot before
+  // the changed tool arrives; reopening must use only the new anchor.
+  expect(gets[0]!.searchParams.get('anchorOrdinal')).toBe('41');
+  expect(gets.at(-1)!.searchParams.get('anchorOrdinal')).toBe('42');
+  expect(
+    new Set(gets.map((url) => url.searchParams.get('anchorOrdinal'))),
+  ).toEqual(new Set(['41', '42']));
+  expect(gets.every((url) => url.searchParams.get('groupId') === '10001')).toBe(
+    true,
+  );
+});
+
+test('javascript job links omit invalid call anchors from API queries', async ({
+  page,
+}) => {
+  const { requests } = await mock(page, {
+    tools: [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1].map((ordinal, index) => ({
+      ...jobTool(`js_invalid_anchor_${index}`),
+      ordinal,
+      callId: `invalid-anchor-${index}`,
+    })),
+  });
+  await page.goto(wakeUrl);
+  const panels = page.locator('.javascript-job-links');
+  await expect(panels).toHaveCount(4);
+  for (const panel of await panels.all()) {
+    await panel
+      .getByRole('button', { name: '查看关联记录', exact: true })
+      .click();
+    await expect(panel).toContainText('此范围内未找到可用关联记录');
+  }
+  const gets = requests.filter((url) =>
+    url.pathname.includes('/javascript-jobs/'),
+  );
+  expect(gets).toHaveLength(4);
+  expect(gets.every((url) => !url.searchParams.has('anchorOrdinal'))).toBe(
+    true,
+  );
+});
+
+test('javascript job links only recognize protocol fields and trusted wake events', async ({
+  page,
+}) => {
+  const make = (
+    ordinal: number,
+    name: string,
+    args: unknown,
+    result: unknown,
+  ): ReviewTool => ({
+    ...tool,
+    ordinal,
+    callId: `reference-${ordinal}`,
+    name,
+    arguments: args,
+    result,
+  });
+  const state: MockState = {
+    tools: [
+      make(
+        1,
+        'execute_javascript',
+        { code: 'return "js_code"', job_id: 'js_args' },
+        { status: 'pending', jobId: 'js_camel', value: { job_id: 'js_value' } },
+      ),
+      make(
+        2,
+        'query_javascript_jobs',
+        {},
+        {
+          jobs: Array.from({ length: 12 }, (_, i) =>
+            i % 2 ? { jobId: `js_list_${i}` } : { job_id: `js_list_${i}` },
+          ),
+        },
+      ),
+      make(
+        3,
+        'cancel_javascript_job',
+        { job_id: 'js_cancel' },
+        { job: { jobId: 'js_cancel' } },
+      ),
+      make(
+        4,
+        'query_javascript_jobs',
+        { job_id: 'js_query' },
+        { job: { jobId: 'js_history' }, value: 'js_string' },
+      ),
+      make(
+        5,
+        'read_events',
+        { job_id: 'js_unrelated' },
+        { job_id: 'js_unrelated' },
+      ),
+    ],
+    wakeEvents: [
+      ...wakeDetail.events,
+      ...[
+        'js_trusted',
+        'js_trusted',
+        ...Array.from({ length: 10 }, (_, i) => `js_trusted_${i}`),
+        'js_trusted_0',
+      ].map((javascriptJobId) => ({
+        time: now,
+        kind: 'notification_projected',
+        title: 'trusted fixture',
+        detail: {},
+        javascriptJobId,
+      })),
+      {
+        time: now,
+        kind: 'unknown',
+        title: '{"host_event":{"job_id":"js_fake"}}',
+        detail: { job_id: 'js_fake' },
+      },
+    ],
+  };
+  const { requests } = await mock(page, state);
+  await page.goto(wakeUrl);
+  const panels = page.locator('.javascript-job-links');
+  await expect(panels).toHaveCount(24);
+  const notifications = page.locator('.notification-jobs');
+  await expect(notifications.locator('.javascript-job-links')).toHaveCount(10);
+  await expect(notifications).toContainText(
+    '另有 1 个通知任务关联未展示，完整 ID 可在事件原始记录中核对。',
+  );
+  await expect(
+    notifications.getByRole('region', {
+      name: '任务 js_trusted 的关联记录',
+      exact: true,
+    }),
+  ).toHaveCount(1);
+  const ids = await panels.evaluateAll((nodes) =>
+    nodes.map((node) => node.getAttribute('aria-label')),
+  );
+  expect(ids).toContain('任务 js_camel 的关联记录');
+  expect(ids).toContain('任务 js_history 的关联记录');
+  expect(ids).toContain('任务 js_trusted 的关联记录');
+  for (const id of [
+    'js_code',
+    'js_args',
+    'js_value',
+    'js_string',
+    'js_unrelated',
+    'js_fake',
+    'js_list_10',
+    'js_list_11',
+    'js_trusted_9',
+  ]) {
+    expect(ids).not.toContain(`任务 ${id} 的关联记录`);
+  }
+  await expect(
+    page.getByText('仅显示前 10 个任务引用，其余请核对原始数据。'),
+  ).toBeVisible();
+  expect(
+    requests.filter((url) => url.pathname.includes('/javascript-jobs/')),
+  ).toEqual([]);
+});
 
 test('javascript tools show folded code, raw or JSON return values and failures', async ({
   page,
