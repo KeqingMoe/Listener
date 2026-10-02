@@ -470,6 +470,8 @@ interface MockState {
   wakeEvents?: WakeReviewDetail['events'];
   /** 替换唤醒详情中的工具调用。 */
   tools?: ReviewTool[];
+  memberNames?: WakeReviewDetail['memberNames'];
+  detailGroupId?: string;
   authenticated?: boolean;
   configured?: boolean;
   invalidConfig?: boolean;
@@ -726,7 +728,8 @@ async function mock(page: Page, state: MockState = {}) {
             } satisfies WakesResponse)
           : ({
               ...wakeDetail,
-              wake: item,
+              wake: { ...item, groupId: state.detailGroupId ?? item.groupId },
+              memberNames: state.memberNames ?? wakeDetail.memberNames,
               tools: state.tools ?? wakeDetail.tools,
               events: state.wakeEvents ?? wakeDetail.events,
             } satisfies WakeReviewDetail);
@@ -4351,9 +4354,9 @@ test('tool evidence labels operations, returns and fallback arguments neutrally 
       name: 'poke_member',
       arguments: { user_id: '10002' },
       result: { status: 'error', code: 'poke_failed' },
-      label: '请求操作',
+      label: '管理请求与处理记录',
       text: '工具返回错误',
-      body: '戳一戳 10002',
+      body: '戳一戳',
     },
     {
       name: 'react_message',
@@ -4460,6 +4463,9 @@ test('tool evidence labels operations, returns and fallback arguments neutrally 
       `${expected.label} · ${expected.text}`,
     );
     await expect(item).toContainText(expected.body);
+    if (expected.name === 'poke_member') {
+      await expect(item.locator('.management-request')).toContainText('10002');
+    }
     await expect(item).not.toContainText('戳了戳');
     await expect(item).not.toContainText('已添加');
     await expect(item).not.toContainText('已转为后台任务');
@@ -4477,6 +4483,639 @@ test('tool evidence labels operations, returns and fallback arguments neutrally 
       () => document.documentElement.scrollWidth <= innerWidth + 1,
     ),
   ).toBe(true);
+});
+
+function managementRecord(
+  ordinal: number,
+  name: string,
+  args: unknown,
+  result: unknown = { status: 'executed' },
+  evidence: Partial<ReviewTool> = {},
+): ReviewTool {
+  return {
+    ...tool,
+    ordinal,
+    callId: `management-call-${ordinal}`,
+    proposedAt: now - 4500 + ordinal,
+    name,
+    arguments: args,
+    result,
+    ...evidence,
+  };
+}
+
+const managementSubmitted = {
+  status: 'ok',
+  submitted: true,
+  effect_confirmed: false,
+  delivery_confirmed: false,
+};
+
+test('management results show all write requests with literal false, empty text and historical identities', async ({
+  page,
+}) => {
+  const hostile =
+    '<img src="https://remote.test/pixel"><script>window.__managementExecuted=true</script>';
+  const cases: {
+    name: string;
+    args: unknown;
+    action: string;
+    values?: string[];
+  }[] = [
+    {
+      name: 'mute_member',
+      args: { user_id: '10002', seconds: 3600 },
+      action: '禁言成员',
+      values: ['10002', '历史成员', '3600 秒'],
+    },
+    { name: 'unmute_member', args: { user_id: '10002' }, action: '解除禁言' },
+    {
+      name: 'recall_message',
+      args: { message_id: '-2147483648' },
+      action: '撤回消息',
+      values: ['-2147483648'],
+    },
+    {
+      name: 'set_member_card',
+      args: {
+        user_id: '10002',
+        card: '<script>window.__managementExecuted=true</script>',
+      },
+      action: '修改群名片',
+      values: ['<script>window.__managementExecuted=true</script>'],
+    },
+    { name: 'poke_member', args: { user_id: '10002' }, action: '戳一戳成员' },
+    { name: 'group_sign', args: {}, action: '本群签到' },
+    {
+      name: 'set_group_name',
+      args: { name: '源请求群名' },
+      action: '修改群名称',
+      values: ['源请求群名'],
+    },
+    {
+      name: 'set_group_title',
+      args: { user_id: '10002', title: '' },
+      action: '设置成员头衔',
+      values: ['空字符串：移除头衔'],
+    },
+    {
+      name: 'set_group_whole_mute',
+      args: { enable: false },
+      action: '设置全员禁言',
+      values: ['关闭全员禁言（false）'],
+    },
+    {
+      name: 'kick_member',
+      args: { user_id: '10002', reject_add_request: false },
+      action: '移出群成员',
+      values: ['拒绝再次申请', '不拒绝再次申请（false）'],
+    },
+    {
+      name: 'set_group_admin',
+      args: { user_id: '10002', enable: false },
+      action: '任免管理员',
+      values: ['撤销管理员（false）'],
+    },
+    {
+      name: 'set_group_essence',
+      args: { message_id: '-22' },
+      action: '设置精华消息',
+      values: ['-22'],
+    },
+    {
+      name: 'remove_group_essence',
+      args: { message_id: '-23' },
+      action: '移除精华消息',
+      values: ['-23'],
+    },
+    {
+      name: 'publish_group_notice',
+      args: { text: hostile },
+      action: '发布群公告',
+      values: [hostile],
+    },
+    {
+      name: 'delete_group_notice',
+      args: { notice_id: 'notice-synthetic' },
+      action: '删除群公告',
+      values: ['notice-synthetic'],
+    },
+    { name: 'leave_group', args: {}, action: 'Bot退出本群' },
+    {
+      name: 'create_group_folder',
+      args: { name: '请求目录名' },
+      action: '创建群文件目录',
+      values: ['请求目录名'],
+    },
+    {
+      name: 'delete_group_file',
+      args: { file_handle: 'file-synthetic' },
+      action: '删除群文件',
+      values: ['file-synthetic'],
+    },
+    {
+      name: 'delete_group_folder',
+      args: { folder_handle: 'folder-synthetic' },
+      action: '删除群文件目录',
+      values: ['folder-synthetic'],
+    },
+    {
+      name: 'respond_group_request',
+      args: {
+        request_handle: 'request-rejected',
+        approve: false,
+        reason: hostile,
+      },
+      action: '处理入群申请',
+      values: ['拒绝', hostile],
+    },
+    {
+      name: 'respond_group_request',
+      args: { request_handle: 'request-approved', approve: true, reason: '' },
+      action: '处理入群申请',
+      values: ['同意', '空字符串'],
+    },
+  ];
+  const { posts, external } = await mockWebResults(page, {
+    memberNames: { '10002': '历史成员' },
+    tools: cases.map((entry, index) =>
+      managementRecord(index + 1, entry.name, entry.args, {
+        status: 'confirmation_required',
+        card: 'RETURN_NOT_REQUEST',
+        name: 'RETURN_NOT_REQUEST',
+        text: 'RETURN_NOT_REQUEST',
+        reason: 'RETURN_REASON',
+      }),
+    ),
+  });
+  const items = page.locator('.wake-detail .tool-detail');
+  await expect(
+    items.getByRole('region', { name: '群管理请求与结果' }),
+  ).toHaveCount(cases.length);
+  for (const [index, entry] of cases.entries()) {
+    const view = items
+      .nth(index)
+      .getByRole('region', { name: '群管理请求与结果' });
+    await expect(view.locator('.management-action')).toContainText(
+      entry.action,
+    );
+    await expect(view.locator('.management-request')).toContainText('10001');
+    for (const value of entry.values ?? []) {
+      await expect(view).toContainText(value);
+    }
+    await expect(
+      view
+        .locator('.management-request, .management-text')
+        .filter({ hasText: 'RETURN_' }),
+    ).toHaveCount(0);
+    await expect(view.locator('img, script, a, [src]')).toHaveCount(0);
+    await expect(
+      view.getByRole('button', { name: /执行|确认|重试/ }),
+    ).toHaveCount(0);
+  }
+  await expect(items.nth(20).locator('.management-notice')).not.toContainText(
+    '不符合协议',
+  );
+  await items
+    .nth(3)
+    .getByRole('button', { name: '原始数据', exact: true })
+    .click();
+  await expect(
+    items.nth(3).getByRole('region', { name: '工具参数', exact: true }),
+  ).toContainText('window.__managementExecuted=true');
+  await expect(
+    items.nth(3).getByRole('region', { name: '工具结果', exact: true }),
+  ).toContainText('RETURN_NOT_REQUEST');
+  expect(await page.evaluate(() => '__managementExecuted' in window)).toBe(
+    false,
+  );
+  expect(posts).toEqual([]);
+  expect(external).toEqual([]);
+});
+
+test('management results distinguish ACK, confirmation, submitted, unknown and conflicting receipts', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const longError = `${'error_'.repeat(17000)}ERROR_TAIL_MUST_STAY_RAW`;
+  const longReason = `${'reason_'.repeat(15000)}REASON_TAIL_MUST_STAY_RAW`;
+  const longNote = `${'note_'.repeat(21000)}NOTE_TAIL_MUST_STAY_RAW`;
+  const longResult = {
+    status: 'error',
+    error: longError,
+    reason: longReason,
+    note: longNote,
+  };
+  const cases: {
+    result: unknown;
+    name?: string;
+    args?: unknown;
+    evidence?: Partial<ReviewTool>;
+    stage: string;
+    text?: string[];
+  }[] = [
+    { result: { status: 'executed' }, stage: '本次业务执行已确认' },
+    {
+      result: {
+        status: 'confirmation_required',
+        notification_message_id: '-999',
+      },
+      stage: '等待主人确认',
+      text: ['确认提示消息ID（不是管理目标）', '-999', '不代表已执行'],
+    },
+    {
+      name: 'kick_member',
+      args: { user_id: '10002', reject_add_request: false },
+      result: managementSubmitted,
+      stage: '已提交，效果与送达未核实',
+      text: ['仅说明请求正常提交', '不代表生效'],
+    },
+    {
+      name: 'respond_group_request',
+      args: { request_handle: 'request-approved', approve: true, reason: '' },
+      result: managementSubmitted,
+      stage: '已提交，效果与送达未核实',
+      text: ['不代表申请人已入群'],
+    },
+    {
+      result: {
+        status: 'unknown',
+        error: 'previous_result_unknown',
+        effect_unknown: true,
+        retry_allowed: false,
+      },
+      stage: '结果未知，外部效果未确认',
+      text: ['返回明确不允许重试', 'previous_result_unknown', '此前结果未知'],
+    },
+    {
+      result: { status: 'error', error: 'permission_denied' },
+      stage: '工具返回错误',
+      text: ['permission_denied', '权限不足'],
+    },
+    {
+      result: { status: 'executed', duplicate: true, dispatched: false },
+      stage: '本次无新派发证据',
+      text: ['重复调用结果', '返回记录未新派发'],
+    },
+    {
+      result: { status: 'executed', cached: true, dispatched: false },
+      stage: '本次无新派发证据',
+      text: ['复用缓存结果', '不算新执行'],
+    },
+    {
+      result: { status: 'executed', cancelled_after_dispatch: true },
+      stage: '记录有执行回执，另有派发后取消标记',
+      text: ['取消不证明执行被撤销'],
+    },
+    {
+      result: { status: 'executed' },
+      evidence: { state: 'unknown', outcome: 'unknown' },
+      stage: '账本结果未知',
+    },
+    ...[
+      { action: 'unmute_member' },
+      { user_id: '10003' },
+      { group_id: '10009' },
+    ].map((conflict) => ({
+      result: { status: 'executed', ...conflict },
+      stage: '返回证据异常',
+      text: ['与本次操作不一致'],
+    })),
+    {
+      result: longResult,
+      evidence: { reasonCode: longError },
+      stage: '工具返回错误',
+      text: ['已裁剪'],
+    },
+    {
+      result: { status: 'error' },
+      evidence: { reasonCode: 'permission_denied' },
+      stage: '工具返回错误',
+      text: ['permission_denied', '权限不足'],
+    },
+  ];
+  const { requests, posts, external } = await mockWebResults(page, {
+    tools: cases.map((entry, index) =>
+      managementRecord(
+        index + 1,
+        entry.name ?? 'mute_member',
+        entry.args ?? { user_id: '10002', seconds: 60 },
+        entry.result,
+        entry.evidence,
+      ),
+    ),
+  });
+  const views = page.getByRole('region', { name: '群管理请求与结果' });
+  const before = requests.length;
+  for (const [index, entry] of cases.entries()) {
+    const view = views.nth(index);
+    await expect(view.locator('.management-receipt')).not.toHaveAttribute(
+      'open',
+      '',
+    );
+    await view.locator('.management-receipt summary').click();
+    await expect(view.locator('.management-returned')).toBeVisible();
+    await expect(view.locator('.management-stage strong')).toHaveText(
+      entry.stage,
+    );
+    if (index > 0) {
+      await expect(view.locator('.management-stage')).not.toHaveAttribute(
+        'data-tone',
+        'success',
+      );
+    }
+    for (const text of entry.text ?? []) {
+      await expect(view).toContainText(text);
+    }
+  }
+  await expect(views.nth(1).locator('.management-request')).toContainText(
+    '10002',
+  );
+  await expect(views.nth(1).locator('.management-request')).not.toContainText(
+    '-999',
+  );
+  await expect(views.nth(2).locator('.management-stage')).not.toContainText(
+    '已踢',
+  );
+  await expect(views.locator('button:not(.copy-text button)')).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: /^(执行|确认|重试)/ }),
+  ).toHaveCount(0);
+  const longItem = page
+    .locator('.wake-detail .tool-detail')
+    .nth(cases.length - 2);
+  // Check the entire default card, not only the bounded helper: a legacy
+  // resultProblem/reasonCode paragraph must not bypass preview limits.
+  expect((await longItem.textContent())!.length).toBeLessThan(4000);
+  await expect(longItem).not.toContainText('TAIL_MUST_STAY_RAW');
+  await expect(longItem.locator('.result-detail')).toHaveCount(0);
+  await expect(
+    views.nth(cases.length - 1).locator('.management-reasons'),
+  ).toContainText('permission_denied');
+  await longItem.getByRole('button', { name: '原始数据', exact: true }).click();
+  const rawResult = longItem.getByRole('region', {
+    name: '工具结果',
+    exact: true,
+  });
+  await expect(rawResult).toContainText('ERROR_TAIL_MUST_STAY_RAW');
+  await expect(rawResult).toContainText('REASON_TAIL_MUST_STAY_RAW');
+  await expect(rawResult).toContainText('NOTE_TAIL_MUST_STAY_RAW');
+  await rawResult
+    .getByRole('button', { name: '复制全文', exact: true })
+    .click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    JSON.stringify(longResult, null, 2),
+  );
+  await page.clock.runFor(1000);
+  expect(requests).toHaveLength(before);
+  expect(posts).toEqual([]);
+  expect(external).toEqual([]);
+});
+
+test('management results require folder business ACK and never refresh remote lists or capture uploads and reads', async ({
+  page,
+}) => {
+  const folderResults = [
+    { status: 'ok', deleted: true, effect_confirmed: true },
+    { status: 'ok' },
+    { status: 'ok', deleted: true, effect_confirmed: false },
+    { status: 'ok', deleted: false, effect_confirmed: true },
+    { status: 'ok', deleted: true, effect_confirmed: true, submitted: true },
+    {
+      status: 'ok',
+      deleted: true,
+      effect_confirmed: true,
+      effect_unknown: true,
+    },
+  ];
+  const state: MockState = {
+    tools: [
+      managementRecord(
+        1,
+        'delete_group_file',
+        { file_handle: 'file-handle' },
+        {
+          ...managementSubmitted,
+          api_reported_success: true,
+          refresh_list: true,
+        },
+      ),
+      managementRecord(
+        2,
+        'create_group_folder',
+        { name: '新目录' },
+        { ...managementSubmitted, refresh_list: true },
+      ),
+      ...folderResults.map((result, index) =>
+        managementRecord(
+          index + 3,
+          'delete_group_folder',
+          { folder_handle: `folder-${index}` },
+          result,
+        ),
+      ),
+      managementRecord(
+        9,
+        'upload_group_file',
+        { artifact_id: 'artifact-upload' },
+        {
+          status: 'ok',
+          uploaded: true,
+          resource_id_available: false,
+          effect_confirmed: true,
+        },
+      ),
+      ...[
+        'get_group_info',
+        'get_group_honor',
+        'get_group_mutes',
+        'read_group_notices',
+        'read_group_essence',
+        'list_group_files',
+        'list_group_requests',
+      ].map((name, index) =>
+        managementRecord(
+          index + 10,
+          name,
+          { limit: 10 },
+          { status: 'ok', items: [] },
+        ),
+      ),
+    ],
+  };
+  const { requests, posts, external } = await mockWebResults(page, state);
+  const items = page.locator('.wake-detail .tool-detail');
+  const views = page.getByRole('region', { name: '群管理请求与结果' });
+  await expect(views).toHaveCount(8);
+  const before = requests.length;
+  for (const index of [0, 1]) {
+    await views.nth(index).locator('.management-receipt summary').click();
+    await expect(
+      views.nth(index).locator('.management-returned'),
+    ).toBeVisible();
+  }
+  await expect(views.nth(0)).toContainText('API报告成功，不等于目标删除已核实');
+  for (const index of [0, 1]) {
+    await expect(views.nth(index)).toContainText(
+      '建议重新读取列表；本页面不会执行',
+    );
+    await expect(
+      views.nth(index).locator('.management-stage strong'),
+    ).toHaveText('已提交，效果与送达未核实');
+  }
+  await expect(views.nth(2).locator('.management-stage')).toHaveAttribute(
+    'data-tone',
+    'success',
+  );
+  await expect(views.nth(2).locator('.management-stage strong')).toHaveText(
+    '目录删除回执已确认',
+  );
+  for (let index = 3; index < 8; index++) {
+    await expect(
+      views.nth(index).locator('.management-stage'),
+    ).not.toHaveAttribute('data-tone', 'success');
+  }
+  await expect(items.nth(8).locator('.artifact-tool-result')).toHaveCount(1);
+  for (let index = 8; index < state.tools!.length; index++) {
+    await expect(
+      items.nth(index).locator('.management-tool-result'),
+    ).toHaveCount(0);
+  }
+  await page.clock.runFor(1000);
+  expect(requests).toHaveLength(before);
+  expect(posts).toEqual([]);
+  expect(external).toEqual([]);
+});
+
+test('management results keep mobile text inert, copy complete handles and fold locally across identity changes', async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const handle = `request-${'h'.repeat(220)}`;
+  const text = [
+    '<script>window.__managementExecuted=true</script>',
+    '<img src="https://remote.test/pixel">',
+    ...Array.from(
+      { length: 24 },
+      (_, index) => `公告第${index}行 ${'长文字'.repeat(20)}`,
+    ),
+  ].join('\n');
+  const reason = '拒绝说明'.repeat(40);
+  const state: MockState = {
+    tools: [
+      managementRecord(
+        1,
+        'publish_group_notice',
+        { text, extra: 'RAW_REQUEST_ONLY' },
+        {
+          status: 'executed',
+          text: 'RETURN_TEXT_NOT_REQUEST',
+          original: 'RAW_RESULT_ONLY',
+        },
+      ),
+      managementRecord(
+        2,
+        'respond_group_request',
+        { request_handle: handle, approve: false, reason },
+        managementSubmitted,
+      ),
+    ],
+  };
+  const { requests, posts, external } = await mockWebResults(page, state);
+  const items = page.locator('.wake-detail .tool-detail');
+  const views = page.getByRole('region', { name: '群管理请求与结果' });
+  const body = views.nth(0).getByLabel('请求公告正文', { exact: true });
+  expect(await body.textContent()).toBe(text);
+  await expect(views.nth(0).locator('.management-text')).not.toContainText(
+    'RETURN_TEXT_NOT_REQUEST',
+  );
+  const folded = (await body.boundingBox())!.height;
+  const before = requests.length;
+  await views.nth(0).locator('.management-receipt summary').click();
+  for (const view of await views.all()) {
+    await view.getByRole('button', { name: '展开全部', exact: true }).click();
+    await expect(
+      view.getByRole('button', { name: '收起', exact: true }),
+    ).toHaveAttribute('aria-expanded', 'true');
+    await expect(view.locator('script, img, a, [src]')).toHaveCount(0);
+    expect(
+      await view.evaluate(
+        (element) => element.scrollWidth <= element.clientWidth,
+      ),
+    ).toBe(true);
+  }
+  expect((await body.boundingBox())!.height).toBeGreaterThan(folded * 2);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await views
+    .nth(1)
+    .getByRole('button', { name: `复制目标申请句柄 ${handle}`, exact: true })
+    .click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    handle,
+  );
+  await items
+    .nth(0)
+    .getByRole('button', { name: '原始数据', exact: true })
+    .click();
+  await expect(items.nth(0).locator('.raw')).toContainText('RAW_REQUEST_ONLY');
+  await expect(items.nth(0).locator('.raw')).toContainText('RAW_RESULT_ONLY');
+  await items
+    .nth(0)
+    .getByRole('searchbox', { name: '搜索工具参数', exact: true })
+    .fill('"text":');
+  await expect(
+    items
+      .nth(0)
+      .getByRole('region', { name: '工具参数', exact: true })
+      .locator('.text-line pre'),
+  ).toHaveText(`  "text": ${JSON.stringify(text)},`);
+  await page.clock.runFor(1000);
+  expect(requests).toHaveLength(before);
+  state.tools![0] = {
+    ...state.tools![0]!,
+    result: { status: 'executed', note: '同call刷新' },
+  };
+  await refreshImmediately(page);
+  await expect(views.nth(0).locator('.management-returned')).toBeVisible();
+  await expect(views.nth(0)).toContainText('同call刷新');
+  await expect(
+    views.nth(0).getByRole('button', { name: '收起', exact: true }),
+  ).toHaveAttribute('aria-expanded', 'true');
+  state.tools![0] = {
+    ...state.tools![0]!,
+    callId: 'management-new-call',
+    result: { status: 'executed', note: '换call刷新' },
+  };
+  await refreshImmediately(page);
+  await expect(views.nth(0).locator('.management-returned')).not.toBeVisible();
+  await views.nth(0).locator('.management-receipt summary').click();
+  await expect(views.nth(0)).toContainText('换call刷新');
+  await expect(
+    views.nth(0).getByRole('button', { name: '展开全部', exact: true }),
+  ).toHaveAttribute('aria-expanded', 'false');
+  await expect(
+    views.nth(1).getByRole('button', { name: '收起', exact: true }),
+  ).toHaveAttribute('aria-expanded', 'true');
+  state.detailGroupId = '10009';
+  await refreshImmediately(page);
+  await expect(views.nth(1).locator('.management-request')).toContainText(
+    '10009',
+  );
+  await expect(
+    views.nth(1).getByRole('button', { name: '展开全部', exact: true }),
+  ).toHaveAttribute('aria-expanded', 'false');
+  expect(await page.evaluate(() => '__managementExecuted' in window)).toBe(
+    false,
+  );
+  expect(posts).toEqual([]);
+  expect(external).toEqual([]);
 });
 
 function artifactRecord(

@@ -13,6 +13,8 @@ import WebToolResult from './WebToolResult.vue';
 import { webToolView } from './web-tool-view';
 import ArtifactToolResult from './ArtifactToolResult.vue';
 import { artifactToolView } from './artifact-tool-view';
+import ManagementToolResult from './ManagementToolResult.vue';
+import { managementToolView } from './management-tool-view';
 import ContentViewer from './ContentViewer.vue';
 import CopyId from './CopyId.vue';
 import FoldBlock from './FoldBlock.vue';
@@ -47,6 +49,9 @@ const webView = computed(() =>
   webToolView(props.tool.name, props.tool.arguments, props.tool.result),
 );
 const artifactView = computed(() => artifactToolView(props.tool));
+const managementView = computed(() =>
+  managementToolView(props.tool, props.lookup?.names, props.groupId),
+);
 const jobs = computed(() =>
   javascriptJobReferences(
     props.tool.name,
@@ -76,11 +81,16 @@ watch(toolIdentity, () => {
 });
 const clock = useEstimatedTime(computed(() => isScriptWaiting(props.tool)));
 const timing = computed(() => scriptTiming(props.tool, clock.value));
-const problem = computed(() => resultProblem(props.tool.result));
+const problem = computed(() =>
+  managementView.value ? '' : resultProblem(props.tool.result),
+);
 const argsLine = computed(() => argumentsLine(props.tool.arguments));
 const evidence = computed(() => toolEvidence(props.tool));
 const failed = computed(() => evidence.value.tone === 'error');
 const contentLabel = computed(() => {
+  if (managementView.value) {
+    return '管理请求与处理记录';
+  }
   if (artifactView.value) {
     return '产物请求与记录';
   }
@@ -149,13 +159,19 @@ const stack = ref(false);
       >{{ evidence.text }}
     </p>
     <p
-      v-if="problem || tool.reasonCode"
+      v-if="!managementView && (problem || tool.reasonCode)"
       :class="['result-detail', evidence.tone]"
     >
       {{ problem || status(tool.reasonCode) }}
     </p>
+    <ManagementToolResult
+      v-if="managementView"
+      :key="`management:${toolIdentity}`"
+      :view="managementView"
+      :group-id="groupId"
+    />
     <ArtifactToolResult
-      v-if="artifactView"
+      v-else-if="artifactView"
       :key="`artifact:${toolIdentity}`"
       :view="artifactView"
     />
