@@ -4479,6 +4479,385 @@ test('tool evidence labels operations, returns and fallback arguments neutrally 
   ).toBe(true);
 });
 
+function artifactRecord(
+  ordinal: number,
+  name: string,
+  args: unknown,
+  result: unknown,
+  evidence: Partial<ReviewTool> = {},
+): ReviewTool {
+  return {
+    ...tool,
+    ordinal,
+    callId: `artifact-call-${ordinal}`,
+    name,
+    arguments: args,
+    result,
+    ...evidence,
+  };
+}
+
+function artifactMetadata(index = 0) {
+  return {
+    artifact_id: `artifact-${index}-${'i'.repeat(180)}`,
+    name: `returned-${index}-${'n'.repeat(100)}`,
+    description:
+      '<img src="https://remote.test/pixel"><script>window.__artifactExecuted=true</script>',
+    media_type: 'application/x-returned',
+    size: 0,
+    sha256: 'ab'.repeat(32),
+    created_at: '2026-09-20T09:00:00Z',
+    expires_at: '2026-09-20T10:00:00Z',
+  };
+}
+
+test('artifact results creation keeps root metadata separate, inert and copyable on mobile', async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const metadata = artifactMetadata();
+  const args = {
+    name: 'request-only.txt',
+    media_type: 'text/plain',
+    content: 'RAW_CONTENT_ONLY',
+    pixels: ['RAW_PIXELS_ONLY'],
+  };
+  const result = { status: 'ok', ...metadata, original: 'RAW_EXTRA_ONLY' };
+  const { requests, posts, external } = await mockWebResults(page, {
+    tools: [
+      artifactRecord(1, 'create_artifact', args, result),
+      artifactRecord(
+        2,
+        'create_image',
+        {
+          name: 'requested.png',
+          width: 1,
+          height: 2,
+          pixels: ['RAW_IMAGE_PIXELS'],
+        },
+        {
+          status: 'ok',
+          ...artifactMetadata(1),
+          media_type: 'image/png',
+          size: 2048,
+          width: 640,
+          height: 480,
+        },
+      ),
+      artifactRecord(
+        3,
+        'create_artifact',
+        args,
+        { status: 'error', error: 'synthetic creation failure' },
+        { outcome: 'failed' },
+      ),
+    ],
+  });
+  const items = page.locator('.wake-detail .tool-detail');
+  const views = items.locator('.artifact-tool-result');
+  const first = views.nth(0);
+  await expect(first.locator('.artifact-request')).toContainText(
+    'request-only.txt',
+  );
+  await expect(first.locator('.artifact-request')).toContainText('text/plain');
+  const card = first.locator('.artifact-card');
+  for (const value of [
+    metadata.name,
+    metadata.artifact_id,
+    metadata.media_type,
+    '0 字节',
+    metadata.sha256,
+    metadata.description,
+  ]) {
+    await expect(card).toContainText(value);
+  }
+  await expect(card).not.toContainText('request-only.txt');
+  await expect(card).not.toContainText('text/plain');
+  await expect(card.locator('time')).toHaveCount(2);
+  await expect(card.locator('time').nth(0)).toHaveAttribute(
+    'datetime',
+    metadata.created_at,
+  );
+  await expect(card.locator('time').nth(1)).toHaveAttribute(
+    'datetime',
+    metadata.expires_at,
+  );
+  await expect(first).toContainText('到期时间不是实时可用性检查');
+  await expect(first).toContainText('不判断当前过期、删除或可用状态');
+  await expect(views.nth(1).locator('.artifact-card')).toContainText(
+    '640 × 480 px',
+  );
+  await expect(views.nth(1).locator('.artifact-card')).toContainText(
+    '2,048 字节',
+  );
+  await expect(views.nth(2).locator('.artifact-request')).toContainText(
+    'request-only.txt',
+  );
+  await expect(views.nth(2).locator('.artifact-card')).toHaveCount(0);
+  await expect(views.nth(2)).not.toContainText('已生成');
+  for (const view of await views.all()) {
+    await expect(view.locator('img, script, [href], [src]')).toHaveCount(0);
+    await expect(view).not.toContainText('RAW_');
+    expect(
+      await view.evaluate(
+        (element) => element.scrollWidth <= element.clientWidth,
+      ),
+    ).toBe(true);
+  }
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  expect(await page.evaluate(() => '__artifactExecuted' in window)).toBe(false);
+  const before = requests.length;
+  await first
+    .getByRole('button', {
+      name: `复制产物 ID ${metadata.artifact_id}`,
+      exact: true,
+    })
+    .click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    metadata.artifact_id,
+  );
+  await items
+    .nth(0)
+    .getByRole('button', { name: '原始数据', exact: true })
+    .click();
+  for (const value of [
+    'RAW_CONTENT_ONLY',
+    'RAW_PIXELS_ONLY',
+    'RAW_EXTRA_ONLY',
+  ]) {
+    await expect(items.nth(0).locator('.raw')).toContainText(value);
+  }
+  await page.clock.runFor(1000);
+  expect(requests).toHaveLength(before);
+  expect(posts).toEqual([]);
+  expect(external).toEqual([]);
+});
+
+test('artifact results upload requires confirmed evidence and preserves reference-only IDs', async ({
+  page,
+}) => {
+  const args = {
+    artifact_id: 'artifact-reference-only',
+    folder_handle: 'folder-reference-only',
+  };
+  const success = {
+    status: 'ok',
+    uploaded: true,
+    effect_confirmed: true,
+    resource_id_available: false,
+  };
+  const variants: { result: unknown; evidence?: Partial<ReviewTool> }[] = [
+    { result: success },
+    { result: { ...success, effect_unknown: true } },
+    { result: { ...success, submitted: true } },
+    { result: { ...success, status: 'confirmation_required' } },
+    { result: { ...success, effect_confirmed: false } },
+    { result: { ...success, status: 'staged' } },
+    { result: success, evidence: { state: 'proposed', outcome: 'unknown' } },
+    { result: success, evidence: { outcome: 'failed' } },
+  ];
+  const { posts, external } = await mockWebResults(page, {
+    tools: variants.map(({ result, evidence }, index) =>
+      artifactRecord(index + 1, 'upload_group_file', args, result, evidence),
+    ),
+  });
+  const views = page.locator('.wake-detail .artifact-tool-result');
+  await expect(views.nth(0).locator('.artifact-result-note')).toHaveText(
+    '工具明确回报上传成功',
+  );
+  await expect(views.nth(0)).toContainText(
+    '仅表示未拿到新文件ID，不表示上传失败',
+  );
+  for (let index = 0; index < variants.length; index++) {
+    const view = views.nth(index);
+    await expect(view.locator('.artifact-request')).toContainText(
+      args.artifact_id,
+    );
+    await expect(view.locator('.artifact-request')).toContainText(
+      args.folder_handle,
+    );
+    await expect(view.locator('img, [href], [src]')).toHaveCount(0);
+    if (index > 0) {
+      await expect(view).not.toContainText('工具明确回报上传成功');
+    }
+  }
+  expect(posts).toEqual([]);
+  expect(external).toEqual([]);
+});
+
+test('artifact results image send and load reports never imply reading or reverse execution', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const messageId = `message-${'m'.repeat(180)}`;
+  const { requests, posts, external } = await mockWebResults(page, {
+    tools: [
+      artifactRecord(
+        1,
+        'send_group_image',
+        { artifact_id: 'send-artifact' },
+        {
+          status: 'executed',
+          message_id: messageId,
+          local_projection_failed: true,
+        },
+      ),
+      artifactRecord(
+        2,
+        'view_images',
+        { image_ids: ['loaded-image', 'failed-image'] },
+        {
+          status: 'partial',
+          loaded_ids: ['loaded-image'],
+          failed_ids: ['failed-image'],
+          pixels: ['RAW_LOAD_PIXELS'],
+          original: 'RAW_LOAD_EXTRA',
+        },
+      ),
+    ],
+  });
+  const items = page.locator('.wake-detail .tool-detail');
+  const sent = items.nth(0).locator('.artifact-tool-result');
+  await expect(sent.locator('.artifact-result-note')).toHaveText(
+    '工具回报发送已执行，不代表已读。',
+  );
+  await expect(sent).toContainText('本地记录同步失败，不据此逆转发送为失败');
+  await expect(sent).toContainText(messageId);
+  const loaded = items.nth(1).locator('.artifact-tool-result');
+  await expect(loaded).toContainText('不代表模型已看或图片已发送');
+  await expect(loaded.locator('.artifact-loaded')).toContainText(
+    'loaded-image',
+  );
+  await expect(loaded.locator('.artifact-failed')).toContainText(
+    'failed-image',
+  );
+  await expect(loaded).not.toContainText('RAW_LOAD');
+  await expect(
+    items.locator(
+      '.artifact-tool-result img, .artifact-tool-result [href], .artifact-tool-result [src]',
+    ),
+  ).toHaveCount(0);
+  const before = requests.length;
+  await sent
+    .getByRole('button', { name: '复制记录中的消息 ID', exact: true })
+    .click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    messageId,
+  );
+  await items
+    .nth(1)
+    .getByRole('button', { name: '原始数据', exact: true })
+    .click();
+  await expect(items.nth(1).locator('.raw')).toContainText('RAW_LOAD_PIXELS');
+  await expect(items.nth(1).locator('.raw')).toContainText('RAW_LOAD_EXTRA');
+  await page.clock.runFor(1000);
+  expect(requests).toHaveLength(before);
+  expect(posts).toEqual([]);
+  expect(external).toEqual([]);
+});
+
+test('artifact results list expands only local records, retains refresh and resets new calls', async ({
+  page,
+}) => {
+  const list = (
+    ordinal: number,
+    count: number,
+    extra: Record<string, unknown> = {},
+    evidence: Partial<ReviewTool> = {},
+  ) =>
+    artifactRecord(
+      ordinal,
+      'list_artifacts',
+      {},
+      {
+        status: 'ok',
+        artifacts: Array.from({ length: count }, (_, index) =>
+          artifactMetadata(index),
+        ),
+        has_more: false,
+        ...extra,
+      },
+      evidence,
+    );
+  const state: MockState = {
+    tools: [
+      list(1, 11),
+      { ...list(2, 20), arguments: { offset: 20, limit: 20 } },
+      list(3, 0),
+      list(4, 0, { status: 'error' }, { outcome: 'failed' }),
+      list(5, 0, {}, { outcome: 'unknown' }),
+      list(6, 0, { has_more: true }),
+      { ...list(7, 0), arguments: { offset: 100, limit: 20 } },
+    ],
+  };
+  const { requests, posts, external } = await mockWebResults(page, state);
+  const views = page.locator('.wake-detail .artifact-tool-result');
+  await expect(views.nth(0).locator('.artifact-card')).toHaveCount(10);
+  await expect(views.nth(1).locator('.artifact-card')).toHaveCount(10);
+  await expect(views.nth(2).locator('.artifact-empty')).toBeVisible();
+  for (const index of [3, 4, 5]) {
+    await expect(views.nth(index).locator('.artifact-empty')).toHaveCount(0);
+    await expect(views.nth(index)).not.toContainText('本次返回的产物列表为空');
+  }
+  await expect(views.nth(5)).toContainText('本页不是完整列表');
+  for (const [index, offset] of [
+    [1, '20'],
+    [6, '100'],
+  ] as const) {
+    const view = views.nth(index);
+    await expect(view.locator('.artifact-request dt')).toHaveText([
+      '请求偏移',
+      '单页数量',
+    ]);
+    await expect(view.locator('.artifact-request dd')).toHaveText([
+      offset,
+      '20',
+    ]);
+    await expect(view).toContainText('本页结果不能代表偏移前的内容');
+  }
+  await expect(views.nth(6).locator('.artifact-empty')).toBeVisible();
+  await expect(views.nth(6)).toContainText('不代表当前或其他记录中没有产物');
+  const before = requests.length;
+  await views
+    .nth(0)
+    .getByRole('button', { name: /再显示\s*1\s*条已有产物（还剩\s*1\s*条）/ })
+    .click();
+  await views
+    .nth(1)
+    .getByRole('button', { name: /再显示\s*10\s*条已有产物（还剩\s*10\s*条）/ })
+    .click();
+  await expect(views.nth(0).locator('.artifact-card')).toHaveCount(11);
+  await expect(views.nth(1).locator('.artifact-card')).toHaveCount(20);
+  await expect(views.nth(0).locator('.artifact-more')).toHaveCount(0);
+  await expect(views.nth(1).locator('.artifact-more')).toHaveCount(0);
+  await page.clock.runFor(1000);
+  expect(requests).toHaveLength(before);
+  state.tools![0] = list(1, 11, {
+    artifacts: Array.from({ length: 11 }, (_, index) => ({
+      ...artifactMetadata(index),
+      name: `refreshed-${index}`,
+    })),
+  });
+  await refreshImmediately(page);
+  await expect(views.nth(0)).toContainText('refreshed-10');
+  await expect(views.nth(0).locator('.artifact-card')).toHaveCount(11);
+  await expect(views.nth(1).locator('.artifact-card')).toHaveCount(20);
+  state.tools![0] = { ...list(1, 11), callId: 'artifact-replacement-call' };
+  await refreshImmediately(page);
+  await expect(views.nth(0).locator('.artifact-card')).toHaveCount(10);
+  await expect(views.nth(0).locator('.artifact-more')).toBeVisible();
+  await expect(views.nth(1).locator('.artifact-card')).toHaveCount(20);
+  expect(posts).toEqual([]);
+  expect(external).toEqual([]);
+});
+
 // Web result fixtures remain entirely local, including deliberately hostile URLs.
 async function mockWebResults(page: Page, state: MockState) {
   const external: string[] = [];

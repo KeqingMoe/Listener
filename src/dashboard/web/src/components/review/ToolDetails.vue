@@ -11,6 +11,8 @@ import { javascriptJobReferences } from './javascript-job-references';
 import JavascriptJobLinks from './JavascriptJobLinks.vue';
 import WebToolResult from './WebToolResult.vue';
 import { webToolView } from './web-tool-view';
+import ArtifactToolResult from './ArtifactToolResult.vue';
+import { artifactToolView } from './artifact-tool-view';
 import ContentViewer from './ContentViewer.vue';
 import CopyId from './CopyId.vue';
 import FoldBlock from './FoldBlock.vue';
@@ -44,6 +46,7 @@ const view = computed(() =>
 const webView = computed(() =>
   webToolView(props.tool.name, props.tool.arguments, props.tool.result),
 );
+const artifactView = computed(() => artifactToolView(props.tool));
 const jobs = computed(() =>
   javascriptJobReferences(
     props.tool.name,
@@ -78,6 +81,9 @@ const argsLine = computed(() => argumentsLine(props.tool.arguments));
 const evidence = computed(() => toolEvidence(props.tool));
 const failed = computed(() => evidence.value.tone === 'error');
 const contentLabel = computed(() => {
+  if (artifactView.value) {
+    return '产物请求与记录';
+  }
   if (webView.value) {
     return '网页请求与结果';
   }
@@ -148,7 +154,12 @@ const stack = ref(false);
     >
       {{ problem || status(tool.reasonCode) }}
     </p>
-    <WebToolResult v-if="webView" :key="toolIdentity" :view="webView" />
+    <ArtifactToolResult
+      v-if="artifactView"
+      :key="`artifact:${toolIdentity}`"
+      :view="artifactView"
+    />
+    <WebToolResult v-else-if="webView" :key="toolIdentity" :view="webView" />
     <div v-else-if="view?.kind === 'send'" class="bubble">
       <ReplyQuote v-if="view.reply" :reply="view.reply" /><MessageParts
         :parts="view.parts"
