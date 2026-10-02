@@ -4479,6 +4479,318 @@ test('tool evidence labels operations, returns and fallback arguments neutrally 
   ).toBe(true);
 });
 
+// Web result fixtures remain entirely local, including deliberately hostile URLs.
+async function mockWebResults(page: Page, state: MockState) {
+  const external: string[] = [];
+  await page.route('**/*', (route) => {
+    if (new URL(route.request().url()).origin === 'http://127.0.0.1:5175') {
+      return route.fallback();
+    }
+    external.push(route.request().url());
+    return route.abort();
+  });
+  await page.clock.install({ time: now });
+  await page.clock.pauseAt(now);
+  const traffic = await mock(page, state);
+  await page.goto(wakeUrl);
+  await page.getByRole('checkbox', { name: '自动刷新', exact: true }).uncheck();
+  await expect(page.locator('.wake-detail .tool-detail')).toHaveCount(
+    state.tools!.length,
+  );
+  return { ...traffic, external };
+}
+
+function webRecord(
+  ordinal: number,
+  name: 'web_search' | 'web_fetch',
+  args: unknown,
+  result: unknown,
+): ReviewTool {
+  return {
+    ...tool,
+    ordinal,
+    callId: `web-call-${ordinal}`,
+    name,
+    arguments: args,
+    result,
+  };
+}
+
+test('web results search sources preserve safe links, partial failures and raw data', async ({
+  page,
+}) => {
+  const urls = [
+    'https://example.test/article',
+    'http://example.test/second',
+    'javascript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+    'http://localhost/private',
+    'http://127.0.0.1/private',
+    'http://192.168.1.1/private',
+  ];
+  const sources = urls.map((url, index) => ({
+    title: `来源 ${index + 1}`,
+    url,
+    snippet: `摘要 ${index + 1} <b>不是HTML</b>`,
+    published_at: '2026-09-20',
+  }));
+  const result = {
+    status: 'ok',
+    sources,
+    failed_queries: 1,
+    truncated: true,
+    original: 'raw-only-field',
+  };
+  const { requests, posts, external } = await mockWebResults(page, {
+    tools: [
+      webRecord(
+        1,
+        'web_search',
+        { queries: ['第一条查询', '第二条查询'] },
+        result,
+      ),
+    ],
+  });
+  const item = page.locator('.wake-detail .tool-detail');
+  const view = item.getByRole('region', { name: '网页搜索记录' });
+  await expect(view.locator('.web-queries li')).toHaveText([
+    '第一条查询',
+    '第二条查询',
+  ]);
+  const rows = view.locator('.web-sources > li');
+  await expect(rows).toHaveCount(sources.length);
+  for (const [index, source] of sources.entries()) {
+    await expect(rows.nth(index)).toContainText(source.title);
+    await expect(rows.nth(index)).toContainText(source.url);
+    await expect(rows.nth(index)).toContainText(
+      `来源标注时间：${source.published_at}`,
+    );
+    await expect(
+      rows.nth(index).getByLabel('摘要', { exact: true }),
+    ).toHaveText(source.snippet);
+    const link = rows.nth(index).getByRole('link');
+    if (index < 2) {
+      await expect(link).toHaveText(source.title);
+      await expect(link).toHaveAttribute('href', source.url);
+      await expect(link).toHaveAttribute('target', '_blank');
+      await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+      await expect(link).toHaveAttribute('referrerpolicy', 'no-referrer');
+    } else {
+      await expect(link).toHaveCount(0);
+    }
+  }
+  await expect(view.locator('b, img, script')).toHaveCount(0);
+  await expect(view).toContainText('部分查询失败（1条），当前来源不完整');
+  await expect(view).toContainText('服务端已截断返回内容，当前结果不完整');
+  const before = requests.length;
+  await item.getByRole('button', { name: '原始数据', exact: true }).click();
+  await expect(item.locator('.raw')).toContainText('raw-only-field');
+  await expect(item.locator('.raw')).toContainText('failed_queries');
+  for (const source of sources) {
+    await expect(item.locator('.raw')).toContainText(source.url);
+  }
+  await page.clock.runFor(1000);
+  expect(requests).toHaveLength(before);
+  expect(posts).toEqual([]);
+  expect(external).toEqual([]);
+});
+
+test('web results fetch is inert, locally folded and identity-stable on mobile', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const url = `https://example.test/${'long-url-'.repeat(100)}`;
+  const content = [
+    '<script>window.__webExecuted=true</script>',
+    '<img src="https://remote.test/pixel" onerror="window.__webExecuted=true">',
+    '![remote markdown](https://remote.test/markdown.png)',
+    ...Array.from(
+      { length: 25 },
+      (_, index) => `正文第${index}行 ${'long-body-'.repeat(10)}`,
+    ),
+  ].join('\n');
+  const result = {
+    status: 'ok',
+    url,
+    title: '合成网页标题',
+    http_status: 200,
+    content_type: 'text/html',
+    content,
+    total_chars: 30000,
+    next_start: 12000,
+    truncated: true,
+    original: 'retained-metadata',
+  };
+  const state: MockState = {
+    tools: [webRecord(1, 'web_fetch', { url, start: 100 }, result)],
+  };
+  const { requests, posts, external } = await mockWebResults(page, state);
+  const item = page.locator('.wake-detail .tool-detail');
+  const view = item.getByRole('region', { name: '网页读取记录' });
+  for (const text of [
+    '合成网页标题',
+    'HTTP 200',
+    '类型 text/html',
+    '起点 100',
+    '正文总字符 30000',
+    '记录的续读起点 12000',
+  ]) {
+    await expect(view).toContainText(text);
+  }
+  const body = view.getByLabel('网页正文', { exact: true });
+  expect(await body.textContent()).toBe(content);
+  const folded = (await body.boundingBox())!.height;
+  expect(await body.evaluate((element) => element.style.maxHeight)).toBe(
+    '16em',
+  );
+  const before = requests.length;
+  await view.getByRole('button', { name: '展开全部', exact: true }).click();
+  await expect(
+    view.getByRole('button', { name: '收起', exact: true }),
+  ).toHaveAttribute('aria-expanded', 'true');
+  expect((await body.boundingBox())!.height).toBeGreaterThan(folded * 2);
+  await expect(view.locator('script, img')).toHaveCount(0);
+  expect(await page.evaluate(() => '__webExecuted' in window)).toBe(false);
+  expect(
+    await view.evaluate(
+      (element) => element.scrollWidth <= element.clientWidth,
+    ),
+  ).toBe(true);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await item.getByRole('button', { name: '原始数据', exact: true }).click();
+  await expect(item.locator('.raw')).toContainText('retained-metadata');
+  // 原始数据搜索使用完整JSON原文，不受可读视图折叠/高亮换行影响。
+  await item
+    .getByRole('searchbox', { name: '搜索工具结果', exact: true })
+    .fill('"content":');
+  await expect(
+    item
+      .getByRole('region', { name: '工具结果', exact: true })
+      .locator('.text-line pre'),
+  ).toHaveText(`  "content": ${JSON.stringify(content)},`);
+  await page.clock.runFor(1000);
+  expect(requests).toHaveLength(before);
+  expect(posts).toEqual([]);
+  expect(external).toEqual([]);
+
+  state.tools = [
+    { ...state.tools![0]!, result: { ...result, title: '同条刷新' } },
+  ];
+  await refreshImmediately(page);
+  await expect(view).toContainText('同条刷新');
+  await expect(
+    view.getByRole('button', { name: '收起', exact: true }),
+  ).toHaveAttribute('aria-expanded', 'true');
+  state.tools = [
+    {
+      ...state.tools![0]!,
+      callId: 'replacement-web-call',
+      result: { ...result, title: '新条记录' },
+    },
+  ];
+  await refreshImmediately(page);
+  await expect(view).toContainText('新条记录');
+  await expect(
+    view.getByRole('button', { name: '展开全部', exact: true }),
+  ).toHaveAttribute('aria-expanded', 'false');
+  expect((await body.boundingBox())!.height).toBe(folded);
+  expect(posts).toEqual([]);
+  expect(external).toEqual([]);
+});
+
+test('web results distinguish empty success, unknown, errors, redirects and empty slices', async ({
+  page,
+}) => {
+  const search = (ordinal: number, result: unknown) =>
+    webRecord(ordinal, 'web_search', { queries: ['empty query'] }, result);
+  const fetch = (ordinal: number, start: number, result: unknown) =>
+    webRecord(
+      ordinal,
+      'web_fetch',
+      { url: 'https://example.test/page', start },
+      result,
+    );
+  const { external } = await mockWebResults(page, {
+    tools: [
+      search(1, { status: 'ok', sources: [], truncated: false }),
+      {
+        ...search(2, { status: 'error', error: 'HTTP 503', sources: [] }),
+        status: 'error',
+        outcome: 'failed',
+      },
+      search(3, null),
+      search(4, { status: 'ok', truncated: false }),
+      fetch(5, 0, {
+        status: 'ok',
+        redirect_to: 'https://example.test/target',
+        http_status: 302,
+        content: 'MUST-NOT-PREVIEW',
+      }),
+      fetch(6, 500, {
+        status: 'ok',
+        content: '',
+        total_chars: 500,
+        truncated: false,
+      }),
+      fetch(7, 0, {
+        status: 'ok',
+        content: '',
+        total_chars: 0,
+        truncated: false,
+      }),
+      fetch(8, 0, { status: 'unknown' }),
+      fetch(9, 0, { status: 'ok' }),
+    ],
+  });
+  const items = page.locator('.wake-detail .tool-detail');
+  await expect(items.nth(0).locator('.web-empty')).toHaveText(
+    '本次返回未列出搜索来源',
+  );
+  for (const index of [1, 2, 3, 4, 5, 7, 8]) {
+    await expect(items.nth(index).locator('.web-empty')).toHaveCount(0);
+  }
+  await expect(items.nth(1).locator('.tool-evidence')).toContainText(
+    '工具返回错误',
+  );
+  await expect(items.nth(1).locator('.result-detail')).toContainText(
+    'HTTP 503',
+  );
+  for (const index of [1, 2, 7]) {
+    await expect(items.nth(index)).toContainText(
+      '尚无已确认成功的结果；不能据此判断无搜索结果或无正文',
+    );
+  }
+  await expect(items.nth(3)).toContainText('sources缺失或格式异常，来源未知');
+  const redirect = items.nth(4).getByRole('region', { name: '网页读取记录' });
+  await expect(redirect).toContainText('返回重定向目标（未自动读取）');
+  await expect(redirect.locator('.web-redirect-url a')).toHaveAttribute(
+    'href',
+    'https://example.test/target',
+  );
+  await expect(redirect).not.toContainText('MUST-NOT-PREVIEW');
+  await expect(redirect.getByLabel('网页正文', { exact: true })).toHaveCount(0);
+  await items
+    .nth(4)
+    .getByRole('button', { name: '原始数据', exact: true })
+    .click();
+  await expect(items.nth(4).locator('.raw')).toContainText('MUST-NOT-PREVIEW');
+  await expect(items.nth(5)).toContainText(
+    '当前分页切片为空，不代表整页正文为空',
+  );
+  await expect(items.nth(6).locator('.web-empty')).toHaveText(
+    '返回的网页正文为空',
+  );
+  await expect(
+    items.nth(7).getByLabel('网页正文', { exact: true }),
+  ).toHaveCount(0);
+  await expect(items.nth(8)).toContainText('正文缺失或格式异常，内容未知');
+  expect(external).toEqual([]);
+});
+
 test('javascript wait metadata handles pending, missing, invalid and async values on mobile', async ({
   page,
 }) => {

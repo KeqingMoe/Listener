@@ -9,6 +9,8 @@ import { toolEvidence } from './tool-evidence';
 import { scriptCallDetails } from './script-call-details';
 import { javascriptJobReferences } from './javascript-job-references';
 import JavascriptJobLinks from './JavascriptJobLinks.vue';
+import WebToolResult from './WebToolResult.vue';
+import { webToolView } from './web-tool-view';
 import ContentViewer from './ContentViewer.vue';
 import CopyId from './CopyId.vue';
 import FoldBlock from './FoldBlock.vue';
@@ -39,6 +41,9 @@ const view = computed(() =>
     props.lookup,
   ),
 );
+const webView = computed(() =>
+  webToolView(props.tool.name, props.tool.arguments, props.tool.result),
+);
 const jobs = computed(() =>
   javascriptJobReferences(
     props.tool.name,
@@ -54,19 +59,18 @@ const visibleCalls = computed(() => {
   const items = internalCalls.value?.items ?? [];
   return expandedCalls.value ? items : items.slice(0, 5);
 });
-watch(
-  () =>
-    JSON.stringify([
-      props.groupId,
-      props.tool.requestId,
-      props.tool.callId,
-      props.tool.ordinal,
-      props.tool.proposedAt,
-    ]),
-  () => {
-    expandedCalls.value = false;
-  },
+const toolIdentity = computed(() =>
+  JSON.stringify([
+    props.groupId,
+    props.tool.requestId,
+    props.tool.callId,
+    props.tool.ordinal,
+    props.tool.proposedAt,
+  ]),
 );
+watch(toolIdentity, () => {
+  expandedCalls.value = false;
+});
 const clock = useEstimatedTime(computed(() => isScriptWaiting(props.tool)));
 const timing = computed(() => scriptTiming(props.tool, clock.value));
 const problem = computed(() => resultProblem(props.tool.result));
@@ -74,6 +78,9 @@ const argsLine = computed(() => argumentsLine(props.tool.arguments));
 const evidence = computed(() => toolEvidence(props.tool));
 const failed = computed(() => evidence.value.tone === 'error');
 const contentLabel = computed(() => {
+  if (webView.value) {
+    return '网页请求与结果';
+  }
   const kind = view.value?.kind;
   if (kind === 'send') {
     return '请求发送的内容';
@@ -141,7 +148,8 @@ const stack = ref(false);
     >
       {{ problem || status(tool.reasonCode) }}
     </p>
-    <div v-if="view?.kind === 'send'" class="bubble">
+    <WebToolResult v-if="webView" :key="toolIdentity" :view="webView" />
+    <div v-else-if="view?.kind === 'send'" class="bubble">
       <ReplyQuote v-if="view.reply" :reply="view.reply" /><MessageParts
         :parts="view.parts"
       />
