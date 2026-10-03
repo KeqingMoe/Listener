@@ -1,3 +1,4 @@
+/* eslint-disable vue/one-component-per-file -- Test entry mounts the real tool and its historical oracle in the same position. */
 import { createApp, nextTick } from 'vue';
 import { createRouter, createMemoryHistory } from 'vue-router';
 import ToolDetails from '../../../src/dashboard/web/src/components/review/ToolDetails.vue';

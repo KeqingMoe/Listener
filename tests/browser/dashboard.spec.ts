@@ -469,6 +469,10 @@ interface MockState {
   jobLinks?: Partial<JavascriptJobLinksResponse>;
   jobLinksGate?: Promise<void>;
   wakeEvents?: WakeReviewDetail['events'];
+  wakeMessages?: WakeReviewDetail['messages'];
+  wakeRequests?: WakeReviewDetail['requests'];
+  wakeSummary?: Partial<WakeItem>;
+  deliveryBatches?: WakeReviewDetail['deliveryBatches'];
   /** 替换唤醒详情中的工具调用。 */
   tools?: ReviewTool[];
   memberNames?: WakeReviewDetail['memberNames'];
@@ -729,10 +733,17 @@ async function mock(page: Page, state: MockState = {}) {
             } satisfies WakesResponse)
           : ({
               ...wakeDetail,
-              wake: { ...item, groupId: state.detailGroupId ?? item.groupId },
+              wake: {
+                ...item,
+                ...state.wakeSummary,
+                groupId: state.detailGroupId ?? item.groupId,
+              },
               memberNames: state.memberNames ?? wakeDetail.memberNames,
               tools: state.tools ?? wakeDetail.tools,
               events: state.wakeEvents ?? wakeDetail.events,
+              messages: state.wakeMessages ?? wakeDetail.messages,
+              requests: state.wakeRequests ?? wakeDetail.requests,
+              deliveryBatches: state.deliveryBatches,
             } satisfies WakeReviewDetail);
     } else if (path.startsWith('/api/requests/')) {
       const id = decodeURIComponent(path.split('/').at(-1)!);
@@ -4630,6 +4641,202 @@ test('tool evidence labels operations, returns and fallback arguments neutrally 
       () => document.documentElement.scrollWidth <= innerWidth + 1,
     ),
   ).toBe(true);
+});
+
+function deliveryScenario(unknownTime = false): MockState {
+  const event = (id: string, text: string, bot = false) => ({
+    type: 'message.created',
+    observed_at: 1234,
+    payload: {
+      message: {
+        messageId: id,
+        userId: bot ? '9' : '7',
+        nickname: bot ? 'Listener' : '群友甲',
+        bot,
+        segments: [{ type: 'text', text }],
+        ...(bot ? { reply_to: '1' } : {}),
+      },
+    },
+  });
+  const first = event('1', '首次投递的消息');
+  const own = event('2', '已有的自身回显', true);
+  const notice = {
+    type: 'reaction.changed',
+    actor_id: '7',
+    payload: { message_id: '1' },
+  };
+  const contents = [
+    {
+      context_update: {
+        unread_count: 32,
+        omitted_count: 30,
+        read_through: 32,
+        items: [
+          { type: 'world_event', event: first },
+          {
+            type: 'job_result',
+            result: { status: 'ok', value: '后台结果位于消息之间' },
+          },
+          { type: 'world_event', event: own },
+        ],
+      },
+    },
+    {
+      context_update: {
+        unread_count: 2,
+        omitted_count: 0,
+        read_through: 34,
+        items: [
+          { type: 'world_event', event: notice },
+          { type: 'world_event', event: event('3', '后续投递的消息') },
+        ],
+      },
+    },
+  ];
+  return {
+    wakeRequests: [previous, request],
+    wakeSummary: { modelRequests: 2, toolCalls: 3 },
+    wakeMessages: contents.map((content) => ({
+      role: 'user',
+      content,
+      createdAt: null,
+    })),
+    deliveryBatches: contents.map((content, index) => ({
+      messageIndex: index,
+      messageSeq: index + 1,
+      sessionId: wake.sessionId,
+      wakeId: wake.wakeId,
+      createdAt: unknownTime ? null : now - (index === 0 ? 9500 : 6100),
+      unreadCount: content.context_update.unread_count,
+      omittedCount: content.context_update.omitted_count,
+      readThrough: content.context_update.read_through,
+      worldEventCount: 2,
+      contentTruncated: false,
+    })),
+    memberNames: { '7': '群友甲', '9': 'Listener' },
+    tools: [
+      {
+        ...tool,
+        proposedAt: now - 6900,
+        result: { status: 'ok', events: [first, own, notice] },
+      },
+      {
+        ...tool,
+        name: 'finish',
+        ordinal: 2,
+        callId: 'finish-soft',
+        proposedAt: now - 6500,
+        arguments: { mode: 'soft' },
+        result: { status: 'ok', closed: false },
+      },
+      {
+        ...tool,
+        name: 'finish',
+        ordinal: 3,
+        callId: 'finish-hard',
+        proposedAt: now - 3900,
+        arguments: { mode: 'hard' },
+        result: { status: 'ok', closed: true },
+      },
+    ],
+  };
+}
+
+for (const width of [1280, 390]) {
+  test(`initial and appended delivery reuse original chat rows at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const { posts } = await mock(page, deliveryScenario());
+    await page.goto(wakeUrl);
+    await page
+      .getByRole('checkbox', { name: '自动刷新', exact: true })
+      .uncheck();
+    const deliveries = page.locator('.delivery-context');
+    await expect(deliveries).toHaveCount(2);
+    await expect(
+      page.locator('.process-list > li').first().locator('.delivery-context'),
+    ).toHaveCount(1);
+    await expect(deliveries.first()).toContainText('首次投递的消息');
+    await expect(deliveries.first()).toContainText('未读 32 条');
+    await expect(deliveries.first()).toContainText('30 条未自动投递');
+    expect(
+      await deliveries
+        .first()
+        .evaluate((el) =>
+          [...el.children]
+            .filter((c) => c.matches('.chat-lines,.context-other'))
+            .map((c) => c.className),
+        ),
+    ).toEqual(['chat-lines', 'context-other', 'chat-lines']);
+    await expect(deliveries.first().locator('.reply-quote')).toContainText(
+      '首次投递的消息',
+    );
+    await expect(deliveries.nth(1)).toContainText('后续投递的消息');
+    const chronological = await page
+      .locator('.process-list > li')
+      .allTextContents();
+    const next = chronological.findIndex((text) =>
+      text.includes('后续投递的消息'),
+    );
+    expect(next).toBeGreaterThan(
+      chronological.findIndex((text) => text.includes('本轮继续')),
+    );
+    await expect(page.locator('.finish-receipt')).toHaveText([
+      '关闭回执：本轮继续（soft）',
+      '关闭回执：本轮已关闭（hard）',
+    ]);
+    const styles = (selector: string) =>
+      page
+        .locator(selector)
+        .first()
+        .evaluate((el) => {
+          const row = el.querySelector('li')!,
+            who = el.querySelector('.who')!,
+            text = el.querySelector('.part.text')!;
+          return [
+            getComputedStyle(el).fontSize,
+            getComputedStyle(el).borderLeftWidth,
+            getComputedStyle(row).display,
+            getComputedStyle(row).padding,
+            getComputedStyle(who).color,
+            getComputedStyle(text).backgroundColor,
+            getComputedStyle(text).padding,
+          ];
+        });
+    expect(await styles('.delivery-context .chat-lines')).toEqual(
+      await styles('.tool-detail .chat-lines'),
+    );
+    await page.screenshot({
+      path: test.info().outputPath(`delivery-${width}.png`),
+      fullPage: true,
+    });
+    if (width === 390) {
+      await deliveries.nth(1).scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: test.info().outputPath('delivery-390-appended.png'),
+        fullPage: true,
+      });
+    }
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+    ).toBe(true);
+    expect(posts).toEqual([]);
+  });
+}
+
+test('unknown delivery time stays unplaced rather than using event time or trigger', async ({
+  page,
+}) => {
+  await mock(page, deliveryScenario(true));
+  await page.goto(wakeUrl);
+  await expect(page.locator('.unplaced-inputs .delivery-context')).toHaveCount(
+    2,
+  );
+  await expect(page.locator('.process-list .delivery-context')).toHaveCount(0);
+  await expect(page.locator('.unplaced-inputs')).toContainText('没有可靠时间');
 });
 
 function managementRecord(

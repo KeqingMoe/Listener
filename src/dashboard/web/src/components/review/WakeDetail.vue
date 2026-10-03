@@ -14,6 +14,8 @@ import ToolDetails from './ToolDetails.vue';
 import JavascriptJobLinks from './JavascriptJobLinks.vue';
 import { isJavascriptJobId } from '../../../../contracts/javascript-jobs';
 import { collectNames, collectQuotes } from './tool-summary';
+import DeliveryContext from './DeliveryContext.vue';
+import { deliveryItems, deliveryBlocks, finishReceipt } from './delivery-view';
 
 const props = defineProps<{ wakeId: string; groupId: string }>();
 const { data, loading, error, retry } = useResource<WakeReviewDetail>(
@@ -26,6 +28,24 @@ const lookup = computed(() => ({
   names: collectNames(data.value?.tools ?? [], data.value?.memberNames),
   quotes: collectQuotes(data.value?.tools ?? [], data.value?.quotedMessages),
 }));
+// Keep the existing tool lookup unchanged; enrich only delivered context.
+const deliveryLookup = computed(() => {
+  const events = (data.value?.deliveryBatches ?? []).flatMap((batch) =>
+    deliveryBlocks(
+      deliveryItems(data.value?.messages[batch.messageIndex]?.content),
+    ).flatMap((block) => (block.kind === 'events' ? block.events : [])),
+  );
+  const sources = [...(data.value?.tools ?? []), { result: { events } }];
+  return {
+    names: collectNames(sources, data.value?.memberNames),
+    quotes: collectQuotes(sources, data.value?.quotedMessages),
+  };
+});
+const unplacedInputs = computed(() =>
+  (data.value?.deliveryBatches ?? []).filter(
+    (batch) => batch.createdAt === null,
+  ),
+);
 const notificationJobs = computed(() => [
   ...new Set(
     (data.value?.events ?? [])
@@ -89,13 +109,24 @@ const timeline = computed(() =>
           at: request.startedAt,
           request,
           tool: null,
+          input: null,
         })),
         ...data.value.tools.map((tool, index) => ({
           key: `t-${index}`,
           at: tool.proposedAt ?? tool.startedAt,
           request: null,
           tool,
+          input: null,
         })),
+        ...(data.value.deliveryBatches ?? [])
+          .filter((batch) => batch.createdAt !== null)
+          .map((input) => ({
+            key: `i-${String(input.messageIndex).padStart(4, '0')}`,
+            at: input.createdAt,
+            request: null,
+            tool: null,
+            input,
+          })),
       ].sort(
         (a, b) =>
           (a.at ?? Infinity) - (b.at ?? Infinity) || a.key.localeCompare(b.key),
@@ -217,11 +248,19 @@ const timeline = computed(() =>
           class="tab-content"
         >
           <template v-if="tab === 'process'">
-            <p v-if="!timeline.length" class="muted">未记录执行过程</p>
+            <p v-if="!timeline.length && !unplacedInputs.length" class="muted">
+              未记录执行过程
+            </p>
             <ol class="process-list">
               <li v-for="item in timeline" :key="item.key">
                 <time class="muted">{{ time(item.at) }}</time>
-                <div v-if="item.request" class="process-request">
+                <DeliveryContext
+                  v-if="item.input"
+                  :batch="item.input"
+                  :content="data.messages[item.input.messageIndex]?.content"
+                  :lookup="deliveryLookup"
+                />
+                <div v-else-if="item.request" class="process-request">
                   <RouterLink
                     :to="{
                       path: '/requests',
@@ -256,8 +295,26 @@ const timeline = computed(() =>
                   :group-id="data.wake.groupId"
                   :lookup="lookup"
                 />
+                <p
+                  v-if="item.tool && finishReceipt(item.tool)"
+                  class="muted finish-receipt"
+                >
+                  {{ finishReceipt(item.tool) }}
+                </p>
               </li>
             </ol>
+            <section v-if="unplacedInputs.length" class="unplaced-inputs">
+              <p class="muted">
+                以下投递没有可靠时间，未推测其对应的模型请求。
+              </p>
+              <DeliveryContext
+                v-for="batch in unplacedInputs"
+                :key="batch.messageIndex"
+                :batch="batch"
+                :content="data.messages[batch.messageIndex]?.content"
+                :lookup="deliveryLookup"
+              />
+            </section>
           </template>
           <template v-else-if="tab === 'conversation'">
             <p v-if="!data.messages.length" class="muted">未记录对话内容</p>
