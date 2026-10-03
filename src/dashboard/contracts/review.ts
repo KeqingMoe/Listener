@@ -86,7 +86,23 @@ export interface QuotedMessage {
   segments?: unknown[];
 }
 
+export interface WakeDeliveryBatch {
+  /** 引用messages中已经脱敏的context_update.items，不复制内容或改变混合顺序。 */
+  messageIndex: number;
+  messageSeq: number | null;
+  sessionId: string | null;
+  wakeId: string | null;
+  /** 仅来自经验证匹配的chat_read；不是消息或事件时间。 */
+  createdAt: number | null;
+  unreadCount: number | null;
+  omittedCount: number | null;
+  readThrough: number | null;
+  worldEventCount: number;
+  contentTruncated: boolean;
+}
+
 export interface WakeReviewDetail {
+  deliveryBatches?: WakeDeliveryBatch[];
   wake: WakeItem;
   requests: ReviewRequest[];
   tools: ReviewTool[];

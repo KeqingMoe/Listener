@@ -224,6 +224,242 @@ function fixture(old = false) {
   };
 }
 
+test('wake deliveries reference sanitized mixed items and same-group world targets', async () => {
+  const f = fixture();
+  try {
+    const db = new DatabaseSync(f.sessionPath);
+    const items = [
+      {
+        type: 'world_event',
+        event: {
+          type: 'message.deleted',
+          payload: { message_id: '9001', token: 'LIVE_SECRET' },
+        },
+      },
+      { type: 'job_result', result: { job_id: '9002', value: 'LIVE_SECRET' } },
+      {
+        type: 'world_event',
+        event: {
+          type: 'reaction.added',
+          subject: { kind: 'message', id: '9003' },
+        },
+      },
+      { type: 'future', value: 'kept' },
+    ];
+    db.prepare('INSERT INTO model_session_messages VALUES(?,?,?,?,?)').run(
+      10,
+      'session-a',
+      'wake-a',
+      null,
+      JSON.stringify({
+        role: 'user',
+        content: JSON.stringify({
+          context_update: {
+            unread_count: 2,
+            omitted_count: 0,
+            read_through: 20,
+            items,
+          },
+        }),
+      }),
+    );
+    db.prepare('INSERT INTO model_session_journal VALUES(?,?,?,?,?,?)').run(
+      10,
+      'session-a',
+      'wake-a',
+      'chat_read',
+      JSON.stringify({ message_seq: 10, read_through: 20 }),
+      123,
+    );
+    db.close();
+    const response = await f.get('/api/wakes/wake-a/review?groupId=11');
+    assert.equal(response.statusCode, 200);
+    const body = response.json();
+    assert.equal(body.deliveryBatches.length, 1);
+    const b = body.deliveryBatches[0];
+    assert.deepEqual(b, {
+      messageIndex: 3,
+      messageSeq: 10,
+      sessionId: 'session-a',
+      wakeId: 'wake-a',
+      createdAt: 123,
+      unreadCount: 2,
+      omittedCount: 0,
+      readThrough: 20,
+      worldEventCount: 2,
+      contentTruncated: false,
+    });
+    assert.equal('items' in b, false);
+    const content = body.messages[b.messageIndex].content;
+    const update = (typeof content === 'string' ? JSON.parse(content) : content)
+      .context_update;
+    assert.deepEqual(
+      update.items.map((i: { type: string }) => i.type),
+      ['world_event', 'job_result', 'world_event', 'future'],
+    );
+    assert.ok(!response.body.includes('LIVE_SECRET'));
+    assert.ok(body.quotedMessages['9001']);
+    assert.ok(body.quotedMessages['9003']);
+    assert.equal(body.quotedMessages['9002'], undefined);
+    const world = new DatabaseSync(f.worldPath);
+    world.prepare('UPDATE world_identity SET group_id=?').run('22');
+    world.close();
+    assert.deepEqual(
+      (await f.get('/api/wakes/wake-a/review?groupId=11')).json()
+        .quotedMessages,
+      {},
+    );
+    f.revoke();
+    assert.notEqual(
+      (await f.get('/api/wakes/wake-a/review?groupId=11')).statusCode,
+      200,
+    );
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('delivery message references resolve signed and zero replies and member names only within world identity', async () => {
+  const f = fixture();
+  try {
+    const world = new WorldEventStore({ path: f.worldPath, groupId: '11' });
+    for (const messageId of ['-17', '0']) {
+      world.appendMessage({
+        messageId,
+        userId: '100000007',
+        nickname: '批次成员',
+        text: 'LIVE_SECRET reply',
+        time: 1,
+        segments: [],
+      });
+    }
+    world.close();
+    const db = new DatabaseSync(f.sessionPath);
+    db.exec('DELETE FROM model_tool_ledger');
+    db.prepare('INSERT INTO model_session_messages VALUES(?,?,?,?,?)').run(
+      10,
+      'session-a',
+      'wake-a',
+      null,
+      JSON.stringify({
+        role: 'user',
+        content: JSON.stringify({
+          context_update: {
+            items: [
+              {
+                type: 'world_event',
+                event: {
+                  type: 'message.created',
+                  payload: {
+                    message: {
+                      reply_to: '-17',
+                      segments: [{ type: 'at', user_id: '100000007' }],
+                    },
+                  },
+                },
+              },
+              {
+                type: 'world_event',
+                event: {
+                  type: 'message.created',
+                  payload: { message: { reply_to: 0 } },
+                },
+              },
+              { type: 'job_result', result: { message: { reply_to: '9002' } } },
+            ],
+          },
+        }),
+      }),
+    );
+    db.close();
+    const response = await f.get('/api/wakes/wake-a/review?groupId=11');
+    assert.equal(response.statusCode, 200);
+    const body = response.json();
+    assert.deepEqual(Object.keys(body.quotedMessages).sort(), ['-17', '0']);
+    assert.equal(body.memberNames['100000007'], '批次成员');
+    assert.ok(!response.body.includes('LIVE_SECRET'));
+    const wrongWorld = new DatabaseSync(f.worldPath);
+    wrongWorld.prepare('UPDATE world_identity SET group_id=?').run('22');
+    wrongWorld.close();
+    const isolated = (
+      await f.get('/api/wakes/wake-a/review?groupId=11')
+    ).json();
+    assert.deepEqual(isolated.quotedMessages, {});
+    assert.deepEqual(isolated.memberNames, {});
+  } finally {
+    await f.cleanup();
+  }
+});
+
+for (const mode of ['complete', 'missing', 'bad-json', 'snapshot-clipped']) {
+  test(`legacy delivery API requires complete evidence: ${mode}`, async () => {
+    const f = fixture();
+    try {
+      const db = new DatabaseSync(f.sessionPath);
+      const message = db.prepare(
+        'INSERT INTO model_session_messages VALUES(?,?,?,?,?)',
+      );
+      const journal = db.prepare(
+        'INSERT INTO model_session_journal VALUES(?,?,?,?,?,?)',
+      );
+      for (const seq of [10, 11]) {
+        message.run(
+          seq,
+          'session-a',
+          'wake-a',
+          null,
+          JSON.stringify({
+            role: 'user',
+            content: JSON.stringify({
+              context_update: {
+                unread_count: 0,
+                omitted_count: 0,
+                read_through: 20,
+                items: [],
+              },
+            }),
+          }),
+        );
+        if (mode !== 'missing' || seq === 10) {
+          journal.run(
+            seq,
+            'session-a',
+            'wake-a',
+            'chat_read',
+            mode === 'bad-json' && seq === 11
+              ? '{'
+              : JSON.stringify({ read_through: 20 }),
+            seq * 100,
+          );
+        }
+      }
+      if (mode === 'snapshot-clipped') {
+        journal.run(
+          12,
+          'session-a',
+          'wake-a',
+          'other',
+          JSON.stringify({ value: 'x'.repeat(1048577) }),
+          0,
+        );
+      }
+      db.close();
+      const response = await f.get('/api/wakes/wake-a/review?groupId=11');
+      assert.equal(response.statusCode, 200);
+      assert.deepEqual(
+        response
+          .json()
+          .deliveryBatches.map(
+            (b: { createdAt: number | null }) => b.createdAt,
+          ),
+        mode === 'complete' ? [1000, 1100] : [null, null],
+      );
+    } finally {
+      await f.cleanup();
+    }
+  });
+}
+
 test('only trusted notification projection journal supplies task backlinks to a wake', async () => {
   const f = fixture();
   try {

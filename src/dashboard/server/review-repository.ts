@@ -1,5 +1,13 @@
 import { DatabaseSync } from 'node:sqlite';
 import {
+  contextUpdate,
+  counter,
+  sequence,
+  record,
+  matchDeliveryReads,
+  type DeliveryRead,
+} from './review-delivery.ts';
+import {
   performanceMetrics,
   intervalDuration,
   requestDuration,
@@ -784,10 +792,47 @@ export class ReviewRepository {
     let truncated = tools.truncated || requests.length > 500;
     const rawMessages = a.messages.filter((m) => wakes.has(m.wake_id));
     truncated ||= rawMessages.length > 500;
-    const messages = rawMessages.slice(0, 500).map((row) => {
+    const deliveryBatches: NonNullable<WakeReviewDetail['deliveryBatches']> =
+      [];
+    const deliveryReads: DeliveryRead[] = [];
+    let deliveryComplete = !budget.truncated && rawMessages.length <= 500;
+    const messages = rawMessages.slice(0, 500).map((row, messageIndex) => {
       const raw = parse(row.message),
         clean = this.clean(raw?.content ?? raw);
       truncated ||= clean.truncated || !!row.clipped;
+      deliveryComplete &&= !clean.truncated && !row.clipped && !!record(raw);
+      if (raw?.role === 'user') {
+        const update = contextUpdate(clean.value);
+        if (
+          typeof clean.value === 'string' &&
+          typeof parse(clean.value) === 'string'
+        ) {
+          deliveryComplete = false;
+        }
+        if (
+          !update &&
+          record(parse(clean.value)) &&
+          'context_update' in record(parse(clean.value))!
+        ) {
+          deliveryComplete = false;
+        }
+        if (update) {
+          deliveryBatches.push({
+            messageIndex,
+            messageSeq: sequence(row.seq),
+            sessionId: s(row.session_id),
+            wakeId: s(row.wake_id),
+            createdAt: null,
+            unreadCount: counter(update.unread_count),
+            omittedCount: counter(update.omitted_count),
+            readThrough: counter(update.read_through),
+            worldEventCount: (update.items as unknown[]).filter(
+              (item) => record(item)?.type === 'world_event',
+            ).length,
+            contentTruncated: clean.truncated || !!row.clipped,
+          });
+        }
+      }
       return {
         role: s(raw?.role) ?? 'unknown',
         content: clean.value,
@@ -802,7 +847,7 @@ export class ReviewRepository {
       const rows = collectContent(
         db
           .prepare(
-            'SELECT created_at,kind,substr(payload,1,1048576) AS payload,length(payload)>1048576 AS clipped FROM model_session_journal WHERE wake_id=? ORDER BY seq LIMIT 501',
+            'SELECT seq,session_id,wake_id,created_at,kind,substr(payload,1,1048576) AS payload,length(payload)>1048576 AS clipped FROM model_session_journal WHERE wake_id=? ORDER BY seq LIMIT 501',
           )
           .iterate(w),
         Math.max(0, 500 - events.length),
@@ -812,6 +857,17 @@ export class ReviewRepository {
       for (const row of rows.slice(0, 500)) {
         const payload = parse(row.payload);
         const clean = this.clean(payload);
+        deliveryComplete &&= !clean.truncated && !row.clipped;
+        if (row.kind === 'chat_read') {
+          deliveryReads.push({
+            seq: sequence(row.seq),
+            sessionId: s(row.session_id),
+            wakeId: s(row.wake_id),
+            payload: clean.value,
+            createdAt: n(row.created_at),
+            complete: !clean.truncated && !row.clipped && !!record(clean.value),
+          });
+        }
         const jobId =
           row.kind === 'external_event_received' &&
           typeof payload?.event_id === 'string' &&
@@ -875,11 +931,22 @@ export class ReviewRepository {
             : {}),
         }
       : null;
+    matchDeliveryReads(
+      deliveryBatches,
+      deliveryReads,
+      deliveryComplete && !budget.truncated,
+    );
+    const deliveryItems = deliveryBatches.flatMap(
+      (batch) =>
+        (contextUpdate(messages[batch.messageIndex]?.content)
+          ?.items as unknown[]) ?? [],
+    );
     return {
+      deliveryBatches,
       wake: this.summarizeWake(legacy.wake, requests),
       requests: requests.slice(0, 500),
       tools: tools.items,
-      ...this.worldLookup(groupId, tools.items),
+      ...this.worldLookup(groupId, tools.items, deliveryItems),
       messages,
       events: events
         .sort((a, b) => (a.time ?? 0) - (b.time ?? 0))
@@ -961,8 +1028,39 @@ export class ReviewRepository {
   private worldLookup(
     groupId: string,
     tools: readonly { arguments: unknown; result: unknown }[],
+    deliveryItems: unknown[] = [],
   ): Pick<WakeReviewDetail, 'memberNames' | 'quotedMessages'> {
-    const ids = lookupIds(tools.flatMap((t) => [t.arguments, t.result]));
+    const deliveryMessages = deliveryItems.flatMap((item) => {
+      const event = record(record(item)?.event);
+      return record(item)?.type === 'world_event' &&
+        event?.type === 'message.created'
+        ? [record(event.payload)?.message]
+        : [];
+    });
+    const ids = lookupIds([
+      ...tools.flatMap((t) => [t.arguments, t.result]),
+      ...deliveryMessages,
+    ]);
+    for (const item of deliveryItems) {
+      if (record(item)?.type !== 'world_event') {
+        continue;
+      }
+      const event = record(record(item)?.event);
+      const subject = record(event?.subject);
+      for (const target of [
+        record(event?.payload)?.message_id,
+        subject?.kind === 'message' ? subject.id : undefined,
+      ]) {
+        const id = canonicalMessageId(target);
+        if (
+          id !== undefined &&
+          !ids.replies.includes(id) &&
+          ids.replies.length < MAX_LOOKUP_IDS
+        ) {
+          ids.replies.push(id);
+        }
+      }
+    }
     const source = this.base.groups.find((g) => g.groupId === groupId);
     const out: Pick<WakeReviewDetail, 'memberNames' | 'quotedMessages'> = {
       memberNames: {},
