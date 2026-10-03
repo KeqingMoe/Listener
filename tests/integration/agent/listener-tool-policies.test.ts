@@ -783,7 +783,7 @@ test('ts mode sends declarations to the model while confirm proposals still vali
       type: 'object',
       additionalProperties: true,
     });
-    assert.match(sent!.system, /function mute_member\(_: /);
+    assert.match(sent!.system, /function mute_member\(\{\}: /);
     assert.match(sent!.system, /1 到 45/);
     assert.deepEqual(
       captured.map((r) => r.status),
@@ -792,8 +792,8 @@ test('ts mode sends declarations to the model while confirm proposals still vali
     assert.deepEqual(
       captured.slice(3).map((r) => [r.reason_code, r.hint]),
       [
-        ['wrapped_arguments', 'arguments 应直接是参数对象，去掉外层的 params'],
-        ['wrapped_arguments', 'arguments 应直接是参数对象，去掉外层的 _'],
+        ['wrapped_arguments', '直接传参数对象，去掉外层的 params'],
+        ['wrapped_arguments', '直接传参数对象，去掉外层的 _'],
       ],
     );
     assert.doesNotMatch(sent!.system, /\(params/);

@@ -9,7 +9,7 @@ export const INTERACTION_DECLARATIONS: DeclarationTable = {
  * 图片在下一轮送达：同一次响应里的 send_message、finish、react_message、manage_attention 等会被拒绝（reason_code='image_first'），看完下一轮再操作。
  * 本轮已加载过的ID直接算作 loaded。
  */
-function view_images(_: { image_ids: (ImageId | ArtifactId)[] }):
+function view_images({}: { image_ids: (ImageId | ArtifactId)[] }):
   | {
       status: 'ok' | 'partial' | 'error';
       loaded_ids: string[];
@@ -32,7 +32,7 @@ type ArtifactId = string;`,
  * 嵌套转发以 forward 片段给出新 forward_id（本轮有效），需另行读取，最多3层。
  * 转发内图片不可查看，引用不是真实群消息ID；claimed_sender 只是声称的发送者。
  */
-function read_forward(_: { forward_id: ForwardId; start: number; limit: number }):
+function read_forward({}: { forward_id: ForwardId; start: number; limit: number }):
   | {
       status: 'ok';
       forward_id: ForwardId;
@@ -73,7 +73,7 @@ type ForwardNode = {
  * message_id 取自本轮读到的消息或其引用；emoji_id 来自目录，QQ不保证接受每个ID。
  * 本轮重复同一动作返回原结果并带 duplicate=true；出现 unknown 后该消息该表情不再提交任何动作，requested_action 标出被拦下的动作。
  */
-function react_message(_: { message_id: MessageId; emoji_id: EmojiId; action: 'add' | 'remove' }): (
+function react_message({}: { message_id: MessageId; emoji_id: EmojiId; action: 'add' | 'remove' }): (
   | (Submitted & { message_id: MessageId; emoji_id: EmojiId; action: 'add' | 'remove' })
   | (Unknown & { message_id: MessageId; emoji_id: EmojiId; action: 'add' | 'remove' })
   | Failure
@@ -92,7 +92,7 @@ type EmojiId = string;`,
  * user_id 用于核对某人：target_found=true 即可停止；读完仍未见为 false，否则为 null。
  * 本账号 react_message 该消息该表情后游标失效，需从第一页重查。名单是当前状态，不证明过去谁点过。
  */
-function get_reaction_users(_: {
+function get_reaction_users({}: {
   message_id: MessageId;
   emoji_id: string;
   emoji_type: '1' | '2';
@@ -133,7 +133,7 @@ function get_reaction_users(_: {
  * 时限和条件从提交时起算，只看之后的消息；到点无未读消息不唤醒。
  */
 function manage_attention(
-  _:
+  {}:
     | { operation: 'create'; any_of: AttentionCondition[]; expires_in_seconds: number; purpose?: string }
     | { operation: 'update'; plan_id: string; any_of: AttentionCondition[]; expires_in_seconds: number; purpose?: string }
     | { operation: 'cancel'; plan_id: string },

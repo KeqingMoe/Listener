@@ -14,7 +14,7 @@ export interface DeclarationContext {
 export interface ToolDeclaration {
   /** 一句话概要。 */
   summary: string;
-  /** 以`/** … *\/`开头、`function 名字(_: …): 返回类型;`结尾的声明。 */
+  /** 工具函数声明：形参统一用空对象绑定`{}`，冒号后的完整类型承载参数字段及必选性；无参数字段时用`{}: {}`。 */
   ts: string | ((context: DeclarationContext) => string);
   /** 该工具专用的类型别名，按名字去重，只在工具启用时输出。 */
   types?: Readonly<Record<string, string>>;

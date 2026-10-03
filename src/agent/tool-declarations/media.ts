@@ -22,7 +22,7 @@ export const MEDIA_DECLARATIONS: DeclarationTable = {
  * image_id 和 artifact_id 恰好给一个。
  * image_id 须来自本群已知消息或其直接引用；artifact_id 须是本群未过期的 png/jpeg/webp/gif 产物。
  */
-function send_group_image(_: { image_id: ImageId } | { artifact_id: ArtifactId }):
+function send_group_image({}: { image_id: ImageId } | { artifact_id: ArtifactId }):
   | { status: 'executed'; message_id: MessageId; local_projection_failed?: true }
   | ConfirmationRequired
   | Unknown
@@ -32,7 +32,7 @@ function send_group_image(_: { image_id: ImageId } | { artifact_id: ArtifactId }
   forward_message: {
     summary: '在本群转发一条本群消息。',
     ts: `/** 消息须是本群已知消息或其直接引用。成功时不返回新消息ID。 */
-function forward_message(_: { message_id: MessageId }):
+function forward_message({}: { message_id: MessageId }):
   | { status: 'executed'; message_id: null; source_count: 1 }
   | ConfirmationRequired
   | Unknown
@@ -44,7 +44,7 @@ function forward_message(_: { message_id: MessageId }):
  * 按给定顺序合并转发本群已知消息或其直接引用，1～128条，可重复。
  * 不保证每条都被保留。
  */
-function send_group_forward(_: { message_ids: MessageId[] }):
+function send_group_forward({}: { message_ids: MessageId[] }):
   | { status: 'executed'; message_id: MessageId; requested_source_count: number; source_completeness: 'not_verified'; local_projection_failed?: true }
   | ConfirmationRequired
   | Unknown
@@ -56,7 +56,7 @@ function send_group_forward(_: { message_ids: MessageId[] }):
  * 转写含 record 片段的本群已知消息或其直接引用，多段只转第一段。
  * 识别可能不准；truncated=true 表示因输出上限被截断。
  */
-function transcribe_voice(_: { message_id: MessageId }):
+function transcribe_voice({}: { message_id: MessageId }):
   | { status: 'ok'; message_id: MessageId; text: string; truncated?: true; reason?: 'output_limit' }
   | Failure;`,
   },
@@ -66,7 +66,7 @@ function transcribe_voice(_: { message_id: MessageId }):
  * limit≥1，offset≥0（默认0）。has_more=true 时用 next_offset 继续。
  * 空列表只代表这次结果；reason='output_limit' 表示因输出上限少返回了。
  */
-function get_group_ai_voices(_: { limit: number; offset?: number }):
+function get_group_ai_voices({}: { limit: number; offset?: number }):
   | {
       status: 'ok';
       voices: { type: string; character_id: CharacterId; character_name: string }[];
@@ -88,7 +88,7 @@ function get_group_ai_voices(_: { limit: number; offset?: number }):
  * character_id 须是本群当前可用声线，否则 voice_unavailable。
  * text 原样朗读，不能全是空白，UTF-8 最多8192字节。不返回消息ID。
  */
-function send_group_ai_voice(_: { character_id: CharacterId; text: string }):
+function send_group_ai_voice({}: { character_id: CharacterId; text: string }):
   | (Submitted & { message_id: null })
   | ConfirmationRequired
   | Unknown
@@ -98,7 +98,7 @@ function send_group_ai_voice(_: { character_id: CharacterId; text: string }):
   get_group_file_space: {
     summary: '查询本群文件空间。',
     ts: `/** 容量和用量可能是占位值（如0用量），不能当作精确剩余空间。 */
-function get_group_file_space(_: {}):
+function get_group_file_space({}: {}):
   | { status: 'ok'; file_count: number; limit_count: number; used_space: number; total_space: number; provider_values_unverified: true }
   | Failure;`,
   },
@@ -109,7 +109,7 @@ function get_group_file_space(_: {}):
  * 最多1000项，列表不保证完整，变化时分页会漂移；next_offset 非 null 时可继续。
  * 子目录里 subfolders_reported=false 表示不保证列出下级目录。
  */
-function list_group_files(_: { limit: number; offset?: number; folder_handle?: FolderHandle }):
+function list_group_files({}: { limit: number; offset?: number; folder_handle?: FolderHandle }):
   | {
       status: 'ok';
       items: GroupFileItem[];
@@ -136,7 +136,7 @@ function list_group_files(_: { limit: number; offset?: number; folder_handle?: F
  * max_bytes 为1～262144；文件超过 max_bytes 时拒绝（resource_limit）。输出另限约22KB，截断时 truncated=true、complete=false。
  * 只支持列表中大小已知的 txt/md/markdown/json/jsonl/ndjson/csv/tsv/log/yaml/yml/xml/ini/toml/conf/cfg/rst 文件。
  */
-function read_group_text_file(_: { file_handle: FileHandle; max_bytes: number }):
+function read_group_text_file({}: { file_handle: FileHandle; max_bytes: number }):
   | {
       status: 'ok';
       file_handle: FileHandle;
@@ -157,7 +157,7 @@ function read_group_text_file(_: { file_handle: FileHandle; max_bytes: number })
  * 上传本群未过期的产物，文件名取产物 name（不合法时 invalid_file_name）。不给 folder_handle 时传到根目录。
  * resource_id_available=false 只表示没拿到新文件ID，上传已成功。
  */
-function upload_group_file(_: { artifact_id: ArtifactId; folder_handle?: FolderHandle }):
+function upload_group_file({}: { artifact_id: ArtifactId; folder_handle?: FolderHandle }):
   | { status: 'ok'; uploaded: true; resource_id_available: boolean; effect_confirmed: true }
   | ConfirmationRequired
   | Unknown
@@ -170,7 +170,7 @@ function upload_group_file(_: { artifact_id: ArtifactId; folder_handle?: FolderH
  * name 1～120字符，首尾不能是空白或“.”，不能含 / \\ : 和控制字符。
  * 成功后需重新 list_group_files 才能拿到句柄。
  */
-function create_group_folder(_: { name: string }):
+function create_group_folder({}: { name: string }):
   | (Submitted & { refresh_list: true })
   | ConfirmationRequired
   | Unknown
@@ -182,7 +182,7 @@ function create_group_folder(_: { name: string }):
  * 非管理员或群主只能删自己上传的文件，否则 insufficient_permission。
  * 同一目标有已提交或结果未知的操作时返回 target_* 错误。
  */
-function delete_group_file(_: { file_handle: FileHandle }):
+function delete_group_file({}: { file_handle: FileHandle }):
   | (Submitted & { api_reported_success: boolean; refresh_list: true })
   | ConfirmationRequired
   | Unknown
@@ -195,7 +195,7 @@ function delete_group_file(_: { file_handle: FileHandle }):
  * 删除目录及其内容，需管理员或群主，否则 insufficient_permission。
  * 目标或其内有已提交或结果未知的操作时返回 target_* 错误。
  */
-function delete_group_folder(_: { folder_handle: FolderHandle }):
+function delete_group_folder({}: { folder_handle: FolderHandle }):
   | { status: 'ok'; deleted: true; effect_confirmed: true }
   | ConfirmationRequired
   | Unknown
@@ -209,7 +209,7 @@ function delete_group_folder(_: { folder_handle: FolderHandle }):
  * 只扫描最近1000条通知，没列出不代表不存在。
  * previous_outcome 表示你此前处理过，为 submitted 或 unknown 时不要再处理。
  */
-function list_group_requests(_: { limit: number; offset?: number }):
+function list_group_requests({}: { limit: number; offset?: number }):
   | {
       status: 'ok';
       items: {
@@ -240,7 +240,7 @@ function list_group_requests(_: { limit: number; offset?: number }):
  * 同意时 reason 须为空串；拒绝时 reason 原样发给申请人，UTF-8 最多512字节。
  * 成功只表示已提交，不代表已入群；同一申请不要再次处理。
  */
-function respond_group_request(_: { request_handle: RequestHandle; approve: boolean; reason: string }):
+function respond_group_request({}: { request_handle: RequestHandle; approve: boolean; reason: string }):
   | Submitted
   | ConfirmationRequired
   | Unknown

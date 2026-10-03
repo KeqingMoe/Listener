@@ -10,7 +10,7 @@ export const CORE_DECLARATIONS: DeclarationTable = {
    config.messageMentions === false ? '\n * 本群禁用 at 片段。' : ''
  }
  */
-function send_message(_: {
+function send_message({}: {
   segments: (${
     config.messageMentions === false
       ? "{ type: 'text'; text: string } | { type: 'face'; id: FaceId; name?: string }"
@@ -22,12 +22,12 @@ function send_message(_: {
   finish: {
     summary: '结束本次唤醒。',
     ts: `/** soft：有新事件或待投递的后台结果则投递并继续，否则结束；hard：立即结束，保留未读事件和待投递结果。之后同批调用不执行。 */
-function finish(_: { mode: 'soft' | 'hard' }): { status: 'ok'; closed: boolean } | Failure;`,
+function finish({}: { mode: 'soft' | 'hard' }): { status: 'ok'; closed: boolean } | Failure;`,
   },
   get_group_members: {
     summary: '分页搜索本群成员。',
     ts: `/** search 匹配QQ号、昵称或群名片；用 next_offset 续页。 */
-function get_group_members(_: { limit: number; offset?: number; search?: string }): {
+function get_group_members({}: { limit: number; offset?: number; search?: string }): {
   status: 'ok';
   members: { user_id: UserId; nickname: string; card: string; role: 'owner' | 'admin' | 'member' | 'unknown' }[];
   total: number;
@@ -37,7 +37,7 @@ function get_group_members(_: { limit: number; offset?: number; search?: string 
   },
   get_member_info: {
     summary: '读取本群某个成员的资料。',
-    ts: `function get_member_info(_: { user_id: UserId }): {
+    ts: `function get_member_info({}: { user_id: UserId }): {
   status: 'ok';
   member: { user_id: UserId; nickname: string; card: string; role: 'owner' | 'admin' | 'member' | 'unknown' };
 } | Failure;`,
@@ -49,12 +49,12 @@ function get_group_members(_: { limit: number; offset?: number; search?: string 
     }) => `/** 也可用最近消息的顶层 reply_to 读取被引用消息（取其 image_id 等）。${
       config.observeReactions ? '会刷新反应快照。' : ''
     } */
-function read_message(_: { message_id: MessageId }): { status: 'ok'; message: Message } | Failure;`,
+function read_message({}: { message_id: MessageId }): { status: 'ok'; message: Message } | Failure;`,
   },
   get_wake_state: {
     summary: '查询唤醒信息、未读计数、预算和时间。',
     ts: `/** 不读正文，不推进已读位置。 */
-function get_wake_state(_: {}): {
+function get_wake_state({}: {}): {
   status: 'ok';
   read_through: number;
   latest_available: number;
@@ -71,7 +71,7 @@ type Clock = { unix_seconds: UnixSeconds; utc: string; local: string; timezone: 
   },
   get_time: {
     summary: '获取当前时间。',
-    ts: `function get_time(_: {}): { status: 'ok' } & Clock;`,
+    ts: `function get_time({}: {}): { status: 'ok' } & Clock;`,
     types: {
       Clock: `/** local 按配置时区格式化，timezone 是IANA时区。 */
 type Clock = { unix_seconds: UnixSeconds; utc: string; local: string; timezone: string };`,
@@ -85,7 +85,7 @@ type Clock = { unix_seconds: UnixSeconds; utc: string; local: string; timezone: 
  * 不推进已读位置；续页只传 limit 和 cursor，不能混传方向、锚点或过滤。
  */
 function read_events(
-  _:
+  {}:
     | ({ limit: number; actor_id?: UserId; since?: UnixSeconds; until?: UnixSeconds; types?: EventType[] } & ({ direction?: 'backward'; before_event_id?: string } | { direction: 'forward'; after_event_id?: string }))
     | { limit: number; cursor: string },
 ): ({ status: 'ok'; events: WorldEvent[]; next_cursor?: string } & Page) | Failure;`,

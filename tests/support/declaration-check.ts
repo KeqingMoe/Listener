@@ -27,29 +27,35 @@ export function allToolsConfig(
   };
 }
 
-export function declarationDiagnostics(config: ListenerConfig): string[] {
+export function declarationDiagnostics(
+  config: ListenerConfig,
+  usage = '',
+): string[] {
   const tools = buildToolDefinitions(config);
   const text = renderDeclarations(config, tools);
   const code = /```ts\n([\s\S]*?)\n```/.exec(text)?.[1] ?? '';
-  const file = 'decl.d.ts';
+  const sources = new Map([
+    ['decl.d.ts', code],
+    ['usage.ts', usage],
+  ]);
   const host = ts.createCompilerHost({});
   const original = host.getSourceFile;
   host.getSourceFile = (name, version) =>
-    name === file
-      ? ts.createSourceFile(file, code, version)
+    sources.has(name)
+      ? ts.createSourceFile(name, sources.get(name)!, version)
       : original(name, version);
   const program = ts.createProgram(
-    [file],
+    [...sources.keys()],
     { noEmit: true, strict: true, lib: ['lib.es2022.d.ts'], types: [] },
     host,
   );
-  const lines = code.split('\n');
   return ts
     .getPreEmitDiagnostics(program)
-    .filter((d) => d.file?.fileName === file)
+    .filter((d) => d.file && sources.has(d.file.fileName))
     .map((d) => {
       const { line } = d.file!.getLineAndCharacterOfPosition(d.start ?? 0);
-      return `${line + 1}: ${ts.flattenDiagnosticMessageText(d.messageText, '\n')} | ${lines[line]?.trim()}`;
+      const text = d.file!.text.split('\n')[line]?.trim();
+      return `${d.file!.fileName}:${line + 1}: ${ts.flattenDiagnosticMessageText(d.messageText, '\n')} | ${text}`;
     });
 }
 

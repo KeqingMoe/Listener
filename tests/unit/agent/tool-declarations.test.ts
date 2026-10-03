@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import ts from 'typescript';
 import {
   buildToolDefinitions,
   SANDBOX_EXCLUDED_TOOLS,
@@ -34,6 +35,89 @@ test('rendered declarations compile as TypeScript in every catalog variant', () 
   ]) {
     assert.deepEqual(declarationDiagnostics(allToolsConfig(overrides)), []);
   }
+});
+
+test('all declared tools use an empty object binding with fields carried by the type', () => {
+  for (const toolSchema of ['ts', 'both'] as const) {
+    const config = allToolsConfig({ toolSchema });
+    const tools = buildToolDefinitions(config);
+    const prompt = buildSystemPrompt(config, tools);
+    const code = /```ts\n([\s\S]*?)\n```/.exec(prompt)![1]!;
+    const source = ts.createSourceFile(
+      'decl.d.ts',
+      code,
+      ts.ScriptTarget.Latest,
+    );
+    const names: string[] = [];
+    const visit = (node: ts.Node): void => {
+      if (ts.isFunctionDeclaration(node)) {
+        names.push(node.name!.text);
+        assert.equal(node.parameters.length, 1);
+        const parameter = node.parameters[0]!;
+        assert.ok(ts.isObjectBindingPattern(parameter.name), node.name!.text);
+        assert.equal(parameter.dotDotDotToken, undefined);
+        assert.equal(parameter.questionToken, undefined);
+        assert.equal(parameter.initializer, undefined);
+        assert.equal(parameter.name.elements.length, 0, node.name!.text);
+        assert.ok(parameter.type, node.name!.text);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+    assert.deepEqual(
+      names,
+      tools.map((tool) => tool.function.name),
+    );
+    assert.match(
+      prompt,
+      /下方 tools 命名空间描述每个工具的参数对象和返回值，完整参数字段及必选性由冒号后的类型给出。调用read_events时直接传\{"limit":20\}；没有参数字段的工具传\{\}。/,
+    );
+    assert.doesNotMatch(prompt, /\barguments\b/);
+    assert.match(prompt, /await tools\.read_events\(\{ limit: 20 \}\)/);
+    assert.doesNotMatch(
+      prompt,
+      /唯一的形参|"_"\s*:|"params"\s*:|tools\.<name>\(_\)/,
+    );
+  }
+});
+
+test('destructuring preserves full argument types including union-specific fields', () => {
+  assert.deepEqual(
+    declarationDiagnostics(
+      allToolsConfig(),
+      `
+    tools.finish({ mode: 'soft' });
+    tools.read_events({ limit: 20, cursor: 'page' });
+    tools.read_events({ limit: 20, direction: 'forward', after_event_id: 'event' });
+    tools.manage_attention({ operation: 'create', any_of: [{ type: 'member_message', user_ids: ['100000003'] }], expires_in_seconds: 60 });
+    tools.manage_attention({ operation: 'cancel', plan_id: 'att_example' });
+    tools.execute_javascript({ description: 'compute', code: 'return "42";', mode: 'sync', wait_ms: 1000 });
+    tools.execute_javascript({ description: 'compute', code: 'return "42";', mode: 'async' });
+    tools.get_time({});
+    tools.send_group_image({ image_id: 'image' });
+    tools.send_group_image({ artifact_id: 'artifact' });
+    const image: { image_id: string } | { artifact_id: string } = Math.random() ? { image_id: 'image' } : { artifact_id: 'artifact' };
+    tools.send_group_image(image);
+    // @ts-expect-error native arguments have no wrapper
+    tools.finish({ _: { mode: 'soft' } });
+    // @ts-expect-error empty binding still requires mode
+    tools.finish({});
+    // @ts-expect-error empty binding still requires image_ids
+    tools.view_images({});
+    // @ts-expect-error operation is required
+    tools.manage_attention({ any_of: [], expires_in_seconds: 60 });
+    // @ts-expect-error sync requires wait_ms even though it is not destructured
+    tools.execute_javascript({ description: 'compute', code: 'return "42";', mode: 'sync' });
+    // @ts-expect-error async forbids wait_ms
+    tools.execute_javascript({ description: 'compute', code: 'return "42";', mode: 'async', wait_ms: 1000 });
+    // @ts-expect-error empty destructuring does not remove the argument
+    tools.get_time();
+    // @ts-expect-error a disjoint union is not an empty parameter object
+    tools.send_group_image({});
+  `,
+    ),
+    [],
+  );
 });
 
 test('declarations follow the enabled tools and per-group schema rewrites', () => {

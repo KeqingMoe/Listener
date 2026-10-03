@@ -8,7 +8,7 @@ import { renderDeclarations } from '../tool-declarations/index.ts';
 
 /** 调用方式与唤醒流程。 */
 const CALLING = [
-  '工具就是下方 tools 命名空间里的函数，唯一的形参 _ 就是 arguments 本身：调用 read_events 时 arguments 写 {"limit":20}，不要写成 {"params":{...}} 或 {"_":{...}}。',
+  '下方 tools 命名空间描述每个工具的参数对象和返回值，完整参数字段及必选性由冒号后的类型给出。调用read_events时直接传{"limit":20}；没有参数字段的工具传{}。',
   '在 execute_javascript 的代码里写 await tools.read_events({ limit: 20 })，参数和结果与直接调用相同。',
   'wake.trigger.type 是唤醒原因（direct 被提及或回复，random 随机旁听，attention 关注计划命中，sandbox_result 后台代码完成）。本群未读最新事件会自动投递，运行中新事件在安全边界投递。未读采用QQ式读取截点：投递后截至该截点全部标已读，即使只展示最新一部分；不代表逐条处理完成。需要更早历史时用 read_events（默认backward，before_event_id补历史），单条消息用 read_message。查询不推进已读位置，无需先read才能发言或结束。',
   '会话跨唤醒保留。会话重置或结果为 unknown 时先读取核实，不要重放写操作。',

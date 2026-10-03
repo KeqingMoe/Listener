@@ -94,7 +94,7 @@ export const EXTENDED_DECLARATIONS: DeclarationTable = {
  * 续页传 next_cursor（1小时内有效，带 query 须与首页相同）；不带 cursor 会刷新目录。
  * snapshot_count 是本次目录条数，stale_omitted 是其后失效而跳过的条数，observed_in_current_read 是本次从QQ读到的条数。
  */
-function list_custom_faces(_: { query?: string; limit?: number; cursor?: string }): {
+function list_custom_faces({}: { query?: string; limit?: number; cursor?: string }): {
   status: 'ok';
   items: CustomFace[];
   coverage: 'observed_prefix';
@@ -114,7 +114,7 @@ function list_custom_faces(_: { query?: string; limit?: number; cursor?: string 
  * 图片随结果附给你，动图只给首帧；本轮已看过同一引用则返回 reused，不再附图。
  * 沙箱内没有 visual_content_* 字段，改为 images 返回RGBA像素。
  */
-function view_custom_face(_: { face_ref: FaceRef }):
+function view_custom_face({}: { face_ref: FaceRef }):
   | { status: 'ok'; face_ref: FaceRef; visual_content_provided?: true; first_frame_only: boolean; animated: boolean; width: number; height: number; images?: FacePixels[] }
   | { status: 'ok'; face_ref: FaceRef; reused: true; visual_content_already_provided?: true; images?: FacePixels[] }
   | Failure;`,
@@ -127,7 +127,7 @@ type FacePixels = { face_ref?: FaceRef; width: number; height: number; pixels: U
   send_custom_face: {
     summary: '把一张收藏表情发到本群。',
     ts: `/** 以原图格式发送收藏表情，保留GIF/PNG等格式，动图仍是动图。 */
-function send_custom_face(_: { face_ref: FaceRef }):
+function send_custom_face({}: { face_ref: FaceRef }):
   | { status: 'executed'; message_id: MessageId; face_ref: FaceRef; local_projection_failed?: true }
   | ConfirmationRequired
   | Unknown
@@ -142,7 +142,7 @@ function send_custom_face(_: { face_ref: FaceRef }):
  * already_collected=true 表示原本已收藏，只更新描述。
  * 收藏已提交但未核实绑定时返回带 error 的 Submitted；reconcile_allowed=true 时可用同一 image_id 再调用一次对账，不会重复收藏。
  */
-function add_custom_face(_: { image_id: ImageId; description: string; tags?: string[] }):
+function add_custom_face({}: { image_id: ImageId; description: string; tags?: string[] }):
   | {
       status: 'ok' | 'error' | 'unknown';
       collection_submitted: boolean;
@@ -169,7 +169,7 @@ function add_custom_face(_: { image_id: ImageId; description: string; tags?: str
   delete_custom_face: {
     summary: '删除一张收藏表情。',
     ts: `/** reference_revoked=true 表示该引用已失效。 */
-function delete_custom_face(_: { face_ref: FaceRef }):
+function delete_custom_face({}: { face_ref: FaceRef }):
   | (Submitted & { reference_revoked: boolean; local_projection_failed?: true })
   | ConfirmationRequired
   | Unknown
@@ -182,7 +182,7 @@ function delete_custom_face(_: { face_ref: FaceRef }):
  * 描述最多2048字节；不传 tags 保留原标签，传入则整体替换。
  * description_confirmed=true 时返回新 face_ref，旧引用失效。
  */
-function set_custom_face_description(_: { face_ref: FaceRef; description: string; tags?: string[] }):
+function set_custom_face_description({}: { face_ref: FaceRef; description: string; tags?: string[] }):
   | (Submitted & { description_confirmed: false; readback: 'not_confirmed'; local_tags_updated?: false })
   | ({
       status: 'ok';
@@ -206,13 +206,13 @@ function set_custom_face_description(_: { face_ref: FaceRef; description: string
  * due_at 为未来时间，RFC3339 含秒和偏移（Z 或 ±HH:MM），如 2025-01-02T08:00:00+08:00。
  * time_zone 为IANA时区（如 Asia/Shanghai），其在该时刻的偏移须与 due_at 一致。
  */
-function create_reminder(_: { source_message_id: MessageId; text: string; due_at: string; time_zone: string }): ReminderStored | Failure;`,
+function create_reminder({}: { source_message_id: MessageId; text: string; due_at: string; time_zone: string }): ReminderStored | Failure;`,
     types: REMINDER_TYPES,
   },
   list_reminders: {
     summary: '查询本群提醒。',
     ts: `/** 查询本群所有人的提醒；next_offset 为 null 表示没有更多。 */
-function list_reminders(_: { limit: number; offset?: number; state?: ReminderState }): {
+function list_reminders({}: { limit: number; offset?: number; state?: ReminderState }): {
   status: 'ok';
   scope: 'current_group_shared';
   pagination: 'live_offset';
@@ -234,13 +234,13 @@ function list_reminders(_: { limit: number; offset?: number; state?: ReminderSta
  * 修改 pending 提醒，id 与 revision 取自最近的提醒结果。至少改一项；due_at 与 time_zone 须一起给（格式同 create_reminder）。
  * not_pending_or_conflict 表示状态或版本已变，需重新查询。成功后 revision 会变。
  */
-function update_reminder(_: { id: ReminderId; revision: number; text?: string; due_at?: string; time_zone?: string }): ReminderStored | Failure;`,
+function update_reminder({}: { id: ReminderId; revision: number; text?: string; due_at?: string; time_zone?: string }): ReminderStored | Failure;`,
     types: REMINDER_TYPES,
   },
   cancel_reminder: {
     summary: '取消一条待发送的提醒。',
     ts: `/** 取消 pending 提醒，id 与 revision 取自最近的提醒结果；不撤回已发消息。 */
-function cancel_reminder(_: { id: ReminderId; revision: number }): ReminderStored | Failure;`,
+function cancel_reminder({}: { id: ReminderId; revision: number }): ReminderStored | Failure;`,
     types: REMINDER_TYPES,
   },
   execute_javascript: {
@@ -248,7 +248,7 @@ function cancel_reminder(_: { id: ReminderId; revision: number }): ReminderStore
     ts: `/**
  * code 是 async 函数体（最多65536字节），必须 return 字符串（结构化结果自行 JSON.stringify）；description 写用途（最多1024字节）。
  * 无文件、网络、环境变量、Intl、setTimeout；console.log 等只接受字符串，输出进 logs。
- * 代码内 await tools.<name>(_) 调用工具，参数与结果相同，失败返回 status 结果、不抛异常。
+ * 代码内用 await tools.read_events({ limit: 20 }) 这样的形式调用工具，参数与结果相同，失败返回 status 结果、不抛异常。
  * 代码内不可用：finish、manage_attention、get_wake_state、execute_javascript。
  * 代码内字节字段可传 Uint8Array；view_images、view_custom_face 返回 RGBA 像素。
  * 代码内调用不占本轮工具调用次数，最多8个在途。
@@ -257,7 +257,7 @@ function cancel_reminder(_: { id: ReminderId; revision: number }): ReminderStore
  * 失败时看 error 与 diagnostic 修代码。
  */
 function execute_javascript(
-  _:
+  {}:
     | { description: string; code: string; mode: 'sync' | 'auto'; wait_ms: number }
     | { description: string; code: string; mode: 'async' },
 ):
@@ -285,7 +285,7 @@ function execute_javascript(
  * 不给 job_id 时列出概要（默认只列活动中和未交付的），limit 1至100，默认20。
  * 给 job_id 时返回详情；再给 calls_offset 附带代码内工具调用明细（每页100条）。
  */
-function query_javascript_jobs(_: { job_id?: JobId; status?: JobStatus; offset?: number; limit?: number; calls_offset?: number }):
+function query_javascript_jobs({}: { job_id?: JobId; status?: JobStatus; offset?: number; limit?: number; calls_offset?: number }):
   | { status: 'ok'; jobs: JobSummary[]; offset: number; has_more: boolean }
   | {
       status: 'ok';
@@ -299,7 +299,7 @@ function query_javascript_jobs(_: { job_id?: JobId; status?: JobStatus; offset?:
   cancel_javascript_job: {
     summary: '取消本群的一个JavaScript任务。',
     ts: `/** 取消排队或运行中的任务；已结束的原样返回。 */
-function cancel_javascript_job(_: { job_id: JobId }): { status: 'ok'; job: Job } | Failure;`,
+function cancel_javascript_job({}: { job_id: JobId }): { status: 'ok'; job: Job } | Failure;`,
     types: JOB_TYPES,
   },
   web_search: {
@@ -308,7 +308,7 @@ function cancel_javascript_job(_: { job_id: JobId }): { status: 'ok'; job: Job }
  * queries 1至4个，每个最多512字节；合并去重后最多10个来源，全文用 web_fetch。
  * truncated 表示还有来源未列出；failed_queries 是失败的查询数。
  */
-function web_search(_: { queries: string[] }): {
+function web_search({}: { queries: string[] }): {
   status: 'ok';
   sources: { url: string; title: string; snippet?: string; published_at?: string }[];
   truncated: boolean;
@@ -321,7 +321,7 @@ function web_search(_: { queries: string[] }): {
  * 读取公开 http(s) 网页正文（Markdown），每次最多20000字符；truncated=true 时以 next_start 作 start 续读。
  * 跨站重定向不跟随，返回 redirect_to，要读需再调用。不能访问内网、本机或需登录的页面。
  */
-function web_fetch(_: { url: string; start?: number }):
+function web_fetch({}: { url: string; start?: number }):
   | { status: 'ok'; url: string; http_status: number; redirect_to: string }
   | {
       status: 'ok';
@@ -343,7 +343,7 @@ function web_fetch(_: { url: string; start?: number }):
  * name 1至128字符，作显示名和上传文件名，不能含斜杠或控制字符；description 1至500字符，确认上传时展示给主人。
  * ttl_ms 1至86400000（24小时）。media_type 默认 application/octet-stream，不按内容推断。
  */
-function create_artifact(_: {
+function create_artifact({}: {
   name: string;
   description: string;
   ttl_ms: number;
@@ -359,7 +359,7 @@ function create_artifact(_: {
  * 可用 send_group_image 发送或 view_images 查看；jpeg 透明部分铺白。
  * width、height 各1至8192，pixels 按行排列，长度须为 width×height×4。name、description、ttl_ms 同 create_artifact。
  */
-function create_image(_: {
+function create_image({}: {
   name: string;
   description: string;
   ttl_ms: number;
@@ -374,7 +374,7 @@ function create_image(_: {
   list_artifacts: {
     summary: '列出本群未过期的产物。',
     ts: `/** 从新到旧；limit 1至100，默认20。 */
-function list_artifacts(_: { offset?: number; limit?: number }): { status: 'ok'; artifacts: ArtifactInfo[]; has_more: boolean } | Failure;`,
+function list_artifacts({}: { offset?: number; limit?: number }): { status: 'ok'; artifacts: ArtifactInfo[]; has_more: boolean } | Failure;`,
     types: ARTIFACT_TYPES,
   },
 };

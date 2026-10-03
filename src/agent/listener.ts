@@ -1738,7 +1738,7 @@ export class Listener {
             isObject(args) && Object.keys(args).length === 1
               ? ['params', '_'].find((key) => Object.hasOwn(args, key))
               : undefined;
-          // 声明写成 function x(_: {...})，模型偶尔把参数包进 params 或 _；不代为解包，只提示改法。
+          // 模型仍可能沿用历史声明，把参数包进 params 或 _；不代为解包，只提示改法。
           if (
             definition &&
             wrapper &&
@@ -1751,7 +1751,7 @@ export class Listener {
               status: 'error',
               error: 'invalid_arguments',
               reason_code: 'wrapped_arguments',
-              hint: `arguments 应直接是参数对象，去掉外层的 ${wrapper}`,
+              hint: `直接传参数对象，去掉外层的 ${wrapper}`,
             };
             traceResult(wrapped);
             appendToolResult(call, wrapped);
