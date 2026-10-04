@@ -1,4 +1,5 @@
 import type { Api } from '../contracts/onebot.ts';
+import { observeVisibleEffect } from '../contracts/visible-effect.ts';
 import type { ChatContentPart } from '../contracts/model.ts';
 import type { Memory, TimelineEntry } from '../contracts/messages.ts';
 import type { JsonObject } from '../contracts/json.ts';
@@ -143,6 +144,7 @@ export function createTurnToolkit(
       sandbox: deps.runtime.sandbox,
       web: deps.runtime.web,
       artifacts: deps.runtime.artifacts,
+      effectObserver: deps.runtime.effectObserver,
       ownerId: deps.ownerId,
       customFaces: deps.customFaces
         ? {
@@ -166,9 +168,14 @@ export function createTurnToolkit(
           signal,
         ),
       beforeSend: () => deps.captureSendReceipt(),
-      onSent: (entry, receipt) => {
+      onSent: (entry, receipt, context) => {
         // 迟到但有效的ACK即使在取消或断线后仍记为world中的事实。
         deps.claimMessageAck(entry, receipt);
+        observeVisibleEffect(
+          deps.runtime.effectObserver,
+          context?.eventOrigin,
+          'message_sent',
+        );
         if (deps.runtime.world) {
           recordToolMessage(deps.runtime.world, entry);
         }

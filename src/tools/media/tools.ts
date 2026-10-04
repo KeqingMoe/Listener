@@ -1,4 +1,8 @@
 import { canonicalMessageId } from '../../onebot/identity.ts';
+import {
+  observeVisibleEffect,
+  type VisibleEffectObserver,
+} from '../../contracts/visible-effect.ts';
 import { createHash } from 'node:crypto';
 import { resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
@@ -42,7 +46,12 @@ export interface GroupMediaOptions {
   maxDownloadMb?: number;
   artifacts?: ArtifactStore;
   beforeSend?: () => SendReceiptSnapshot;
-  onSent?: (entry: TimelineEntry, receipt?: SendReceiptSnapshot) => void;
+  onSent?: (
+    entry: TimelineEntry,
+    receipt?: SendReceiptSnapshot,
+    context?: TurnContext,
+  ) => void;
+  effectObserver?: VisibleEffectObserver;
 }
 
 const INPUT_BYTES = 24 * 1024,
@@ -480,6 +489,11 @@ export class GroupMediaTools {
         if (ack !== null) {
           return unknown();
         }
+        observeVisibleEffect(
+          this.options.effectObserver,
+          ctx.eventOrigin,
+          'message_sent',
+        );
         return afterDispatch(
           { status: 'executed', message_id: null, source_count: 1 },
           !!signal?.aborted,
@@ -511,7 +525,7 @@ export class GroupMediaTools {
       // 重复出现的ID则不同，不能证明发生了新的发送。
       let projectionFailed = false;
       try {
-        this.options.onSent?.(entry, receipt);
+        this.options.onSent?.(entry, receipt, ctx);
       } catch (error) {
         if (error instanceof DuplicateMessageAckError) {
           return { ...unknown(), error: 'duplicate_message_ack' };

@@ -13,6 +13,7 @@ import { OneBotError } from '../../../../src/onebot/client.ts';
 import type { Api } from '../../../../src/contracts/onebot.ts';
 import type { JsonObject } from '../../../../src/contracts/json.ts';
 import type { TurnContext } from '../../../../src/contracts/tools.ts';
+import type { VisibleEffectObserver } from '../../../../src/contracts/visible-effect.ts';
 
 const artifactDir = mkdtempSync(join(tmpdir(), 'file-request-outcomes-'));
 const store = new ArtifactStore({
@@ -61,7 +62,7 @@ const original = (): Item => ({
   uploadedAt: 100,
 });
 
-function fixture() {
+function fixture(effectObserver?: VisibleEffectObserver) {
   const state = {
     items: [original()] as Item[],
     role: 'admin',
@@ -153,6 +154,7 @@ function fixture() {
       return 'text';
     },
     artifacts: store,
+    effectObserver,
   });
   const run = (name: string, args: unknown, signal?: AbortSignal) =>
     tools.execute(name, args, ctx, signal);
@@ -178,6 +180,52 @@ function fixture() {
     downloads: () => downloads,
   };
 }
+
+test('file effects observe native confirmation but not submitted mutations or cached repeats', async () => {
+  const origin = {
+    selfId: ctx.selfId,
+    groupId: ctx.groupId,
+    turnId: 'original',
+    receipt: { receivedAt: Date.now(), receivedMonotonic: performance.now() },
+  };
+  const context = { ...ctx, eventOrigin: origin };
+  const kinds: string[] = [];
+  const f = fixture({
+    confirm(actual, event) {
+      assert.equal(actual, origin);
+      kinds.push(event.kind);
+      throw new Error('observer unavailable');
+    },
+  });
+  const artifact_id = await art('observed.txt');
+  const uploaded = await f.tools.execute(
+    'upload_group_file',
+    { artifact_id },
+    context,
+  );
+  assert.equal(uploaded.effect_confirmed, true);
+  await f.tools.execute('upload_group_file', { artifact_id }, context);
+  const folder = (await f.list()).find(
+    (x) => x.kind === 'folder',
+  )!.folder_handle;
+  assert.equal(
+    (
+      await f.tools.execute(
+        'delete_group_folder',
+        { folder_handle: folder },
+        context,
+      )
+    ).effect_confirmed,
+    true,
+  );
+  const file = await f.handle();
+  assert.equal(
+    (await f.tools.execute('delete_group_file', { file_handle: file }, context))
+      .submitted,
+    true,
+  );
+  assert.deepEqual(kinds, ['group_file_changed', 'group_file_changed']);
+});
 
 test('random provider tokens are only consistency aliases: fresh validation never rebinds the execution target', async () => {
   const f = fixture(),

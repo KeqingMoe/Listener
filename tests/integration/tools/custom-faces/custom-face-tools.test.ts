@@ -671,6 +671,37 @@ test('unknown send is blocked across a new wake/module and reset, not merely a p
   assert.equal(writes(second).length, 0);
 });
 
+test('custom-face send preserves invocation origin for trusted post-ACK observation', async (t) => {
+  const origin = {
+    selfId: SELF,
+    groupId: GROUP,
+    turnId: 'original-wake',
+    receipt: { receivedAt: Date.now(), receivedMonotonic: performance.now() },
+  };
+  const observed: TurnContext[] = [];
+  const f = fixture({
+    extras: {
+      onSent(_entry, _receipt, context) {
+        if (context) {
+          observed.push(context);
+        }
+        throw new Error('projection failed');
+      },
+    },
+  });
+  t.after(() => f.close());
+  const ref = await firstRef(f);
+  const result = await f.execute(
+    'send_custom_face',
+    { face_ref: ref },
+    { ...CTX, eventOrigin: origin },
+  );
+  assert.equal(result.status, 'executed');
+  assert.equal(result.local_projection_failed, true);
+  assert.equal(observed.length, 1);
+  assert.equal(observed[0]!.eventOrigin, origin);
+});
+
 test('duplicate ACK differs from local projection error and preserves uncertainty', async (t) => {
   const f = fixture({
     extras: {

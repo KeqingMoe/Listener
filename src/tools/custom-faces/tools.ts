@@ -1000,7 +1000,7 @@ export class CustomFaceTools {
     };
     let projectionFailed = false;
     try {
-      this.options.onSent?.(entry, receipt);
+      this.options.onSent?.(entry, receipt, ctx);
     } catch (e) {
       if (
         e instanceof DuplicateMessageAckError ||

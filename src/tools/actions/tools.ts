@@ -1,4 +1,8 @@
 import { canonicalMessageId } from '../../onebot/identity.ts';
+import {
+  observeVisibleEffect,
+  type VisibleEffectObserver,
+} from '../../contracts/visible-effect.ts';
 import { createHash } from 'node:crypto';
 import { types } from 'node:util';
 import { resolveGroupId } from '../../contracts/identity.ts';
@@ -186,6 +190,7 @@ export class GroupActionTools {
       recent: () => [],
       find: () => undefined,
     },
+    private readonly effectObserver?: VisibleEffectObserver,
   ) {
     this.groupId = resolveGroupId(groupId);
     if (
@@ -247,6 +252,7 @@ export class GroupActionTools {
         selfId: ctx.selfId,
         actorId: ctx.actorId,
         messageId: ctx.messageId,
+        ...(ctx.eventOrigin ? { eventOrigin: ctx.eventOrigin } : {}),
       };
       await this.verify(action, value, context, signal);
       check(signal);
@@ -291,6 +297,7 @@ export class GroupActionTools {
         selfId: ctx.selfId,
         actorId: ctx.actorId,
         messageId: ctx.messageId,
+        ...(ctx.eventOrigin ? { eventOrigin: ctx.eventOrigin } : {}),
       };
     } catch (error) {
       return this.error(error);
@@ -757,6 +764,11 @@ export class GroupActionTools {
     if (!ack) {
       return failure();
     }
+    observeVisibleEffect(
+      this.effectObserver,
+      ctx.eventOrigin,
+      'group_state_changed',
+    );
     const confirmed: JsonObject = {
       status: 'executed',
       action: name,

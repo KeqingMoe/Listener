@@ -15,6 +15,7 @@ import type {
   TimelineEntry,
 } from '../../../../src/contracts/messages.ts';
 import type { TurnContext } from '../../../../src/contracts/tools.ts';
+import type { VisibleEffectObserver } from '../../../../src/contracts/visible-effect.ts';
 
 const groupId = '123',
   selfId = '456',
@@ -60,6 +61,7 @@ class Mem implements Memory {
 function fixture(
   output: () => unknown | Promise<unknown>,
   onSent?: () => void,
+  effectObserver?: VisibleEffectObserver,
 ) {
   const calls: { action: string; params: JsonObject }[] = [],
     writes: string[] = [],
@@ -118,17 +120,80 @@ function fixture(
       groupId,
       GROUP_ACTION_TOOL_NAMES,
       memory,
+      effectObserver,
     ),
     media: new GroupMediaTools(
       api,
       groupId,
       ['forward_message', 'send_group_forward'],
       memory,
-      { onSent },
+      { onSent, effectObserver },
     ),
     voice: new GroupVoiceTools(api, groupId, ['send_group_ai_voice']),
   };
 }
+
+test('visible effects require fresh business ACKs and observers cannot affect results', async () => {
+  const origin = {
+    selfId,
+    groupId,
+    turnId: 'original-wake',
+    receipt: { receivedAt: Date.now(), receivedMonotonic: performance.now() },
+  };
+  const context = { ...ctx, eventOrigin: origin };
+  const kinds: string[] = [];
+  const observer: VisibleEffectObserver = {
+    confirm(actual, event) {
+      assert.equal(actual, origin);
+      assert.ok(event.confirmedAt >= origin.receipt.receivedAt);
+      assert.ok(event.confirmedMonotonic >= origin.receipt.receivedMonotonic);
+      kinds.push(event.kind);
+      throw new Error('observer unavailable');
+    },
+  };
+  const f = fixture(() => null, undefined, observer);
+  assert.equal(
+    (await f.actions.execute('set_group_name', { name: 'new name' }, context))
+      .status,
+    'executed',
+  );
+  assert.equal(
+    (await f.actions.execute('set_group_name', { name: 'new name' }, context))
+      .cached,
+    true,
+  );
+  submitted(
+    await f.actions.execute('poke_member', { user_id: target }, context),
+  );
+  assert.equal(
+    (await f.media.execute('forward_message', { message_id: '1' }, context))
+      .status,
+    'executed',
+  );
+  assert.deepEqual(kinds, ['group_state_changed', 'message_sent']);
+  const unknown = fixture(() => ({ result: 0 }), undefined, observer);
+  assert.equal(
+    (
+      await unknown.media.execute(
+        'forward_message',
+        { message_id: '1' },
+        context,
+      )
+    ).status,
+    'unknown',
+  );
+  assert.equal(
+    (
+      await unknown.actions.execute(
+        'set_group_name',
+        { name: 'unknown' },
+        context,
+      )
+    ).status,
+    'unknown',
+  );
+  assert.deepEqual(kinds, ['group_state_changed', 'message_sent']);
+});
 
 function submitted(r: JsonObject) {
   assert.equal(r.status, 'ok');

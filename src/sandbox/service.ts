@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { startExecution, encodeToolValue } from './executor.ts';
 import type { JsonObject } from '../contracts/json.ts';
+import type { EventOrigin } from '../contracts/visible-effect.ts';
 import type {
   ToolCallObserver,
   ToolObservationEnd,
@@ -48,6 +49,8 @@ type JobResponse =
 interface JobCaller {
   actorId: string;
   messageId: string;
+  /** Trusted submitter metadata; never supplied by guest tool arguments. */
+  eventOrigin?: EventOrigin;
 }
 
 /** guest代码可调用的host工具。鉴权在call()内部、按调用时刻进行。 */
@@ -198,7 +201,23 @@ export class SandboxService {
       const item: Live = {
         job,
         code: input.code,
-        ...(caller ? { caller: { ...caller } } : {}),
+        ...(caller
+          ? {
+              caller: {
+                ...caller,
+                ...(caller.eventOrigin
+                  ? {
+                      eventOrigin: Object.freeze({
+                        ...caller.eventOrigin,
+                        receipt: Object.freeze({
+                          ...caller.eventOrigin.receipt,
+                        }),
+                      }),
+                    }
+                  : {}),
+              },
+            }
+          : {}),
         calls: 0,
         resolve,
         delivery: input.mode === 'async' ? 'background' : 'foreground',

@@ -1,4 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
+import {
+  observeVisibleEffect,
+  type VisibleEffectObserver,
+} from '../../contracts/visible-effect.ts';
 import { resolveGroupId } from '../../contracts/identity.ts';
 import { type Api } from '../../contracts/onebot.ts';
 import {
@@ -197,6 +201,7 @@ interface Listed {
 }
 
 interface GroupFileToolsOptions {
+  effectObserver?: VisibleEffectObserver;
   downloader?: GroupTextDownloader;
   artifacts?: ArtifactStore;
 }
@@ -264,7 +269,7 @@ export class GroupFileTools {
     private readonly api: Api,
     groupId: string,
     enabled: readonly string[] = [],
-    options: GroupFileToolsOptions = {},
+    private readonly options: GroupFileToolsOptions = {},
   ) {
     this.groupId = resolveGroupId(groupId);
     this.enabled = enabledNames(enabled);
@@ -984,6 +989,14 @@ export class GroupFileTools {
           this.classify(name, value),
           !!signal?.aborted || generation !== this.generation,
         );
+        // This classifier owns the native business-ACK semantics; submission alone is not an effect.
+        if (result.effect_confirmed === true) {
+          observeVisibleEffect(
+            this.options.effectObserver,
+            ctx.eventOrigin,
+            'group_file_changed',
+          );
+        }
       } catch (error) {
         result = afterDispatch(
           writeFailure(error, 'operation_result_unknown'),
@@ -1041,7 +1054,7 @@ export class GroupFileTools {
   ): JsonObject {
     fields(
       ctx,
-      ['groupId', 'selfId', 'actorId', 'messageId'],
+      ['groupId', 'selfId', 'actorId', 'messageId', 'eventOrigin'],
       ['groupId', 'selfId'],
     );
     if (ctx.groupId !== this.groupId) {

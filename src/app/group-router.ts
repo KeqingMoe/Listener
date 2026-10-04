@@ -4,9 +4,15 @@ import { withLogContext } from '../observability/logger.ts';
 import { normalizeOneBotEvent } from '../world/ingest.ts';
 import { types } from 'node:util';
 import type { Reminder, DeliveryOutcome } from '../reminders/store.ts';
+import type { MessageReceipt } from '../contracts/visible-effect.ts';
+import type { TurnContext } from '../contracts/tools.ts';
 
 export interface GroupHandler {
-  receive(event: unknown, selfId: string): Promise<void>;
+  receive(
+    event: unknown,
+    selfId: string,
+    receipt?: MessageReceipt,
+  ): Promise<void>;
   /** 由宿主调度、主动发送的提醒；不得伪造成一次receive事件。 */
   sendReminder?(
     reminder: Reminder,
@@ -22,12 +28,7 @@ export interface GroupHandler {
   executeHostTool?(
     name: string,
     args: unknown,
-    context: {
-      groupId: string;
-      selfId: string;
-      actorId: string;
-      messageId: string;
-    },
+    context: TurnContext,
     signal: AbortSignal,
   ): Promise<import('../contracts/json.ts').JsonObject>;
   setConnected(value: boolean): void;
@@ -226,12 +227,7 @@ export class GroupRouter {
 
   /** 执行sandbox发起的工具调用，在调用时按当前账号、成员身份和handler校验。 */
   async executeHostTool(
-    context: {
-      groupId: string;
-      selfId: string;
-      actorId: string;
-      messageId: string;
-    },
+    context: TurnContext,
     name: string,
     args: unknown,
     signal: AbortSignal,
@@ -484,7 +480,11 @@ export class GroupRouter {
     });
   }
 
-  async receive(event: unknown, selfId: string): Promise<void> {
+  async receive(
+    event: unknown,
+    selfId: string,
+    receipt?: MessageReceipt,
+  ): Promise<void> {
     if (
       !this.connected ||
       this.stopped ||
@@ -581,7 +581,7 @@ export class GroupRouter {
       !this.closing.has(groupId)
     ) {
       await withLogContext({ group_id: groupId }, () =>
-        stable.receive(event, selfId),
+        stable.receive(event, selfId, receipt),
       );
       return;
     }
@@ -646,7 +646,7 @@ export class GroupRouter {
       !this.departed.has(groupId)
     ) {
       await withLogContext({ group_id: groupId }, () =>
-        handler.receive(event, selfId),
+        handler.receive(event, selfId, receipt),
       );
     }
   }

@@ -1,5 +1,6 @@
 import { mkdirSync, chmodSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { loadAppConfig } from '../config/loader.ts';
 import { ConfigError } from '../config/errors.ts';
 import { assertStoragePaths } from '../config/storage-paths.ts';
@@ -28,6 +29,7 @@ import {
 import { RuntimeEventStore } from '../observability/runtime-events.ts';
 import { TelemetryStore } from '../observability/telemetry.ts';
 import { ToolObservationStore } from '../observability/tool-call-observations.ts';
+import { WakeEffectWaitStore } from '../observability/wake-effect-waits.ts';
 import { FACE_CATALOG, EXAMPLE_FACE_CATALOG } from '../onebot/catalog/faces.ts';
 import { getReactionCatalog } from '../onebot/catalog/reactions.ts';
 import { CustomFaceStore } from '../tools/custom-faces/store.ts';
@@ -44,6 +46,7 @@ import { createSearchBackend } from '../tools/web/search.ts';
 let logger: ReturnType<typeof configureLogging> | undefined;
 let telemetry: TelemetryStore | undefined;
 let toolObservations: ToolObservationStore | undefined;
+let effectWaits: WakeEffectWaitStore | undefined;
 let runtimeEvents: RuntimeEventStore | undefined,
   stopObserving: (() => void) | undefined;
 let heartbeat: ReturnType<typeof setInterval> | undefined;
@@ -129,6 +132,20 @@ async function main(): Promise<void> {
     log('warn', 'app.tool_observations_unavailable', {
       reason: 'storage_failed',
     });
+  }
+  try {
+    let effectWarningEmitted = false;
+    effectWaits = new WakeEffectWaitStore(app.storage.telemetryPath, {
+      onError: () => {
+        if (!effectWarningEmitted) {
+          effectWarningEmitted = true;
+          console.warn('wake effect observation storage unavailable');
+        }
+      },
+    });
+    effectWaits.recoverInterrupted();
+  } catch {
+    log('warn', 'app.wake_effects_unavailable', { reason: 'storage_failed' });
   }
   sandboxService = new SandboxService({
     store: sandboxStore,
@@ -312,6 +329,8 @@ async function main(): Promise<void> {
           {
             world,
             session,
+            effectObserver: effectWaits,
+            effectWaits,
             modelRequestId: () => lastRequestId,
             customFaces,
             reminders: reminderStore,
@@ -364,6 +383,7 @@ async function main(): Promise<void> {
           selfId: scope.selfId,
           actorId: scope.actorId,
           messageId: scope.messageId,
+          ...(scope.eventOrigin ? { eventOrigin: scope.eventOrigin } : {}),
         },
         name,
         args,
@@ -467,6 +487,10 @@ async function main(): Promise<void> {
     }
   });
   const receive = (event: unknown) => {
+    const receipt = Object.freeze({
+      receivedAt: Date.now(),
+      receivedMonotonic: performance.now(),
+    });
     if (!selfId || stopping) {
       return;
     }
@@ -489,7 +513,7 @@ async function main(): Promise<void> {
       }
     }
     void router
-      .receive(event, selfId)
+      .receive(event, selfId, receipt)
       .catch(() =>
         log('warn', 'message.failed', { reason: 'event_handler_failed' }),
       );
@@ -567,6 +591,13 @@ async function main(): Promise<void> {
           });
         }
         try {
+          effectWaits?.close();
+        } catch {
+          log('warn', 'app.wake_effects_unavailable', {
+            reason: 'close_failed',
+          });
+        }
+        try {
           telemetry?.close();
         } catch {
           log('warn', 'model.telemetry_failed', { reason: 'close_failed' });
@@ -599,6 +630,9 @@ void main().catch(async (error: unknown) => {
   } catch {}
   try {
     toolObservations?.close();
+  } catch {}
+  try {
+    effectWaits?.close();
   } catch {}
   try {
     telemetry?.close();

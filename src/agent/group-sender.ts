@@ -1,4 +1,8 @@
 import type { Api } from '../contracts/onebot.ts';
+import {
+  observeVisibleEffect,
+  type VisibleEffectObserver,
+} from '../contracts/visible-effect.ts';
 import type { Memory, TimelineEntry } from '../contracts/messages.ts';
 import type { TurnContext } from '../contracts/tools.ts';
 import { isObject } from '../contracts/json.ts';
@@ -26,6 +30,7 @@ export interface GroupSenderDeps {
   api: Api;
   groupId: string;
   botName?: string;
+  effectObserver?: VisibleEffectObserver;
   world?: WorldEventStore;
   memory: () => Memory | undefined;
   generation: () => number;
@@ -235,6 +240,11 @@ export class GroupSender {
     // 重复的消息ID不能证明发生了新的发送。真正的新ACK不会因取消或本地投影失败而撤销，
     // 也不能让已清空的对话记忆重新出现。
     this.claimMessageAck(entry, receipt);
+    observeVisibleEffect(
+      this.deps.effectObserver,
+      context.eventOrigin,
+      'message_sent',
+    );
     let projectionFailed = false;
     try {
       if (this.deps.world) {

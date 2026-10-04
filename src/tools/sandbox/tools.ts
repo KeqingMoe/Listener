@@ -138,6 +138,9 @@ function caller(context: TurnContext) {
   return {
     actorId: typeof context.actorId === 'string' ? context.actorId : '',
     messageId: typeof context.messageId === 'string' ? context.messageId : '',
+    ...(context.eventOrigin
+      ? { eventOrigin: structuredClone(context.eventOrigin) }
+      : {}),
   };
 }
 

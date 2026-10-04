@@ -1,4 +1,5 @@
 import type { JsonObject } from './json.ts';
+import type { EventOrigin } from './visible-effect.ts';
 
 export interface ToolDefinition {
   type: 'function';
@@ -16,4 +17,6 @@ export interface TurnContext {
   actorId: string;
   messageId: string;
   selfId: string;
+  /** Trusted host execution lineage, never part of model/guest arguments. */
+  eventOrigin?: EventOrigin;
 }

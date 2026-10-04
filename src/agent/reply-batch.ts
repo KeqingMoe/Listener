@@ -3,6 +3,10 @@ import { type TimelineEntry } from '../contracts/messages.ts';
 import { type TurnContext } from '../contracts/tools.ts';
 import { newTraceId } from '../observability/logger.ts';
 import type { AttentionHit } from './attention.ts';
+import type {
+  EventOrigin,
+  MessageReceipt,
+} from '../contracts/visible-effect.ts';
 
 export interface BatchItem {
   entry: TimelineEntry;
@@ -10,6 +14,8 @@ export interface BatchItem {
   sequence: number;
   worldSequence?: number;
   received: number;
+  /** Trusted bot-ingress clock pair, never reconstructed from a message. */
+  receipt?: MessageReceipt;
   trigger?: 'mention' | 'quote';
   unverifiedQuote?: boolean;
 }
@@ -23,6 +29,29 @@ const copy = <T>(value: T): T => structuredClone(value);
  */
 export class ReplyBatch {
   readonly turnId = newTraceId();
+  private originFrozen = false;
+  private origin?: EventOrigin;
+
+  /** Freeze the first actual wake admission cause, including a timer-only cause. */
+  freezeOrigin(item?: BatchItem): void {
+    if (this.originFrozen) {
+      return;
+    }
+    this.originFrozen = true;
+    if (item?.receipt) {
+      this.origin = Object.freeze({
+        selfId: item.context.selfId,
+        groupId: item.context.groupId,
+        turnId: this.turnId,
+        receipt: Object.freeze({ ...item.receipt }),
+      });
+    }
+  }
+
+  get eventOrigin(): EventOrigin | undefined {
+    return this.origin;
+  }
+
   items: BatchItem[] = [];
   openedAt: number;
   readyAt: number;

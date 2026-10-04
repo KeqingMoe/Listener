@@ -1,4 +1,8 @@
 import { canonicalMessageId } from '../../onebot/identity.ts';
+import {
+  observeVisibleEffect,
+  type VisibleEffectObserver,
+} from '../../contracts/visible-effect.ts';
 import { randomBytes } from 'node:crypto';
 import { MAX_MUTE_SECONDS } from '../../contracts/tool-limits.ts';
 import { writeFailure } from '../../onebot/operation-result.ts';
@@ -216,6 +220,7 @@ export class Moderation {
     options: Partial<ModerationPolicy> = {},
     groupId: string,
     ownerId: string,
+    private readonly effectObserver?: VisibleEffectObserver,
   ) {
     this.groupId = resolveGroupId(groupId);
     this.ownerId = resolveOwnerId(ownerId);
@@ -250,6 +255,7 @@ export class Moderation {
       actorId: context.actorId,
       selfId: context.selfId,
       messageId: context.messageId,
+      ...(context.eventOrigin ? { eventOrigin: context.eventOrigin } : {}),
     };
   }
 
@@ -523,6 +529,13 @@ export class Moderation {
           ? 0
           : undefined,
       phase,
+    );
+    observeVisibleEffect(
+      this.effectObserver,
+      context.eventOrigin,
+      action.name === 'recall_message'
+        ? 'message_recalled'
+        : 'member_moderated',
     );
     return { status: 'executed' };
   }

@@ -1,4 +1,5 @@
 import { isExecutionDiagnostic } from '../sandbox/protocol.ts';
+import type { MessageReceipt } from '../contracts/visible-effect.ts';
 import { buildSystemPrompt } from './prompts/index.ts';
 import { presentTools, toolSchemaMode } from './tool-declarations/index.ts';
 import {
@@ -185,7 +186,7 @@ export class Listener {
       api,
       this.groupId,
       GROUP_FILE_TOOL_NAMES.filter((name) => enabled.has(name)),
-      { artifacts: runtime.artifacts },
+      { artifacts: runtime.artifacts, effectObserver: runtime.effectObserver },
     );
     this.groupRequests = new GroupRequestTools(
       api,
@@ -222,12 +223,14 @@ export class Listener {
       config.tools.moderation,
       this.groupId,
       this.ownerId,
+      runtime.effectObserver,
     );
     this.sender = new GroupSender({
       api,
       groupId: this.groupId,
       botName: this.config.botName,
       world: runtime.world,
+      effectObserver: runtime.effectObserver,
       memory: () => this.memory,
       generation: () => this.generation,
       live: () => this.connected && !this.stopped,
@@ -308,6 +311,8 @@ export class Listener {
         this.ownerId,
       );
     }
+    // A deadline waking old unread messages has no new message receipt.
+    this.pending.freezeOrigin();
     const wasDirect = this.pending.kind === 'direct';
     for (const item of unread) {
       this.pending.add(item, 0);
@@ -336,6 +341,7 @@ export class Listener {
       this.config.tools.moderation,
       this.groupId,
       this.ownerId,
+      this.runtime.effectObserver,
     );
   }
 
@@ -469,11 +475,20 @@ export class Listener {
     }
   }
 
-  async receive(event: unknown, selfId: string): Promise<void> {
+  async receive(
+    event: unknown,
+    selfId: string,
+    receipt?: MessageReceipt,
+  ): Promise<void> {
     if (this.stopped || !this.connected) {
       return;
     }
-    const worldInput = normalizeOneBotEvent(event, selfId, 'onebot');
+    const worldInput = normalizeOneBotEvent(
+      event,
+      selfId,
+      'onebot',
+      receipt ? receipt.receivedAt / 1000 : undefined,
+    );
     let worldSequence: number | undefined;
     if (worldInput) {
       try {
@@ -525,7 +540,7 @@ export class Listener {
     }
     const sequence = ++this.arrivalSequence;
     const generation = this.generation;
-    const received = Date.now();
+    const received = receipt?.receivedAt ?? Date.now();
     const arrivedBusy = this.running || !!this.pending;
     // normalizeEvent已确认message是数组，这里只读取文字与at片段。
     const raw = (event as { message: Array<JsonObject | null> }).message;
@@ -572,6 +587,7 @@ export class Listener {
         context,
         sequence,
         received,
+        ...(receipt ? { receipt: { ...receipt } } : {}),
         ...(entry.replyTo ? { unverifiedQuote: true } : {}),
       });
     }
@@ -638,6 +654,7 @@ export class Listener {
       sequence,
       worldSequence,
       received,
+      ...(receipt ? { receipt: { ...receipt } } : {}),
       ...(unverifiedQuote ? { unverifiedQuote: true } : {}),
       ...(triggered
         ? { trigger: mentioned ? ('mention' as const) : ('quote' as const) }
@@ -733,6 +750,9 @@ export class Listener {
       clearTimeout(this.timer);
       this.timer = undefined;
     }
+    if (triggered || attentionHits.length || this.pending.randomSelected) {
+      this.pending.freezeOrigin(item);
+    }
     this.wakeAttention(attentionHits);
     this.schedule();
   }
@@ -810,6 +830,7 @@ export class Listener {
         return;
       }
       batch.randomSelected = true;
+      batch.freezeOrigin(batch.primary);
       batch.readyAt = batch.openedAt + this.replyDelay();
     }
     const now = Date.now(),
@@ -1314,6 +1335,7 @@ export class Listener {
       return;
     }
     const hostOnly = !this.pending;
+    const eventOrigin = this.pending?.eventOrigin;
     const batch = this.pending ?? {
       turnId: this.hostWakeId,
       kind: 'sandbox_result' as const,
@@ -1345,11 +1367,25 @@ export class Listener {
       );
     }
     this.pending = undefined;
-    const trigger = { ...batch.primary, kind: batch.kind };
+    const trigger = {
+      ...batch.primary,
+      kind: batch.kind,
+      context: {
+        ...batch.primary.context,
+        ...(eventOrigin ? { eventOrigin } : {}),
+      },
+    };
     this.running = true;
     this.lastTurn = Date.now();
     this.lastSealedSequence = this.arrivalSequence;
     const started = Date.now();
+    if (eventOrigin) {
+      try {
+        this.runtime.effectWaits?.begin(eventOrigin, started);
+      } catch {
+        // Optional observation must not change wake execution.
+      }
+    }
     let outcome = 'tool_budget_exhausted';
     let reason: string | undefined;
     const toolCallsLimit = this.config.maxToolCallsPerWake ?? 96,
@@ -2142,6 +2178,13 @@ export class Listener {
           outcome = 'failed';
           reason = 'session_checkpoint_failed';
           log('error', 'session.checkpoint_failed', { reason });
+        }
+      }
+      if (eventOrigin) {
+        try {
+          this.runtime.effectWaits?.finish(eventOrigin, outcome, Date.now());
+        } catch {
+          // Late asynchronous confirmations can still update the original row.
         }
       }
       log(

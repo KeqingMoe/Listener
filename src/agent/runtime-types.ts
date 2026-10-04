@@ -10,6 +10,8 @@ import type { ReminderStore } from '../reminders/store.ts';
 import type { WorldEventStore } from '../world/events.ts';
 import type { SideEffectPacer } from './pacing.ts';
 import type { ModelSession } from './session/store.ts';
+import type { VisibleEffectObserver } from '../contracts/visible-effect.ts';
+import type { WakeEffectWaitStore } from '../observability/wake-effect-waits.ts';
 
 export interface CustomFaceRuntime {
   store: CustomFaceStore;
@@ -19,6 +21,8 @@ export interface CustomFaceRuntime {
 }
 
 export interface ListenerRuntime {
+  effectObserver?: VisibleEffectObserver;
+  effectWaits?: Pick<WakeEffectWaitStore, 'begin' | 'finish'>;
   pacer?: SideEffectPacer;
   web?: WebTools;
   artifacts?: ArtifactStore;

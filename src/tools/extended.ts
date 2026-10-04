@@ -1,4 +1,5 @@
 import type { Api } from '../contracts/onebot.ts';
+import type { VisibleEffectObserver } from '../contracts/visible-effect.ts';
 import type { Memory } from '../contracts/messages.ts';
 import type { ToolDefinition, TurnContext } from '../contracts/tools.ts';
 import type { JsonObject } from '../contracts/json.ts';
@@ -54,6 +55,7 @@ import {
 } from './custom-faces/tools.ts';
 
 interface ExtendedToolOptions {
+  effectObserver?: VisibleEffectObserver;
   downloader?: ImageDownloader;
   maxDownloadMb?: number;
   reminders?: ReminderStore;
@@ -151,6 +153,7 @@ export function createExtendedTools(
     groupId,
     GROUP_ACTION_TOOL_NAMES.filter((name) => enabled.has(name)),
     memory,
+    options.effectObserver,
   );
   for (const definition of actions.definitions()) {
     register({
@@ -171,6 +174,7 @@ export function createExtendedTools(
       artifacts: options.artifacts,
       beforeSend: options.beforeSend,
       onSent: options.onSent,
+      effectObserver: options.effectObserver,
     },
   );
   for (const definition of media.definitions()) {
@@ -216,7 +220,7 @@ export function createExtendedTools(
       api,
       groupId,
       GROUP_FILE_TOOL_NAMES.filter((name) => enabled.has(name)),
-      { artifacts: options.artifacts },
+      { artifacts: options.artifacts, effectObserver: options.effectObserver },
     );
   for (const definition of files.definitions()) {
     if (enabled.has(definition.function.name)) {

@@ -17,6 +17,7 @@ import {
 import { type Api } from '../../../../src/contracts/onebot.ts';
 import { type Memory } from '../../../../src/contracts/messages.ts';
 import { type TurnContext } from '../../../../src/contracts/tools.ts';
+import type { VisibleEffectObserver } from '../../../../src/contracts/visible-effect.ts';
 
 const ctx: TurnContext = {
   groupId: LISTENER_GROUP,
@@ -35,6 +36,7 @@ const actions = [
 function moderationFixture(
   mode: 'direct' | 'confirm',
   write: () => unknown | Promise<unknown>,
+  effectObserver?: VisibleEffectObserver,
 ) {
   let writes = 0;
   const api: Api = {
@@ -75,6 +77,7 @@ function moderationFixture(
     },
     LISTENER_GROUP,
     OWNER_ID,
+    effectObserver,
   );
   return {
     moderation,
@@ -92,6 +95,60 @@ function moderationFixture(
     },
   };
 }
+
+test('moderation observes confirmed effects through validated context, not proposals or unknown outcomes', async () => {
+  const origin = {
+    selfId: ctx.selfId,
+    groupId: ctx.groupId,
+    turnId: 'original',
+    receipt: { receivedAt: Date.now(), receivedMonotonic: performance.now() },
+  };
+  const context = { ...ctx, eventOrigin: origin };
+  const kinds: string[] = [];
+  const observer: VisibleEffectObserver = {
+    confirm(actual, event) {
+      assert.equal(actual, origin);
+      kinds.push(event.kind);
+      throw new Error('observer failed');
+    },
+  };
+  for (const action of actions) {
+    const f = moderationFixture('direct', () => null, observer);
+    assert.equal(
+      (await f.moderation.request(action.name, action.args, context)).status,
+      'executed',
+    );
+  }
+  assert.deepEqual(kinds, [
+    'member_moderated',
+    'member_moderated',
+    'member_moderated',
+    'message_recalled',
+  ]);
+  const unknown = moderationFixture('direct', () => ({}), observer);
+  assert.equal(
+    (
+      await unknown.moderation.request(
+        'recall_message',
+        { message_id: '7' },
+        context,
+      )
+    ).status,
+    'unknown',
+  );
+  const pending = moderationFixture('confirm', () => null, observer);
+  const proposal = await pending.moderation.request(
+    'recall_message',
+    { message_id: '7' },
+    context,
+  );
+  assert.equal(proposal.status, 'confirmation_required');
+  assert.equal(
+    (await pending.moderation.confirm(String(proposal.code), owner)).status,
+    'executed',
+  );
+  assert.equal(kinds.length, 4);
+});
 
 const reactions = { message_id: '7', emoji_id: '76', action: 'add' };
 
