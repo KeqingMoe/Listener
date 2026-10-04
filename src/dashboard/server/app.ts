@@ -14,6 +14,7 @@ import { registerReviewRoutes } from './review-routes.ts';
 import { ReviewRepository } from './review-repository.ts';
 import { buildRequestTrends } from './request-trends.ts';
 import { RequestTrendsSync } from './request-trends-sync.ts';
+import { wakeEffectTrends } from './wake-effect-trends.ts';
 import { registerResourceSync } from './resource-sync.ts';
 import { internalToolObservations } from './tool-observations.ts';
 import { TOOL_USAGE_ROLE_VERSION } from '../contracts/tool-observations.ts';
@@ -274,6 +275,10 @@ export function buildApp(options: AppOptions) {
     const { range, groupId } = parse(req.query);
     const requests = reviewRepository.requests(range, groupId);
     return buildRequestTrends(range, repository.availability(), requests);
+  });
+  app.get('/api/wake-effect-trends', async (req) => {
+    const { range, groupId } = parse(req.query);
+    return wakeEffectTrends(repository, range, groupId);
   });
   app.get('/api/overview', async (req) => {
     const { range, groupId } = parse(req.query),

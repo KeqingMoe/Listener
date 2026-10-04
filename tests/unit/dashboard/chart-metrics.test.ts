@@ -45,6 +45,8 @@ const point: RequestTrendPoint = {
   startedAt: 1234567890123,
   outcome: 'failed',
   durationMs: 1500,
+  reasoningDurationMs: null,
+  reasoningTimingStatus: null,
   ttftMs: null,
   inputTokens: 0,
   totalInputTokens: 100,

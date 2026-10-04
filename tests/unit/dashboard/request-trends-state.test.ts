@@ -17,6 +17,8 @@ const point = (key: string, startedAt = 100): RequestTrendSyncPoint => ({
   outputTokens: null,
   tps: null,
   ttftMs: null,
+  reasoningDurationMs: null,
+  reasoningTimingStatus: null,
   cacheHitRate: null,
 });
 const response = (

@@ -92,6 +92,37 @@ function fixture(journal = true) {
   };
 }
 
+test('reasoning observations survive snapshots and timing-only delta updates', async () => {
+  const f = fixture();
+  try {
+    f.db.exec(
+      'ALTER TABLE model_requests ADD COLUMN reasoning_duration_ms REAL; ALTER TABLE model_requests ADD COLUMN reasoning_timing_status TEXT',
+    );
+    const initial = await f.sync();
+    assert.equal(initial.upserts[0]!.reasoningTimingStatus, null);
+    assert.equal(initial.upserts[0]!.reasoningDurationMs, null);
+    f.db.exec(
+      "UPDATE model_requests SET status='success',ended_at=200,duration_ms=100,reasoning_duration_ms=20,reasoning_timing_status='complete' WHERE request_id='a'",
+    );
+    const complete = await f.sync(initial.cursor);
+    assert.equal(complete.mode, 'delta');
+    assert.equal(complete.upserts.length, 1);
+    assert.equal(complete.upserts[0]!.reasoningDurationMs, 20);
+    assert.equal(complete.upserts[0]!.reasoningTimingStatus, 'complete');
+    f.db.exec(
+      "UPDATE model_requests SET reasoning_duration_ms=NULL,reasoning_timing_status='partial' WHERE request_id='a'",
+    );
+    const partial = await f.sync(complete.cursor);
+    assert.equal(partial.mode, 'delta');
+    assert.equal(partial.upserts.length, 1);
+    assert.equal(partial.upserts[0]!.reasoningDurationMs, null);
+    assert.equal(partial.upserts[0]!.reasoningTimingStatus, 'partial');
+    assert.equal(partial.buckets[0]!.total, 1);
+  } finally {
+    await f.cleanup();
+  }
+});
+
 test('sync completion, both-table deletion and sliding re-read only keys and entering intervals', async () => {
   const f = fixture();
   const original = ReviewRepository.prototype.requests;

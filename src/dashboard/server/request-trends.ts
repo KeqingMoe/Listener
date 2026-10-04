@@ -46,6 +46,8 @@ export function buildRequestTrends(
     outputTokens: r.outputTokens,
     tps: r.tps,
     ttftMs: r.ttftMs,
+    reasoningDurationMs: r.reasoningDurationMs,
+    reasoningTimingStatus: r.reasoningTimingStatus,
     cacheHitRate: r.cacheHitRate,
   }));
   return buildRequestTrendBuckets(range, availability, points);

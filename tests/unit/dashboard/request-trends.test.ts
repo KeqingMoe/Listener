@@ -29,6 +29,8 @@ const row = (
     tps: null,
     ttftMs: null,
     decodeDurationMs: null,
+    reasoningDurationMs: null,
+    reasoningTimingStatus: null,
     cacheHitRate: null,
     performance: performanceMetrics([
       {
@@ -129,6 +131,8 @@ test('projection preserves zeros, unknowns, TPS and emits only the compact field
     outputTokens: 0,
     tps: null,
     ttftMs: null,
+    reasoningDurationMs: null,
+    reasoningTimingStatus: null,
     cacheHitRate: null,
   });
   assert.deepEqual(points[1], {
@@ -141,6 +145,8 @@ test('projection preserves zeros, unknowns, TPS and emits only the compact field
     outputTokens: 0,
     tps: 7,
     ttftMs: null,
+    reasoningDurationMs: null,
+    reasoningTimingStatus: null,
     cacheHitRate: null,
   });
 });

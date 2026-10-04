@@ -22,7 +22,12 @@ function fixture(old = false) {
     ('foreign','22',100,200,100,'success',99999,0,99999,NULL);`);
   if (!old) {
     db.exec(
-      `ALTER TABLE model_requests ADD COLUMN ttft_ms REAL; ALTER TABLE model_requests ADD COLUMN decode_duration_ms REAL; UPDATE model_requests SET ttft_ms=12.5,decode_duration_ms=87.5 WHERE request_id='success';`,
+      `ALTER TABLE model_requests ADD COLUMN ttft_ms REAL; ALTER TABLE model_requests ADD COLUMN decode_duration_ms REAL;
+       ALTER TABLE model_requests ADD COLUMN reasoning_duration_ms REAL; ALTER TABLE model_requests ADD COLUMN reasoning_timing_status TEXT;
+       UPDATE model_requests SET ttft_ms=12.5,decode_duration_ms=87.5,reasoning_duration_ms=25,reasoning_timing_status='complete' WHERE request_id='success';
+       UPDATE model_requests SET reasoning_duration_ms=0,reasoning_timing_status='complete' WHERE request_id='zero';
+       UPDATE model_requests SET reasoning_duration_ms=10,reasoning_timing_status='partial' WHERE request_id='failed';
+       UPDATE model_requests SET reasoning_timing_status='not_observed' WHERE request_id='timeout';`,
     );
   }
   if (!old) {
@@ -92,10 +97,20 @@ test('trends preserves review metering, all seven outcomes and old schemas witho
         outputTokens: 10,
         tps: old ? null : 114.28571428571429,
         ttftMs: old ? null : 12.5,
+        reasoningDurationMs: old ? null : 25,
+        reasoningTimingStatus: old ? null : 'complete',
         cacheHitRate: 0.4,
       });
       const zero = body.points.find((p) => p.startedAt === 200)!;
       assert.equal(zero.durationMs, 0);
+      assert.equal(zero.reasoningDurationMs, old ? null : 0);
+      const failed = body.points.find((p) => p.outcome === 'failed')!;
+      assert.equal(failed.reasoningDurationMs, old ? null : 10);
+      assert.equal(failed.reasoningTimingStatus, old ? null : 'partial');
+      assert.equal(
+        body.points.find((p) => p.outcome === 'timeout')!.reasoningTimingStatus,
+        old ? null : 'not_observed',
+      );
       assert.equal(zero.outputTokens, 0);
       assert.equal(zero.tps, null);
       assert.equal(body.points.find((p) => p.outcome === 'failed')!.tps, null);

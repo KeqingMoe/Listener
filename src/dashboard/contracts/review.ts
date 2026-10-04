@@ -1,6 +1,7 @@
 import type { Availability, Range, WakeItem } from './contracts.ts';
 import type { CacheMetrics } from './metrics.ts';
 import type { ModelRequestDiagnostics } from '../../observability/model-diagnostics.ts';
+import type { ModelRequestRecord } from '../../observability/model-usage.ts';
 import type { RequestOutcome, ToolOutcome } from './outcomes.ts';
 
 /** 所有未知标量均为null。inputTokens特指未命中缓存的输入。 */
@@ -32,6 +33,12 @@ export interface ReviewRequest extends CacheMetrics {
   tps: number | null;
   ttftMs: number | null;
   decodeDurationMs: number | null;
+  /** Observed first reasoning phase; partial observations are not complete samples. */
+  reasoningDurationMs: number | null;
+  reasoningTimingStatus: Exclude<
+    ModelRequestRecord['reasoningTimingStatus'],
+    undefined
+  >;
   responseId: string | null;
   previousResponseId: string | null;
   providerRequestId: string | null;

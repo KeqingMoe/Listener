@@ -165,6 +165,8 @@ const fields = [
   'duration_ms',
   'ttft_ms',
   'decode_duration_ms',
+  'reasoning_duration_ms',
+  'reasoning_timing_status',
   'status',
   'error_code',
   'http_status',
@@ -227,6 +229,8 @@ export class ReviewRepository {
       'duration_ms',
       'ttft_ms',
       'decode_duration_ms',
+      'reasoning_duration_ms',
+      'reasoning_timing_status',
       'status',
       'error_code',
       'input_tokens',
@@ -475,6 +479,17 @@ export class ReviewRepository {
           tps: performance.tps,
           ttftMs: performance.ttftMs,
           decodeDurationMs: performance.decodeDurationMs,
+          reasoningDurationMs:
+            row.reasoning_timing_status === 'complete' ||
+            row.reasoning_timing_status === 'partial'
+              ? n(row.reasoning_duration_ms)
+              : null,
+          reasoningTimingStatus:
+            row.reasoning_timing_status === 'complete' ||
+            row.reasoning_timing_status === 'partial' ||
+            row.reasoning_timing_status === 'not_observed'
+              ? row.reasoning_timing_status
+              : null,
           responseId: this.text(row.response_id),
           previousResponseId: this.text(row.previous_response_id),
           providerRequestId: this.text(row.provider_request_id),

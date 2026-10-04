@@ -34,6 +34,8 @@ function point(
     startedAt: epoch + index * minute,
     outcome: 'success',
     durationMs: 1000,
+    reasoningDurationMs: null,
+    reasoningTimingStatus: null,
     inputTokens: 20_000,
     totalInputTokens: 50_000 + index * 100,
     cachedInputTokens: 30_000 + index * 100,

@@ -25,6 +25,8 @@ export type RequestTrendPoint = Pick<
   | 'outputTokens'
   | 'tps'
   | 'ttftMs'
+  | 'reasoningDurationMs'
+  | 'reasoningTimingStatus'
   | 'cacheHitRate'
 >;
 
