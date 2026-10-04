@@ -104,7 +104,9 @@ export function parseChatUsage(value: unknown): ModelUsage {
   // 标准字段只要存在就优先，即使其值非法也不静默回退到可能冲突的厂商计数字段。
   const cached = Object.hasOwn(details, 'cached_tokens')
     ? details.cached_tokens
-    : v.prompt_cache_hit_tokens;
+    : Object.hasOwn(v, 'prompt_cache_hit_tokens')
+      ? v.prompt_cache_hit_tokens
+      : 0; // 未报告缓存命中字段时按0处理；有效输入计数仍由normalizeUsage校验。
   return normalizeUsage({
     inputTokens: v.prompt_tokens,
     outputTokens: v.completion_tokens,
@@ -115,12 +117,16 @@ export function parseChatUsage(value: unknown): ModelUsage {
 }
 
 export function parseResponsesUsage(value: unknown): ModelUsage {
-  const v = object(value);
+  const v = object(value),
+    details = object(v.input_tokens_details);
   return normalizeUsage({
     inputTokens: v.input_tokens,
     outputTokens: v.output_tokens,
     totalTokens: v.total_tokens,
-    cachedInputTokens: object(v.input_tokens_details).cached_tokens,
+    // 与Chat一致：仅缺失字段默认0，明确返回的非法计数不兜底。
+    cachedInputTokens: Object.hasOwn(details, 'cached_tokens')
+      ? details.cached_tokens
+      : 0,
     reasoningTokens: object(v.output_tokens_details).reasoning_tokens,
   });
 }

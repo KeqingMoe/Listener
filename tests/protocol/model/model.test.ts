@@ -53,6 +53,46 @@ test('request observer sees charged truncated usage once and cannot mask model e
   }
 });
 
+test('chat reports zero cache for missing cache fields without rewriting raw usage', async () => {
+  const usage = {
+    prompt_tokens: 100,
+    completion_tokens: 20,
+    total_tokens: 120,
+  };
+  const fixture = await server((_req, res) =>
+    res.end(
+      JSON.stringify({ ...reply({ role: 'assistant', content: 'ok' }), usage }),
+    ),
+  );
+  const records: import('../../../src/observability/model-usage.ts').ModelRequestRecord[] =
+    [];
+  try {
+    const model = new OpenAIModel({
+      baseUrl: fixture.url,
+      apiKey: secret,
+      model: 'test-model',
+      timeoutMs: 1000,
+      maxTokens: 100,
+      onRequest: (record) => records.push(record),
+    });
+    assert.equal((await model.complete([])).content, 'ok');
+    assert.equal(records.length, 1);
+    assert.deepEqual(records[0]!.usage, {
+      inputTokens: 100,
+      outputTokens: 20,
+      totalTokens: 120,
+      cachedInputTokens: 0,
+      reasoningTokens: null,
+    });
+    assert.deepEqual(
+      JSON.parse(records[0]!.inspection!.responseJson!).usage,
+      usage,
+    );
+  } finally {
+    stop(fixture.server);
+  }
+});
+
 test('observer throwing does not alter successful completion', async () => {
   const fixture = await server((_req, res) =>
     res.end(JSON.stringify(reply({ role: 'assistant', content: 'ok' }))),
