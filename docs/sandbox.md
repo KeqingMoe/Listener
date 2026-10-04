@@ -4,7 +4,7 @@ Listener 提供三个默认开启的群工具：`execute_javascript`、`query_ja
 
 ## 执行
 
-`execute_javascript` 必须提供 `description`、`code`、`mode`；`sync` 和 `auto` 还必须提供 `wait_ms`（1..2147483647 的整数毫秒），`async` 禁止提供 `wait_ms`，没有默认值。代码按统一的异步函数体执行，所有模式都可以使用 `await`，最终必须 `return` 一个 primitive string；不会将数字、BigInt、对象、数组或 `undefined` 隐式转换。请在代码中调用 `.toString()` 或 `JSON.stringify()`。
+`execute_javascript` 必须提供 `description`、`code`、`mode`；`sync` 和 `auto` 还必须提供 `wait_ms`（1..2147483647 的整数毫秒），`async` 禁止提供 `wait_ms`，没有默认值。`code` 填写要立即执行的 JavaScript 语句，所有模式都可以直接使用 `await`，并用 `return` 返回一个 primitive string；不会将数字、BigInt、对象、数组或 `undefined` 隐式转换。请在代码中调用 `.toString()` 或 `JSON.stringify()`。
 
 ```js
 let n = 1n;

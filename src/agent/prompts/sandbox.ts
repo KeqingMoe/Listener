@@ -2,7 +2,7 @@ import { section } from './section.ts';
 
 /** execute_javascript计算沙箱。 */
 const RULES = [
-  'execute_javascript必须填写用途description、代码code和等待模式mode；所有模式均按async函数体执行，可await，最终必须return字符串，自行序列化BigInt或结构化结果。',
+  'execute_javascript必须填写用途description、代码code和等待模式mode；code填写要立即执行的JavaScript语句，可以直接使用await，并用return返回字符串，自行序列化BigInt或结构化结果。',
   'sync和auto必须自行填写wait_ms整数1..2147483647，指定前台等待毫秒数（含排队与启动），没有默认值；sync到期未完成即终止，auto到期未完成则原任务继续后台执行，不重新运行。',
   'async立即返回任务句柄且禁止传wait_ms。',
   'wait_ms不能延长整轮唤醒预算，整轮取消时sync终止、auto转后台。',

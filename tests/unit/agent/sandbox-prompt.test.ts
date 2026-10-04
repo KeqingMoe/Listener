@@ -5,6 +5,7 @@ import { buildSystemPrompt } from '../../../src/agent/prompts/index.ts';
 import type { ListenerConfig } from '../../../src/config/listener.ts';
 import { OWNER_ID } from '../../../src/contracts/identity.ts';
 import { toolPermissions } from '../../support/tool-permissions.ts';
+import { buildToolDefinitions } from '../../../src/agent/tool-definitions.ts';
 
 const config: ListenerConfig = {
   ownerId: OWNER_ID,
@@ -43,6 +44,33 @@ test('sandbox prompt explains actionable guest diagnostics without granting auth
   assert.doesNotMatch(disabled, /计算沙箱：/);
 });
 
+test('sandbox presentations describe direct statements', () => {
+  for (const toolSchema of ['json', 'ts', 'both'] as const) {
+    const current = { ...config, toolSchema };
+    const prompt = buildSystemPrompt(current);
+    assert.match(prompt, /code填写要立即执行的JavaScript语句/);
+    assert.match(prompt, /可以直接使用await，并用return返回字符串/);
+    assert.doesNotMatch(
+      prompt,
+      /函数体|函数外壳|完整调用参数示例|async function main/,
+    );
+    const definition = buildToolDefinitions(current).find(
+      (tool) => tool.function.name === 'execute_javascript',
+    )!;
+    assert.match(
+      definition.function.description,
+      /code填写要立即执行的JavaScript语句，可以直接使用await，并用return返回字符串/,
+    );
+    const parameters = JSON.stringify(definition.function.parameters);
+    assert.match(parameters, /要立即执行的JavaScript语句，最多65536字节/);
+    assert.match(parameters, /可以直接使用await，并用return返回字符串/);
+    assert.doesNotMatch(
+      definition.function.description + parameters,
+      /函数体|函数外壳|async function main/,
+    );
+  }
+});
+
 test('sandbox documentation keeps diagnostic and waiting contracts explicit without new configuration', () => {
   const doc = readFileSync(
     new URL('../../../docs/sandbox.md', import.meta.url),
@@ -52,4 +80,6 @@ test('sandbox documentation keeps diagnostic and waiting contracts explicit with
   assert.match(doc, /没有 `Intl`/);
   assert.match(doc, /contract diagnostic/);
   assert.match(doc, /没有新增配置项/);
+  assert.match(doc, /`code` 填写要立即执行的 JavaScript 语句/);
+  assert.doesNotMatch(doc, /函数体|函数外壳/);
 });

@@ -246,7 +246,7 @@ function cancel_reminder({}: { id: ReminderId; revision: number }): ReminderStor
   execute_javascript: {
     summary: '在隔离的JavaScript沙箱中执行代码。',
     ts: `/**
- * code 是 async 函数体（最多65536字节），必须 return 字符串（结构化结果自行 JSON.stringify）；description 写用途（最多1024字节）。
+ * code填写要立即执行的JavaScript语句（最多65536字节），可以直接使用await，并用return返回字符串（结构化结果自行JSON.stringify）；description写用途（最多1024字节）。
  * 无文件、网络、环境变量、Intl、setTimeout；console.log 等只接受字符串，输出进 logs。
  * 代码内用 await tools.read_events({ limit: 20 }) 这样的形式调用工具，参数与结果相同，失败返回 status 结果、不抛异常。
  * 代码内不可用：finish、manage_attention、get_wake_state、execute_javascript。

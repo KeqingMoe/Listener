@@ -3,6 +3,31 @@ import assert from 'node:assert/strict';
 import { startExecution } from '../../../src/sandbox/executor.ts';
 import { isExecutionDiagnostic } from '../../../src/sandbox/protocol.ts';
 
+test('direct statements and called helpers return strings without auto-invoking function definitions', async () => {
+  for (const code of [
+    'const n = await Promise.resolve(42); return n.toString();',
+    'async function compute() { return "42"; } return await compute();',
+  ]) {
+    const result = await startExecution({ code, timeoutMs: 3000 }).result;
+    assert.equal(result.status, 'completed');
+    if (result.status === 'completed') {
+      assert.equal(result.value, '42');
+    }
+  }
+  for (const [code, error] of [
+    ['async function() { return "42"; }', 'syntax_error'],
+    ['async function compute() { return "42"; }', 'invalid_return_type'],
+    ['async () => { return "42"; }', 'invalid_return_type'],
+  ]) {
+    const result = await startExecution({ code: code!, timeoutMs: 3000 })
+      .result;
+    assert.equal(result.status, 'failed');
+    if (result.status === 'failed') {
+      assert.equal(result.error, error);
+    }
+  }
+});
+
 test('guest diagnostics preserve compile, ReferenceError, promise rejection and thrown primitives', async () => {
   for (const [code, error, name, text] of [
     [
