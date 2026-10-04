@@ -9,19 +9,22 @@ import {
   chartMetrics,
   metricValue,
   resolveMetric,
-  scatterSummary,
+  requestSamples,
+  sampleSummary,
   resolveChartRange,
   resolveChartScale,
   resolveChartDots,
   resolveChartGuides,
-  trendLines,
+  sampleTrendLines,
   defaultScatterView,
   outcomes,
 } from '../../../src/dashboard/web/src/components/overview/chartMetrics.ts';
 import {
-  chartOptions,
+  barOptions,
+  scatterOptions,
   fitColor,
 } from '../../../src/dashboard/web/src/components/overview/chartOptions.ts';
+import { fitLines } from '../../../src/dashboard/web/src/components/overview/chartFit.ts';
 
 const p95 = { ...defaultScatterView, range: 'p95' } as const;
 
@@ -36,9 +39,9 @@ type Series = {
   z: number;
 };
 
-const allSeries = (option: ReturnType<typeof chartOptions>) =>
+const allSeries = (option: ReturnType<typeof scatterOptions>) =>
   option.series as Series[];
-const scatterSeries = (option: ReturnType<typeof chartOptions>) =>
+const scatterSeries = (option: ReturnType<typeof scatterOptions>) =>
   allSeries(option).filter((s) => s.type === 'scatter');
 
 const point: RequestTrendPoint = {
@@ -58,18 +61,25 @@ const point: RequestTrendPoint = {
 
 test('all eight metrics preserve zero and missing values; duration uses seconds and TPS is never inferred', () => {
   assert.deepEqual(
-    chartMetrics.map((metric) => metricValue(point, metric)),
+    chartMetrics
+      .filter((m) => m.key !== 'reasoning' && m.key !== 'firstEffect')
+      .map((metric) => metricValue(point, metric)),
     [1.5, 0, 100, 100, null, null, null, 100],
   );
-  for (const metric of chartMetrics) {
+  for (const metric of chartMetrics.filter(
+    (m) => m.key !== 'reasoning' && m.key !== 'firstEffect',
+  )) {
     assert.equal(metricValue({ ...point, [metric.field]: null }, metric), null);
     assert.equal(metricValue({ ...point, [metric.field]: 0 }, metric), 0);
     assert.equal(metricValue({ ...point, [metric.field]: NaN }, metric), null);
   }
+  const points = [point, { ...point, durationMs: null }];
   assert.deepEqual(
-    scatterSummary(
-      [point, { ...point, durationMs: null }],
-      resolveMetric('duration'),
+    sampleSummary(
+      requestSamples(points, resolveMetric('duration')),
+      'all',
+      'linear',
+      points.length,
     ),
     {
       total: 2,
@@ -105,14 +115,32 @@ test('cache hit rates plot percentages and retain zero, missing and percentile s
   };
   const colors = { text: '#fff', muted: '#aaa', border: '#333' };
   assert.equal(
-    (chartOptions(response, metric, colors, 'scatter').yAxis as { max: number })
-      .max,
+    (
+      scatterOptions(
+        {
+          ...response,
+          samples: requestSamples(response.points, metric),
+          categories: outcomes,
+        },
+        metric,
+        colors,
+      ).yAxis as { max: number }
+    ).max,
     100,
   );
   assert.ok(
     Math.abs(
       (
-        chartOptions(response, metric, colors, 'scatter', p95).yAxis as {
+        scatterOptions(
+          {
+            ...response,
+            samples: requestSamples(response.points, metric),
+            categories: outcomes,
+          },
+          metric,
+          colors,
+          p95,
+        ).yAxis as {
           max: number;
         }
       ).max - 97,
@@ -126,8 +154,14 @@ test('percentile display keeps ties and zeros, excludes missing samples and leav
     ...point,
     durationMs: i * 1000,
   }));
+  const withMissing = [...points, { ...point, durationMs: null }];
   assert.deepEqual(
-    scatterSummary([...points, { ...point, durationMs: null }], metric, 'p95'),
+    sampleSummary(
+      requestSamples(withMissing, metric),
+      'p95',
+      'linear',
+      withMissing.length,
+    ),
     {
       total: 101,
       drawable: 96,
@@ -140,7 +174,7 @@ test('percentile display keeps ties and zeros, excludes missing samples and leav
       limited: true,
     },
   );
-  assert.deepEqual(scatterSummary(points, metric, 'p99'), {
+  assert.deepEqual(sampleSummary(requestSamples(points, metric), 'p99'), {
     total: 100,
     drawable: 100,
     missing: 0,
@@ -151,26 +185,32 @@ test('percentile display keeps ties and zeros, excludes missing samples and leav
     upper: 99,
     limited: true,
   });
-  const small = scatterSummary(points.slice(0, 19), metric, 'p95');
+  const small = sampleSummary(
+    requestSamples(points.slice(0, 19), metric),
+    'p95',
+  );
   assert.equal(small.lower, null);
   assert.equal(small.upper, null);
   assert.equal(small.limited, false);
-  assert.deepEqual(scatterSummary(points.slice(0, 20), metric, 'p95'), {
-    total: 20,
-    drawable: 20,
-    missing: 0,
-    below: 0,
-    above: 0,
-    unplottable: 0,
-    lower: 0,
-    upper: 19,
-    limited: true,
-  });
+  assert.deepEqual(
+    sampleSummary(requestSamples(points.slice(0, 20), metric), 'p95'),
+    {
+      total: 20,
+      drawable: 20,
+      missing: 0,
+      below: 0,
+      above: 0,
+      unplottable: 0,
+      lower: 0,
+      upper: 19,
+      limited: true,
+    },
+  );
   const ties = points.map((p, i) => ({
     ...p,
     durationMs: i < 3 ? 2000 : i > 96 ? 97000 : p.durationMs,
   }));
-  const tied = scatterSummary(ties, metric, 'p95');
+  const tied = sampleSummary(requestSamples(ties, metric), 'p95');
   assert.equal(tied.lower, 2);
   assert.equal(tied.upper, 97);
   assert.equal(tied.below, 0);
@@ -184,7 +224,16 @@ test('percentile display keeps ties and zeros, excludes missing samples and leav
     buckets: [],
   };
   const colors = { text: '#fff', muted: '#aaa', border: '#333' };
-  const option = chartOptions(response, metric, colors, 'scatter', p95);
+  const option = scatterOptions(
+    {
+      ...response,
+      samples: requestSamples(response.points, metric),
+      categories: outcomes,
+    },
+    metric,
+    colors,
+    p95,
+  );
   assert.equal((option.yAxis as { max: number }).max, 97);
   const series = scatterSeries(option);
   assert.deepEqual(
@@ -194,13 +243,12 @@ test('percentile display keeps ties and zeros, excludes missing samples and leav
   assert.ok(
     series.every((s) => s.symbolSize === 2 && s.itemStyle.opacity === 0.9),
   );
-  assert.deepEqual(
-    chartOptions(response, metric, colors, 'bar', p95).series,
-    chartOptions(response, metric, colors, 'bar').series,
+  assert.ok(
+    allSeries(barOptions(response, colors)).every((s) => s.type === 'bar'),
   );
   assert.equal(
     (
-      chartOptions(response, metric, colors, 'bar', p95).yAxis as {
+      barOptions(response, colors).yAxis as {
         max?: number;
       }
     ).max,
@@ -236,15 +284,19 @@ test('automatic axis floors stay below visible values without forcing positive d
   };
   const colors = { text: '#fff', muted: '#aaa', border: '#333' };
   const metric = resolveMetric('totalInput');
-  const axis = chartOptions(response, metric, colors, 'scatter').yAxis as {
+  const axis = scatterOptions(
+    {
+      ...response,
+      samples: requestSamples(response.points, metric),
+      categories: outcomes,
+    },
+    metric,
+    colors,
+  ).yAxis as {
     min: number;
   };
   assert.ok(axis.min > 0 && axis.min <= 19220);
-  assert.equal(
-    (chartOptions(response, metric, colors, 'bar').yAxis as { min: number })
-      .min,
-    0,
-  );
+  assert.equal((barOptions(response, colors).yAxis as { min: number }).min, 0);
 });
 
 test('all-zero, all-100-percent and constant samples retain ties and nondegenerate axes', () => {
@@ -268,7 +320,7 @@ test('all-zero, all-100-percent and constant samples retain ties and nondegenera
       buckets: [],
     };
     for (const range of ['all', 'p95', 'p99'] as const) {
-      const summary = scatterSummary(points, metric, range);
+      const summary = sampleSummary(requestSamples(points, metric), range);
       assert.equal(summary.drawable, 100);
       assert.equal(summary.below, 0);
       assert.equal(summary.above, 0);
@@ -280,10 +332,19 @@ test('all-zero, all-100-percent and constant samples retain ties and nondegenera
         summary.upper,
         range === 'all' ? null : value / metric.divisor,
       );
-      const option = chartOptions(response, metric, colors, 'scatter', {
-        ...defaultScatterView,
-        range,
-      });
+      const option = scatterOptions(
+        {
+          ...response,
+          samples: requestSamples(response.points, metric),
+          categories: outcomes,
+        },
+        metric,
+        colors,
+        {
+          ...defaultScatterView,
+          range,
+        },
+      );
       const axis = option.yAxis as { min: number; max?: number };
       assert.ok(Number.isFinite(axis.min) && axis.min >= 0);
       assert.ok(axis.min <= value / metric.divisor);
@@ -306,7 +367,7 @@ test('two-tail log clipping separates clipped zeros from unplottable retained ze
     durationMs: i * 1000,
   }));
   for (const range of ['p95', 'p99'] as const) {
-    const summary = scatterSummary(points, metric, range, 'log');
+    const summary = sampleSummary(requestSamples(points, metric), range, 'log');
     assert.deepEqual(
       [summary.below, summary.above, summary.unplottable, summary.drawable],
       range === 'p95' ? [2, 2, 0, 96] : [0, 0, 1, 99],
@@ -318,11 +379,14 @@ test('two-tail log clipping separates clipped zeros from unplottable retained ze
       bucketMs: 1000,
       buckets: [],
     };
-    const option = chartOptions(
-      response,
+    const option = scatterOptions(
+      {
+        ...response,
+        samples: requestSamples(response.points, metric),
+        categories: outcomes,
+      },
       metric,
       { text: '#fff', muted: '#aaa', border: '#333' },
-      'scatter',
       { ...defaultScatterView, range, scale: 'log' },
     );
     const axis = option.yAxis as { min: number; max: number };
@@ -334,7 +398,7 @@ test('two-tail log clipping separates clipped zeros from unplottable retained ze
     );
   }
   const zeros = points.map((p) => ({ ...p, durationMs: 0 }));
-  const summary = scatterSummary(zeros, metric, 'p95', 'log');
+  const summary = sampleSummary(requestSamples(zeros, metric), 'p95', 'log');
   assert.deepEqual(
     [summary.below, summary.above, summary.unplottable, summary.drawable],
     [0, 0, 100, 0],
@@ -353,7 +417,9 @@ test('invalid route metric resolves to duration, including arrays and inherited 
   ]) {
     assert.equal(resolveMetric(value).key, 'duration');
   }
-  for (const metric of chartMetrics) {
+  for (const metric of chartMetrics.filter(
+    (m) => m.key !== 'reasoning' && m.key !== 'firstEffect',
+  )) {
     assert.equal(resolveMetric(metric.key), metric);
   }
 });
@@ -371,11 +437,14 @@ test('options preserve all 10000 raw timestamp/value pairs and seven outcome ser
     bucketMs: 1000,
     buckets: [],
   };
-  const option = chartOptions(
-    response,
+  const option = scatterOptions(
+    {
+      ...response,
+      samples: requestSamples(points, resolveMetric('duration')),
+      categories: outcomes,
+    },
     resolveMetric('duration'),
     { text: '#fff', muted: '#aaa', border: '#333' },
-    'scatter',
   );
   const series = scatterSeries(option);
   assert.equal(series.length, 7);
@@ -389,17 +458,20 @@ test('options preserve all 10000 raw timestamp/value pairs and seven outcome ser
   assert.ok(
     series.every((series) => series.silent && series.emphasis.disabled),
   );
-  assert.deepEqual(scatterSummary(points, resolveMetric('duration')), {
-    total: 10000,
-    drawable: 10000,
-    missing: 0,
-    below: 0,
-    above: 0,
-    unplottable: 0,
-    lower: null,
-    upper: null,
-    limited: false,
-  });
+  assert.deepEqual(
+    sampleSummary(requestSamples(points, resolveMetric('duration'))),
+    {
+      total: 10000,
+      drawable: 10000,
+      missing: 0,
+      below: 0,
+      above: 0,
+      unplottable: 0,
+      lower: null,
+      upper: null,
+      limited: false,
+    },
+  );
 });
 
 test('log scale excludes non-positive values honestly and is unavailable for percentages', () => {
@@ -418,17 +490,20 @@ test('log scale excludes non-positive values honestly and is unavailable for per
     outcome: 'success' as const,
     durationMs,
   }));
-  assert.deepEqual(scatterSummary(points, duration, 'all', 'log'), {
-    total: 4,
-    drawable: 2,
-    missing: 0,
-    below: 0,
-    above: 0,
-    unplottable: 2,
-    lower: null,
-    upper: null,
-    limited: false,
-  });
+  assert.deepEqual(
+    sampleSummary(requestSamples(points, duration), 'all', 'log'),
+    {
+      total: 4,
+      drawable: 2,
+      missing: 0,
+      below: 0,
+      above: 0,
+      unplottable: 2,
+      lower: null,
+      upper: null,
+      limited: false,
+    },
+  );
   const response: RequestTrendsResponse = {
     range: { since: point.startedAt, until: point.startedAt + 10 },
     availability: { telemetry: true, sessions: [] },
@@ -437,12 +512,21 @@ test('log scale excludes non-positive values honestly and is unavailable for per
     buckets: [],
   };
   const colors = { text: '#fff', muted: '#aaa', border: '#333' };
-  const option = chartOptions(response, duration, colors, 'scatter', {
-    range: 'all',
-    scale: 'log',
-    dots: 'bold',
-    guides: 'quantiles',
-  });
+  const option = scatterOptions(
+    {
+      ...response,
+      samples: requestSamples(response.points, duration),
+      categories: outcomes,
+    },
+    duration,
+    colors,
+    {
+      range: 'all',
+      scale: 'log',
+      dots: 'bold',
+      guides: 'quantiles',
+    },
+  );
   assert.equal((option.yAxis as { type: string }).type, 'log');
   const series = scatterSeries(option);
   assert.deepEqual(
@@ -473,7 +557,12 @@ test('trend lines use a sliding window, include clipped samples and always show 
     { ...point, startedAt: 400, durationMs: 3000 },
     { ...point, startedAt: 10, durationMs: null },
   ];
-  const lines = trendLines(points, range, 100, metric, 'linear');
+  const lines = sampleTrendLines(
+    requestSamples(points, metric),
+    range,
+    100,
+    'linear',
+  );
   assert.deepEqual(
     lines.median.map(([x]) => x),
     [0, 50, 100, 150, 200, 250, 300, 350, 400],
@@ -497,16 +586,29 @@ test('trend lines use a sliding window, include clipped samples and always show 
   );
   // 200之后只剩远处2个样本，断开而不是外推。
   assert.ok(lines.p5.slice(4).every(([, y]) => y === null));
-  const sparse = trendLines(points.slice(0, 19), range, 100, metric, 'linear');
+  const sparse = sampleTrendLines(
+    requestSamples(points.slice(0, 19), metric),
+    range,
+    100,
+    'linear',
+  );
   assert.equal(sparse.p5[0]![1], null);
   assert.equal(sparse.p95[0]![1], null);
   assert.ok(lines.median.slice(4).every(([, y]) => y === null));
   assert.ok(lines.p95.slice(4).every(([, y]) => y === null));
   const zeros = points.map((p) => ({ ...p, durationMs: 0 }));
-  assert.equal(trendLines(zeros, range, 100, metric, 'log').p5[0]![1], null);
-  assert.equal(trendLines(zeros, range, 100, metric, 'linear').p5[0]![1], 0);
+  assert.equal(
+    sampleTrendLines(requestSamples(zeros, metric), range, 100, 'log')
+      .p5[0]![1],
+    null,
+  );
+  assert.equal(
+    sampleTrendLines(requestSamples(zeros, metric), range, 100, 'linear')
+      .p5[0]![1],
+    0,
+  );
   assert.deepEqual(
-    trendLines([], { since: 1, until: 0 }, 100, metric, 'linear'),
+    sampleTrendLines([], { since: 1, until: 0 }, 100, 'linear'),
     {
       median: [],
       p5: [],
@@ -514,11 +616,13 @@ test('trend lines use a sliding window, include clipped samples and always show 
     },
   );
   assert.equal(
-    trendLines(zeros, range, 100, metric, 'log').median[0]![1],
+    sampleTrendLines(requestSamples(zeros, metric), range, 100, 'log')
+      .median[0]![1],
     null,
   );
   assert.equal(
-    trendLines(zeros, range, 100, metric, 'linear').median[0]![1],
+    sampleTrendLines(requestSamples(zeros, metric), range, 100, 'linear')
+      .median[0]![1],
     0,
   );
   const response: RequestTrendsResponse = {
@@ -530,7 +634,18 @@ test('trend lines use a sliding window, include clipped samples and always show 
   };
   const colors = { text: '#fff', muted: '#aaa', border: '#333' };
   const names = (view: typeof defaultScatterView) =>
-    allSeries(chartOptions(response, metric, colors, 'scatter', view))
+    allSeries(
+      scatterOptions(
+        {
+          ...response,
+          samples: requestSamples(response.points, metric),
+          categories: outcomes,
+        },
+        metric,
+        colors,
+        view,
+      ),
+    )
       .filter((s) => s.type === 'line')
       .map((s) => s.name);
   // 分位线在每种裁剪范围下都存在，裁剪不改变统计值。
@@ -539,14 +654,31 @@ test('trend lines use a sliding window, include clipped samples and always show 
     assert.deepEqual(names(view), ['中位数', 'P95', 'P5']);
     for (const name of ['P5', 'P95']) {
       const line = (v: typeof defaultScatterView) =>
-        allSeries(chartOptions(response, metric, colors, 'scatter', v)).find(
-          (s) => s.name === name,
-        )!.data;
+        allSeries(
+          scatterOptions(
+            {
+              ...response,
+              samples: requestSamples(response.points, metric),
+              categories: outcomes,
+            },
+            metric,
+            colors,
+            v,
+          ),
+        ).find((s) => s.name === name)!.data;
       assert.deepEqual(line(view), line(defaultScatterView));
     }
   }
   const plotted = allSeries(
-    chartOptions(response, metric, colors, 'scatter'),
+    scatterOptions(
+      {
+        ...response,
+        samples: requestSamples(response.points, metric),
+        categories: outcomes,
+      },
+      metric,
+      colors,
+    ),
   ).filter((s) => s.type === 'line') as unknown as Array<{
     lineStyle: { type: string; opacity: number };
     smooth: number;
@@ -586,11 +718,20 @@ test('fit mode draws one independent line per group without changing scatter dat
     let expected: unknown;
     for (const range of ['all', 'p95', 'p99'] as const) {
       const view = { ...defaultScatterView, range, guides: 'fit' } as const;
-      const option = chartOptions(data, metric, colors, 'scatter', view);
-      const hidden = chartOptions(data, metric, colors, 'scatter', {
-        ...view,
-        guides: 'hide',
-      });
+      const samples = requestSamples(points, metric);
+      const fitted = fitLines(points, metric);
+      const scatterData = { ...data, samples, categories: outcomes };
+      const option = scatterOptions(scatterData, metric, colors, view, fitted);
+      const hidden = scatterOptions(
+        scatterData,
+        metric,
+        colors,
+        {
+          ...view,
+          guides: 'hide',
+        },
+        fitted,
+      );
       const lines = allSeries(option).filter((s) => s.type === 'line');
       assert.deepEqual(
         lines.map((s) => s.name),
@@ -611,12 +752,16 @@ test('fit mode draws one independent line per group without changing scatter dat
       assert.equal(styled[0]!.lineStyle.color, fitColor('11'));
       assert.equal(styled[1]!.lineStyle.color, fitColor('22'));
       assert.ok(styled.every((s) => s.silent && !s.connectNulls));
-      const single = chartOptions(
-        { ...data, points: points.slice(16) },
+      const single = scatterOptions(
+        {
+          ...data,
+          samples: requestSamples(points.slice(16), metric),
+          categories: outcomes,
+        },
         metric,
         colors,
-        'scatter',
         view,
+        fitLines(points.slice(16), metric),
       );
       assert.deepEqual(
         allSeries(single).filter((s) => s.type === 'line'),
@@ -629,17 +774,27 @@ test('fit mode draws one independent line per group without changing scatter dat
   )) {
     assert.equal(
       allSeries(
-        chartOptions(data, metric, colors, 'scatter', {
-          ...defaultScatterView,
-          guides: 'fit',
-        }),
+        scatterOptions(
+          {
+            ...data,
+            samples: requestSamples(points, metric),
+            categories: outcomes,
+          },
+          metric,
+          colors,
+          {
+            ...defaultScatterView,
+            guides: 'fit',
+          },
+          fitLines(points, metric),
+        ),
       ).filter((s) => s.type === 'line').length,
       0,
     );
   }
 });
 
-test('guide toggle removes all statistical lines without changing points, axes or bars', () => {
+test('guide toggle removes all statistical lines without changing points or axes', () => {
   assert.equal(resolveChartGuides('hide'), 'hide');
   assert.equal(resolveChartGuides('fit'), 'fit');
   assert.equal(resolveChartGuides('fit', false), 'hide');
@@ -662,20 +817,14 @@ test('guide toggle removes all statistical lines without changing points, axes o
     for (const scale of ['linear', 'log'] as const) {
       const show = { ...defaultScatterView, range, scale };
       const hide = { ...show, guides: 'hide' } as const;
-      const visible = chartOptions(
-        response,
-        resolveMetric('duration'),
-        colors,
-        'scatter',
-        show,
-      );
-      const hidden = chartOptions(
-        response,
-        resolveMetric('duration'),
-        colors,
-        'scatter',
-        hide,
-      );
+      const metric = resolveMetric('duration');
+      const scatterData = {
+        ...response,
+        samples: requestSamples(response.points, metric),
+        categories: outcomes,
+      };
+      const visible = scatterOptions(scatterData, metric, colors, show);
+      const hidden = scatterOptions(scatterData, metric, colors, hide);
       assert.equal(
         allSeries(visible).filter((s) => s.type === 'line').length,
         3,
@@ -688,12 +837,6 @@ test('guide toggle removes all statistical lines without changing points, axes o
       assert.deepEqual(hidden.yAxis, visible.yAxis);
       // formatter闭包每次新建，比较其余坐标轴配置。
       assert.equal(JSON.stringify(hidden.xAxis), JSON.stringify(visible.xAxis));
-      assert.deepEqual(
-        chartOptions(response, resolveMetric('duration'), colors, 'bar', hide)
-          .series,
-        chartOptions(response, resolveMetric('duration'), colors, 'bar', show)
-          .series,
-      );
     }
   }
 });

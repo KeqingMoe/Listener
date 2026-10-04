@@ -16,6 +16,8 @@ import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import { BarChart, LineChart, ScatterChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent } from 'echarts/components';
+import { useWakeEffectTrends } from '../../composables/useWakeEffectTrends';
+import { wakeSamples, wakeCategories, reasoningCounts } from './chartSources';
 import { useRequestTrends } from '../../composables/useRequestTrends';
 import {
   chartDots,
@@ -35,9 +37,10 @@ import {
   coordinateTime,
   outcomes,
   resolveMetric,
-  scatterSummary,
+  sampleSummary,
+  requestSamples,
 } from './chartMetrics';
-import { chartOptions, fitColor, plot } from './chartOptions';
+import { barOptions, scatterOptions, fitColor, plot } from './chartOptions';
 import { FIT_WINDOW, FIT_MIN_SAMPLES, fitLines, supportsFit } from './chartFit';
 
 use([
@@ -72,6 +75,33 @@ watch(
   { flush: 'sync' },
 );
 const metric = computed(() => resolveMetric(chartQuery.value.chartMetric));
+const isWake = computed(() => metric.value.key === 'firstEffect');
+const {
+  data: wakeData,
+  loading: wakeLoading,
+  error: wakeError,
+  retry: retryWake,
+} = useWakeEffectTrends(isWake);
+const samples = computed(() =>
+  isWake.value
+    ? wakeSamples(wakeData.value?.points ?? [])
+    : requestSamples(data.value?.points ?? [], metric.value),
+);
+const reasoning = computed(() => reasoningCounts(data.value?.points ?? []));
+const wakeStatuses = computed(() =>
+  wakeCategories.map((category) => ({
+    ...category,
+    count:
+      wakeData.value?.points.filter((point) => point.outcome === category.key)
+        .length ?? 0,
+  })),
+);
+const scatterRange = computed(() =>
+  isWake.value ? wakeData.value?.range : data.value?.range,
+);
+const scatterBucketMs = computed(
+  () => (isWake.value ? wakeData.value?.bucketMs : data.value?.bucketMs) ?? 0,
+);
 const view = computed<ScatterView>(() => ({
   range: resolveChartRange(chartQuery.value.chartRange),
   scale: resolveChartScale(chartQuery.value.chartScale, metric.value),
@@ -83,7 +113,7 @@ const view = computed<ScatterView>(() => ({
 }));
 const displayRange = computed(() => view.value.range);
 const windowLabel = computed(() => {
-  const minutes = ((data.value?.bucketMs ?? 0) * TREND_WINDOW_BUCKETS) / 60000;
+  const minutes = (scatterBucketMs.value * TREND_WINDOW_BUCKETS) / 60000;
   return minutes >= 60
     ? `${coordinateNumber(minutes / 60)} 小时`
     : `${coordinateNumber(minutes)} 分钟`;
@@ -174,7 +204,7 @@ const scatterChart = ref<InstanceType<typeof VChart>>();
 const barChart = ref<InstanceType<typeof VChart>>();
 const colors = ref({ text: '#263449', muted: '#68788a', border: '#d8e0e8' });
 const barOption = computed(() =>
-  data.value ? chartOptions(data.value, metric.value, colors.value, 'bar') : {},
+  data.value ? barOptions(data.value, colors.value) : {},
 );
 const fitted = computed(() =>
   view.value.guides === 'fit' && data.value
@@ -186,23 +216,29 @@ const fitted = computed(() =>
     : [],
 );
 const scatterOption = computed(() =>
-  data.value
-    ? chartOptions(
-        data.value,
+  scatterRange.value
+    ? scatterOptions(
+        {
+          range: scatterRange.value,
+          bucketMs: scatterBucketMs.value,
+          samples: samples.value,
+          categories: isWake.value ? wakeCategories : outcomes,
+        },
         metric.value,
         colors.value,
-        'scatter',
         view.value,
         fitted.value,
       )
     : {},
 );
 const summary = computed(() =>
-  scatterSummary(
-    data.value?.points ?? [],
-    metric.value,
+  sampleSummary(
+    samples.value,
     view.value.range,
     view.value.scale,
+    (isWake.value
+      ? wakeData.value?.points.length
+      : data.value?.points.length) ?? 0,
   ),
 );
 const total = computed(
@@ -268,7 +304,7 @@ watch(
   },
   { flush: 'post' },
 );
-watch([metric, data, view], hideCrosshair);
+watch([metric, data, wakeData, view], hideCrosshair);
 let themeObserver: MutationObserver | undefined;
 let resizeObserver: ResizeObserver | undefined;
 let media: MediaQueryList | undefined;
@@ -332,7 +368,7 @@ onUnmounted(() => {
     ref="root"
     class="overview-charts"
     aria-label="请求趋势图表"
-    :aria-busy="loading"
+    :aria-busy="loading || wakeLoading"
   >
     <div
       v-if="loading && data"
@@ -396,154 +432,204 @@ onUnmounted(() => {
         </p>
       </section>
     </div>
-    <template v-if="data">
-      <section class="panel chart-panel scatter-panel">
-        <div class="section-title">
-          <h2>每请求指标</h2>
-          <label
-            >纵轴
-            <select
-              aria-label="散点纵轴指标"
-              :value="metric.key"
-              @change="selectMetric"
-            >
-              <option
-                v-for="item in chartMetrics"
-                :key="item.key"
-                :value="item.key"
-              >
-                {{ item.label }}
-              </option>
-            </select></label
+    <section class="panel chart-panel scatter-panel">
+      <div class="section-title">
+        <h2>耗时与请求指标</h2>
+        <label
+          >纵轴
+          <select
+            aria-label="散点纵轴指标"
+            :value="metric.key"
+            @change="selectMetric"
           >
-          <div class="chart-controls">
-            <button
-              v-for="control in controls"
-              :key="control.key"
-              type="button"
-              class="cycle"
-              :aria-label="`${control.label}：${control.current}，点击切换`"
-              :title="control.title"
-              :disabled="control.next === null"
-              @click="control.next && setView(control.key, control.next)"
+            <option
+              v-for="item in chartMetrics"
+              :key="item.key"
+              :value="item.key"
             >
-              <span class="muted">{{ control.name }}</span>
-              {{ control.current }}
-            </button>
-          </div>
+              {{ item.label }}
+            </option>
+          </select></label
+        >
+        <div class="chart-controls">
+          <button
+            v-for="control in controls"
+            :key="control.key"
+            type="button"
+            class="cycle"
+            :aria-label="`${control.label}：${control.current}，点击切换`"
+            :title="control.title"
+            :disabled="control.next === null"
+            @click="control.next && setView(control.key, control.next)"
+          >
+            <span class="muted">{{ control.name }}</span>
+            {{ control.current }}
+          </button>
         </div>
-        <p class="chart-summary muted" data-testid="request-scatter-summary">
-          总数 {{ summary.total }} · 可绘制 {{ summary.drawable }} · 缺失
-          {{ summary.missing }} · 低于下限 {{ summary.below }} · 高于上限
-          {{ summary.above
-          }}<span v-if="summary.unplottable">
-            · 对数轴无法显示的零值 {{ summary.unplottable }}</span
-          ><span v-if="summary.lower !== null">
-            · 下限 {{ coordinateNumber(summary.lower) }} {{ metric.unit }}</span
-          ><span v-if="summary.upper !== null">
-            · 上限 {{ coordinateNumber(summary.upper) }} {{ metric.unit }}</span
+      </div>
+      <p v-if="isWake && wakeLoading" role="status">正在加载可见效果趋势…</p>
+      <p v-if="isWake && wakeError" role="alert">
+        {{
+          wakeData
+            ? '可见效果数据已过期，更新失败：'
+            : '可见效果趋势加载失败：'
+        }}{{ wakeError }}
+        <button type="button" @click="retryWake">重试可见效果趋势</button>
+      </p>
+      <p
+        v-if="metric.key === 'reasoning'"
+        class="chart-summary muted"
+        data-testid="reasoning-summary"
+      >
+        部分观测 {{ reasoning.partial }} · 未观测 {{ reasoning.notObserved }} ·
+        尚无测量 {{ reasoning.unknown }}；仅完整观测参与绘图与分位统计，不按 0
+        补。
+      </p>
+      <p
+        v-if="isWake"
+        class="chart-summary muted"
+        data-testid="wake-effect-trends-summary"
+      >
+        <span v-for="status in wakeStatuses" :key="status.key"
+          >{{ status.label }} {{ status.count }} ·
+        </span>
+        <template v-if="wakeData">
+          <span v-if="!wakeData.availability.telemetry"
+            >可见效果遥测不可用；空图不代表没有等待。</span
           >
-        </p>
-        <ul
-          v-if="view.guides === 'fit' && fitted.length"
-          class="chart-legend fit-legend"
-          aria-label="拟合线群组图例"
+          <span v-else-if="wakeData.collectionStartedAt === null"
+            >尚无采集记录。</span
+          >
+          <span v-else-if="wakeData.range.since < wakeData.collectionStartedAt"
+            >{{
+              coordinateTime(wakeData.collectionStartedAt)
+            }}
+            之前历史无采集，不按 0 填充。</span
+          >
+        </template>
+      </p>
+      <p class="chart-summary muted" data-testid="request-scatter-summary">
+        总数 {{ summary.total }} · 可绘制 {{ summary.drawable }} · 缺失
+        {{ summary.missing }} · 低于下限 {{ summary.below }} · 高于上限
+        {{ summary.above
+        }}<span v-if="summary.unplottable">
+          · 对数轴无法显示的零值 {{ summary.unplottable }}</span
+        ><span v-if="summary.lower !== null">
+          · 下限 {{ coordinateNumber(summary.lower) }} {{ metric.unit }}</span
+        ><span v-if="summary.upper !== null">
+          · 上限 {{ coordinateNumber(summary.upper) }} {{ metric.unit }}</span
         >
-          <li v-for="line in fitted" :key="line.groupId">
-            <span
-              :style="{ backgroundColor: fitColor(line.groupId) }"
-              aria-hidden="true"
-            ></span
-            >群 {{ line.groupId }}
-          </li>
-        </ul>
-        <div
-          class="chart-box scatter-box chart-crosshair-host"
-          role="img"
-          aria-label="每请求原始散点图"
-          @mouseleave="hideCrosshair"
-        >
-          <VChart
-            ref="scatterChart"
-            :option="scatterOption"
-            autoresize
-            :update-options="{ notMerge: true }"
-          />
-          <div
-            v-if="crosshair.visible"
-            class="chart-crosshair"
-            data-testid="chart-crosshair"
+      </p>
+      <ul
+        v-if="view.guides === 'fit' && fitted.length"
+        class="chart-legend fit-legend"
+        aria-label="拟合线群组图例"
+      >
+        <li v-for="line in fitted" :key="line.groupId">
+          <span
+            :style="{ backgroundColor: fitColor(line.groupId) }"
             aria-hidden="true"
+          ></span
+          >群 {{ line.groupId }}
+        </li>
+      </ul>
+      <div
+        class="chart-box scatter-box chart-crosshair-host"
+        role="img"
+        :aria-label="isWake ? '每逻辑wake原始散点图' : '每请求原始散点图'"
+        @mouseleave="hideCrosshair"
+      >
+        <VChart
+          ref="scatterChart"
+          :option="scatterOption"
+          autoresize
+          :update-options="{ notMerge: true }"
+        />
+        <div
+          v-if="crosshair.visible"
+          class="chart-crosshair"
+          data-testid="chart-crosshair"
+          aria-hidden="true"
+        >
+          <i
+            class="vertical"
+            :style="{
+              left: `${crosshair.left}px`,
+              top: `${plot.top}px`,
+              bottom: `${plot.bottom}px`,
+            }"
+          ></i>
+          <i
+            class="horizontal"
+            :style="{
+              top: `${crosshair.top}px`,
+              left: `${plot.left}px`,
+              right: `${plot.right}px`,
+            }"
+          ></i>
+          <span
+            class="coordinate x-coordinate"
+            data-testid="crosshair-x"
+            :style="{
+              left: `clamp(94px, ${crosshair.left}px, calc(100% - 94px))`,
+            }"
+            >{{ crosshair.x }}</span
           >
-            <i
-              class="vertical"
-              :style="{
-                left: `${crosshair.left}px`,
-                top: `${plot.top}px`,
-                bottom: `${plot.bottom}px`,
-              }"
-            ></i>
-            <i
-              class="horizontal"
-              :style="{
-                top: `${crosshair.top}px`,
-                left: `${plot.left}px`,
-                right: `${plot.right}px`,
-              }"
-            ></i>
-            <span
-              class="coordinate x-coordinate"
-              data-testid="crosshair-x"
-              :style="{
-                left: `clamp(94px, ${crosshair.left}px, calc(100% - 94px))`,
-              }"
-              >{{ crosshair.x }}</span
-            >
-            <span
-              class="coordinate y-coordinate"
-              data-testid="crosshair-y"
-              :style="{ top: `${crosshair.top}px` }"
-              >{{ crosshair.y }}</span
-            >
-          </div>
+          <span
+            class="coordinate y-coordinate"
+            data-testid="crosshair-y"
+            :style="{ top: `${crosshair.top}px` }"
+            >{{ crosshair.y }}</span
+          >
         </div>
-        <p class="chart-note muted">
-          保留每个请求的真实开始时间，不聚合、不抽样、不移动点。缺失不作
-          0；零值正常绘制。<span v-if="metric.key === 'ttft'"
-            >TTFT 是首个有效输出前的等待时间，缺失不作 0。</span
-          ><span v-if="metric.key === 'tps'"
-            >TPS 仅统计首个有效输出之后的输出阶段，不含 TTFT。</span
-          ><span v-if="summary.total && !summary.drawable"
-            >当前指标无可绘制数据。</span
-          ><span v-if="displayRange !== 'all'"
-            >两端各裁去
-            {{
-              displayRange === 'p95' ? '2.5%' : '0.5%'
-            }}，按样本数向下取整，边界同值全部保留；不改变柱状图和汇总。<span
-              v-if="!summary.limited"
-              >有效点少于20条，暂不裁剪。</span
-            ></span
-          ><span v-if="view.guides === 'quantiles'"
-            >实线为中位数，淡虚线为
-            P5/P95，标出中间约90%的分位范围（非置信带，不填色）。按约
-            {{ windowLabel }} 的滑动窗口统计，中位数至少需
-            {{ TREND_MIN_SAMPLES.median }} 条样本，分位线至少需
-            {{ TREND_MIN_SAMPLES.p95 }}
-            条，不足时断开。统计包含被裁剪的点，分位线不等于全局裁剪边界。</span
-          ><span v-if="view.guides === 'fit'"
-            >按群分段，以最多
-            {{ FIT_WINDOW }} 个相邻请求做稳健局部拟合，每段至少需
-            {{ FIT_MIN_SAMPLES }}
-            个有效样本，不强制单调；总输入明显骤降、长时间断档或缺失值处断开，边界为启发式识别，不代表已确认压缩。统计包含被裁剪的点，原始散点不变。<span
-              v-if="!fitted.length"
-              >当前范围暂无可绘制的拟合线。</span
-            ></span
-          ><span v-else-if="chartQuery.chartGuides === 'fit'"
-            >拟合仅支持缓存输入和总输入，当前指标暂不显示辅助线。</span
-          >十字线标签表示鼠标坐标，不代表最近请求。
-        </p>
-      </section>
-    </template>
+      </div>
+      <p class="chart-note muted">
+        <span v-if="isWake"
+          >一个点一次由消息触发的逻辑
+          wake，横轴为收到触发消息时间；只统计明确确认的群可见效果。当前
+          reaction/poke
+          仅受理，不作为确认。等待确认、未确认和中断不参与分位统计。</span
+        >
+        <span v-else>保留每个请求的真实开始时间。</span>
+        <span v-if="metric.key === 'reasoning'"
+          >推理耗时按每请求的推理/推理摘要增量观测，不含首个增量前的时间，并非服务端纯计算耗时；buffered
+          的 0 可能是真实观测值，不是缺失。</span
+        >
+        不聚合、不抽样、不移动点。缺失不作 0；零值正常绘制。<span
+          v-if="metric.key === 'ttft'"
+          >TTFT 是首个有效输出前的等待时间，缺失不作 0。</span
+        ><span v-if="metric.key === 'tps'"
+          >TPS 仅统计首个有效输出之后的输出阶段，不含 TTFT。</span
+        ><span v-if="summary.total && !summary.drawable"
+          >当前指标无可绘制数据。</span
+        ><span v-if="displayRange !== 'all'"
+          >两端各裁去
+          {{
+            displayRange === 'p95' ? '2.5%' : '0.5%'
+          }}，按样本数向下取整，边界同值全部保留；不改变柱状图和汇总。<span
+            v-if="!summary.limited"
+            >有效点少于20条，暂不裁剪。</span
+          ></span
+        ><span v-if="view.guides === 'quantiles'"
+          >实线为中位数，淡虚线为
+          P5/P95，标出中间约90%的分位范围（非置信带，不填色）。按约
+          {{ windowLabel }} 的滑动窗口统计，中位数至少需
+          {{ TREND_MIN_SAMPLES.median }} 条样本，分位线至少需
+          {{ TREND_MIN_SAMPLES.p95 }}
+          条，不足时断开。统计包含被裁剪的点，分位线不等于全局裁剪边界。</span
+        ><span v-if="view.guides === 'fit'"
+          >按群分段，以最多
+          {{ FIT_WINDOW }} 个相邻请求做稳健局部拟合，每段至少需
+          {{ FIT_MIN_SAMPLES }}
+          个有效样本，不强制单调；总输入明显骤降、长时间断档或缺失值处断开，边界为启发式识别，不代表已确认压缩。统计包含被裁剪的点，原始散点不变。<span
+            v-if="!fitted.length"
+            >当前范围暂无可绘制的拟合线。</span
+          ></span
+        ><span v-else-if="chartQuery.chartGuides === 'fit'"
+          >拟合仅支持缓存输入和总输入，当前指标暂不显示辅助线。</span
+        >十字线标签表示鼠标坐标，不代表最近请求。
+      </p>
+    </section>
   </section>
 </template>
 

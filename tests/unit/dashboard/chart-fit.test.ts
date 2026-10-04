@@ -8,6 +8,7 @@ import type {
 import {
   chartMetrics,
   resolveMetric,
+  metricValue,
 } from '../../../src/dashboard/web/src/components/overview/chartMetrics.ts';
 import {
   FIT_WINDOW,
@@ -162,7 +163,7 @@ test('linear trends remain exact at real irregular timestamps, including edges',
     assert.equal(data.length, raw.length);
     data.forEach(([at, value], i) => {
       assert.equal(at, raw[i]!.startedAt);
-      close(value, raw[i]![metric.field]!);
+      close(value, metricValue(raw[i]!, metric)!);
     });
   }
 });
@@ -186,7 +187,7 @@ test('sustained cache and total declines are preserved, never forced monotonic u
   for (const metric of [totalMetric, cachedMetric]) {
     const data = fitLines(raw, metric)[0]!.data;
     assert.equal(data.length, raw.length);
-    data.forEach(([, value], i) => close(value, raw[i]![metric.field]!));
+    data.forEach(([, value], i) => close(value, metricValue(raw[i]!, metric)!));
   }
 });
 
@@ -219,7 +220,13 @@ test('a total-input reset breaks both metrics with null at a real timestamp, no 
     assert.deepEqual(data[7], [raw[7]!.startedAt, null]);
     assert.equal(data[8]![0], raw[7]!.startedAt);
     for (const [at, value] of data.filter(([, y]) => y !== null)) {
-      close(value, raw.find((p) => p.startedAt === at)![metric.field]!);
+      close(
+        value,
+        metricValue(
+          raw.find((p) => p.startedAt === at)!,
+          metric,
+        )!,
+      );
     }
   }
 });

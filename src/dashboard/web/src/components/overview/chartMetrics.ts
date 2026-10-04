@@ -19,8 +19,22 @@ export const outcomes: {
 export const chartMetrics = [
   {
     key: 'duration',
-    label: '耗时（秒）',
+    label: '请求耗时（秒）',
     field: 'durationMs',
+    divisor: 1000,
+    unit: '秒',
+  },
+  {
+    key: 'reasoning',
+    label: '推理耗时（秒）',
+    field: 'reasoningDurationMs',
+    divisor: 1000,
+    unit: '秒',
+  },
+  {
+    key: 'firstEffect',
+    label: '首次副作用等待（秒）',
+    field: 'firstEffectWaitMs',
     divisor: 1000,
     unit: '秒',
   },
@@ -85,6 +99,15 @@ export function metricValue(
   point: RequestTrendPoint,
   metric: ChartMetric,
 ): number | null {
+  if (metric.key === 'firstEffect') {
+    return null;
+  }
+  if (
+    metric.key === 'reasoning' &&
+    point.reasoningTimingStatus !== 'complete'
+  ) {
+    return null;
+  }
   const value = point[metric.field];
   return value == null || !Number.isFinite(value) || value < 0
     ? null
@@ -175,16 +198,31 @@ export function percentile(sorted: readonly number[], p: number): number {
   return sorted[Math.max(0, Math.ceil(sorted.length * p) - 1)]!;
 }
 
-export function scatterSummary(
+export interface NumericSample {
+  time: number;
+  value: number;
+  category: string;
+}
+
+export function requestSamples(
   points: RequestTrendPoint[],
   metric: ChartMetric,
+): NumericSample[] {
+  return points.flatMap((point) => {
+    const value = metricValue(point, metric);
+    return value !== null && Number.isFinite(point.startedAt)
+      ? [{ time: point.startedAt, value, category: point.outcome }]
+      : [];
+  });
+}
+
+export function sampleSummary(
+  samples: NumericSample[],
   range: ChartRange = 'all',
   scale: ChartScale = 'linear',
+  total = samples.length,
 ) {
-  const values = points.flatMap((point) => {
-    const value = metricValue(point, metric);
-    return Number.isFinite(point.startedAt) && value !== null ? [value] : [];
-  });
+  const values = samples.filter(validSample).map((sample) => sample.value);
   // 两端各裁去一半：95%显示P2.5..P97.5，99%显示P0.5..P99.5。
   // 最近秩百分位会保留所有并列值；这只是显示范围，不是离群值检测。
   const limited = range !== 'all' && values.length >= 20;
@@ -208,9 +246,9 @@ export function scatterSummary(
         ).length
       : 0;
   return {
-    total: points.length,
+    total,
     drawable: values.length - below - above - unplottable,
-    missing: points.length - values.length,
+    missing: total - values.length,
     below,
     above,
     unplottable,
@@ -265,24 +303,24 @@ export interface TrendLines {
   p5: Array<[number, number | null]>;
 }
 
+export const validSample = (sample: NumericSample) =>
+  Number.isFinite(sample.time) &&
+  Number.isFinite(sample.value) &&
+  sample.value >= 0;
+
 /**
- * 滑动窗口的中位数与P5/P95：在范围内每半个桶取一个位置，统计其前后各1.5个桶时长内的请求。
- * 统计包括被显示范围裁剪掉的样本；对数刻度下非正值的统计结果留空。
+ * 每半个桶取一个位置，统计前后各1.5个桶时长内的数值样本。
+ * 包括显示范围裁剪掉的样本；对数刻度下非正统计结果留空。
  */
-export function trendLines(
-  points: RequestTrendPoint[],
+export function sampleTrendLines(
+  points: NumericSample[],
   range: { since: number; until: number },
   bucketMs: number,
-  metric: ChartMetric,
   scale: ChartScale,
 ): TrendLines {
   const samples = points
-    .flatMap((point) => {
-      const value = metricValue(point, metric);
-      return value !== null && Number.isFinite(point.startedAt)
-        ? [[point.startedAt, value] as const]
-        : [];
-    })
+    .filter(validSample)
+    .map((point) => [point.time, point.value] as const)
     .sort((a, b) => a[0] - b[0]);
   const median: TrendLines['median'] = [],
     p95: TrendLines['p95'] = [],

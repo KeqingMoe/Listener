@@ -1,18 +1,19 @@
 import type { EChartsOption } from 'echarts';
-import { fitLines } from './chartFit';
+import type { fitLines } from './chartFit';
 import type { RequestTrendsResponse } from '../../../../contracts/request-trends';
 import {
   axisNumber,
   axisFloor,
-  metricValue,
+  sampleSummary,
+  sampleTrendLines,
+  validSample,
+  type NumericSample,
   outcomes,
   timeLabel,
   type ChartMetric,
   type ScatterView,
   defaultScatterView,
   dotStyles,
-  scatterSummary,
-  trendLines,
 } from './chartMetrics';
 
 export const plot = { left: 66, right: 20, top: 34, bottom: 58 };
@@ -43,40 +44,52 @@ const DRAW_ORDER = [
   'failed',
 ] as const;
 
-export function chartOptions(
-  data: RequestTrendsResponse,
+type BarData = Pick<RequestTrendsResponse, 'range' | 'buckets'>;
+
+export function barOptions(data: BarData, colors: ChartColors): EChartsOption {
+  return {
+    ...baseOptions(data.range, colors),
+    yAxis: {
+      ...valueAxis(colors),
+      type: 'value',
+      min: 0,
+      minInterval: 1,
+      name: '请求数',
+    },
+    series: barSeries(data),
+  };
+}
+
+export interface ScatterData {
+  range: { since: number; until: number };
+  bucketMs: number;
+  samples: NumericSample[];
+  categories: { key: string; label: string; color: string }[];
+}
+
+/** Scatter renderer only accepts numeric samples, never request/wake DTOs. */
+export function scatterOptions(
+  data: ScatterData,
   metric: ChartMetric,
   colors: ChartColors,
-  kind: 'bar' | 'scatter',
   view: ScatterView = defaultScatterView,
-  fitted?: ReturnType<typeof fitLines>,
+  fitted: ReturnType<typeof fitLines> = [],
 ): EChartsOption {
-  const { since, until } = data.range;
-  const scatter = kind === 'scatter';
-  const log = scatter && view.scale === 'log';
-  const summary = scatter
-    ? scatterSummary(data.points, metric, view.range, view.scale)
-    : null;
+  const log = view.scale === 'log';
+  const summary = sampleSummary(data.samples, view.range, view.scale);
   const lower = summary?.lower ?? null;
   const upper = summary?.upper ?? null;
   const shown = (value: number) =>
     (lower === null || value >= lower) &&
     (upper === null || value <= upper) &&
     (!log || value > 0);
-  const values = scatter
-    ? data.points.flatMap((point) => {
-        const value = metricValue(point, metric);
-        return Number.isFinite(point.startedAt) &&
-          value !== null &&
-          shown(value)
-          ? [value]
-          : [];
-      })
-    : [];
+  const values = data.samples
+    .filter((point) => validSample(point) && shown(point.value))
+    .map((point) => point.value);
   const minimum = values.length ? values.reduce((a, b) => Math.min(a, b)) : 0;
   const maximum = values.length ? values.reduce((a, b) => Math.max(a, b)) : 0;
   // 显示范围只由保留的散点决定，不让未裁剪的统计线重新撑开纵轴。
-  const floor = scatter && !log ? axisFloor(minimum, maximum) : 0;
+  const floor = !log ? axisFloor(minimum, maximum) : 0;
   const ceiling =
     upper === null
       ? metric.key === 'cacheHitRate'
@@ -87,23 +100,98 @@ export function chartOptions(
         : floor + Math.max(Math.abs(floor) * 0.01, 0.001);
   const dots = dotStyles[view.dots];
   const trends =
-    scatter && view.guides === 'quantiles'
-      ? trendLines(data.points, data.range, data.bucketMs, metric, view.scale)
+    view.guides === 'quantiles'
+      ? sampleTrendLines(data.samples, data.range, data.bucketMs, view.scale)
       : null;
-  const fits =
-    scatter && view.guides === 'fit'
-      ? (fitted ?? fitLines(data.points, metric))
-      : [];
+  const fits = view.guides === 'fit' ? fitted : [];
+  return {
+    ...baseOptions(data.range, colors),
+    yAxis: {
+      ...valueAxis(colors),
+      // 对数轴的下限由数据决定，0和负值不可表示。
+      ...(log
+        ? { type: 'log', logBase: 10, ...(minimum > 0 ? { min: minimum } : {}) }
+        : { type: 'value', min: floor }),
+      ...(ceiling !== null
+        ? { max: log ? Math.max(ceiling, minimum * 1.01) : ceiling }
+        : {}),
+      name: metric.label,
+    },
+    series: [
+      ...[...data.categories]
+        .sort(
+          (a, b) =>
+            DRAW_ORDER.indexOf(a.key as (typeof DRAW_ORDER)[number]) -
+            DRAW_ORDER.indexOf(b.key as (typeof DRAW_ORDER)[number]),
+        )
+        .map((outcome, order) => {
+          return {
+            name: outcome.label,
+            type: 'scatter' as const,
+            silent: true,
+            emphasis: { disabled: true },
+            animation: false,
+            clip: true,
+            z: 2 + order,
+            // 点数超过阈值时ECharts默认分帧绘制：先清空再逐帧补点，每次刷新都会闪。
+            // 一万个点内一次画完只需几毫秒，因此关闭渐进渲染。
+            progressive: 0,
+            symbolSize: dots.size,
+            itemStyle: { color: outcome.color, opacity: dots.opacity },
+            data: data.samples.flatMap((point) =>
+              point.category === outcome.key &&
+              validSample(point) &&
+              shown(point.value)
+                ? [[point.time, point.value]]
+                : [],
+            ),
+          };
+        }),
+      ...(trends
+        ? [
+            trendSeries('中位数', trends.median, colors.text, 'solid'),
+            trendSeries('P95', trends.p95, colors.text, 'dashed'),
+            trendSeries('P5', trends.p5, colors.text, 'dashed'),
+          ]
+        : []),
+      ...fits.map((line) => ({
+        ...trendSeries(
+          `群 ${line.groupId} 拟合`,
+          line.data.map(([x, y]): [number, number | null] => [
+            x,
+            log && y !== null && y <= 0 ? null : y,
+          ]),
+          fitColor(line.groupId),
+          'solid',
+        ),
+        // 已做局部稳健拟合，只轻度平滑连接；null边界保持断开。
+        smooth: 0.2,
+        lineStyle: {
+          color: fitColor(line.groupId),
+          width: 1.8,
+          opacity: 0.8,
+        },
+      })),
+    ],
+  };
+}
+
+function baseOptions(range: ScatterData['range'], colors: ChartColors) {
+  const { since, until } = range;
   return {
     animation: false,
     textStyle: { color: colors.text },
     grid: plot,
-    tooltip: { show: false, trigger: 'none', renderMode: 'richText' },
+    tooltip: {
+      show: false,
+      trigger: 'none' as const,
+      renderMode: 'richText' as const,
+    },
     xAxis: {
-      type: 'time',
+      type: 'time' as const,
       min: since,
       max: until,
-      boundaryGap: [0, 0],
+      boundaryGap: [0, 0] as [number, number],
       axisPointer: { show: false },
       axisLine: { lineStyle: { color: colors.border } },
       axisLabel: {
@@ -116,89 +204,27 @@ export function chartOptions(
       },
       splitLine: { show: false },
     },
-    yAxis: {
-      // 对数轴的下限由数据决定，0和负值不可表示。
-      ...(log
-        ? { type: 'log', logBase: 10, ...(minimum > 0 ? { min: minimum } : {}) }
-        : { type: 'value', min: floor }),
-      ...(scatter && ceiling !== null
-        ? { max: log ? Math.max(ceiling, minimum * 1.01) : ceiling }
-        : {}),
-      ...(kind === 'bar' ? { minInterval: 1 } : {}),
-      name: kind === 'bar' ? '请求数' : metric.label,
-      nameLocation: 'end',
-      nameGap: 12,
-      nameTextStyle: {
-        color: colors.muted,
-        align: 'left',
-        padding: [0, 0, 0, -48],
-      },
-      axisPointer: { show: false },
-      axisLabel: {
-        color: colors.muted,
-        formatter: axisNumber,
-        width: 54,
-        overflow: 'truncate',
-        fontSize: 10,
-      },
-      splitLine: { lineStyle: { color: colors.border, opacity: 0.5 } },
+  };
+}
+
+function valueAxis(colors: ChartColors) {
+  return {
+    nameLocation: 'end' as const,
+    nameGap: 12,
+    nameTextStyle: {
+      color: colors.muted,
+      align: 'left' as const,
+      padding: [0, 0, 0, -48],
     },
-    series:
-      kind === 'bar'
-        ? barSeries(data)
-        : [
-            ...DRAW_ORDER.map((key, order) => {
-              const outcome = outcomes.find((item) => item.key === key)!;
-              return {
-                name: outcome.label,
-                type: 'scatter' as const,
-                silent: true,
-                emphasis: { disabled: true },
-                animation: false,
-                clip: true,
-                z: 2 + order,
-                // 点数超过阈值时ECharts默认分帧绘制：先清空再逐帧补点，每次刷新都会闪。
-                // 一万个点内一次画完只需几毫秒，因此关闭渐进渲染。
-                progressive: 0,
-                symbolSize: dots.size,
-                itemStyle: { color: outcome.color, opacity: dots.opacity },
-                data: data.points.flatMap((point) => {
-                  const value = metricValue(point, metric);
-                  return point.outcome === outcome.key &&
-                    Number.isFinite(point.startedAt) &&
-                    value !== null &&
-                    shown(value)
-                    ? [[point.startedAt, value]]
-                    : [];
-                }),
-              };
-            }),
-            ...(trends
-              ? [
-                  trendSeries('中位数', trends.median, colors.text, 'solid'),
-                  trendSeries('P95', trends.p95, colors.text, 'dashed'),
-                  trendSeries('P5', trends.p5, colors.text, 'dashed'),
-                ]
-              : []),
-            ...fits.map((line) => ({
-              ...trendSeries(
-                `群 ${line.groupId} 拟合`,
-                line.data.map(([x, y]): [number, number | null] => [
-                  x,
-                  log && y !== null && y <= 0 ? null : y,
-                ]),
-                fitColor(line.groupId),
-                'solid',
-              ),
-              // 已做局部稳健拟合，只轻度平滑连接；null边界保持断开。
-              smooth: 0.2,
-              lineStyle: {
-                color: fitColor(line.groupId),
-                width: 1.8,
-                opacity: 0.8,
-              },
-            })),
-          ],
+    axisPointer: { show: false },
+    axisLabel: {
+      color: colors.muted,
+      formatter: axisNumber,
+      width: 54,
+      overflow: 'truncate' as const,
+      fontSize: 10,
+    },
+    splitLine: { lineStyle: { color: colors.border, opacity: 0.5 } },
   };
 }
 
@@ -232,7 +258,7 @@ function trendSeries(
   };
 }
 
-function barSeries(data: RequestTrendsResponse) {
+function barSeries(data: BarData) {
   return outcomes.map((outcome) => ({
     name: outcome.label,
     type: 'bar' as const,

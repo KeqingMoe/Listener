@@ -24,6 +24,7 @@ import type {
 } from '../../src/dashboard/contracts/javascript-jobs.ts';
 import type { PerformanceMetrics } from '../../src/dashboard/contracts/metrics.ts';
 import { buildRequestTrends } from '../../src/dashboard/server/request-trends.ts';
+import type { WakeEffectTrendsResponse } from '../../src/dashboard/contracts/wake-effect-trends.ts';
 
 // 全部为合成数据：截图和剪贴板测试从不使用生产日志。
 function performance(
@@ -113,6 +114,8 @@ const request: ReviewRequest = {
   cachedInputTokens: 400,
   outputTokens: 80,
   reasoningTokens: 30,
+  reasoningDurationMs: 1200,
+  reasoningTimingStatus: 'complete',
   tps: 40,
   ttftMs: 500,
   decodeDurationMs: 2000,
@@ -160,6 +163,8 @@ const failed: ReviewRequest = {
   cachedInputTokens: null,
   outputTokens: null,
   reasoningTokens: null,
+  reasoningDurationMs: null,
+  reasoningTimingStatus: 'not_observed',
   tps: null,
   ttftMs: null,
 };
@@ -465,6 +470,13 @@ const denseRequests: ReviewRequest[] = Array.from(
 );
 
 interface MockState {
+  wakeEffectCount?: number;
+  wakeBucketMs?: number;
+  failRequestTrends?: boolean;
+  wakeEffectsConfirmedOnly?: boolean;
+  wakeCollectionStartedAt?: number | null;
+  wakeTelemetryUnavailable?: boolean;
+  reasoningMissingVariants?: boolean;
   toolStatistics?: ToolsResponse;
   jobLinks?: Partial<JavascriptJobLinksResponse>;
   jobLinksGate?: Promise<void>;
@@ -568,7 +580,10 @@ async function mock(page: Page, state: MockState = {}) {
       });
     }
     expect(route.request().method()).toBe('GET');
-    if (path !== '/api/request-trends/sync') {
+    if (
+      path !== '/api/request-trends/sync' &&
+      path !== '/api/wake-effect-trends'
+    ) {
       expect(transportUrl.pathname).toBe('/api/resource-sync');
     }
     if (state.businessConfigError) {
@@ -580,7 +595,10 @@ async function mock(page: Page, state: MockState = {}) {
     if (state.expired || !state.authenticated) {
       return route.fulfill({ status: 401, json: { error: 'unauthorized' } });
     }
-    if (state.fail && path === '/api/requests') {
+    if (
+      (state.fail && path === '/api/requests') ||
+      (state.failRequestTrends && path === '/api/request-trends/sync')
+    ) {
       return route.fulfill({ status: 503, json: { error: 'unavailable' } });
     }
     let body: unknown;
@@ -648,6 +666,14 @@ async function mock(page: Page, state: MockState = {}) {
         ? []
         : [request, failed, previous].map((item, i) => ({
             ...item,
+            ...(state.reasoningMissingVariants
+              ? {
+                  reasoningDurationMs: i === 0 ? 500 : null,
+                  reasoningTimingStatus: (
+                    ['partial', 'not_observed', null] as const
+                  )[i]!,
+                }
+              : {}),
             startedAt:
               selectedRange.since +
               ((selectedRange.until - selectedRange.since) * (i + 1)) / 4,
@@ -663,6 +689,50 @@ async function mock(page: Page, state: MockState = {}) {
           key: JSON.stringify([items[index]!.groupId, items[index]!.requestId]),
         })),
       };
+    } else if (path === '/api/wake-effect-trends') {
+      const selectedRange = {
+        since: Number(url.searchParams.get('since')),
+        until: Number(url.searchParams.get('until')),
+      };
+      const count = state.empty ? 0 : (state.wakeEffectCount ?? 5);
+      body = {
+        range: selectedRange,
+        bucketMs: state.wakeBucketMs ?? 60000,
+        availability: {
+          ...availability,
+          telemetry: !state.wakeTelemetryUnavailable,
+        },
+        collectionStartedAt:
+          state.wakeCollectionStartedAt === undefined
+            ? selectedRange.since + 1000
+            : state.wakeCollectionStartedAt,
+        points: Array.from({ length: count }, (_, index) => {
+          const outcome = state.wakeEffectsConfirmedOnly
+            ? 'confirmed'
+            : (
+                [
+                  'confirmed',
+                  'pending',
+                  'unconfirmed',
+                  'interrupted',
+                  'confirmed',
+                ] as const
+              )[index % 5]!;
+          return {
+            key: JSON.stringify([
+              url.searchParams.get('groupId') ?? '10001',
+              `synthetic-logical-wake-${index}`,
+            ]),
+            receivedAt:
+              selectedRange.since +
+              ((selectedRange.until - selectedRange.since) * (index + 1)) /
+                (count + 1),
+            firstEffectWaitMs:
+              outcome === 'confirmed' ? 2000 + index * 100 : null,
+            outcome,
+          };
+        }),
+      } satisfies WakeEffectTrendsResponse;
     } else if (path === '/api/health') {
       body = health;
     } else if (path === '/api/tools') {
@@ -797,7 +867,7 @@ test('overview charts preserve raw metrics, free coordinates, filters and mobile
   await expect(scatter.locator('canvas').first()).toBeVisible();
   await expect(page.getByTestId('request-trends-summary')).toContainText('3');
   const metric = page.getByLabel('散点纵轴指标');
-  await expect(metric.locator('option')).toHaveCount(8);
+  await expect(metric.locator('option')).toHaveCount(10);
   for (const key of [
     'input',
     'totalInput',
@@ -807,6 +877,7 @@ test('overview charts preserve raw metrics, free coordinates, filters and mobile
     'tps',
     'cacheHitRate',
     'duration',
+    'reasoning',
   ]) {
     await metric.selectOption(key);
     await expect(page).toHaveURL(new RegExp(`chartMetric=${key}`));
@@ -905,6 +976,208 @@ test('overview charts preserve raw metrics, free coordinates, filters and mobile
     fullPage: true,
   });
   expect(errors).toEqual([]);
+});
+
+test('wake effect metric uses synthetic snapshots without changing the request legend', async ({
+  page,
+}) => {
+  await page.clock.install();
+  const { requests } = await mock(page);
+  await page.goto('/?range=5m&chartMetric=reasoning');
+  const metric = page.getByLabel('散点纵轴指标');
+  await expect(metric.locator('option:checked')).toHaveText('推理耗时（秒）');
+  await expect(page.getByTestId('reasoning-summary')).toContainText('未观测 1');
+  const legend = page.getByRole('list', { name: '请求状态图例与数量' });
+  await expect(legend).toBeVisible();
+  const beforeLegend = await legend.textContent();
+  expect(
+    requests.filter((url) => url.pathname === '/api/wake-effect-trends'),
+  ).toHaveLength(0);
+  await metric.selectOption('firstEffect');
+  await expect(metric.locator('option:checked')).toHaveText(
+    '首次副作用等待（秒）',
+  );
+  const summary = page.getByTestId('wake-effect-trends-summary');
+  await expect(summary).toBeVisible();
+  await expect(summary).toContainText('已确认 2');
+  await expect(summary).toContainText('等待确认 1');
+  await expect(summary).toContainText('未确认 1');
+  await expect(summary).toContainText('中断 1');
+  await expect(summary).toContainText('之前历史无采集，不按 0 填充');
+  await expect(legend).toHaveText(beforeLegend!);
+  await expect(page.getByTestId('request-scatter-summary')).toContainText(
+    '总数 5',
+  );
+  await expect(page.locator('.scatter-panel canvas').first()).toBeVisible();
+  await page.getByLabel('群组', { exact: true }).selectOption('10001');
+  await page.getByLabel('时间范围').selectOption('3h');
+  await expect
+    .poll(() =>
+      requests.some(
+        (url) =>
+          url.pathname === '/api/wake-effect-trends' &&
+          url.searchParams.get('groupId') === '10001' &&
+          Number(url.searchParams.get('until')) -
+            Number(url.searchParams.get('since')) ===
+            3 * 3600000,
+      ),
+    )
+    .toBe(true);
+  expect(
+    requests
+      .filter((url) => url.pathname === '/api/wake-effect-trends')
+      .every((url) =>
+        [...url.searchParams.keys()].every((key) =>
+          ['since', 'until', 'groupId'].includes(key),
+        ),
+      ),
+  ).toBe(true);
+  await metric.selectOption('reasoning');
+  await expect(summary).toHaveCount(0);
+  await expect(legend).toHaveText(beforeLegend!);
+});
+
+test('wake effect scatter renders 10000 synthetic observations without sampling', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await mock(page, { wakeEffectCount: 10000, wakeEffectsConfirmedOnly: true });
+  await page.goto('/?range=5m&chartMetric=firstEffect');
+  await expect(page.getByTestId('request-scatter-summary')).toContainText(
+    '总数 10000 · 可绘制 10000',
+  );
+  await expect(page.locator('.scatter-panel canvas').first()).toBeVisible();
+  await expect(page.getByTestId('wake-effect-trends-summary')).toContainText(
+    '已确认 10000',
+  );
+  expect(errors).toEqual([]);
+});
+
+test('wake effect snapshot refresh pauses when disabled or hidden and clears on logout', async ({
+  page,
+}) => {
+  await page.clock.install();
+  const { requests } = await mock(page);
+  await page.goto('/?range=5m&chartMetric=firstEffect');
+  const summary = page.getByTestId('wake-effect-trends-summary');
+  await expect(summary).toContainText('已确认 2');
+  const wakeCalls = () =>
+    requests.filter((url) => url.pathname === '/api/wake-effect-trends');
+  await expect(page.getByTestId('dashboard-refresh-status')).not.toHaveText(
+    '刷新中…',
+  );
+  let before = wakeCalls().length;
+  await refreshImmediately(page);
+  await expect.poll(() => wakeCalls().length).toBe(before + 1);
+  await page.getByLabel('散点纵轴指标').selectOption('duration');
+  before = wakeCalls().length;
+  await refreshImmediately(page);
+  await page.clock.runFor(5100);
+  expect(wakeCalls()).toHaveLength(before);
+  await page.getByLabel('散点纵轴指标').selectOption('firstEffect');
+  await expect.poll(() => wakeCalls().length).toBe(before + 1);
+  await page.getByRole('link', { name: '工具', exact: true }).click();
+  before = wakeCalls().length;
+  await page.clock.runFor(5100);
+  expect(wakeCalls()).toHaveLength(before);
+  await page.getByRole('link', { name: '总览', exact: true }).click();
+  await expect.poll(() => wakeCalls().length).toBe(before + 1);
+  await expect(summary).toContainText('已确认 2');
+  await page.getByRole('button', { name: '退出', exact: true }).click();
+  await expect(summary).toHaveCount(0);
+  before = wakeCalls().length;
+  await page.clock.runFor(5100);
+  expect(wakeCalls()).toHaveLength(before);
+  expect(wakeCalls().every((url) => !url.searchParams.has('cursor'))).toBe(
+    true,
+  );
+});
+
+for (const failRequestTrends of [false, true]) {
+  test(`wake effect range and window are independent of request trends failure=${failRequestTrends}`, async ({
+    page,
+  }) => {
+    await mock(page, { wakeBucketMs: 120000, failRequestTrends });
+    const since = now - 300000;
+    await page.goto(
+      `/?range=custom&since=${since}&until=${now}&chartMetric=firstEffect`,
+    );
+    const scatter = page.getByRole('img', {
+      name: '每逻辑wake原始散点图',
+      exact: true,
+    });
+    await expect(scatter.locator('canvas').first()).toBeVisible();
+    await expect(page.getByTestId('request-scatter-summary')).toContainText(
+      '总数 5 · 可绘制 2',
+    );
+    await expect(page.locator('.scatter-panel .chart-note')).toContainText(
+      '6 分钟 的滑动窗口统计',
+    );
+    if (failRequestTrends) {
+      await expect(
+        page.getByLabel('请求趋势图表', { exact: true }).getByRole('alert'),
+      ).toBeVisible();
+    } else {
+      await expect(page.getByTestId('request-trends-summary')).toContainText(
+        '每桶约 60 秒',
+      );
+    }
+    await scatter.scrollIntoViewIfNeeded();
+    const box = (await scatter.boundingBox())!;
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+    await expect(page.getByTestId('crosshair-x')).toContainText('2026/9/21');
+  });
+}
+
+test('reasoning partial, unobserved and legacy records are not plotted as zero', async ({
+  page,
+}) => {
+  await mock(page, { reasoningMissingVariants: true });
+  await page.goto('/?range=5m&chartMetric=reasoning');
+  const summary = page.getByTestId('reasoning-summary');
+  await expect(summary).toContainText('部分观测 1');
+  await expect(summary).toContainText('未观测 1');
+  await expect(summary).toContainText('尚无测量 1');
+  await expect(page.getByTestId('request-scatter-summary')).toContainText(
+    '总数 3 · 可绘制 0 · 缺失 3',
+  );
+});
+
+for (const unavailable of [false, true]) {
+  test(`wake effect missing collection source distinguishes telemetry unavailable=${unavailable}`, async ({
+    page,
+  }) => {
+    await mock(page, {
+      empty: true,
+      wakeCollectionStartedAt: null,
+      wakeTelemetryUnavailable: unavailable,
+    });
+    await page.goto('/?range=5m&chartMetric=firstEffect');
+    const summary = page.getByTestId('wake-effect-trends-summary');
+    await expect(summary).toContainText(
+      unavailable ? '可见效果遥测不可用；空图不代表没有等待' : '尚无采集记录',
+    );
+    await expect(summary).not.toContainText(
+      unavailable ? '尚无采集记录' : '可见效果遥测不可用',
+    );
+    await expect(page.getByTestId('request-scatter-summary')).toContainText(
+      '总数 0 · 可绘制 0',
+    );
+  });
+}
+
+test('wake effect snapshots reject overflow rather than silently sampling', async ({
+  page,
+}) => {
+  await mock(page, { wakeEffectCount: 10001 });
+  await page.goto('/?range=5m&chartMetric=firstEffect');
+  await expect(
+    page.getByRole('alert').filter({ hasText: '10000' }),
+  ).toBeVisible();
+  await expect(page.getByTestId('request-scatter-summary')).toContainText(
+    '总数 0',
+  );
 });
 
 test('scatter guide toggle is local, persists in URL and survives cached navigation', async ({
