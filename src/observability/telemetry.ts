@@ -131,6 +131,7 @@ export class TelemetryStore {
         duration_ms REAL NOT NULL, transport TEXT NOT NULL, model TEXT NOT NULL,
         status TEXT NOT NULL, error_code TEXT, http_status INTEGER,
         ttft_ms REAL, decode_duration_ms REAL,
+        reasoning_duration_ms REAL, reasoning_timing_status TEXT,
          input_tokens INTEGER, output_tokens INTEGER, total_tokens INTEGER,
         cached_input_tokens INTEGER, reasoning_tokens INTEGER,
         group_id TEXT, turn_id TEXT, phase TEXT, diagnostics TEXT, model_name TEXT
@@ -154,6 +155,8 @@ export class TelemetryStore {
       for (const [name, type] of [
         ['ttft_ms', 'REAL'],
         ['decode_duration_ms', 'REAL'],
+        ['reasoning_duration_ms', 'REAL'],
+        ['reasoning_timing_status', 'TEXT'],
         ['model_name', 'TEXT'],
       ] as const) {
         if (
@@ -446,6 +449,27 @@ export class TelemetryStore {
     ) {
       decode = null;
     }
+    let reasoning = validTime(value.reasoningDurationMs);
+    let reasoningStatus = value.reasoningTimingStatus ?? null;
+    if (
+      reasoningStatus !== null &&
+      !['complete', 'partial', 'not_observed'].includes(reasoningStatus)
+    ) {
+      reasoningStatus = null;
+    }
+    if (reasoning !== null && reasoning > duration) {
+      reasoning = null;
+    }
+    if (reasoningStatus === null || reasoningStatus === 'not_observed') {
+      reasoning = null;
+    }
+    // Malformed complete observations must never enter complete-sample aggregates.
+    if (
+      reasoningStatus === 'complete' &&
+      (status !== 'success' || reasoning === null)
+    ) {
+      reasoningStatus = 'partial';
+    }
     const u = normalizeUsage(value.usage),
       error = value.errorCode ?? null,
       http = value.httpStatus === undefined ? null : int(value.httpStatus);
@@ -466,7 +490,7 @@ export class TelemetryStore {
     );
     this.db
       .prepare(
-        `INSERT OR IGNORE INTO model_requests(request_id,started_at,ended_at,duration_ms,transport,model,status,error_code,http_status,input_tokens,output_tokens,total_tokens,cached_input_tokens,reasoning_tokens,group_id,turn_id,phase,diagnostics,ttft_ms,decode_duration_ms,model_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT OR IGNORE INTO model_requests(request_id,started_at,ended_at,duration_ms,transport,model,status,error_code,http_status,input_tokens,output_tokens,total_tokens,cached_input_tokens,reasoning_tokens,group_id,turn_id,phase,diagnostics,ttft_ms,decode_duration_ms,model_name,reasoning_duration_ms,reasoning_timing_status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
         id,
@@ -490,6 +514,8 @@ export class TelemetryStore {
         ttft,
         decode,
         text(value.modelName),
+        reasoning,
+        reasoningStatus,
       );
     try {
       this.persistInspection(

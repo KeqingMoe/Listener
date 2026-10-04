@@ -60,6 +60,10 @@ export interface ModelRequestRecord {
   /** 流式测量值；历史记录或非流式请求为null。 */
   ttftMs?: number | null;
   decodeDurationMs?: number | null;
+  /** Observed reasoning phase only; never inferred from token counts or snapshots. */
+  reasoningDurationMs?: number | null;
+  /** null/absent denotes historical records, not an unobserved new request. */
+  reasoningTimingStatus?: 'complete' | 'partial' | 'not_observed' | null;
   transport: 'chat' | 'responses';
   model: string;
   status: 'success' | 'error';

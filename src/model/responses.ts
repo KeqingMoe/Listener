@@ -29,6 +29,7 @@ import {
 } from '../observability/model-diagnostics.ts';
 import { MODEL_USER_AGENT } from '../config/version.ts';
 import { readSse, SseError } from './sse.ts';
+import { ReasoningTiming } from './reasoning-timing.ts';
 import { isObject } from '../contracts/json.ts';
 
 const MAX_BYTES = 2 * 1024 * 1024,
@@ -457,6 +458,8 @@ export class ResponsesModel implements Model {
       requestId = randomUUID();
     const snapshot = structuredClone(messages),
       toolSnapshot = structuredClone(tools);
+    const reasoningTiming = new ReasoningTiming();
+    let reasoningCompletedAt: number | undefined;
     let ttftMs: number | null = null,
       decodeDurationMs: number | null = null;
     let usage: ModelUsage = parseResponsesUsage(undefined),
@@ -734,7 +737,25 @@ export class ResponsesModel implements Model {
               deltas.set(key, entry);
               if (event.delta) {
                 observed(at);
+                reasoningTiming.observe(
+                  at,
+                  event.type === 'response.reasoning_text.delta',
+                  event.type !== 'response.reasoning_text.delta',
+                );
               }
+            }
+            // Summary deltas are timing observations only. Do not change the
+            // existing final-snapshot consistency checks or response assembly.
+            if (
+              event.type === 'response.reasoning_summary_text.delta' &&
+              typeof event.delta === 'string' &&
+              event.delta.length > 0 &&
+              Number.isSafeInteger(event.output_index) &&
+              Number(event.output_index) >= 0 &&
+              Number.isSafeInteger(event.summary_index) &&
+              Number(event.summary_index) >= 0
+            ) {
+              reasoningTiming.observe(at, true, false);
             }
             if (
               event.type === 'response.output_item.added' &&
@@ -753,6 +774,7 @@ export class ResponsesModel implements Model {
               }
               addedCalls.set(Number(event.output_index), event.item);
               observed(at);
+              reasoningTiming.observe(at, false, true);
             }
             if (
               [
@@ -770,6 +792,7 @@ export class ResponsesModel implements Model {
               }
               raw = event.response;
               streamCompletedAt = at;
+              reasoningCompletedAt = at;
               return true;
             }
             if (event.type === 'error') {
@@ -949,6 +972,7 @@ export class ResponsesModel implements Model {
           durationMs: Math.max(0, performance.now() - started),
           ttftMs,
           decodeDurationMs: status === 'success' ? decodeDurationMs : null,
+          ...reasoningTiming.finish(status === 'success', reasoningCompletedAt),
           transport: 'responses',
           model: this.options.model,
           status,

@@ -29,6 +29,7 @@ import {
   type ModelRequestDiagnostics,
 } from '../observability/model-diagnostics.ts';
 import { readSse, SseError } from './sse.ts';
+import { ReasoningTiming } from './reasoning-timing.ts';
 import { isObject } from '../contracts/json.ts';
 
 export type ModelErrorCode =
@@ -234,6 +235,7 @@ export class OpenAIModel implements Model {
     tools: ToolDefinition[] = [],
     signal?: AbortSignal,
   ): Promise<Completion> {
+    const reasoningTiming = new ReasoningTiming();
     const started = performance.now();
     const startedAt = Date.now();
     const requestId = randomUUID();
@@ -447,6 +449,16 @@ export class OpenAIModel implements Model {
           ) {
             throw new Error();
           }
+          // Observe both fields together: a single SSE event can close at 0ms.
+          reasoningTiming.observe(
+            at,
+            [delta.reasoning_content, delta.reasoning].some(
+              (value) => typeof value === 'string' && value.length > 0,
+            ),
+            [delta.content, delta.refusal].some(
+              (value) => typeof value === 'string' && value.length > 0,
+            ),
+          );
           let effective = false;
           for (const key of [
             'content',
@@ -516,6 +528,7 @@ export class OpenAIModel implements Model {
                     }
                     call[key] += value;
                     effective = true;
+                    reasoningTiming.observe(at, false, true);
                   }
                 }
               }
@@ -638,6 +651,10 @@ export class OpenAIModel implements Model {
           streamCompletedAt !== undefined
             ? streamCompletedAt - firstOutputAt
             : null,
+        ...reasoningTiming.finish(
+          requestStatus === 'success',
+          streamCompletedAt,
+        ),
         transport: 'chat',
         model: this.options.model,
         status: requestStatus,
