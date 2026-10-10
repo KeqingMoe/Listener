@@ -5,7 +5,7 @@ import {
   type StreamFn,
 } from '@earendil-works/pi-agent-core';
 import type { AssistantMessage, Model } from '@earendil-works/pi-ai';
-import type { Chat, Event } from '@listener/chat';
+import type { Chat, Event, Mentioned } from '@listener/chat';
 import protocol from './protocol.md?raw';
 import { tools } from './tools';
 
@@ -15,6 +15,7 @@ export type AgentConfig = {
   prompt?: string;
   sessionId?: string;
   signal: AbortSignal;
+  mentioned: Mentioned;
 };
 
 export type LoopFeed = {
@@ -52,12 +53,12 @@ export async function runLoop(
   config: AgentConfig,
   onEvent?: LoopHandler,
 ): Promise<void> {
-  const { model, streamFn, prompt, sessionId, signal } = config;
+  const { model, streamFn, prompt, sessionId, signal, mentioned } = config;
 
   const initialState = {
     systemPrompt: systemPrompt(chat.selfId, prompt),
     model,
-    tools: tools(chat),
+    tools: tools(chat, signal, mentioned),
   };
 
   const finishTurn: FinishTurn = () => {

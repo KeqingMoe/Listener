@@ -30,6 +30,10 @@ function client(): Client {
     async message() {
       return undefined;
     },
+    watch() {
+      return () => {};
+    },
+    dispose() {},
   };
 }
 
@@ -70,6 +74,7 @@ describe('runLoop', () => {
         model: faux.getModel(),
         streamFn: models.streamSimple.bind(models),
         signal: abort.signal,
+        mentioned: { at: true, reply: true },
       },
       event => {
         seen.push(event);
@@ -138,6 +143,7 @@ describe('runLoop', () => {
           return inner(model, context, options);
         },
         signal: abort.signal,
+        mentioned: { at: true, reply: true },
       },
       event => {
         seen.push(event);

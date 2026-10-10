@@ -20,6 +20,10 @@ function client(messages: MessageCreated[] = []): Client {
     async message(msgId) {
       return byId.get(msgId);
     },
+    watch() {
+      return () => {};
+    },
+    dispose() {},
   };
 }
 
@@ -68,6 +72,7 @@ describe('Chat', () => {
     await c.append(message('1', 'self'));
     await c.append(message('2', 'a'));
     expect(c.unread).toBe(2);
+    expect(c.unreadMentioned).toEqual({ at: false, reply: false });
     expect(texts(c.openWindow(10))).toEqual(['self', 'a']);
     expect(c.unread).toBe(0);
   });
@@ -117,6 +122,27 @@ describe('Chat', () => {
     expect(reply.openWindow(1)).toMatchObject([
       { type: 'gap', skipped: 1, mentioned: true },
       { segments: ['later'] },
+    ]);
+  });
+
+  it('on 能分清 at 和 reply，也可以同时成立', async () => {
+    next = 1;
+    const mine = message('1', 'mine', { msgId: must(MessageId(10)) });
+    const c = chat([mine]);
+    const seen: { at: boolean; reply: boolean }[] = [];
+    c.on(payload => {
+      seen.push(payload.mentioned);
+    });
+    await c.append(message('2', 're', { replyTo: mine.msgId }));
+    await c.append(
+      message('2', 'both', {
+        replyTo: mine.msgId,
+        segments: [{ type: 'at', userId: must(UserId('1')) }],
+      }),
+    );
+    expect(seen).toEqual([
+      { at: false, reply: true },
+      { at: true, reply: true },
     ]);
   });
 
@@ -253,5 +279,74 @@ describe('Chat', () => {
       { type: 'gap', skipped: 1, mentioned: true },
       { segments: ['mid'] },
     ]);
+  });
+
+  it('append 之后 on，带 at / reply', async () => {
+    next = 1;
+    const c = chat();
+    const seen: { at: boolean; reply: boolean }[] = [];
+    c.on(payload => {
+      seen.push(payload.mentioned);
+    });
+    await c.append(
+      message('2', 'hi', {
+        segments: [{ type: 'at', userId: must(UserId('1')) }],
+      }),
+    );
+    await c.append(message('2', 'no'));
+    expect(seen).toEqual([
+      { at: true, reply: false },
+      { at: false, reply: false },
+    ]);
+  });
+
+  it('on 可以取消', async () => {
+    next = 1;
+    const c = chat();
+    const seen: { at: boolean; reply: boolean }[] = [];
+    const off = c.on(payload => {
+      seen.push(payload.mentioned);
+    });
+    await c.append(
+      message('2', 'hi', {
+        segments: [{ type: 'at', userId: must(UserId('1')) }],
+      }),
+    );
+    off();
+    await c.append(message('2', 'no'));
+    expect(seen).toEqual([{ at: true, reply: false }]);
+  });
+
+  it('dispose 取消 watch，handlers 不再收到', async () => {
+    next = 1;
+    let watching = true;
+    const c = new Chat(
+      {
+        selfId: must(UserId('1')),
+        groupId: must(GroupId('100')),
+      },
+      {
+        async send() {
+          return must(MessageId(1));
+        },
+        async message() {
+          return undefined;
+        },
+        watch() {
+          return () => {
+            watching = false;
+          };
+        },
+        dispose() {},
+      },
+    );
+    const seen: { at: boolean; reply: boolean }[] = [];
+    c.on(payload => {
+      seen.push(payload.mentioned);
+    });
+    c.dispose();
+    await c.append(message('2', 'hi'));
+    expect(watching).toBe(false);
+    expect(seen).toEqual([]);
   });
 });

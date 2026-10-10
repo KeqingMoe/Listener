@@ -36,6 +36,10 @@ describe('tools', () => {
       async message() {
         return undefined;
       },
+      watch() {
+        return () => {};
+      },
+      dispose() {},
     };
     const chat = new Chat(
       {
@@ -69,6 +73,7 @@ describe('tools', () => {
       model: faux.getModel(),
       streamFn: models.streamSimple.bind(models),
       signal: abort.signal,
+      mentioned: { at: true, reply: true },
     });
     await vi.waitFor(() => {
       expect(sent).toEqual([{ segments: ['并非 kq'] }]);
@@ -90,9 +95,16 @@ describe('tools', () => {
         async message() {
           return undefined;
         },
+        watch() {
+          return () => {};
+        },
+        dispose() {},
       },
     );
-    const sendMessage = tools(chat).find(tool => tool.name === 'sendMessage');
+    const sendMessage = tools(chat, new AbortController().signal, {
+      at: true,
+      reply: true,
+    }).find(tool => tool.name === 'sendMessage');
     if (sendMessage === undefined) {
       throw new Error('没有 sendMessage');
     }
