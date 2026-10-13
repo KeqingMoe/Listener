@@ -109,6 +109,7 @@ for (const group of groupList) {
         prompt: systemPrompt,
         signal: abort.signal,
         mentioned: policy.open.mentioned,
+        thinking: policy.thinking,
       },
       event => groupLog.info(event),
     ),

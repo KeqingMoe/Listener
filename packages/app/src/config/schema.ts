@@ -18,6 +18,16 @@ export const openFile = Type.Object(
   closed,
 );
 
+const thinkingFile = Type.Union([
+  Type.Literal('off'),
+  Type.Literal('minimal'),
+  Type.Literal('low'),
+  Type.Literal('medium'),
+  Type.Literal('high'),
+  Type.Literal('xhigh'),
+  Type.Literal('max'),
+]);
+
 export const groupFile = Type.Union([
   Type.Literal(false),
   Type.Object(
@@ -25,6 +35,7 @@ export const groupFile = Type.Union([
       derive: Type.Optional(Type.String({ minLength: 1 })),
       model: Type.Optional(Type.String({ minLength: 1 })),
       persona: Type.Optional(Type.String()),
+      thinking: Type.Optional(thinkingFile),
       open: Type.Optional(openFile),
     },
     closed,

@@ -45,6 +45,7 @@ function normalize(node: GroupFile): {
 
 const fill: Omit<GroupTable, 'model'> = {
   persona: '',
+  thinking: 'off',
   open: {
     window: 20,
     mentioned: { at: false, reply: false },

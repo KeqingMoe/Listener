@@ -47,6 +47,30 @@ open.mentioned = { at = true, reply = false }
     );
   });
 
+  it('thinking 默认 off，能继承也能覆盖', () => {
+    const config = parse(`
+[onebot]
+url = 'ws://127.0.0.1:3001'
+${base}
+[groups.'10001']
+derive = 'base'
+
+[groups.'10002']
+derive = 'base'
+thinking = 'high'
+
+[groups.'10003']
+model = 'opencode-go/deepseek-v4.1-flash'
+`);
+    const at = (id: string) => {
+      const group = config.groups[GroupId(id)!];
+      return group === false ? undefined : group;
+    };
+    expect(at('10001')?.thinking).toBe('off');
+    expect(at('10002')?.thinking).toBe('high');
+    expect(at('10003')?.thinking).toBe('off');
+  });
+
   it('persona 空字符串表示无人设', () => {
     const config = parse(`
 [onebot]
@@ -106,6 +130,19 @@ derive = 'base'
 [onebot]
 url = 'ws://127.0.0.1:3001'
 extra = true
+`),
+    ).toThrow(configError.shape);
+  });
+
+  it('thinking 档位不合法', () => {
+    expect(() =>
+      parse(`
+[onebot]
+url = 'ws://127.0.0.1:3001'
+${base}
+[groups.'10001']
+derive = 'base'
+thinking = 'turbo'
 `),
     ).toThrow(configError.shape);
   });

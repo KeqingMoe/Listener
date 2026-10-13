@@ -1,4 +1,8 @@
-import type { Api, Model as PiModel } from '@earendil-works/pi-ai';
+import type {
+  Api,
+  ModelThinkingLevel,
+  Model as PiModel,
+} from '@earendil-works/pi-ai';
 import type { GroupId } from '@listener/chat';
 
 export const configError = {
@@ -28,6 +32,7 @@ export type Open = {
 export type GroupTable = {
   model: string;
   persona: string;
+  thinking: ModelThinkingLevel;
   open: Open;
 };
 

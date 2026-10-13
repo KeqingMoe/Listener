@@ -3,6 +3,8 @@ import {
   fauxAssistantMessage,
   fauxProvider,
   fauxToolCall,
+  type ModelThinkingLevel,
+  type SimpleStreamOptions,
 } from '@earendil-works/pi-ai';
 import {
   Chat,
@@ -241,5 +243,48 @@ describe('runLoop', () => {
         { type: 'message.created', msgId: 13 },
       ],
     });
+  });
+
+  async function levelsFor(thinking?: ModelThinkingLevel) {
+    const c = chat();
+    await c.append({
+      type: 'message.created',
+      msgId: must(MessageId(10)),
+      timestamp: must(UnixTime(1)),
+      userId: must(UserId('2')),
+      segments: ['a'],
+    });
+    const abort = new AbortController();
+    const faux = fauxProvider();
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const levels: unknown[] = [];
+    const step = (
+      _context: unknown,
+      options: SimpleStreamOptions | undefined,
+    ) => {
+      levels.push(options?.reasoning);
+      return fauxAssistantMessage('');
+    };
+    faux.setResponses([step, step, step]);
+    const running = runLoop(c, 10, {
+      model: faux.getModel(),
+      streamFn: models.streamSimple.bind(models),
+      signal: abort.signal,
+      mentioned: { at: true, reply: true },
+      thinking,
+    });
+    await vi.waitFor(() => {
+      expect(levels.length).toBeGreaterThan(0);
+    });
+    abort.abort();
+    await running;
+    return levels;
+  }
+
+  it('thinking 进请求的 reasoning，off 与不写都不带', async () => {
+    expect((await levelsFor('high'))[0]).toBe('high');
+    expect((await levelsFor('off'))[0]).toBeUndefined();
+    expect((await levelsFor())[0]).toBeUndefined();
   });
 });

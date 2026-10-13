@@ -1,10 +1,15 @@
 import {
   Agent,
+  type AgentInitialState,
   type AgentLoopTurnUpdate,
   type FinishTurn,
   type StreamFn,
 } from '@earendil-works/pi-agent-core';
-import type { AssistantMessage, Model } from '@earendil-works/pi-ai';
+import type {
+  AssistantMessage,
+  Model,
+  ModelThinkingLevel,
+} from '@earendil-works/pi-ai';
 import type { Chat, Event, Mentioned } from '@listener/chat';
 import protocol from './protocol.md?raw';
 import { tools } from './tools';
@@ -16,6 +21,7 @@ export type AgentConfig = {
   sessionId?: string;
   signal: AbortSignal;
   mentioned: Mentioned;
+  thinking?: ModelThinkingLevel;
 };
 
 export type LoopFeed = {
@@ -53,13 +59,17 @@ export async function runLoop(
   config: AgentConfig,
   onEvent?: LoopHandler,
 ): Promise<void> {
-  const { model, streamFn, prompt, sessionId, signal, mentioned } = config;
+  const { model, streamFn, prompt, sessionId, signal, mentioned, thinking } =
+    config;
 
-  const initialState = {
+  const initialState: AgentInitialState = {
     systemPrompt: systemPrompt(chat.selfId, prompt),
     model,
     tools: tools(chat, signal, mentioned),
   };
+  if (thinking !== undefined && thinking !== 'off') {
+    initialState.thinkingLevel = thinking;
+  }
 
   const finishTurn: FinishTurn = () => {
     return { action: signal.aborted ? 'end' : 'continue' };
