@@ -36,6 +36,7 @@ export default defineConfig({
     rolldownOptions: {
       input: {
         chat: `${src('chat')}/index.ts`,
+        config: `${src('config')}/index.ts`,
         agent: `${src('agent')}/index.ts`,
         app: `${src('app')}/index.ts`,
         'app-main': `${src('app')}/main.ts`,
@@ -58,6 +59,7 @@ export default defineConfig({
     include: ['packages/*/tests/**/*.test.ts'],
     alias: {
       '@listener/chat': `${src('chat')}/index.ts`,
+      '@listener/config': `${src('config')}/index.ts`,
       '@listener/agent': `${src('agent')}/index.ts`,
       '@listener/app': `${src('app')}/index.ts`,
     },

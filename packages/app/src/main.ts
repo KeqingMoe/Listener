@@ -3,8 +3,9 @@
 import { readFileSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { runLoop } from '@listener/agent';
-import { modelsFromConfig, parse } from '@listener/app';
+import { modelsFromConfig } from '@listener/app';
 import { Chat, napcat, groupId as toGroupId, UserId } from '@listener/chat';
+import { parse } from '@listener/config';
 import { NCWebsocket } from 'node-napcat-ts';
 import pino from 'pino';
 

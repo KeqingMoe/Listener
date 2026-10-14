@@ -1,6 +1,6 @@
 import { GroupId } from '@listener/chat';
 import { describe, expect, it } from 'vitest';
-import { configError, parse } from '@/config';
+import { configError, parse } from '@/index';
 
 const base = `
 

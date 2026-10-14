@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "packages/chat" },
+    { "path": "packages/config" },
     { "path": "packages/agent" },
     { "path": "packages/app" }
   ]

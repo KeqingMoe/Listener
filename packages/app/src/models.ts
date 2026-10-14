@@ -11,7 +11,7 @@ import {
   builtinModels,
   builtinProviders,
 } from '@earendil-works/pi-ai/providers/all';
-import type { Provider, ProviderConfig } from './config/shared';
+import type { Provider, ProviderConfig } from '@listener/config';
 
 function protocols(provider: Provider): string[] {
   const names = new Set<string>();

@@ -1,9 +1,9 @@
 import { parse as parseToml } from 'smol-toml';
 import { Compile } from 'typebox/compile';
-import { resolveGroups } from './config/groups';
-import { resolveProviders } from './config/providers';
-import { type ConfigFile, configFile } from './config/schema';
-import { type AppConfig, configError, fail } from './config/shared';
+import { resolveGroups } from './groups';
+import { resolveProviders } from './providers';
+import { type ConfigFile, configFile } from './schema';
+import { type AppConfig, configError, fail } from './shared';
 
 const fileCheck = Compile(configFile);
 
@@ -49,5 +49,5 @@ export type {
   Open,
   Provider,
   ProviderConfig,
-} from './config/shared';
-export { configError } from './config/shared';
+} from './shared';
+export { configError } from './shared';
