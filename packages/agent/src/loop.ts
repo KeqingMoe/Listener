@@ -2,6 +2,7 @@ import {
   Agent,
   type AgentInitialState,
   type AgentLoopTurnUpdate,
+  type AgentMessage,
   type FinishTurn,
   type StreamFn,
 } from '@earendil-works/pi-agent-core';
@@ -86,19 +87,21 @@ export async function runLoop(
     return { action: signal.aborted ? 'end' : 'continue' };
   };
 
-  const prepareNextTurn = (): AgentLoopTurnUpdate => {
+  const deliver = (via: LoopFeed['via']): AgentMessage[] => {
     const envelope: Envelope = { now: now(), events: chat.openWindow(window) };
-    onEvent?.({ type: 'feed', via: 'turn', payload: envelope });
-    return {
-      messages: [
-        {
-          role: 'user' as const,
-          content: JSON.stringify(envelope),
-          timestamp: Date.now(),
-        },
-      ],
-    };
+    onEvent?.({ type: 'feed', via, payload: envelope });
+    return [
+      {
+        role: 'user' as const,
+        content: JSON.stringify(envelope),
+        timestamp: Date.now(),
+      },
+    ];
   };
+
+  const prepareNextTurn = (): AgentLoopTurnUpdate => ({
+    messages: deliver('turn'),
+  });
 
   const agent = new Agent({
     streamFn,
@@ -125,7 +128,5 @@ export async function runLoop(
 
   if (signal.aborted) return;
 
-  const envelope: Envelope = { now: now(), events: chat.openWindow(window) };
-  onEvent?.({ type: 'feed', via: 'start', payload: envelope });
-  await agent.prompt(JSON.stringify(envelope));
+  await agent.prompt(deliver('start'));
 }
