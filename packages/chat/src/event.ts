@@ -1,4 +1,4 @@
-import type { GapId, MessageId, UnixTime, UserId } from './id';
+import type { GapId, MessageId, Time, UserId } from './id';
 
 export type AtSegment = {
   type: 'at';
@@ -18,7 +18,7 @@ export type Segment = string | AtSegment | AtAllSegment | UnsupportedSegment;
 export type MessageCreated = {
   type: 'message.created';
   msgId: MessageId;
-  timestamp: UnixTime;
+  time: Time;
   userId: UserId;
   replyTo?: MessageId;
   segments: Segment[];

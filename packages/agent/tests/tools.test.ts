@@ -10,7 +10,7 @@ import {
   GroupId,
   MessageId,
   type Send,
-  UnixTime,
+  Time,
   UserId,
 } from '@listener/chat';
 import { describe, expect, it, vi } from 'vitest';
@@ -51,7 +51,7 @@ describe('tools', () => {
     await chat.append({
       type: 'message.created',
       msgId: must(MessageId(10)),
-      timestamp: must(UnixTime(1)),
+      time: must(Time(1000)),
       userId: must(UserId('2')),
       segments: ['hello kq'],
     });

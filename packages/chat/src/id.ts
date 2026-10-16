@@ -1,16 +1,36 @@
 import type { Brand } from './brand';
 
-export type UnixTime = Brand<number, 'UnixTime'>;
+const clock = new Intl.DateTimeFormat('zh-CN', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
+
+class Stamp extends Date {
+  toJSON(): string {
+    return clock.format(this);
+  }
+}
+
+export type Time = Brand<Stamp, 'Time'>;
 export type UserId = Brand<string, 'UserId'>;
 export type GroupId = Brand<string, 'GroupId'>;
 export type MessageId = Brand<number, 'MessageId'>;
 export type GapId = Brand<number, 'GapId'>;
 
-export function UnixTime(n: number): UnixTime | undefined {
-  if (!Number.isInteger(n)) {
+export function Time(ms: number): Time | undefined {
+  if (!Number.isSafeInteger(ms)) {
     return;
   }
-  return n as UnixTime;
+  return new Stamp(ms) as Time;
+}
+
+export function now(): Time {
+  return new Stamp(Date.now()) as Time;
 }
 
 export function UserId(value: string): UserId | undefined {

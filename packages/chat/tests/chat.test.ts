@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Chat, chatError } from '@/chat';
 import type { Client } from '@/client';
 import type { MessageCreated } from '@/event';
-import { GapId, GroupId, MessageId, UnixTime, UserId } from '@/id';
+import { GapId, GroupId, MessageId, Time, UserId } from '@/id';
 
 function must<T>(value: T | undefined): T {
   if (value === undefined) {
@@ -47,7 +47,7 @@ function message(
   next += 1;
   return {
     type: 'message.created',
-    timestamp: must(UnixTime(1)),
+    time: must(Time(1000)),
     userId: must(UserId(userId)),
     segments: [text],
     ...extra,

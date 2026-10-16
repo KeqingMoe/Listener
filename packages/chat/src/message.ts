@@ -1,13 +1,13 @@
 import type { GroupMessage, SendMessageSegment } from 'node-napcat-ts';
 import { Structs } from 'node-napcat-ts';
 import type { MessageCreated, Segment, Send } from './event';
-import { type MessageId, messageId, userId as toUserId, UnixTime } from './id';
+import { type MessageId, messageId, Time, userId as toUserId } from './id';
 
 export function read(event: GroupMessage): MessageCreated | undefined {
   const userId = toUserId(event.user_id);
   const id = messageId(event.message_id);
-  const timestamp = UnixTime(Math.floor(event.time));
-  if (userId === undefined || id === undefined || timestamp === undefined) {
+  const time = Time(Math.floor(event.time * 1000));
+  if (userId === undefined || id === undefined || time === undefined) {
     return;
   }
 
@@ -42,7 +42,7 @@ export function read(event: GroupMessage): MessageCreated | undefined {
   return {
     type: 'message.created',
     msgId: id,
-    timestamp,
+    time,
     userId,
     segments,
     replyTo,

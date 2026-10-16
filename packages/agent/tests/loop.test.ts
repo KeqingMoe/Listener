@@ -11,7 +11,7 @@ import {
   type Client,
   GroupId,
   MessageId,
-  UnixTime,
+  Time,
   UserId,
 } from '@listener/chat';
 import { describe, expect, it, vi } from 'vitest';
@@ -55,7 +55,7 @@ describe('runLoop', () => {
     await c.append({
       type: 'message.created',
       msgId: must(MessageId(10)),
-      timestamp: must(UnixTime(1)),
+      time: must(Time(1000)),
       userId: must(UserId('2')),
       segments: ['a'],
     });
@@ -90,7 +90,7 @@ describe('runLoop', () => {
     expect(seen[0]).toMatchObject({ type: 'feed', via: 'start' });
     expect(
       seen[0] && seen[0].type === 'feed'
-        ? seen[0].events.map(event =>
+        ? seen[0].payload.events.map(event =>
             event.type === 'message.created' ? event.msgId : undefined,
           )
         : [],
@@ -102,14 +102,14 @@ describe('runLoop', () => {
     await c.append({
       type: 'message.created',
       msgId: must(MessageId(10)),
-      timestamp: must(UnixTime(1)),
+      time: must(Time(1000)),
       userId: must(UserId('2')),
       segments: ['a'],
     });
     const extra = {
       type: 'message.created' as const,
       msgId: must(MessageId(11)),
-      timestamp: must(UnixTime(1)),
+      time: must(Time(1000)),
       userId: must(UserId('2')),
       segments: ['during'],
     };
@@ -167,7 +167,7 @@ describe('runLoop', () => {
     expect(seen[3]).toMatchObject({
       type: 'feed',
       via: 'turn',
-      events: [extra],
+      payload: { events: [extra] },
     });
   });
 
@@ -176,14 +176,14 @@ describe('runLoop', () => {
     await c.append({
       type: 'message.created',
       msgId: must(MessageId(10)),
-      timestamp: must(UnixTime(1)),
+      time: must(Time(1000)),
       userId: must(UserId('2')),
       segments: ['a'],
     });
     const burst = [11, 12, 13].map(msgId => ({
       type: 'message.created' as const,
       msgId: must(MessageId(msgId)),
-      timestamp: must(UnixTime(1)),
+      time: must(Time(1000)),
       userId: must(UserId('2')),
       segments: ['during'],
     }));
@@ -237,11 +237,52 @@ describe('runLoop', () => {
     expect(seen[3]).toMatchObject({
       type: 'feed',
       via: 'turn',
-      events: [
-        { type: 'gap', skipped: 1 },
-        { type: 'message.created', msgId: 12 },
-        { type: 'message.created', msgId: 13 },
-      ],
+      payload: {
+        events: [
+          { type: 'gap', skipped: 1 },
+          { type: 'message.created', msgId: 12 },
+          { type: 'message.created', msgId: 13 },
+        ],
+      },
+    });
+  });
+
+  it('空批次也投信封，带上现在时间', async () => {
+    const c = chat();
+    const abort = new AbortController();
+    const faux = fauxProvider();
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const inner = models.streamSimple.bind(models);
+    faux.setResponses([
+      fauxAssistantMessage(''),
+      fauxAssistantMessage(''),
+      fauxAssistantMessage(''),
+    ]);
+    const users: number[] = [];
+    const contents: string[] = [];
+    const running = runLoop(c, 10, {
+      model: faux.getModel(),
+      streamFn: async (model, context, options) => {
+        const mine = context.messages.filter(
+          message => message.role === 'user',
+        );
+        users.push(mine.length);
+        contents.push(String(mine[mine.length - 1]?.content));
+        return inner(model, context, options);
+      },
+      signal: abort.signal,
+      mentioned: { at: true, reply: true },
+    });
+    await vi.waitFor(() => {
+      expect(users.length).toBeGreaterThan(1);
+    });
+    abort.abort();
+    await running;
+    expect(users[1]).toBe(2);
+    expect(JSON.parse(contents[1] ?? '')).toMatchObject({
+      events: [],
+      now: expect.stringMatching(/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}$/),
     });
   });
 
@@ -250,7 +291,7 @@ describe('runLoop', () => {
     await c.append({
       type: 'message.created',
       msgId: must(MessageId(10)),
-      timestamp: must(UnixTime(1)),
+      time: must(Time(1000)),
       userId: must(UserId('2')),
       segments: ['a'],
     });

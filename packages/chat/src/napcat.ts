@@ -3,9 +3,9 @@ import type { Append, Client } from './client';
 import {
   type GroupId,
   messageId,
+  Time,
   groupId as toGroupId,
   userId as toUserId,
-  UnixTime,
 } from './id';
 import { read, write } from './message';
 
@@ -87,14 +87,14 @@ export function napcat(ws: NCWebsocket): Client {
         .send('get_msg', { message_id: Number(msgId) })
         .catch(failure);
       const userId = toUserId(raw.user_id);
-      const timestamp = UnixTime(Math.floor(raw.time));
-      if (userId === undefined || timestamp === undefined) {
+      const time = Time(Math.floor(raw.time * 1000));
+      if (userId === undefined || time === undefined) {
         return;
       }
       return {
         type: 'message.created',
         msgId,
-        timestamp,
+        time,
         userId,
         segments: [],
       };

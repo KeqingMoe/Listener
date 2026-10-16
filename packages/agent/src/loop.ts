@@ -10,7 +10,13 @@ import type {
   Model,
   ModelThinkingLevel,
 } from '@earendil-works/pi-ai';
-import type { Chat, Event, Mentioned } from '@listener/chat';
+import {
+  type Chat,
+  type Event,
+  type Mentioned,
+  now,
+  type Time,
+} from '@listener/chat';
 import protocol from './protocol.md?raw';
 import { tools } from './tools';
 
@@ -24,10 +30,15 @@ export type AgentConfig = {
   thinking?: ModelThinkingLevel;
 };
 
+export type Envelope = {
+  now: Time;
+  events: Event[];
+};
+
 export type LoopFeed = {
   type: 'feed';
   via: 'start' | 'turn';
-  events: Event[];
+  payload: Envelope;
 };
 
 export type LoopAssistant = {
@@ -75,15 +86,14 @@ export async function runLoop(
     return { action: signal.aborted ? 'end' : 'continue' };
   };
 
-  const prepareNextTurn = (): AgentLoopTurnUpdate | undefined => {
-    const batch = chat.openWindow(window);
-    onEvent?.({ type: 'feed', via: 'turn', events: batch });
-    if (batch.length === 0) return;
+  const prepareNextTurn = (): AgentLoopTurnUpdate => {
+    const envelope: Envelope = { now: now(), events: chat.openWindow(window) };
+    onEvent?.({ type: 'feed', via: 'turn', payload: envelope });
     return {
       messages: [
         {
           role: 'user' as const,
-          content: JSON.stringify(batch),
+          content: JSON.stringify(envelope),
           timestamp: Date.now(),
         },
       ],
@@ -115,7 +125,7 @@ export async function runLoop(
 
   if (signal.aborted) return;
 
-  const windowEvents = chat.openWindow(window);
-  onEvent?.({ type: 'feed', via: 'start', events: windowEvents });
-  await agent.prompt(JSON.stringify(windowEvents));
+  const envelope: Envelope = { now: now(), events: chat.openWindow(window) };
+  onEvent?.({ type: 'feed', via: 'start', payload: envelope });
+  await agent.prompt(JSON.stringify(envelope));
 }

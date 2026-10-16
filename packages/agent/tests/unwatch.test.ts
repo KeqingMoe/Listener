@@ -1,4 +1,4 @@
-import { Chat, GroupId, MessageId, UnixTime, UserId } from '@listener/chat';
+import { Chat, GroupId, MessageId, Time, UserId } from '@listener/chat';
 import { describe, expect, it } from 'vitest';
 import { unwatch } from '@/tools/unwatch';
 
@@ -34,7 +34,7 @@ function plain(msgId: number) {
   return {
     type: 'message.created' as const,
     msgId: must(MessageId(msgId)),
-    timestamp: must(UnixTime(1)),
+    time: must(Time(1000)),
     userId: must(UserId('2')),
     segments: ['a'],
   };
@@ -44,7 +44,7 @@ function mention(msgId: number) {
   return {
     type: 'message.created' as const,
     msgId: must(MessageId(msgId)),
-    timestamp: must(UnixTime(1)),
+    time: must(Time(1000)),
     userId: must(UserId('2')),
     segments: [{ type: 'at' as const, userId: must(UserId('1')) }],
   };
