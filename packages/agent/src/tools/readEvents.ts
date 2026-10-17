@@ -1,5 +1,6 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { type Chat, GapId } from '@listener/chat';
+import type { Logger } from 'pino';
 import { Type } from 'typebox';
 import { toolError } from './error';
 
@@ -9,7 +10,10 @@ const readParameters = Type.Object({
   limit: Type.Integer({ minimum: 0 }),
 });
 
-export function readEvents(chat: Chat): AgentTool<typeof readParameters> {
+export function readEvents(
+  chat: Chat,
+  parent: Logger,
+): AgentTool<typeof readParameters> {
   return {
     name: 'readEvents',
     label: '读事件',
@@ -19,7 +23,8 @@ export function readEvents(chat: Chat): AgentTool<typeof readParameters> {
       '没揭完会给你新的 gap。',
     ].join(''),
     parameters: readParameters,
-    async execute(_, params) {
+    async execute(toolCallId, params) {
+      const log = parent.child({ tool: 'readEvents', toolCallId });
       const gapId = GapId(params.gapId);
       if (gapId === undefined) {
         throw new Error(toolError.invalid);
@@ -29,9 +34,10 @@ export function readEvents(chat: Chat): AgentTool<typeof readParameters> {
         side: params.side,
         limit: params.limit,
       });
+      log.info({ count: events.length });
       return {
         content: [{ type: 'text', text: JSON.stringify(events) }],
-        details: events,
+        details: undefined,
       };
     },
   };

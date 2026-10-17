@@ -1,5 +1,6 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import type { Chat, Mentioned } from '@listener/chat';
+import type { Logger } from 'pino';
 import { readEvents } from './tools/readEvents';
 import { readMember } from './tools/readMember';
 import { sendMessage } from './tools/sendMessage';
@@ -12,12 +13,13 @@ export function tools(
   chat: Chat,
   signal: AbortSignal,
   mentioned: Mentioned,
+  log: Logger,
 ): AgentTool[] {
   return [
-    sendMessage(chat),
-    readEvents(chat),
-    readMember(chat),
-    wait(chat, signal),
-    unwatch(chat, signal, mentioned),
+    sendMessage(chat, log),
+    readEvents(chat, log),
+    readMember(chat, log),
+    wait(chat, signal, log),
+    unwatch(chat, signal, mentioned, log),
   ];
 }
