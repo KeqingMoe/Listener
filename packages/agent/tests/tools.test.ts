@@ -5,9 +5,11 @@ import {
   fauxToolCall,
 } from '@earendil-works/pi-ai';
 import {
+  type Avatar,
   Chat,
   type Client,
   GroupId,
+  type MemberInfo,
   MessageId,
   type Send,
   Time,
@@ -22,6 +24,49 @@ function must<T>(value: T | undefined): T {
     throw new Error('夹具无效');
   }
   return value;
+}
+
+function memberChat(info?: MemberInfo, avatar?: Avatar): Chat {
+  return new Chat(
+    { selfId: must(UserId('1')), groupId: must(GroupId('100')) },
+    {
+      async send() {
+        return must(MessageId(1));
+      },
+      async message() {
+        return undefined;
+      },
+      async info() {
+        return info;
+      },
+      async avatar() {
+        return avatar;
+      },
+      watch() {
+        return () => {};
+      },
+      dispose() {},
+    },
+  );
+}
+
+function memberTool(chat: Chat) {
+  const tool = tools(chat, new AbortController().signal, {
+    at: true,
+    reply: true,
+  }).find(tool => tool.name === 'readMember');
+  if (tool === undefined) {
+    throw new Error('没有 readMember');
+  }
+  return tool;
+}
+
+function text(content: { type: string; text?: string }[]): string {
+  const [part] = content;
+  if (part?.type !== 'text' || part.text === undefined) {
+    throw new Error('没有文本');
+  }
+  return part.text;
 }
 
 describe('tools', () => {
@@ -86,6 +131,102 @@ describe('tools', () => {
     });
     abort.abort();
     await running;
+  });
+
+  it('readMember 把主页喂全', async () => {
+    const chat = memberChat({
+      nickname: '阿三',
+      card: '老张',
+      role: 'admin',
+      title: '卷王',
+      sex: 'male',
+      age: 20,
+      area: '广东',
+      level: '3',
+      qqLevel: 32,
+      joinTime: must(Time(1595294844000)),
+      lastActiveTime: must(Time(1700000000000)),
+    });
+
+    const result = await memberTool(chat).execute('', { userId: '2' });
+    expect(result.details).toMatchObject({
+      userId: '2',
+      nickname: '阿三',
+      card: '老张',
+      sex: 'male',
+      age: 20,
+      area: '广东',
+      level: '3',
+      qqLevel: '☀️☀️',
+      role: 'admin',
+      title: '卷王',
+    });
+    const json = text(result.content);
+    expect(json).not.toContain('"isRobot"');
+    expect(json).toMatch(/"joinTime":"\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}"/);
+    expect(json).toMatch(
+      /"lastActiveTime":"\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}"/,
+    );
+  });
+
+  it('readMember 没填的给值，没有的不给', async () => {
+    const chat = memberChat({
+      nickname: '阿三',
+      sex: 'unknown',
+      age: 0,
+      area: '',
+      level: '0',
+      qqLevel: 65,
+      joinTime: must(Time(1)),
+      isRobot: true,
+    });
+
+    const json = text(
+      (await memberTool(chat).execute('', { userId: '2' })).content,
+    );
+    expect(json).not.toContain('"role"');
+    expect(json).toContain('"sex":"unknown"');
+    expect(json).toContain('"age":0');
+    expect(json).toContain('"area":""');
+    expect(json).toContain('"qqLevel":"👑⭐"');
+    expect(json).toContain('"isRobot":true');
+    expect(json).not.toContain('"card"');
+    expect(json).not.toContain('"title"');
+    expect(json).not.toContain('"lastActiveTime"');
+  });
+
+  it('readMember 查不到就是 null', async () => {
+    const result = await memberTool(memberChat()).execute('', { userId: '2' });
+    expect(result.content).toEqual([{ type: 'text', text: 'null' }]);
+  });
+
+  it('readMember 连头像一起给', async () => {
+    const chat = memberChat(
+      {
+        nickname: '阿三',
+        sex: 'unknown',
+        age: 0,
+        area: '',
+        level: '0',
+        qqLevel: 0,
+        joinTime: must(Time(1)),
+      },
+      { data: 'AA==', mimeType: 'image/jpeg' },
+    );
+
+    const result = await memberTool(chat).execute('', { userId: '2' });
+    expect(result.content[1]).toEqual({
+      type: 'image',
+      data: 'AA==',
+      mimeType: 'image/jpeg',
+    });
+    expect(result.details).not.toHaveProperty('avatar');
+  });
+
+  it('readMember 的 userId 不合法就报错', async () => {
+    await expect(
+      memberTool(memberChat()).execute('', { userId: '0' }),
+    ).rejects.toThrow(toolError.invalid);
   });
 
   it('非法 at 报参数不合法', async () => {
