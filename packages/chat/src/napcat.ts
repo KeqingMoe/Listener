@@ -82,6 +82,41 @@ export function napcat(ws: NCWebsocket): Client {
       return id;
     },
 
+    async info(groupId, userId) {
+      const raw = await ws
+        .send('get_group_member_info', {
+          group_id: Number(groupId),
+          user_id: Number(userId),
+        })
+        .catch(() => undefined);
+      if (raw === undefined) {
+        return;
+      }
+      return {
+        nickname: raw.nickname,
+        card: raw.card,
+        role: raw.role,
+        title: raw.title,
+      };
+    },
+
+    async avatar(userId, size) {
+      try {
+        const response = await fetch(
+          `https://q1.qlogo.cn/g?b=qq&nk=${userId}&s=${size}`,
+        );
+        if (!response.ok) {
+          return;
+        }
+        return {
+          data: Buffer.from(await response.arrayBuffer()).toString('base64'),
+          mimeType: response.headers.get('content-type') ?? 'image/jpeg',
+        };
+      } catch {
+        return;
+      }
+    },
+
     async message(msgId) {
       const raw = await ws
         .send('get_msg', { message_id: Number(msgId) })

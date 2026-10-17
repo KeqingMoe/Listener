@@ -22,6 +22,12 @@ function chat() {
       async message() {
         return undefined;
       },
+      async info() {
+        return undefined;
+      },
+      async avatar() {
+        return undefined;
+      },
       watch() {
         return () => {};
       },

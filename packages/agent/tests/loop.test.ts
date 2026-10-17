@@ -7,9 +7,11 @@ import {
   type SimpleStreamOptions,
 } from '@earendil-works/pi-ai';
 import {
+  type Avatar,
   Chat,
   type Client,
   GroupId,
+  type MemberInfo,
   MessageId,
   Time,
   UserId,
@@ -24,13 +26,22 @@ function must<T>(value: T | undefined): T {
   return value;
 }
 
-function client(): Client {
+function client(
+  info: (userId: string) => MemberInfo | undefined = () => undefined,
+  avatar: (userId: string) => Avatar | undefined = () => undefined,
+): Client {
   return {
     async send() {
       return must(MessageId(1));
     },
     async message() {
       return undefined;
+    },
+    async info(_groupId, userId) {
+      return info(userId);
+    },
+    async avatar(userId) {
+      return avatar(userId);
     },
     watch() {
       return () => {};
@@ -39,13 +50,13 @@ function client(): Client {
   };
 }
 
-function chat() {
+function chat(from: Client = client()) {
   return new Chat(
     {
       selfId: must(UserId('1')),
       groupId: must(GroupId('100')),
     },
-    client(),
+    from,
   );
 }
 
@@ -95,6 +106,97 @@ describe('runLoop', () => {
           )
         : [],
     ).toEqual([10]);
+  });
+
+  it('投递时带上名片，不带头像字节', async () => {
+    const c = chat(
+      client(
+        userId =>
+          userId === '2'
+            ? { nickname: 'nick', card: '老张', role: 'owner', title: '卷王' }
+            : undefined,
+        () => ({ data: 'AA==', mimeType: 'image/jpeg' }),
+      ),
+    );
+    await c.append({
+      type: 'message.created',
+      msgId: must(MessageId(10)),
+      time: must(Time(1000)),
+      userId: must(UserId('2')),
+      segments: ['a'],
+    });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const abort = new AbortController();
+    const faux = fauxProvider();
+    const models = createModels();
+    models.setProvider(faux.provider);
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall('sendMessage', { segments: ['x'] })], {
+        stopReason: 'toolUse',
+      }),
+      fauxAssistantMessage(''),
+      fauxAssistantMessage(''),
+    ]);
+    const seen: LoopEvent[] = [];
+    const texts: string[] = [];
+    const images: string[] = [];
+    const running = runLoop(
+      c,
+      10,
+      {
+        model: faux.getModel(),
+        streamFn: async (model, context, options) => {
+          for (const message of context.messages) {
+            if (
+              message.role !== 'user' ||
+              typeof message.content === 'string'
+            ) {
+              continue;
+            }
+            for (const part of message.content) {
+              if (part.type === 'text') {
+                texts.push(part.text);
+              }
+              if (part.type === 'image') {
+                images.push(part.mimeType);
+              }
+            }
+          }
+          return models.streamSimple(model, context, options);
+        },
+        signal: abort.signal,
+        mentioned: { at: true, reply: true },
+      },
+      event => {
+        seen.push(event);
+      },
+    );
+    await vi.waitFor(() => {
+      expect(
+        seen.some(event => event.type === 'feed' && event.via === 'turn'),
+      ).toBe(true);
+    });
+    abort.abort();
+    await running;
+
+    const feeds = seen.filter(event => event.type === 'feed');
+    expect(feeds[0]).toMatchObject({
+      via: 'start',
+      members: [
+        {
+          userId: '2',
+          name: '老张',
+          role: 'owner',
+          title: '卷王',
+          avatar: true,
+        },
+      ],
+    });
+    expect(feeds[1]).toMatchObject({ via: 'turn', members: [] });
+    expect(texts).toContain(
+      '{"userId":"2","name":"老张","role":"owner","title":"卷王"}',
+    );
+    expect(new Set(images)).toEqual(new Set(['image/jpeg']));
   });
 
   it('工具回合把未读再投进去', async () => {
@@ -245,6 +347,47 @@ describe('runLoop', () => {
         ],
       },
     });
+  });
+
+  it('开跑前先把自己的名片挂上', async () => {
+    const c = chat(
+      client(userId =>
+        userId === '1'
+          ? { nickname: '小二', card: '', role: 'owner', title: '' }
+          : undefined,
+      ),
+    );
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const abort = new AbortController();
+    const faux = fauxProvider();
+    const models = createModels();
+    models.setProvider(faux.provider);
+    faux.setResponses([fauxAssistantMessage(''), fauxAssistantMessage('')]);
+    const seen: LoopEvent[] = [];
+    const running = runLoop(
+      c,
+      10,
+      {
+        model: faux.getModel(),
+        streamFn: models.streamSimple.bind(models),
+        signal: abort.signal,
+        mentioned: { at: true, reply: true },
+      },
+      event => {
+        seen.push(event);
+      },
+    );
+    await vi.waitFor(() => {
+      expect(seen.some(event => event.type === 'feed')).toBe(true);
+    });
+    abort.abort();
+    await running;
+
+    const feed = must(seen.find(event => event.type === 'feed'));
+    expect(feed.members).toMatchObject([
+      { userId: '1', name: '小二', role: 'owner' },
+    ]);
+    expect(JSON.stringify(feed.members)).not.toContain('title');
   });
 
   it('空批次也投信封，带上现在时间', async () => {

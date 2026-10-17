@@ -20,6 +20,12 @@ function client(messages: MessageCreated[] = []): Client {
     async message(msgId) {
       return byId.get(msgId);
     },
+    async info() {
+      return undefined;
+    },
+    async avatar() {
+      return undefined;
+    },
     watch() {
       return () => {};
     },
@@ -330,6 +336,12 @@ describe('Chat', () => {
           return must(MessageId(1));
         },
         async message() {
+          return undefined;
+        },
+        async info() {
+          return undefined;
+        },
+        async avatar() {
           return undefined;
         },
         watch() {

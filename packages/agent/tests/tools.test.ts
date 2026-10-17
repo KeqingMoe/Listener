@@ -36,6 +36,12 @@ describe('tools', () => {
       async message() {
         return undefined;
       },
+      async info() {
+        return undefined;
+      },
+      async avatar() {
+        return undefined;
+      },
       watch() {
         return () => {};
       },
@@ -93,6 +99,12 @@ describe('tools', () => {
           return must(MessageId(1));
         },
         async message() {
+          return undefined;
+        },
+        async info() {
+          return undefined;
+        },
+        async avatar() {
           return undefined;
         },
         watch() {
