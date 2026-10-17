@@ -16,8 +16,29 @@ import {
   Time,
   UserId,
 } from '@listener/chat';
+import type { Logger } from 'pino';
+import pino from 'pino';
 import { describe, expect, it, vi } from 'vitest';
 import { type LoopEvent, runLoop } from '@/loop';
+
+const quiet: Logger = pino({ level: 'silent' });
+
+/** 只收循环自己发的事件；工具自己写的行没有 type。 */
+function recorder(): { log: Logger; seen: LoopEvent[] } {
+  const seen: LoopEvent[] = [];
+  const log = pino(
+    { level: 'info' },
+    {
+      write: (line: string) => {
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        if (parsed.type !== undefined) {
+          seen.push(parsed as unknown as LoopEvent);
+        }
+      },
+    },
+  );
+  return { log, seen };
+}
 
 function must<T>(value: T | undefined): T {
   if (value === undefined) {
@@ -92,7 +113,7 @@ describe('runLoop', () => {
       fauxAssistantMessage(''),
       fauxAssistantMessage(''),
     ]);
-    const seen: LoopEvent[] = [];
+    const { log, seen } = recorder();
     const running = runLoop(
       c,
       10,
@@ -102,9 +123,7 @@ describe('runLoop', () => {
         signal: abort.signal,
         mentioned: { at: true, reply: true },
       },
-      event => {
-        seen.push(event);
-      },
+      log,
     );
     await vi.waitFor(() => {
       expect(seen.some(event => event.type === 'assistant')).toBe(true);
@@ -155,7 +174,7 @@ describe('runLoop', () => {
       fauxAssistantMessage(''),
       fauxAssistantMessage(''),
     ]);
-    const seen: LoopEvent[] = [];
+    const { log, seen } = recorder();
     const texts: string[] = [];
     const images: string[] = [];
     const running = runLoop(
@@ -185,9 +204,7 @@ describe('runLoop', () => {
         signal: abort.signal,
         mentioned: { at: true, reply: true },
       },
-      event => {
-        seen.push(event);
-      },
+      log,
     );
     await vi.waitFor(() => {
       expect(
@@ -251,7 +268,7 @@ describe('runLoop', () => {
       fauxAssistantMessage(''),
       fauxAssistantMessage(''),
     ]);
-    const seen: LoopEvent[] = [];
+    const { log, seen } = recorder();
     const running = runLoop(
       c,
       10,
@@ -267,9 +284,7 @@ describe('runLoop', () => {
         signal: abort.signal,
         mentioned: { at: true, reply: true },
       },
-      event => {
-        seen.push(event);
-      },
+      log,
     );
     await vi.waitFor(() => {
       expect(
@@ -287,7 +302,7 @@ describe('runLoop', () => {
     expect(seen[3]).toMatchObject({
       type: 'feed',
       via: 'turn',
-      payload: { events: [extra] },
+      payload: { events: [{ ...extra, time: expect.any(String) }] },
     });
   });
 
@@ -325,7 +340,7 @@ describe('runLoop', () => {
       fauxAssistantMessage(''),
       fauxAssistantMessage(''),
     ]);
-    const seen: LoopEvent[] = [];
+    const { log, seen } = recorder();
     const running = runLoop(
       c,
       2,
@@ -343,9 +358,7 @@ describe('runLoop', () => {
         signal: abort.signal,
         mentioned: { at: true, reply: true },
       },
-      event => {
-        seen.push(event);
-      },
+      log,
     );
     await vi.waitFor(() => {
       expect(
@@ -381,7 +394,7 @@ describe('runLoop', () => {
     const models = createModels();
     models.setProvider(faux.provider);
     faux.setResponses([fauxAssistantMessage(''), fauxAssistantMessage('')]);
-    const seen: LoopEvent[] = [];
+    const { log, seen } = recorder();
     const running = runLoop(
       c,
       10,
@@ -391,9 +404,7 @@ describe('runLoop', () => {
         signal: abort.signal,
         mentioned: { at: true, reply: true },
       },
-      event => {
-        seen.push(event);
-      },
+      log,
     );
     await vi.waitFor(() => {
       expect(seen.some(event => event.type === 'feed')).toBe(true);
@@ -422,19 +433,24 @@ describe('runLoop', () => {
     ]);
     const users: number[] = [];
     const contents: string[] = [];
-    const running = runLoop(c, 10, {
-      model: faux.getModel(),
-      streamFn: async (model, context, options) => {
-        const mine = context.messages.filter(
-          message => message.role === 'user',
-        );
-        users.push(mine.length);
-        contents.push(String(mine[mine.length - 1]?.content));
-        return inner(model, context, options);
+    const running = runLoop(
+      c,
+      10,
+      {
+        model: faux.getModel(),
+        streamFn: async (model, context, options) => {
+          const mine = context.messages.filter(
+            message => message.role === 'user',
+          );
+          users.push(mine.length);
+          contents.push(String(mine[mine.length - 1]?.content));
+          return inner(model, context, options);
+        },
+        signal: abort.signal,
+        mentioned: { at: true, reply: true },
       },
-      signal: abort.signal,
-      mentioned: { at: true, reply: true },
-    });
+      quiet,
+    );
     await vi.waitFor(() => {
       expect(users.length).toBeGreaterThan(1);
     });
@@ -469,13 +485,18 @@ describe('runLoop', () => {
       return fauxAssistantMessage('');
     };
     faux.setResponses([step, step, step]);
-    const running = runLoop(c, 10, {
-      model: faux.getModel(),
-      streamFn: models.streamSimple.bind(models),
-      signal: abort.signal,
-      mentioned: { at: true, reply: true },
-      thinking,
-    });
+    const running = runLoop(
+      c,
+      10,
+      {
+        model: faux.getModel(),
+        streamFn: models.streamSimple.bind(models),
+        signal: abort.signal,
+        mentioned: { at: true, reply: true },
+        thinking,
+      },
+      quiet,
+    );
     await vi.waitFor(() => {
       expect(levels.length).toBeGreaterThan(0);
     });

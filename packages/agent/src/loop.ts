@@ -19,6 +19,7 @@ import {
   now,
   type Time,
 } from '@listener/chat';
+import type { Logger } from 'pino';
 import protocol from './protocol.md?raw';
 import { tools } from './tools';
 
@@ -51,16 +52,13 @@ export type LoopAssistant = {
 
 export type LoopTool = {
   type: 'tool';
+  tool: string;
   toolCallId: string;
-  toolName: string;
-  result: unknown;
   isError: boolean;
   durationMs?: number;
 };
 
 export type LoopEvent = LoopFeed | LoopAssistant | LoopTool;
-
-export type LoopHandler = (event: LoopEvent) => void;
 
 function systemPrompt(selfId: string, custom?: string): string {
   const identity = `你的 QQ 号是 ${selfId}。`;
@@ -90,7 +88,7 @@ export async function runLoop(
   chat: Chat,
   window: number,
   config: AgentConfig,
-  onEvent?: LoopHandler,
+  log: Logger,
 ): Promise<void> {
   const { model, streamFn, prompt, sessionId, signal, mentioned, thinking } =
     config;
@@ -98,7 +96,7 @@ export async function runLoop(
   const initialState: AgentInitialState = {
     systemPrompt: systemPrompt(chat.selfId, prompt),
     model,
-    tools: tools(chat, signal, mentioned),
+    tools: tools(chat, signal, mentioned, log),
   };
   if (thinking !== undefined && thinking !== 'off') {
     initialState.thinkingLevel = thinking;
@@ -111,7 +109,7 @@ export async function runLoop(
   const deliver = (via: LoopFeed['via']): AgentMessage[] => {
     const envelope: Envelope = { now: now(), events: chat.openWindow(window) };
     const cards = chat.members.take();
-    onEvent?.({
+    log.info({
       type: 'feed',
       via,
       payload: envelope,
@@ -143,10 +141,16 @@ export async function runLoop(
     switch (event.type) {
       case 'message_end':
         if (event.message.role !== 'assistant') return;
-        onEvent?.({ type: 'assistant', message: event.message });
+        log.info({ type: 'assistant', message: event.message });
         break;
       case 'tool_execution_end':
-        onEvent?.({ ...event, type: 'tool' });
+        log.info({
+          type: 'tool',
+          tool: event.toolName,
+          toolCallId: event.toolCallId,
+          isError: event.isError,
+          durationMs: event.durationMs,
+        });
         break;
     }
   });

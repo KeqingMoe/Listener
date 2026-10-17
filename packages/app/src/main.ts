@@ -98,7 +98,6 @@ for (const group of groupList) {
 
   const chat = new Chat({ selfId, groupId: id }, client);
   chats.push(chat);
-  const groupLog = log.child({ group: id });
   running.push(
     runLoop(
       chat,
@@ -112,7 +111,7 @@ for (const group of groupList) {
         mentioned: policy.open.mentioned,
         thinking: policy.thinking,
       },
-      event => groupLog.info(event),
+      log.child({ group: id }),
     ),
   );
 }

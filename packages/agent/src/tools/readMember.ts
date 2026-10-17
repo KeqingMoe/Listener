@@ -1,5 +1,6 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { type Chat, UserId } from '@listener/chat';
+import type { Logger } from 'pino';
 import { Type } from 'typebox';
 import { toolError } from './error';
 
@@ -25,7 +26,10 @@ function mark(level: number): string {
   return out;
 }
 
-export function readMember(chat: Chat): AgentTool<typeof readMemberParameters> {
+export function readMember(
+  chat: Chat,
+  parent: Logger,
+): AgentTool<typeof readMemberParameters> {
   return {
     name: 'readMember',
     label: '看主页',
@@ -34,13 +38,15 @@ export function readMember(chat: Chat): AgentTool<typeof readMemberParameters> {
       '群等级、QQ 等级、入群时间、最后发言时间、是不是 Bot。',
     ].join(''),
     parameters: readMemberParameters,
-    async execute(_, params) {
+    async execute(toolCallId, params) {
+      const log = parent.child({ tool: 'readMember', toolCallId });
       const userId = UserId(params.userId);
       if (userId === undefined) {
         throw new Error(toolError.invalid);
       }
       const member = await chat.members.profile(userId);
       if (member === undefined) {
+        log.info({ userId, found: false });
         return {
           content: [{ type: 'text' as const, text: 'null' }],
           details: undefined,
@@ -48,6 +54,16 @@ export function readMember(chat: Chat): AgentTool<typeof readMemberParameters> {
       }
       const { info, avatar } = member;
       const profile = { userId, ...info, qqLevel: mark(info.qqLevel) };
+      log.info({
+        profile,
+        avatar:
+          avatar === undefined
+            ? undefined
+            : {
+                mimeType: avatar.mimeType,
+                bytes: Buffer.byteLength(avatar.data, 'base64'),
+              },
+      });
       return {
         content: [
           { type: 'text' as const, text: JSON.stringify(profile) },
@@ -55,7 +71,7 @@ export function readMember(chat: Chat): AgentTool<typeof readMemberParameters> {
             ? [{ type: 'image' as const, ...avatar }]
             : []),
         ],
-        details: profile,
+        details: undefined,
       };
     },
   };

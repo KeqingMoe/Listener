@@ -1,20 +1,20 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import type { Chat, Mentioned } from '@listener/chat';
+import type { Logger } from 'pino';
 import { Type } from 'typebox';
 
 const unwatchParameters = Type.Object({
   ms: Type.Integer({ minimum: 0 }),
 });
 
-export type UnwatchResult = {
-  reason: 'timeout' | 'event' | 'abort';
-};
+type Reason = 'timeout' | 'event' | 'abort';
 
 export function unwatch(
   chat: Chat,
   signal: AbortSignal,
   mentioned: Mentioned,
-): AgentTool<typeof unwatchParameters, UnwatchResult> {
+  parent: Logger,
+): AgentTool<typeof unwatchParameters> {
   const hits = (arg: Mentioned) =>
     (arg.at && mentioned.at) || (arg.reply && mentioned.reply);
   return {
@@ -27,35 +27,38 @@ export function unwatch(
     ].join(''),
     parameters: unwatchParameters,
     executionMode: 'sequential',
-    async execute(_, params) {
-      const done = (reason: UnwatchResult['reason']) => ({
-        content: [],
-        details: { reason },
-      });
+    async execute(toolCallId, params) {
+      const log = parent.child({ tool: 'unwatch', toolCallId });
+      const doLog = (reason: Reason) => {
+        log.info({ ms: params.ms, reason });
+        return { content: [], details: undefined };
+      };
 
-      if (signal.aborted) return done('abort');
+      if (signal.aborted) {
+        return doLog('abort');
+      }
       if (hits(chat.unreadMentioned)) {
-        return done('event');
+        return doLog('event');
       }
 
-      const reason = await new Promise<UnwatchResult['reason']>(resolve => {
-        const finish = (why: UnwatchResult['reason']) => {
-          clearTimeout(timer);
-          signal.removeEventListener('abort', onAbort);
-          off();
-          resolve(why);
-        };
+      const { promise, resolve } = Promise.withResolvers<Reason>();
+      const finish = (why: Reason) => {
+        clearTimeout(timer);
+        signal.removeEventListener('abort', onAbort);
+        off();
+        resolve(why);
+      };
 
-        const onAbort = () => finish('abort');
-        const off = chat.on(payload => {
-          if (!hits(payload.mentioned)) return;
-          finish('event');
-        });
-        const timer = setTimeout(() => finish('timeout'), params.ms);
-        signal.addEventListener('abort', onAbort, { once: true });
+      const onAbort = () => finish('abort');
+      const off = chat.on(payload => {
+        if (!hits(payload.mentioned)) return;
+        finish('event');
       });
+      const timer = setTimeout(() => finish('timeout'), params.ms);
+      signal.addEventListener('abort', onAbort, { once: true });
 
-      return done(reason);
+      const reason = await promise;
+      return doLog(reason);
     },
   };
 }

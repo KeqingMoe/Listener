@@ -15,9 +15,13 @@ import {
   Time,
   UserId,
 } from '@listener/chat';
+import type { Logger } from 'pino';
+import pino from 'pino';
 import { describe, expect, it, vi } from 'vitest';
 import { runLoop } from '@/loop';
 import { toolError, tools } from '@/tools';
+
+const quiet: Logger = pino({ level: 'silent' });
 
 function must<T>(value: T | undefined): T {
   if (value === undefined) {
@@ -50,11 +54,16 @@ function memberChat(info?: MemberInfo, avatar?: Avatar): Chat {
   );
 }
 
-function memberTool(chat: Chat) {
-  const tool = tools(chat, new AbortController().signal, {
-    at: true,
-    reply: true,
-  }).find(tool => tool.name === 'readMember');
+function memberTool(chat: Chat, log: Logger = quiet) {
+  const tool = tools(
+    chat,
+    new AbortController().signal,
+    {
+      at: true,
+      reply: true,
+    },
+    log,
+  ).find(tool => tool.name === 'readMember');
   if (tool === undefined) {
     throw new Error('没有 readMember');
   }
@@ -120,12 +129,17 @@ describe('tools', () => {
       ),
       fauxAssistantMessage(''),
     ]);
-    const running = runLoop(chat, 10, {
-      model: faux.getModel(),
-      streamFn: models.streamSimple.bind(models),
-      signal: abort.signal,
-      mentioned: { at: true, reply: true },
-    });
+    const running = runLoop(
+      chat,
+      10,
+      {
+        model: faux.getModel(),
+        streamFn: models.streamSimple.bind(models),
+        signal: abort.signal,
+        mentioned: { at: true, reply: true },
+      },
+      quiet,
+    );
     await vi.waitFor(() => {
       expect(sent).toEqual([{ segments: ['并非 kq'] }]);
     });
@@ -149,7 +163,7 @@ describe('tools', () => {
     });
 
     const result = await memberTool(chat).execute('', { userId: '2' });
-    expect(result.details).toMatchObject({
+    expect(JSON.parse(text(result.content))).toMatchObject({
       userId: '2',
       nickname: '阿三',
       card: '老张',
@@ -220,7 +234,31 @@ describe('tools', () => {
       data: 'AA==',
       mimeType: 'image/jpeg',
     });
-    expect(result.details).not.toHaveProperty('avatar');
+  });
+
+  it('readMember 的日志只记字节数，不记图', async () => {
+    const lines: string[] = [];
+    const log = pino(
+      { level: 'info' },
+      { write: (line: string) => void lines.push(line) },
+    );
+    const chat = memberChat(
+      {
+        nickname: '阿三',
+        sex: 'unknown',
+        age: 0,
+        area: '',
+        level: '0',
+        qqLevel: 0,
+        joinTime: must(Time(1)),
+      },
+      { data: 'AA==', mimeType: 'image/jpeg' },
+    );
+
+    await memberTool(chat, log).execute('', { userId: '2' });
+    const written = lines.join('\n');
+    expect(written).not.toContain('AA==');
+    expect(written).toContain('"bytes":1');
   });
 
   it('readMember 的 userId 不合法就报错', async () => {
@@ -254,10 +292,15 @@ describe('tools', () => {
         dispose() {},
       },
     );
-    const sendMessage = tools(chat, new AbortController().signal, {
-      at: true,
-      reply: true,
-    }).find(tool => tool.name === 'sendMessage');
+    const sendMessage = tools(
+      chat,
+      new AbortController().signal,
+      {
+        at: true,
+        reply: true,
+      },
+      quiet,
+    ).find(tool => tool.name === 'sendMessage');
     if (sendMessage === undefined) {
       throw new Error('没有 sendMessage');
     }

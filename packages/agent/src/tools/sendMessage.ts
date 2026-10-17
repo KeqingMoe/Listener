@@ -1,5 +1,6 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { type Chat, MessageId, type Send, UserId } from '@listener/chat';
+import type { Logger } from 'pino';
 import { type Static, Type } from 'typebox';
 import { toolError } from './error';
 
@@ -45,22 +46,27 @@ function sendFromTool(params: Static<typeof sendParameters>): Send | undefined {
   return { segments, replyTo };
 }
 
-export function sendMessage(chat: Chat): AgentTool<typeof sendParameters> {
+export function sendMessage(
+  chat: Chat,
+  parent: Logger,
+): AgentTool<typeof sendParameters> {
   return {
     name: 'sendMessage',
     label: '发送消息',
     description: '向当前群发送一条消息，返回 msgId',
     parameters: sendParameters,
     executionMode: 'sequential',
-    async execute(_, params) {
+    async execute(toolCallId, params) {
+      const log = parent.child({ tool: 'sendMessage', toolCallId });
       const message = sendFromTool(params);
       if (message === undefined) {
         throw new Error(toolError.invalid);
       }
       const msgId = await chat.send(message);
+      log.info({ msgId, segments: message.segments });
       return {
         content: [{ type: 'text', text: String(msgId) }],
-        details: msgId,
+        details: undefined,
       };
     },
   };
