@@ -26,6 +26,19 @@ function must<T>(value: T | undefined): T {
   return value;
 }
 
+function member(overrides: Partial<MemberInfo> = {}): MemberInfo {
+  return {
+    nickname: '昵称',
+    sex: 'unknown',
+    age: 0,
+    area: '',
+    level: '0',
+    qqLevel: 0,
+    joinTime: must(Time(1)),
+    ...overrides,
+  };
+}
+
 function client(
   info: (userId: string) => MemberInfo | undefined = () => undefined,
   avatar: (userId: string) => Avatar | undefined = () => undefined,
@@ -113,7 +126,12 @@ describe('runLoop', () => {
       client(
         userId =>
           userId === '2'
-            ? { nickname: 'nick', card: '老张', role: 'owner', title: '卷王' }
+            ? member({
+                nickname: 'nick',
+                card: '老张',
+                role: 'owner',
+                title: '卷王',
+              })
             : undefined,
         () => ({ data: 'AA==', mimeType: 'image/jpeg' }),
       ),
@@ -353,7 +371,7 @@ describe('runLoop', () => {
     const c = chat(
       client(userId =>
         userId === '1'
-          ? { nickname: '小二', card: '', role: 'owner', title: '' }
+          ? member({ nickname: '小二', role: 'owner' })
           : undefined,
       ),
     );

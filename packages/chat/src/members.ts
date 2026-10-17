@@ -1,19 +1,33 @@
 import type { Client } from './client';
 import type { ChatEvent } from './event';
-import type { GroupId, UserId } from './id';
+import type { GroupId, Time, UserId } from './id';
 
 export type Role = 'owner' | 'admin';
 
 export type MemberInfo = {
   nickname: string;
-  card: string;
-  role: Role | 'member';
-  title: string;
+  card?: string;
+  role?: Role;
+  title?: string;
+  sex: 'male' | 'female' | 'unknown';
+  age: number;
+  area: string;
+  level: string;
+  qqLevel: number;
+  joinTime: Time;
+  lastActiveTime?: Time;
+  isRobot?: true;
 };
 
 export type Avatar = {
   data: string;
   mimeType: string;
+};
+
+/** 主页：资料加头像。 */
+export type Profile = {
+  info: MemberInfo;
+  avatar?: Avatar;
 };
 
 export type Card = {
@@ -140,9 +154,20 @@ export class Members {
     return {
       userId,
       name: info.card || info.nickname,
-      role: info.role === 'member' ? undefined : info.role,
-      title: info.title === '' ? undefined : info.title,
+      role: info.role,
+      title: info.title,
       avatar,
     };
+  }
+
+  async profile(userId: UserId): Promise<Profile | undefined> {
+    const [info, avatar] = await Promise.all([
+      this.client.info(this.groupId, userId),
+      this.client.avatar(userId, 640),
+    ]);
+    if (info === undefined) {
+      return;
+    }
+    return { info, avatar };
   }
 }

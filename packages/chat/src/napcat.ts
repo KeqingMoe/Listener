@@ -92,11 +92,24 @@ export function napcat(ws: NCWebsocket): Client {
       if (raw === undefined) {
         return;
       }
+      const joinTime = Time(raw.join_time * 1000);
+      if (joinTime === undefined) {
+        return;
+      }
       return {
         nickname: raw.nickname,
-        card: raw.card,
-        role: raw.role,
-        title: raw.title,
+        card: raw.card || undefined,
+        role: raw.role === 'member' ? undefined : raw.role,
+        title: raw.title || undefined,
+        sex: raw.sex,
+        age: raw.age,
+        area: raw.area,
+        level: raw.level,
+        qqLevel: raw.qq_level,
+        joinTime,
+        lastActiveTime:
+          raw.last_sent_time > 0 ? Time(raw.last_sent_time * 1000) : undefined,
+        isRobot: raw.is_robot || undefined,
       };
     },
 

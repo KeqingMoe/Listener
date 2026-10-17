@@ -15,14 +15,23 @@ const group = must(GroupId('100'));
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
+function member(overrides: Partial<MemberInfo> = {}): MemberInfo {
+  return {
+    nickname: '昵称',
+    sex: 'unknown',
+    age: 0,
+    area: '',
+    level: '0',
+    qqLevel: 0,
+    joinTime: must(Time(1)),
+    ...overrides,
+  };
+}
+
 function client(
-  info: (userId: string) => MemberInfo | undefined = userId => ({
-    nickname: `昵称${userId}`,
-    card: `群名片${userId}`,
-    role: 'member',
-    title: '',
-  }),
-  avatar: (userId: string) => Avatar | undefined = () => ({
+  info: (userId: string) => MemberInfo | undefined = userId =>
+    member({ nickname: `昵称${userId}`, card: `群名片${userId}` }),
+  avatar: (userId: string, size: number) => Avatar | undefined = () => ({
     data: 'AA==',
     mimeType: 'image/jpeg',
   }),
@@ -38,8 +47,8 @@ function client(
         asked.push(userId);
         return info(userId);
       },
-      async avatar(userId) {
-        return avatar(userId);
+      async avatar(userId, size) {
+        return avatar(userId, size);
       },
       async message() {
         return undefined;
@@ -130,12 +139,8 @@ describe('Members', () => {
   it('身份和头衔才写进去', async () => {
     const members = new Members(
       group,
-      client(() => ({
-        nickname: '老张',
-        card: '',
-        role: 'admin',
-        title: '卷王',
-      })).client,
+      client(() => member({ nickname: '老张', role: 'admin', title: '卷王' }))
+        .client,
     );
 
     members.want([张]);
@@ -167,7 +172,7 @@ describe('Members', () => {
       if (broken) {
         throw new Error('炸了');
       }
-      return { nickname: '阿三', card: '', role: 'member', title: '' };
+      return member({ nickname: '阿三' });
     });
     const members = new Members(group, from);
 
@@ -181,6 +186,36 @@ describe('Members', () => {
 
     expect(members.take().map(card => card.userId)).toEqual(['2']);
     expect(asked).toEqual(['2', '2']);
+  });
+});
+
+describe('profile', () => {
+  const 张 = must(UserId('2'));
+
+  it('资料和头像一起拿，头像是大图', async () => {
+    const sizes: number[] = [];
+    const members = new Members(
+      group,
+      client(
+        () => member({ nickname: '阿三', card: '小三' }),
+        (_userId, size) => {
+          sizes.push(size);
+          return { data: 'AA==', mimeType: 'image/jpeg' };
+        },
+      ).client,
+    );
+
+    expect(await members.profile(张)).toEqual({
+      info: member({ nickname: '阿三', card: '小三' }),
+      avatar: { data: 'AA==', mimeType: 'image/jpeg' },
+    });
+    expect(sizes).toEqual([640]);
+  });
+
+  it('查不到人就是 undefined', async () => {
+    const members = new Members(group, client(() => undefined).client);
+
+    expect(await members.profile(张)).toBeUndefined();
   });
 });
 
