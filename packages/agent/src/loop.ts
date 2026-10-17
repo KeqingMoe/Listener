@@ -12,6 +12,7 @@ import type {
   ModelThinkingLevel,
 } from '@earendil-works/pi-ai';
 import {
+  type Card,
   type Chat,
   type Event,
   type Mentioned,
@@ -40,6 +41,7 @@ export type LoopFeed = {
   type: 'feed';
   via: 'start' | 'turn';
   payload: Envelope;
+  members: (Omit<Card, 'avatar'> & { avatar: boolean })[];
 };
 
 export type LoopAssistant = {
@@ -63,6 +65,25 @@ export type LoopHandler = (event: LoopEvent) => void;
 function systemPrompt(selfId: string, custom?: string): string {
   const identity = `你的 QQ 号是 ${selfId}。`;
   return `${protocol.trim()}\n\n${identity}\n\n${custom?.trim() ?? ''}`;
+}
+
+function cardMessage(card: Card): AgentMessage {
+  const { avatar, ...member } = card;
+  return {
+    role: 'user',
+    content: [
+      { type: 'text', text: JSON.stringify(member) },
+      ...(avatar !== undefined ? [{ type: 'image' as const, ...avatar }] : []),
+    ],
+    timestamp: Date.now(),
+  };
+}
+
+function cardFeed(card: Card) {
+  return {
+    ...card,
+    avatar: card.avatar !== undefined,
+  };
 }
 
 export async function runLoop(
@@ -89,13 +110,20 @@ export async function runLoop(
 
   const deliver = (via: LoopFeed['via']): AgentMessage[] => {
     const envelope: Envelope = { now: now(), events: chat.openWindow(window) };
-    onEvent?.({ type: 'feed', via, payload: envelope });
+    const cards = chat.members.take();
+    onEvent?.({
+      type: 'feed',
+      via,
+      payload: envelope,
+      members: cards.map(cardFeed),
+    });
     return [
       {
         role: 'user' as const,
         content: JSON.stringify(envelope),
         timestamp: Date.now(),
       },
+      ...cards.map(cardMessage),
     ];
   };
 

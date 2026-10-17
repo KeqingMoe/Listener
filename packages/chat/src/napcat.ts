@@ -7,6 +7,7 @@ import {
   groupId as toGroupId,
   userId as toUserId,
 } from './id';
+import { toWebp } from './image';
 import { read, write } from './message';
 
 function text(error: unknown): string {
@@ -80,6 +81,40 @@ export function napcat(ws: NCWebsocket): Client {
         throw new Error('认不出回执');
       }
       return id;
+    },
+
+    async info(groupId, userId) {
+      const raw = await ws
+        .send('get_group_member_info', {
+          group_id: Number(groupId),
+          user_id: Number(userId),
+        })
+        .catch(() => undefined);
+      if (raw === undefined) {
+        return;
+      }
+      return {
+        nickname: raw.nickname,
+        card: raw.card,
+        role: raw.role,
+        title: raw.title,
+      };
+    },
+
+    async avatar(userId, size) {
+      try {
+        const url = `https://q1.qlogo.cn/g?b=qq&nk=${userId}&s=640`;
+        const resp = await fetch(url);
+        if (!resp.ok) return;
+        const buffer = Buffer.from(await resp.arrayBuffer());
+        const webp = await toWebp(buffer, size);
+        return {
+          data: webp.toString('base64'),
+          mimeType: 'image/webp',
+        };
+      } catch {
+        return;
+      }
     },
 
     async message(msgId) {

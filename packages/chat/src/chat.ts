@@ -7,6 +7,7 @@ import type {
   UnreadGap,
 } from './event';
 import { GapId, type GroupId, type MessageId, type UserId } from './id';
+import { faces, Members } from './members';
 
 export type ChatIdentity = {
   selfId: UserId;
@@ -82,6 +83,7 @@ export class Chat {
   readonly selfId: UserId;
   readonly groupId: GroupId;
   readonly client: Client;
+  readonly members: Members;
   #unread: Gap = emptyGap();
   // 活着的缺口互不重叠：揭过就作废，没揭完才挂新的。
   #gaps = new Map<GapId, Gap>();
@@ -93,6 +95,8 @@ export class Chat {
     this.selfId = identity.selfId;
     this.groupId = identity.groupId;
     this.client = client;
+    this.members = new Members(identity.groupId, client);
+    this.members.want([this.selfId]);
     this.#unwatch = client.watch(this.groupId, this.append.bind(this));
   }
 
@@ -124,6 +128,7 @@ export class Chat {
     if (event.type !== 'message.created') {
       return;
     }
+    this.members.see(faces(event));
     const mentioned = await this.#mentioned(event);
     this.#unread.items.push({ event, mentioned });
     if (hit(mentioned)) {
@@ -147,6 +152,7 @@ export class Chat {
       side: 'latest',
       limit: n,
     });
+    this.members.want(events.flatMap(faces));
     if (rest === undefined) {
       return events;
     }
@@ -165,6 +171,7 @@ export class Chat {
       );
     }
     const { events, rest } = take(gap, query);
+    this.members.want(events.flatMap(faces));
     this.#gaps.delete(query.gapId);
     if (rest === undefined) {
       return events;
